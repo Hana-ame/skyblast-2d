@@ -64,7 +64,7 @@ export class World {
 
   private apply(p: PlayerState, w: WorldInput, dt: number): void {
     p.aim = w.aim
-    move(p.vel, w.move)
+    move(p.vel, w.move, dt)
     if (w.jump && this.onGround(p)) jump(p.vel)
     // 喷射受燃料门控：燃料>0 才生效，并随开/关消耗/回充
     const fuel = this.fuel.get(p.id) ?? 0

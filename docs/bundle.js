@@ -6,10 +6,12 @@
 
   // src/core/sim/physics.ts
   var GRAVITY = 450;
-  var MOVE_SPEED = 360;
+  var MOVE_SPEED = 240;
+  var MOVE_ACCEL = 260;
   var JUMP_VEL = 520;
   var MAX_FALL = 650;
   var JETPACK_ACCEL = 1500;
+  var JETPACK_MAX_UP = 620;
   var JETPACK_FUEL = 2.5;
   var JETPACK_DRAIN = 1;
   var JETPACK_RECHARGE = 0.8;
@@ -21,14 +23,16 @@
     v.y += GRAVITY * dt;
     if (v.y > MAX_FALL) v.y = MAX_FALL;
   }
-  function move(v, dir) {
-    v.x = dir * MOVE_SPEED;
+  function move(v, dir, dt) {
+    const target = dir * MOVE_SPEED;
+    if (v.x < target) v.x = Math.min(target, v.x + MOVE_ACCEL * dt);
+    else if (v.x > target) v.x = Math.max(target, v.x - MOVE_ACCEL * dt);
   }
   function jump(v) {
     v.y = -JUMP_VEL;
   }
   function jetpack(v, _aim, dt) {
-    v.y -= JETPACK_ACCEL * dt;
+    v.y = Math.max(-JETPACK_MAX_UP, v.y - JETPACK_ACCEL * dt);
   }
   function updateJetpackFuel(fuel, active, dt) {
     const next = active ? fuel - JETPACK_DRAIN * dt : fuel + JETPACK_RECHARGE * dt;
@@ -127,7 +131,7 @@
     }
     apply(p, w, dt) {
       p.aim = w.aim;
-      move(p.vel, w.move);
+      move(p.vel, w.move, dt);
       if (w.jump && this.onGround(p)) jump(p.vel);
       const fuel = this.fuel.get(p.id) ?? 0;
       const canJet = w.jetpack && fuel > 0;
