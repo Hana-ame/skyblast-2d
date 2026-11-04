@@ -9,7 +9,7 @@
   var MOVE_SPEED = 260;
   var JUMP_VEL = 520;
   var MAX_FALL = 1400;
-  var JETPACK_ACCEL = 900;
+  var JETPACK_ACCEL = 1800;
   var JETPACK_FUEL = 2.5;
   var JETPACK_DRAIN = 1;
   var JETPACK_RECHARGE = 0.8;
@@ -28,8 +28,8 @@
     v.y = -JUMP_VEL;
   }
   function jetpack(v, aim, dt) {
-    v.x += -Math.cos(aim) * JETPACK_ACCEL * dt;
-    v.y += -Math.sin(aim) * JETPACK_ACCEL * dt;
+    v.x += Math.cos(aim) * JETPACK_ACCEL * dt;
+    v.y += Math.sin(aim) * JETPACK_ACCEL * dt;
   }
   function updateJetpackFuel(fuel, active, dt) {
     const next = active ? fuel - JETPACK_DRAIN * dt : fuel + JETPACK_RECHARGE * dt;
@@ -63,7 +63,7 @@
 
   // src/core/types.ts
   function defaultWorldInput() {
-    return { move: 0, jump: false, jetpack: false, aim: 0, fire: false };
+    return { move: 0, jump: false, jetpack: false, aim: 0, fire: false, reload: false };
   }
 
   // src/core/sim/world.ts
@@ -88,6 +88,7 @@
       __publicField(this, "pid", 1);
       __publicField(this, "prj", 1);
       __publicField(this, "cooldowns", /* @__PURE__ */ new Map());
+      __publicField(this, "fuel", /* @__PURE__ */ new Map());
       __publicField(this, "spawnIndex", 0);
     }
     addTerrain(x, y, w, h) {
@@ -110,6 +111,7 @@
       };
       this.players.push(p);
       this.cooldowns.set(p.id, 0);
+      this.fuel.set(p.id, JETPACK_FUEL);
       return p;
     }
     step(dt, inputs) {
@@ -128,7 +130,11 @@
       p.aim = w.aim;
       move(p.vel, w.move);
       if (w.jump && this.onGround(p)) jump(p.vel);
-      if (w.jetpack) jetpack(p.vel, p.aim, dt);
+      const fuel = this.fuel.get(p.id) ?? 0;
+      const canJet = w.jetpack && fuel > 0;
+      if (canJet) jetpack(p.vel, p.aim, dt);
+      this.fuel.set(p.id, updateJetpackFuel(fuel, w.jetpack, dt));
+      if (w.reload && p.ammo < MAG_SIZE) p.ammo = MAG_SIZE;
       const cd = this.cooldowns.get(p.id) ?? 0;
       this.cooldowns.set(p.id, Math.max(0, cd - dt));
       if (w.fire && cd <= 0 && p.ammo > 0 && p.alive) {
@@ -137,6 +143,10 @@
         p.ammo--;
         this.cooldowns.set(p.id, FIRE_COOLDOWN);
       }
+    }
+    /** 供 UI/HUD 读取玩家燃料 */
+    fuelOf(id) {
+      return this.fuel.get(id) ?? 0;
     }
     physics(p, dt) {
       applyGravity(p.vel, dt);
@@ -271,6 +281,7 @@
           n.fire = it.on;
           break;
         case "reload":
+          n.reload = true;
           break;
       }
     }
@@ -446,7 +457,6 @@
   var enemy = world.addPlayer(740, GROUND_Y);
   var playerInput = defaultWorldInput();
   var enemyInput = defaultWorldInput();
-  var playerFuel = JETPACK_FUEL;
   document.getElementById("btn-fullscreen")?.addEventListener("click", toggleFullscreen);
   document.getElementById("btn-jump")?.addEventListener("touchstart", (e) => {
     e.preventDefault();
@@ -470,6 +480,7 @@
     out.push({ t: "fire", on: t.fire });
     if (t.jump) out.push({ t: "jump" });
     if (t.jetpack) out.push({ t: "jetpack", on: true });
+    else out.push({ t: "jetpack", on: false });
     if (t.reload) out.push({ t: "reload" });
     return out;
   }
@@ -478,7 +489,8 @@
     const dy = player.pos.y - enemy.pos.y;
     const aim = Math.atan2(dy, dx);
     const move2 = Math.abs(dx) > 180 ? dx > 0 ? 1 : -1 : 0;
-    return { move: move2, jump: false, jetpack: false, aim, fire: true };
+    const fire = world.tick % 18 < 12;
+    return { move: move2, jump: false, jetpack: false, aim, fire, reload: enemy.ammo === 0 };
   }
   function drawPlayer(p, color, label) {
     ctx.fillStyle = color;
@@ -520,7 +532,7 @@
     ctx.fillStyle = "#fff";
     ctx.font = "12px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(`\u4F60 K/D=${player.kills}/${player.deaths}   AI K/D=${enemy.kills}/${enemy.deaths}   \u71C3\u6599=${playerFuel.toFixed(1)}   tick=${world.tick}`, 12, 20);
+    ctx.fillText(`\u4F60 K/D=${player.kills}/${player.deaths}   AI K/D=${enemy.kills}/${enemy.deaths}   \u71C3\u6599=${world.fuelOf(player.id).toFixed(1)}   tick=${world.tick}`, 12, 20);
   }
   var last = performance.now();
   var acc = 0;
@@ -534,7 +546,6 @@
       const t = controls.getState();
       playerInput = applyIntents(playerInput, toIntents(t));
       enemyInput = aiIntent();
-      playerFuel = updateJetpackFuel(playerFuel, playerInput.jetpack, FIXED);
       world.step(FIXED, /* @__PURE__ */ new Map([[player.id, playerInput], [enemy.id, enemyInput]]));
       controls.consumeMomentary();
       acc -= FIXED;
@@ -545,4 +556,19 @@
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  window.__dbg = {
+    world,
+    get player() {
+      return player;
+    },
+    get enemy() {
+      return enemy;
+    },
+    get fuel() {
+      return world.fuelOf(player.id);
+    },
+    get input() {
+      return playerInput;
+    }
+  };
 })();

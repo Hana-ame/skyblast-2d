@@ -3,7 +3,6 @@ import { World, GROUND_Y, PLAYER_R, WALL_L, WALL_R } from '../core/sim/world.ts'
 import { defaultWorldInput } from '../core/types.ts'
 import type { WorldInput } from '../core/types.ts'
 import type { Intent } from '../input/intent.ts'
-import { JETPACK_FUEL, updateJetpackFuel } from '../core/sim/physics.ts'
 import { applyIntents } from '../net/ServerSim.ts'
 import { Controls } from './controls.ts'
 import { fitCanvas, toggleFullscreen } from './fullscreen.ts'
@@ -26,7 +25,6 @@ const enemy = world.addPlayer(740, GROUND_Y)
 
 let playerInput = defaultWorldInput()
 let enemyInput = defaultWorldInput()
-let playerFuel = JETPACK_FUEL
 
 // UI 按钮（触屏手柄）
 document.getElementById('btn-fullscreen')?.addEventListener('click', toggleFullscreen)
@@ -44,6 +42,7 @@ function toIntents(t: ReturnType<Controls['getState']>): Intent[] {
   out.push({ t: 'fire', on: t.fire })
   if (t.jump) out.push({ t: 'jump' })
   if (t.jetpack) out.push({ t: 'jetpack', on: true })
+  else out.push({ t: 'jetpack', on: false })   // 始终下发，松开时关闭，避免燃料持续消耗
   if (t.reload) out.push({ t: 'reload' })
   return out
 }
@@ -54,7 +53,9 @@ function aiIntent(): WorldInput {
   const dy = player.pos.y - enemy.pos.y
   const aim = Math.atan2(dy, dx)
   const move: -1 | 0 | 1 = Math.abs(dx) > 180 ? (dx > 0 ? 1 : -1) : 0
-  return { move, jump: false, jetpack: false, aim, fire: true }
+  // AI 间歇开火 + 弹药耗尽时装填，避免压着玩家打
+  const fire = world.tick % 18 < 12
+  return { move, jump: false, jetpack: false, aim, fire, reload: enemy.ammo === 0 }
 }
 
 function drawPlayer(p: typeof player, color: string, label: string): void {
@@ -102,7 +103,7 @@ function render(): void {
   ctx.fillStyle = '#fff'
   ctx.font = '12px sans-serif'
   ctx.textAlign = 'left'
-  ctx.fillText(`你 K/D=${player.kills}/${player.deaths}   AI K/D=${enemy.kills}/${enemy.deaths}   燃料=${playerFuel.toFixed(1)}   tick=${world.tick}`, 12, 20)
+  ctx.fillText(`你 K/D=${player.kills}/${player.deaths}   AI K/D=${enemy.kills}/${enemy.deaths}   燃料=${world.fuelOf(player.id).toFixed(1)}   tick=${world.tick}`, 12, 20)
 }
 
 // 主循环：固定步长（防高速穿透由 core 地形碰撞保证）
@@ -119,7 +120,6 @@ function frame(now: number): void {
     const t = controls.getState()
     playerInput = applyIntents(playerInput, toIntents(t))
     enemyInput = aiIntent()
-    playerFuel = updateJetpackFuel(playerFuel, playerInput.jetpack, FIXED)
     world.step(FIXED, new Map([[player.id, playerInput], [enemy.id, enemyInput]]))
     controls.consumeMomentary()
     acc -= FIXED
@@ -131,3 +131,12 @@ function frame(now: number): void {
 }
 
 requestAnimationFrame(frame)
+
+// 调试暴露：便于真实操作验证（读回状态）
+;(window as unknown as { __dbg: unknown }).__dbg = {
+  world,
+  get player() { return player },
+  get enemy() { return enemy },
+  get fuel() { return world.fuelOf(player.id) },
+  get input() { return playerInput },
+}

@@ -1,5 +1,5 @@
 // core/sim/world.ts —— 服务器权威世界模拟（确定性，零 IO，可在服务端复用）
-import { applyGravity, integrate, jetpack, jump, move } from './physics.ts'
+import { applyGravity, integrate, jetpack, jump, move, updateJetpackFuel, JETPACK_FUEL } from './physics.ts'
 import { fireProjectile, stepProjectile } from './projectile.ts'
 import { defaultWorldInput } from '../types.ts'
 import type { PlayerState, Projectile, WorldInput, WorldSnapshot } from '../types.ts'
@@ -27,6 +27,7 @@ export class World {
   private pid = 1
   private prj = 1
   private cooldowns = new Map<number, number>()
+  private fuel = new Map<number, number>()
   private spawnIndex = 0
 
   addTerrain(x: number, y: number, w: number, h: number): TerrainBox {
@@ -44,6 +45,7 @@ export class World {
     }
     this.players.push(p)
     this.cooldowns.set(p.id, 0)
+    this.fuel.set(p.id, JETPACK_FUEL)
     return p
   }
 
@@ -64,7 +66,12 @@ export class World {
     p.aim = w.aim
     move(p.vel, w.move)
     if (w.jump && this.onGround(p)) jump(p.vel)
-    if (w.jetpack) jetpack(p.vel, p.aim, dt)
+    // 喷射受燃料门控：燃料>0 才生效，并随开/关消耗/回充
+    const fuel = this.fuel.get(p.id) ?? 0
+    const canJet = w.jetpack && fuel > 0
+    if (canJet) jetpack(p.vel, p.aim, dt)
+    this.fuel.set(p.id, updateJetpackFuel(fuel, w.jetpack, dt))
+    if (w.reload && p.ammo < MAG_SIZE) p.ammo = MAG_SIZE
     const cd = this.cooldowns.get(p.id) ?? 0
     this.cooldowns.set(p.id, Math.max(0, cd - dt))
     if (w.fire && cd <= 0 && p.ammo > 0 && p.alive) {
@@ -73,6 +80,11 @@ export class World {
       p.ammo--
       this.cooldowns.set(p.id, FIRE_COOLDOWN)
     }
+  }
+
+  /** 供 UI/HUD 读取玩家燃料 */
+  fuelOf(id: number): number {
+    return this.fuel.get(id) ?? 0
   }
 
   private physics(p: PlayerState, dt: number): void {

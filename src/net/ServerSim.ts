@@ -39,7 +39,7 @@ export function applyIntents(cur: WorldInput, intents: Intent[]): WorldInput {
       case 'jetpack': n.jetpack = it.on; break
       case 'aim': n.aim = it.angle; break
       case 'fire': n.fire = it.on; break
-      case 'reload': break
+      case 'reload': n.reload = true; break
     }
   }
   return n

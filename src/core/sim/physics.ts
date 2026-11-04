@@ -6,7 +6,7 @@ export const GRAVITY = 1200       // px/s²
 export const MOVE_SPEED = 260     // px/s
 export const JUMP_VEL = 520       // 起跳初速（向上，-y）
 export const MAX_FALL = 1400      // 终端下落速度
-export const JETPACK_ACCEL = 900  // 喷射器加速度（沿 -aim 方向）
+export const JETPACK_ACCEL = 1800  // 喷射器加速度（沿 -aim 方向；>GRAVITY 才能对抗重力浮起）
 
 // 喷射器燃料：有上限，不能无限飘
 export const JETPACK_FUEL = 2.5    // 燃料上限（秒）
@@ -32,10 +32,10 @@ export function jump(v: Vec2): void {
   v.y = -JUMP_VEL
 }
 
-/** 喷射器：沿瞄准反方向推进（Teeworlds 风格），抵消部分重力 */
+/** 喷射器：沿【瞄准方向 +aim】推进（Noita/Teeworlds 喷射是朝你瞄的方向喷，反推身体）；加速度>重力可浮起 */
 export function jetpack(v: Vec2, aim: number, dt: number): void {
-  v.x += -Math.cos(aim) * JETPACK_ACCEL * dt
-  v.y += -Math.sin(aim) * JETPACK_ACCEL * dt
+  v.x += Math.cos(aim) * JETPACK_ACCEL * dt
+  v.y += Math.sin(aim) * JETPACK_ACCEL * dt
 }
 
 /** 喷射器燃料更新：active 时按 drain 消耗，否则按 recharge 回充；夹到 [0, JETPACK_FUEL] */

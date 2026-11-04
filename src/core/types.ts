@@ -36,8 +36,9 @@ export interface WorldInput {
   jetpack: boolean
   aim: number
   fire: boolean
+  reload: boolean
 }
 
 export function defaultWorldInput(): WorldInput {
-  return { move: 0, jump: false, jetpack: false, aim: 0, fire: false }
+  return { move: 0, jump: false, jetpack: false, aim: 0, fire: false, reload: false }
 }
