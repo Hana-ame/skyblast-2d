@@ -5,11 +5,11 @@
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
   // src/core/sim/physics.ts
-  var GRAVITY = 800;
-  var MOVE_SPEED = 300;
+  var GRAVITY = 450;
+  var MOVE_SPEED = 360;
   var JUMP_VEL = 520;
-  var MAX_FALL = 900;
-  var JETPACK_ACCEL = 1700;
+  var MAX_FALL = 650;
+  var JETPACK_ACCEL = 1500;
   var JETPACK_FUEL = 2.5;
   var JETPACK_DRAIN = 1;
   var JETPACK_RECHARGE = 0.8;
