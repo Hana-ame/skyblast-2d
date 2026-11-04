@@ -27,9 +27,8 @@
   function jump(v) {
     v.y = -JUMP_VEL;
   }
-  function jetpack(v, aim, dt) {
-    v.x += Math.cos(aim) * JETPACK_ACCEL * dt;
-    v.y += Math.sin(aim) * JETPACK_ACCEL * dt;
+  function jetpack(v, _aim, dt) {
+    v.y -= JETPACK_ACCEL * dt;
   }
   function updateJetpackFuel(fuel, active, dt) {
     const next = active ? fuel - JETPACK_DRAIN * dt : fuel + JETPACK_RECHARGE * dt;
@@ -153,7 +152,7 @@
       integrate(p.pos, p.vel, dt);
       if (p.pos.y >= GROUND_Y2) {
         p.pos.y = GROUND_Y2;
-        p.vel.y = 0;
+        if (p.vel.y > 0) p.vel.y = 0;
       }
       if (p.pos.x < WALL_L) {
         p.pos.x = WALL_L;

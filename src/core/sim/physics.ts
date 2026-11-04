@@ -32,10 +32,9 @@ export function jump(v: Vec2): void {
   v.y = -JUMP_VEL
 }
 
-/** 喷射器：沿【瞄准方向 +aim】推进（Noita/Teeworlds 喷射是朝你瞄的方向喷，反推身体）；加速度>重力可浮起 */
-export function jetpack(v: Vec2, aim: number, dt: number): void {
-  v.x += Math.cos(aim) * JETPACK_ACCEL * dt
-  v.y += Math.sin(aim) * JETPACK_ACCEL * dt
+/** 喷射器（起飞）：沿【垂直向上 -y】推进（W/空格=起飞，垂直上升，不看瞄准方向）；加速度>重力可浮起 */
+export function jetpack(v: Vec2, _aim: number, dt: number): void {
+  v.y -= JETPACK_ACCEL * dt
 }
 
 /** 喷射器燃料更新：active 时按 drain 消耗，否则按 recharge 回充；夹到 [0, JETPACK_FUEL] */

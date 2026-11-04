@@ -90,7 +90,11 @@ export class World {
   private physics(p: PlayerState, dt: number): void {
     applyGravity(p.vel, dt)
     integrate(p.pos, p.vel, dt)
-    if (p.pos.y >= GROUND_Y) { p.pos.y = GROUND_Y; p.vel.y = 0 }
+    // 只在【向下运动】时落地清 vy；向上（喷射）的 vy 保留，允许起飞离地
+    if (p.pos.y >= GROUND_Y) {
+      p.pos.y = GROUND_Y
+      if (p.vel.y > 0) p.vel.y = 0
+    }
     if (p.pos.x < WALL_L) { p.pos.x = WALL_L; p.vel.x = Math.max(0, p.vel.x) }
     if (p.pos.x > WALL_R) { p.pos.x = WALL_R; p.vel.x = Math.min(0, p.vel.x) }
     this.collideTerrains(p)
