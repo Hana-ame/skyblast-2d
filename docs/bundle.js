@@ -351,13 +351,14 @@
       let moveX = 0;
       if (k.has("a") || k.has("arrowleft")) moveX -= 1;
       if (k.has("d") || k.has("arrowright")) moveX += 1;
+      const jetpack2 = k.has("w") || k.has(" ") || k.has("arrowup") || k.has("e");
       const aim = Math.atan2(this.mouse.y - this.playerWorld.y, this.mouse.x - this.playerWorld.x);
       return {
         moveX,
         aimAngle: aim,
         fire: this.mouseDown,
-        jump: k.has("w") || k.has(" ") || k.has("arrowup"),
-        jetpack: k.has("e"),
+        jump: false,
+        jetpack: jetpack2,
         reload: k.has("r")
       };
     }
@@ -460,16 +461,14 @@
   var playerInput = defaultWorldInput();
   var enemyInput = defaultWorldInput();
   document.getElementById("btn-fullscreen")?.addEventListener("click", toggleFullscreen);
-  document.getElementById("btn-jump")?.addEventListener("touchstart", (e) => {
-    e.preventDefault();
-    controls.pressJump();
-  });
-  var btnJet = document.getElementById("btn-jet");
-  btnJet?.addEventListener("touchstart", (e) => {
-    e.preventDefault();
-    controls.setJetpack(true);
-  });
-  btnJet?.addEventListener("touchend", () => controls.setJetpack(false));
+  for (const id of ["btn-jump", "btn-jet"]) {
+    const b = document.getElementById(id);
+    b?.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      controls.setJetpack(true);
+    });
+    b?.addEventListener("touchend", () => controls.setJetpack(false));
+  }
   document.getElementById("btn-reload")?.addEventListener("touchstart", (e) => {
     e.preventDefault();
     controls.pressReload();
@@ -482,7 +481,6 @@
     out.push({ t: "move", dir: moveDir });
     out.push({ t: "aim", angle: t.aimAngle });
     out.push({ t: "fire", on: t.fire });
-    if (t.jump) out.push({ t: "jump" });
     if (t.jetpack) out.push({ t: "jetpack", on: true });
     else out.push({ t: "jetpack", on: false });
     if (t.reload) out.push({ t: "reload" });
