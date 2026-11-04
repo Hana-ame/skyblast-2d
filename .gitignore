@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Build output / bundles (generated, not committed)
+dist/
+bundle/
+build/
+*.bundle.js
+
+# Logs
+*.log
+logs/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Generated Pages artifact is committed (docs/index.html), so no ignore here.
+# Only ignore stray local copies if any.
+/docs/match-data.json
