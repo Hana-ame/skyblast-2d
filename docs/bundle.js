@@ -6,19 +6,24 @@
 
   // src/core/sim/physics.ts
   var defaults = {
-    mass: 1,
+    mass: 1.3,
+    // 用户调优值：稍重
     gravity: 1250,
     moveSpeed: 300,
     // 水平极速（无惯性：按下即达，松开即停）
-    jumpImpulse: 660,
+    jumpImpulse: 490,
+    // 用户调优值
     maxFall: 1200,
-    jetpackAccel: 1870,
-    // 推力 = gravity(1250) + maxUp(620)/1s → 净加速 620/s，约 1s 预热到升空极速
-    jetpackMaxUp: 620,
-    // 升空速度上限（受力平衡态，可调）
-    jetpackFuel: 2.5,
-    jetpackDrain: 1,
-    jetpackRecharge: 0.8
+    jetpackAccel: 3e3,
+    // 用户调优值：净加速 (3000-1250)/1.3 ≈ 1346/s → 约 0.21s 预热到极速
+    jetpackMaxUp: 280,
+    // 用户调优值：升空速度上限（短促小跳手感）
+    jetpackFuel: 0.5,
+    // 用户调优值：满能量只够喷 1s（drain 0.5）
+    jetpackDrain: 0.5,
+    // 用户调优值
+    jetpackRecharge: 0.2
+    // 用户调优值：回满需 2.5s（短喷长充）
   };
   var P = { ...defaults };
   function getPhysicsParams() {
