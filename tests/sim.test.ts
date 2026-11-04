@@ -108,3 +108,26 @@ test('地形：弹丸被高挡板挡下，不穿过', () => {
   const beyond = w.projectiles.filter((pr) => pr.pos.x > 620)
   assert.equal(beyond.length, 0, `no projectile should pass the wall, found ${beyond.length}`)
 })
+
+test('重生安全：重生点不与地形重叠（不卡地里）', () => {
+  const w = new World()
+  w.addTerrain(120, 400, 14, 60)  // 左悬浮掩体
+  w.addTerrain(400, 460, 160, 14) // 中央平台
+  const a = w.addPlayer(200, GROUND_Y)
+  const b = w.addPlayer(760, GROUND_Y)
+  // 反复死亡重生多次，重生点应始终干净（不与任何地形重叠）
+  for (let i = 0; i < 30; i++) {
+    a.hp = 1
+    b.fire = true
+    // 直接触发一次 kill → respawn
+    ;(w as unknown as { kill: (v: typeof a, k: number) => void }).kill(a, b.id)
+    const overlapped = w.terrains.some((t) => {
+      const nx = Math.max(t.x, Math.min(a.pos.x, t.x + t.w))
+      const ny = Math.max(t.y, Math.min(a.pos.y, t.y + t.h))
+      const dx = a.pos.x - nx
+      const dy = a.pos.y - ny
+      return dx * dx + dy * dy < PLAYER_R * PLAYER_R
+    })
+    assert.ok(!overlapped, `respawn should not overlap terrain, pos=(${a.pos.x},${a.pos.y})`)
+  }
+})

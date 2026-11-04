@@ -185,6 +185,38 @@ export class World {
     p.hp = 100
     p.ammo = MAG_SIZE
     p.alive = true
+    // 防御：若重生点与地形重叠（卡地里），推出到无重叠位置，防死亡后卡住
+    this.pushOutOfTerrains(p)
+  }
+
+  // 把玩家从地形重叠中推出（重生/卡住兜底）；返回是否曾重叠
+  private pushOutOfTerrains(p: PlayerState): boolean {
+    let moved = false
+    for (let guard = 0; guard < 8; guard++) {
+      let overlapped = false
+      for (const t of this.terrains) {
+        const nx = Math.max(t.x, Math.min(p.pos.x, t.x + t.w))
+        const ny = Math.max(t.y, Math.min(p.pos.y, t.y + t.h))
+        const dx = p.pos.x - nx
+        const dy = p.pos.y - ny
+        if (dx * dx + dy * dy < PLAYER_R * PLAYER_R) {
+          overlapped = true
+          moved = true
+          if (dx === 0 && dy === 0) {
+            // 圆心在平台内：向上推出（站在顶面）
+            p.pos.y = t.y - PLAYER_R
+            p.vel.y = Math.min(0, p.vel.y)
+          } else {
+            const d = Math.sqrt(dx * dx + dy * dy)
+            const push = (PLAYER_R - d) / d
+            p.pos.x += dx * push
+            p.pos.y += dy * push
+          }
+        }
+      }
+      if (!overlapped) break
+    }
+    return moved
   }
 
   snapshot(): WorldSnapshot {
