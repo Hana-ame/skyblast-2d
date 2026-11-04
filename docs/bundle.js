@@ -564,10 +564,14 @@
     ctx.fillRect(p.pos.x - 18, p.pos.y - 32, 36, 5);
     ctx.fillStyle = color;
     ctx.fillRect(p.pos.x - 18, p.pos.y - 32, 36 * Math.max(0, p.hp) / 100, 5);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(p.pos.x - 18, p.pos.y - 40, 36, 4);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(p.pos.x - 18, p.pos.y - 40, 36 * Math.max(0, world.fuelOf(p.id)) / getPhysicsParams().jetpackFuel, 4);
     ctx.fillStyle = "#fff";
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`${label} ${p.hp}`, p.pos.x, p.pos.y - 38);
+    ctx.fillText(`${label} ${p.hp}`, p.pos.x, p.pos.y - 46);
   }
   function render() {
     vp.applyTransform();

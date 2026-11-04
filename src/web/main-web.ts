@@ -79,14 +79,20 @@ function drawPlayer(p: typeof player, color: string, label: string): void {
   ctx.moveTo(p.pos.x, p.pos.y)
   ctx.lineTo(p.pos.x + Math.cos(p.aim) * 32, p.pos.y + Math.sin(p.aim) * 32)
   ctx.stroke()
+  // 血条（-32）
   ctx.fillStyle = '#000'
   ctx.fillRect(p.pos.x - 18, p.pos.y - 32, 36, 5)
   ctx.fillStyle = color
   ctx.fillRect(p.pos.x - 18, p.pos.y - 32, 36 * Math.max(0, p.hp) / 100, 5)
+  // 升空条（燃料，-40）：一眼看能量余量
+  ctx.fillStyle = '#000'
+  ctx.fillRect(p.pos.x - 18, p.pos.y - 40, 36, 4)
+  ctx.fillStyle = '#38bdf8'
+  ctx.fillRect(p.pos.x - 18, p.pos.y - 40, 36 * Math.max(0, world.fuelOf(p.id)) / getPhysicsParams().jetpackFuel, 4)
   ctx.fillStyle = '#fff'
   ctx.font = '11px sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText(`${label} ${p.hp}`, p.pos.x, p.pos.y - 38)
+  ctx.fillText(`${label} ${p.hp}`, p.pos.x, p.pos.y - 46)
 }
 
 function render(): void {
