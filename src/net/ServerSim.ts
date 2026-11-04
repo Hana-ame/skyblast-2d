@@ -30,7 +30,7 @@ export class ServerSim {
   }
 }
 
-function applyIntents(cur: WorldInput, intents: Intent[]): WorldInput {
+export function applyIntents(cur: WorldInput, intents: Intent[]): WorldInput {
   const n = { ...cur }
   for (const it of intents) {
     switch (it.t) {

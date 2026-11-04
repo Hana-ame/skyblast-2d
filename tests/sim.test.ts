@@ -1,7 +1,7 @@
 // tests/sim.test.ts —— core 确定性 + 三层 Loopback 集成
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { World, GROUND_Y } from '../src/core/sim/world.ts'
+import { World, GROUND_Y, PLAYER_R } from '../src/core/sim/world.ts'
 import { defaultWorldInput } from '../src/core/types.ts'
 import type { WorldInput } from '../src/core/types.ts'
 import { ServerSim } from '../src/net/ServerSim.ts'
@@ -85,4 +85,26 @@ test('Loopback 集成：两客户端对局跑通，服务器权威产生命中',
 test('三层分离：core 不 import input/ui/net（源码层面检查）', () => {
   // 简单断言：core/types 不引用 input 意图类型；world 只依赖 core 内部
   assert.ok(typeof GROUND_Y === 'number', 'GROUND_Y is a number')
+})
+
+test('地形：玩家落在平台上，不穿透、不瞬移', () => {
+  const w = new World()
+  w.addTerrain(400, 400, 200, 16) // 平台顶 y=400
+  const p = w.addPlayer(500, 300) // 平台上方空中
+  for (let i = 0; i < 120; i++) w.step(DT, new Map([[p.id, input()]]))
+  // 应稳站平台顶附近，绝不穿入平台内部或下方
+  assert.ok(p.pos.y <= 400 + 1, `expected on platform top, y=${p.pos.y}`)
+  assert.ok(p.pos.y >= 400 - PLAYER_R - 1, `expected near top surface, y=${p.pos.y}`)
+})
+
+test('地形：弹丸被高挡板挡下，不穿过', () => {
+  const w = new World()
+  w.addTerrain(500, 240, 120, 160) // 竖直高挡板 x500-620, y240-400
+  const p = w.addPlayer(300, 300)
+  w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]])) // 朝右平射
+  assert.ok(w.projectiles.length > 0, 'should fire')
+  for (let i = 0; i < 60; i++) w.step(DT, new Map([[p.id, input()]]))
+  // 挡板右侧不应有任何弹丸穿过
+  const beyond = w.projectiles.filter((pr) => pr.pos.x > 620)
+  assert.equal(beyond.length, 0, `no projectile should pass the wall, found ${beyond.length}`)
 })

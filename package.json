@@ -8,5 +8,10 @@
     "test": "node --test tests/*.test.ts",
     "build:site": "node scripts/build-site.ts"
   },
-  "engines": { "node": ">=22.18" }
+  "engines": {
+    "node": ">=22.18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }

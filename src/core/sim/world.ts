@@ -16,15 +16,24 @@ export const SPAWNS = [
   { x: 760, y: GROUND_Y },
 ]
 
+export interface TerrainBox { x: number; y: number; w: number; h: number }
+
 export class World {
   players: PlayerState[] = []
   projectiles: Projectile[] = []
+  terrains: TerrainBox[] = []
   tick = 0
   hits = 0
   private pid = 1
   private prj = 1
   private cooldowns = new Map<number, number>()
   private spawnIndex = 0
+
+  addTerrain(x: number, y: number, w: number, h: number): TerrainBox {
+    const t: TerrainBox = { x, y, w, h }
+    this.terrains.push(t)
+    return t
+  }
 
   addPlayer(x: number, y: number): PlayerState {
     const p: PlayerState = {
@@ -46,6 +55,7 @@ export class World {
       this.physics(p, dt)
     }
     for (const pr of this.projectiles) stepProjectile(pr, dt)
+    this.collideProjectileTerrain()
     this.collide()
     this.projectiles = this.projectiles.filter(pr => pr.life > 0)
   }
@@ -71,6 +81,55 @@ export class World {
     if (p.pos.y >= GROUND_Y) { p.pos.y = GROUND_Y; p.vel.y = 0 }
     if (p.pos.x < WALL_L) { p.pos.x = WALL_L; p.vel.x = Math.max(0, p.vel.x) }
     if (p.pos.x > WALL_R) { p.pos.x = WALL_R; p.vel.x = Math.min(0, p.vel.x) }
+    this.collideTerrains(p)
+  }
+
+  // 玩家圆(PLAYER_R) vs 平台 AABB：最小穿透轴推出，绝不穿入/穿过平台、绝不瞬移
+  private collideTerrains(p: PlayerState): void {
+    for (const t of this.terrains) {
+      const nx = Math.max(t.x, Math.min(p.pos.x, t.x + t.w))
+      const ny = Math.max(t.y, Math.min(p.pos.y, t.y + t.h))
+      const dx = p.pos.x - nx
+      const dy = p.pos.y - ny
+      const d2 = dx * dx + dy * dy
+      if (d2 >= PLAYER_R * PLAYER_R) continue
+      if (d2 === 0) {
+        // 圆心落入平台内：按最小穿透方向推出
+        const left = p.pos.x - t.x
+        const right = t.x + t.w - p.pos.x
+        const top = p.pos.y - t.y
+        const bottom = t.y + t.h - p.pos.y
+        const m = Math.min(left, right, top, bottom)
+        if (m === left) { p.pos.x = t.x - PLAYER_R; p.vel.x = Math.min(0, p.vel.x) }
+        else if (m === right) { p.pos.x = t.x + t.w + PLAYER_R; p.vel.x = Math.max(0, p.vel.x) }
+        else if (m === top) { p.pos.y = t.y - PLAYER_R; p.vel.y = Math.min(0, p.vel.y) }
+        else { p.pos.y = t.y + t.h + PLAYER_R; p.vel.y = Math.max(0, p.vel.y) }
+      } else {
+        const d = Math.sqrt(d2)
+        const push = (PLAYER_R - d) / d
+        p.pos.x += dx * push
+        p.pos.y += dy * push
+        if (dy < 0 && p.vel.y > 0) p.vel.y = 0        // 落在顶面
+        else if (dy > 0 && p.vel.y < 0) p.vel.y = 0   // 顶到底面
+        else if (Math.abs(dx) > Math.abs(dy)) p.vel.x = 0  // 侧挡
+      }
+    }
+  }
+
+  // 弹丸 vs 地形：进入平台即被挡下（形成掩体）
+  private collideProjectileTerrain(): void {
+    for (const pr of this.projectiles) {
+      if (pr.life <= 0) continue
+      for (const t of this.terrains) {
+        if (
+          pr.pos.x > t.x - pr.r && pr.pos.x < t.x + t.w + pr.r &&
+          pr.pos.y > t.y - pr.r && pr.pos.y < t.y + t.h + pr.r
+        ) {
+          pr.life = 0
+          break
+        }
+      }
+    }
   }
 
   private onGround(p: PlayerState): boolean {
