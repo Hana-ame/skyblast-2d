@@ -4,6 +4,8 @@ import { defaultWorldInput } from '../core/types.ts'
 import type { WorldInput } from '../core/types.ts'
 import type { Intent } from '../input/intent.ts'
 import { applyIntents } from '../net/ServerSim.ts'
+import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
+import type { PhysicsParams } from '../core/sim/physics.ts'
 import { Controls } from './controls.ts'
 import { fitCanvas, toggleFullscreen } from './fullscreen.ts'
 
@@ -144,4 +146,11 @@ requestAnimationFrame(frame)
   get enemy() { return enemy },
   get fuel() { return world.fuelOf(player.id) },
   get input() { return playerInput },
+}
+
+// 调参暴露：tuning.html 用 window.__tune 实时改物理参数（set/get/reset）
+;(window as unknown as { __tune: unknown }).__tune = {
+  set: (p: Partial<PhysicsParams>) => setPhysicsParams(p),
+  get: () => getPhysicsParams(),
+  reset: () => resetPhysicsParams(),
 }

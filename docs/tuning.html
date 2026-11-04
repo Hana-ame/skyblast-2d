@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>2D 横版射击对战 — 参数调优台</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  #game { display: block; width: 100%; height: 100%; }
+  .btn { position: fixed; z-index: 10; border: 0; border-radius: 12px; background: rgba(255,255,255,.15); color: #fff;
+    font-size: 16px; padding: 12px 16px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #btn-fullscreen { top: 10px; right: 10px; }
+  #btn-jump  { bottom: 20px; right: 100px; width: 66px; height: 66px; border-radius: 50%; font-size: 18px; }
+  #btn-jet   { bottom: 20px; right: 184px; width: 66px; height: 66px; border-radius: 50%; font-size: 18px; }
+  #btn-reload{ bottom: 20px; right: 268px; width: 56px; height: 56px; border-radius: 50%; }
+  #hint { position: fixed; bottom: 6px; left: 12px; color: rgba(255,255,255,.6); font-size: 12px; z-index: 10; max-width: 70%; }
+
+  /* 调参面板：右侧可折叠 */
+  #panel { position: fixed; top: 10px; left: 10px; z-index: 20; width: 300px; max-height: calc(100vh - 24px); overflow-y: auto;
+    background: rgba(16,20,28,.92); border: 1px solid #2a3340; border-radius: 12px; color: #e5e7eb; padding: 12px 14px; font-size: 13px; }
+  #panel h2 { margin: 0 0 8px; font-size: 15px; }
+  #panel .row { margin: 6px 0; }
+  #panel .row label { display: flex; justify-content: space-between; align-items: center; }
+  #panel .row label span { color: #9ca3af; }
+  #panel input[type=range] { width: 100%; }
+  #panel .val { color: #4ade80; font-variant-numeric: tabular-nums; }
+  #panel .actions { display: flex; gap: 8px; margin-top: 10px; }
+  #panel button { flex: 1; border: 0; border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer; }
+  #btn-reset { background: #f87171; color: #fff; }
+  #btn-copy  { background: #4ade80; color: #000; }
+  #panel .note { margin-top: 8px; color: #6b7280; font-size: 11px; line-height: 1.5; }
+  #panel.tucked { width: auto; }
+  #panel.tucked #panel-body { display: none; }
+  #panel-toggle { margin-top: 6px; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<button id="btn-fullscreen" class="btn">⛶ 全屏</button>
+<button id="btn-jump" class="btn">起飞</button>
+<button id="btn-jet" class="btn">喷</button>
+<button id="btn-reload" class="btn">装</button>
+<div id="hint">调优台：拖滑块改物理参数，实时看手感。桌面 A/D 移动 · W/空格 起飞 · 鼠标瞄准 · 左键开火 · R 装填</div>
+
+<div id="panel">
+  <h2>物理参数调优</h2>
+  <div id="panel-body"></div>
+  <div class="actions">
+    <button id="btn-reset">重置</button>
+    <button id="btn-copy">复制 JSON</button>
+  </div>
+  <button id="panel-toggle">收起</button>
+  <div class="note">调完点「复制 JSON」，把参数贴给开发者固化进默认值。滑块即时生效（下次进游戏重置为当前默认）。</div>
+</div>
+
+<script src="./bundle.js"></script>
+<script>
+(function () {
+  var tune = window.__tune
+  if (!tune) { document.getElementById('panel').innerHTML = '<h2>调参未启用</h2><div class="note">window.__tune 不存在</div>'; return }
+
+  // 每个参数的滑块定义：key → [min, max, step]
+  var SLIDERS = {
+    gravity:        [100, 1200, 10],
+    moveSpeed:      [60,  400,  10],
+    moveAccel:      [60,  500,  10],
+    jumpVel:        [200, 900,  10],
+    maxFall:        [200, 1400, 10],
+    jetpackAccel:   [500, 2500, 50],
+    jetpackMaxUp:   [200, 1200, 20],
+    jetpackFuel:    [0.5, 6.0, 0.1],
+    jetpackDrain:   [0.2, 2.5, 0.1],
+    jetpackRecharge:[0.2, 2.5, 0.1],
+  }
+  var LABELS = {
+    gravity: '重力 GRAVITY', moveSpeed: '水平极速 MOVE_SPEED', moveAccel: '水平加速度 MOVE_ACCEL',
+    jumpVel: '起跳 JUMP_VEL', maxFall: '终端下落 MAX_FALL', jetpackAccel: '喷射加速度 JETPACK_ACCEL',
+    jetpackMaxUp: '喷射升速上限 JETPACK_MAX_UP', jetpackFuel: '燃料上限', jetpackDrain: '燃料消耗',
+    jetpackRecharge: '燃料回充',
+  }
+
+  var body = document.getElementById('panel-body')
+  var inputs = {}
+  Object.keys(SLIDERS).forEach(function (k) {
+    var range = SLIDERS[k]
+    var row = document.createElement('div'); row.className = 'row'
+    row.innerHTML = '<label><span>' + LABELS[k] + '</span><span class="val" id="v-' + k + '"></span></label>'
+    var inp = document.createElement('input')
+    inp.type = 'range'; inp.min = range[0]; inp.max = range[1]; inp.step = range[2]
+    inp.addEventListener('input', function () {
+      var p = {}; p[k] = Number(inp.value)
+      var cur = tune.set(p)
+      document.getElementById('v-' + k).textContent = Number(cur[k]).toFixed(range[2] < 1 ? 2 : 0)
+    })
+    row.appendChild(inp)
+    body.appendChild(row)
+    inputs[k] = inp
+  })
+
+  function refresh() {
+    var cur = tune.get()
+    Object.keys(SLIDERS).forEach(function (k) {
+      var v = Number(cur[k])
+      inputs[k].value = v
+      var range = SLIDERS[k]
+      document.getElementById('v-' + k).textContent = v.toFixed(range[2] < 1 ? 2 : 0)
+    })
+  }
+  refresh()
+
+  document.getElementById('btn-reset').addEventListener('click', function () { tune.reset(); refresh() })
+  document.getElementById('btn-copy').addEventListener('click', function () {
+    var cur = tune.get()
+    var json = JSON.stringify(cur, null, 2)
+    var ta = document.createElement('textarea'); ta.value = json
+    document.body.appendChild(ta); ta.select()
+    try { document.execCommand('copy') } catch (e) {}
+    document.body.removeChild(ta)
+    alert('已复制 JSON 参数到剪贴板：\n' + json)
+  })
+  document.getElementById('panel-toggle').addEventListener('click', function () {
+    var p = document.getElementById('panel')
+    p.classList.toggle('tucked')
+    this.textContent = p.classList.contains('tucked') ? '展开' : '收起'
+  })
+})()
+</script>
+</body>
+</html>

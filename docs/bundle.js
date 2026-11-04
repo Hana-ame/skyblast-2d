@@ -6,8 +6,8 @@
 
   // src/core/sim/physics.ts
   var GRAVITY = 450;
-  var MOVE_SPEED = 240;
-  var MOVE_ACCEL = 260;
+  var MOVE_SPEED = 160;
+  var MOVE_ACCEL = 170;
   var JUMP_VEL = 520;
   var MAX_FALL = 650;
   var JETPACK_ACCEL = 1500;
@@ -15,28 +15,52 @@
   var JETPACK_FUEL = 2.5;
   var JETPACK_DRAIN = 1;
   var JETPACK_RECHARGE = 0.8;
+  var defaults = {
+    gravity: GRAVITY,
+    moveSpeed: MOVE_SPEED,
+    moveAccel: MOVE_ACCEL,
+    jumpVel: JUMP_VEL,
+    maxFall: MAX_FALL,
+    jetpackAccel: JETPACK_ACCEL,
+    jetpackMaxUp: JETPACK_MAX_UP,
+    jetpackFuel: JETPACK_FUEL,
+    jetpackDrain: JETPACK_DRAIN,
+    jetpackRecharge: JETPACK_RECHARGE
+  };
+  var P = { ...defaults };
+  function getPhysicsParams() {
+    return { ...P };
+  }
+  function setPhysicsParams(overrides) {
+    P = { ...P, ...overrides };
+    return { ...P };
+  }
+  function resetPhysicsParams() {
+    P = { ...defaults };
+    return { ...P };
+  }
   function integrate(p, v, dt) {
     p.x += v.x * dt;
     p.y += v.y * dt;
   }
   function applyGravity(v, dt) {
-    v.y += GRAVITY * dt;
-    if (v.y > MAX_FALL) v.y = MAX_FALL;
+    v.y += P.gravity * dt;
+    if (v.y > P.maxFall) v.y = P.maxFall;
   }
   function move(v, dir, dt) {
-    const target = dir * MOVE_SPEED;
-    if (v.x < target) v.x = Math.min(target, v.x + MOVE_ACCEL * dt);
-    else if (v.x > target) v.x = Math.max(target, v.x - MOVE_ACCEL * dt);
+    const target = dir * P.moveSpeed;
+    if (v.x < target) v.x = Math.min(target, v.x + P.moveAccel * dt);
+    else if (v.x > target) v.x = Math.max(target, v.x - P.moveAccel * dt);
   }
   function jump(v) {
-    v.y = -JUMP_VEL;
+    v.y = -P.jumpVel;
   }
   function jetpack(v, _aim, dt) {
-    v.y = Math.max(-JETPACK_MAX_UP, v.y - JETPACK_ACCEL * dt);
+    v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel * dt);
   }
   function updateJetpackFuel(fuel, active, dt) {
-    const next = active ? fuel - JETPACK_DRAIN * dt : fuel + JETPACK_RECHARGE * dt;
-    return Math.min(JETPACK_FUEL, Math.max(0, next));
+    const next = active ? fuel - P.jetpackDrain * dt : fuel + P.jetpackRecharge * dt;
+    return Math.min(P.jetpackFuel, Math.max(0, next));
   }
 
   // src/core/sim/projectile.ts
@@ -114,7 +138,7 @@
       };
       this.players.push(p);
       this.cooldowns.set(p.id, 0);
-      this.fuel.set(p.id, JETPACK_FUEL);
+      this.fuel.set(p.id, getPhysicsParams().jetpackFuel);
       return p;
     }
     step(dt, inputs) {
@@ -605,5 +629,10 @@
     get input() {
       return playerInput;
     }
+  };
+  window.__tune = {
+    set: (p) => setPhysicsParams(p),
+    get: () => getPhysicsParams(),
+    reset: () => resetPhysicsParams()
   };
 })();

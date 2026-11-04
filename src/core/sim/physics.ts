@@ -1,10 +1,11 @@
 // core/sim/physics.ts —— 确定性物理：重力/移动/跳跃/喷射器
+// 参数集中为 PhysicsParams，可运行时 setPhysicsParams 覆盖（供 tuning.html 调参），默认值即手感基线
 import type { Vec2 } from '../types.ts'
 
 // 屏幕坐标系：y 向下为正，重力为 +y
 export const GRAVITY = 450        // px/s²（下落轻、飘）
-export const MOVE_SPEED = 240     // px/s 水平极速（原360，降低）
-export const MOVE_ACCEL = 260     // px/s² 水平加速度：240/260≈0.92s 到顶（1秒内到极速，之后不再加速）
+export const MOVE_SPEED = 160     // px/s 水平极速
+export const MOVE_ACCEL = 170     // px/s² 水平加速度：160/170≈0.94s 到顶（1秒内到极速）
 export const JUMP_VEL = 520       // 起跳初速（向上，-y）
 export const MAX_FALL = 650       // 终端下落速度
 export const JETPACK_ACCEL = 1500  // 喷射器加速度（垂直向上 -y；净升 1500-450=1050）
@@ -15,6 +16,52 @@ export const JETPACK_FUEL = 2.5    // 燃料上限（秒）
 export const JETPACK_DRAIN = 1.0   // 开启时每秒消耗（秒/s）
 export const JETPACK_RECHARGE = 0.8 // 关闭时每秒回充（秒/s）
 
+/** 全部可调物理参数（默认=当前手感基线） */
+export interface PhysicsParams {
+  gravity: number
+  moveSpeed: number
+  moveAccel: number
+  jumpVel: number
+  maxFall: number
+  jetpackAccel: number
+  jetpackMaxUp: number
+  jetpackFuel: number
+  jetpackDrain: number
+  jetpackRecharge: number
+}
+
+const defaults: PhysicsParams = {
+  gravity: GRAVITY,
+  moveSpeed: MOVE_SPEED,
+  moveAccel: MOVE_ACCEL,
+  jumpVel: JUMP_VEL,
+  maxFall: MAX_FALL,
+  jetpackAccel: JETPACK_ACCEL,
+  jetpackMaxUp: JETPACK_MAX_UP,
+  jetpackFuel: JETPACK_FUEL,
+  jetpackDrain: JETPACK_DRAIN,
+  jetpackRecharge: JETPACK_RECHARGE,
+}
+
+let P: PhysicsParams = { ...defaults }
+
+/** 读当前参数（供 HUD/tuning 展示） */
+export function getPhysicsParams(): PhysicsParams {
+  return { ...P }
+}
+
+/** 运行时覆盖参数（部分字段缺省则保持现值）；返回最终生效参数 */
+export function setPhysicsParams(overrides: Partial<PhysicsParams>): PhysicsParams {
+  P = { ...P, ...overrides }
+  return { ...P }
+}
+
+/** 重置为默认手感 */
+export function resetPhysicsParams(): PhysicsParams {
+  P = { ...defaults }
+  return { ...P }
+}
+
 /** 欧拉积分：pos += vel * dt（确定性） */
 export function integrate(p: Vec2, v: Vec2, dt: number): void {
   p.x += v.x * dt
@@ -22,30 +69,30 @@ export function integrate(p: Vec2, v: Vec2, dt: number): void {
 }
 
 export function applyGravity(v: Vec2, dt: number): void {
-  v.y += GRAVITY * dt
-  if (v.y > MAX_FALL) v.y = MAX_FALL
+  v.y += P.gravity * dt
+  if (v.y > P.maxFall) v.y = P.maxFall
 }
 
 export function move(v: Vec2, dir: -1 | 0 | 1, dt: number): void {
-  const target = dir * MOVE_SPEED
-  if (v.x < target) v.x = Math.min(target, v.x + MOVE_ACCEL * dt)
-  else if (v.x > target) v.x = Math.max(target, v.x - MOVE_ACCEL * dt)
+  const target = dir * P.moveSpeed
+  if (v.x < target) v.x = Math.min(target, v.x + P.moveAccel * dt)
+  else if (v.x > target) v.x = Math.max(target, v.x - P.moveAccel * dt)
   // dir=0 且 v.x≠0：向 0 衰减，同样受 MOVE_ACCEL 限制（不是瞬间停）
 }
 
 export function jump(v: Vec2): void {
-  v.y = -JUMP_VEL
+  v.y = -P.jumpVel
 }
 
-/** 喷射器（起飞）：垂直向上推进；有上升速度上限 JETPACK_MAX_UP，不会无限加速 */
+/** 喷射器（起飞）：垂直向上推进；有上升速度上限，不会无限加速 */
 export function jetpack(v: Vec2, _aim: number, dt: number): void {
-  v.y = Math.max(-JETPACK_MAX_UP, v.y - JETPACK_ACCEL * dt)
+  v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel * dt)
 }
 
-/** 喷射器燃料更新：active 时按 drain 消耗，否则按 recharge 回充；夹到 [0, JETPACK_FUEL] */
+/** 喷射器燃料更新：active 时按 drain 消耗，否则按 recharge 回充；夹到 [0, jetpackFuel] */
 export function updateJetpackFuel(fuel: number, active: boolean, dt: number): number {
-  const next = active ? fuel - JETPACK_DRAIN * dt : fuel + JETPACK_RECHARGE * dt
-  return Math.min(JETPACK_FUEL, Math.max(0, next))
+  const next = active ? fuel - P.jetpackDrain * dt : fuel + P.jetpackRecharge * dt
+  return Math.min(P.jetpackFuel, Math.max(0, next))
 }
 
 /** 防穿透/防瞬移：把 dt 拆成不超过 maxStep 的小步数组，供调用方循环推进，避免高速物体一步穿过薄墙/平台 */

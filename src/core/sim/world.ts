@@ -1,5 +1,5 @@
 // core/sim/world.ts —— 服务器权威世界模拟（确定性，零 IO，可在服务端复用）
-import { applyGravity, integrate, jetpack, jump, move, updateJetpackFuel, JETPACK_FUEL } from './physics.ts'
+import { applyGravity, integrate, jetpack, jump, move, updateJetpackFuel, getPhysicsParams } from './physics.ts'
 import { fireProjectile, stepProjectile } from './projectile.ts'
 import { defaultWorldInput } from '../types.ts'
 import type { PlayerState, Projectile, WorldInput, WorldSnapshot } from '../types.ts'
@@ -45,7 +45,7 @@ export class World {
     }
     this.players.push(p)
     this.cooldowns.set(p.id, 0)
-    this.fuel.set(p.id, JETPACK_FUEL)
+    this.fuel.set(p.id, getPhysicsParams().jetpackFuel)
     return p
   }
 
