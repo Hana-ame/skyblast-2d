@@ -5,29 +5,24 @@
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
   // src/core/sim/physics.ts
-  var GRAVITY = 450;
-  var MOVE_SPEED = 160;
-  var MOVE_ACCEL = 170;
-  var JUMP_VEL = 520;
-  var MAX_FALL = 650;
-  var JETPACK_ACCEL = 1500;
-  var JETPACK_MAX_UP = 620;
-  var JETPACK_FUEL = 2.5;
-  var JETPACK_DRAIN = 1;
-  var JETPACK_RECHARGE = 0.8;
   var defaults = {
     mass: 1,
-    friction: 2,
-    gravity: GRAVITY,
-    moveSpeed: MOVE_SPEED,
-    moveAccel: MOVE_ACCEL,
-    jumpVel: JUMP_VEL,
-    maxFall: MAX_FALL,
-    jetpackAccel: JETPACK_ACCEL,
-    jetpackMaxUp: JETPACK_MAX_UP,
-    jetpackFuel: JETPACK_FUEL,
-    jetpackDrain: JETPACK_DRAIN,
-    jetpackRecharge: JETPACK_RECHARGE
+    gravity: 1250,
+    groundControlSpeed: 500,
+    groundControlAccel: 5e3,
+    groundFriction: 34.7,
+    airControlSpeed: 250,
+    airControlAccel: 3750,
+    airFriction: 2.56,
+    groundJumpImpulse: 660,
+    airJumpImpulse: 600,
+    maxFall: 1200,
+    jetpackAccel: 2600,
+    // 净升 2600-1250=1350，0.46s 冲到升速上限，爆发力对齐参考起跳脉冲 660
+    jetpackMaxUp: 620,
+    jetpackFuel: 2.5,
+    jetpackDrain: 1,
+    jetpackRecharge: 0.8
   };
   var P = { ...defaults };
   function getPhysicsParams() {
@@ -45,23 +40,27 @@
     p.x += v.x * dt;
     p.y += v.y * dt;
   }
+  function saturatedAdd(min, max, current, add) {
+    if (add < 0) return current > min ? Math.max(current + add, min) : current;
+    return current < max ? Math.min(current + add, max) : current;
+  }
   function applyGravity(v, dt) {
     v.y += P.gravity / P.mass * dt;
     if (v.y > P.maxFall) v.y = P.maxFall;
   }
-  function move(v, dir, dt) {
-    const target = dir * P.moveSpeed;
-    if (dir !== 0) {
-      if (v.x < target) v.x = Math.min(target, v.x + P.moveAccel / P.mass * dt);
-      else if (v.x > target) v.x = Math.max(target, v.x - P.moveAccel / P.mass * dt);
-    } else if (v.x !== 0) {
-      const f = Math.exp(-P.friction * dt);
-      v.x *= f;
-      if (Math.abs(v.x) < 2) v.x = 0;
+  function move(v, dir, dt, grounded) {
+    const speed = grounded ? P.groundControlSpeed : P.airControlSpeed;
+    const accel = (grounded ? P.groundControlAccel : P.airControlAccel) / P.mass * dt;
+    const fric = grounded ? P.groundFriction : P.airFriction;
+    if (dir < 0) v.x = saturatedAdd(-speed, speed, v.x, -accel);
+    else if (dir > 0) v.x = saturatedAdd(-speed, speed, v.x, accel);
+    else {
+      v.x *= Math.exp(-fric * dt);
+      if (Math.abs(v.x) < 1) v.x = 0;
     }
   }
-  function jump(v) {
-    v.y = -P.jumpVel;
+  function jump(v, grounded) {
+    v.y = -(grounded ? P.groundJumpImpulse : P.airJumpImpulse);
   }
   function jetpack(v, _aim, dt) {
     v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel / P.mass * dt);
@@ -163,8 +162,8 @@
     }
     apply(p, w, dt) {
       p.aim = w.aim;
-      move(p.vel, w.move, dt);
-      if (w.jump && this.onGround(p)) jump(p.vel);
+      move(p.vel, w.move, dt, this.onGround(p));
+      if (w.jump && this.onGround(p)) jump(p.vel, true);
       const fuel = this.fuel.get(p.id) ?? 0;
       const canJet = w.jetpack && fuel > 0;
       if (canJet) jetpack(p.vel, p.aim, dt);
@@ -645,9 +644,37 @@
       return playerInput;
     }
   };
+  var PARAM_KEY = "pvp-physics-params";
+  function persistParams(p) {
+    try {
+      localStorage.setItem(PARAM_KEY, JSON.stringify(p));
+    } catch {
+    }
+  }
+  function clearParams() {
+    try {
+      localStorage.removeItem(PARAM_KEY);
+    } catch {
+    }
+  }
+  (function loadSavedParams() {
+    try {
+      const raw = localStorage.getItem(PARAM_KEY);
+      if (raw) setPhysicsParams(JSON.parse(raw));
+    } catch {
+    }
+  })();
   window.__tune = {
-    set: (p) => setPhysicsParams(p),
+    set: (p) => {
+      const cur = setPhysicsParams(p);
+      persistParams(cur);
+      return cur;
+    },
     get: () => getPhysicsParams(),
-    reset: () => resetPhysicsParams()
+    reset: () => {
+      const cur = resetPhysicsParams();
+      clearParams();
+      return cur;
+    }
   };
 })();

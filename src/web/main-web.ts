@@ -158,8 +158,24 @@ requestAnimationFrame(frame)
 }
 
 // 调参暴露：tuning.html 用 window.__tune 实时改物理参数（set/get/reset）
+// 持久化：调优台调的参数存 localStorage，主游戏(index.html)启动读同一份 → 两页共享手感
+const PARAM_KEY = 'pvp-physics-params'
+function persistParams(p: PhysicsParams): void {
+  try { localStorage.setItem(PARAM_KEY, JSON.stringify(p)) } catch { /* 隐私模式忽略 */ }
+}
+function clearParams(): void {
+  try { localStorage.removeItem(PARAM_KEY) } catch { /* 忽略 */ }
+}
+// 启动时读持久化参数并应用（主游戏/调优台都读同一份）
+;(function loadSavedParams() {
+  try {
+    const raw = localStorage.getItem(PARAM_KEY)
+    if (raw) setPhysicsParams(JSON.parse(raw) as Partial<PhysicsParams>)
+  } catch { /* 无效 JSON 忽略，用默认 */ }
+})()
+
 ;(window as unknown as { __tune: unknown }).__tune = {
-  set: (p: Partial<PhysicsParams>) => setPhysicsParams(p),
+  set: (p: Partial<PhysicsParams>) => { const cur = setPhysicsParams(p); persistParams(cur); return cur },
   get: () => getPhysicsParams(),
-  reset: () => resetPhysicsParams(),
+  reset: () => { const cur = resetPhysicsParams(); clearParams(); return cur },
 }
