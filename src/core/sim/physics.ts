@@ -18,6 +18,8 @@ export const JETPACK_RECHARGE = 0.8 // 关闭时每秒回充（秒/s）
 
 /** 全部可调物理参数（默认=当前手感基线） */
 export interface PhysicsParams {
+  mass: number          // 质量：统一缩放所有加速度（÷mass），越大越"重"（难加速/飞不动）；1=基准
+  friction: number      // 地面摩擦：无方向输入时水平速度按此系数衰减（越大滑得越短/停越快）
   gravity: number
   moveSpeed: number
   moveAccel: number
@@ -31,6 +33,8 @@ export interface PhysicsParams {
 }
 
 const defaults: PhysicsParams = {
+  mass: 1,
+  friction: 2.0,
   gravity: GRAVITY,
   moveSpeed: MOVE_SPEED,
   moveAccel: MOVE_ACCEL,
@@ -69,15 +73,21 @@ export function integrate(p: Vec2, v: Vec2, dt: number): void {
 }
 
 export function applyGravity(v: Vec2, dt: number): void {
-  v.y += P.gravity * dt
+  v.y += (P.gravity / P.mass) * dt
   if (v.y > P.maxFall) v.y = P.maxFall
 }
 
 export function move(v: Vec2, dir: -1 | 0 | 1, dt: number): void {
   const target = dir * P.moveSpeed
-  if (v.x < target) v.x = Math.min(target, v.x + P.moveAccel * dt)
-  else if (v.x > target) v.x = Math.max(target, v.x - P.moveAccel * dt)
-  // dir=0 且 v.x≠0：向 0 衰减，同样受 MOVE_ACCEL 限制（不是瞬间停）
+  if (dir !== 0) {
+    if (v.x < target) v.x = Math.min(target, v.x + (P.moveAccel / P.mass) * dt)
+    else if (v.x > target) v.x = Math.max(target, v.x - (P.moveAccel / P.mass) * dt)
+  } else if (v.x !== 0) {
+    // 无方向输入：地面摩擦衰减（指数衰减，越大停越快/滑得越短），比线性减速更自然
+    const f = Math.exp(-P.friction * dt)
+    v.x *= f
+    if (Math.abs(v.x) < 2) v.x = 0 // 低速截断，避免永远微滑
+  }
 }
 
 export function jump(v: Vec2): void {
@@ -86,7 +96,7 @@ export function jump(v: Vec2): void {
 
 /** 喷射器（起飞）：垂直向上推进；有上升速度上限，不会无限加速 */
 export function jetpack(v: Vec2, _aim: number, dt: number): void {
-  v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel * dt)
+  v.y = Math.max(-P.jetpackMaxUp, v.y - (P.jetpackAccel / P.mass) * dt)
 }
 
 /** 喷射器燃料更新：active 时按 drain 消耗，否则按 recharge 回充；夹到 [0, jetpackFuel] */

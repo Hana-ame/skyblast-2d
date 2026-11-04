@@ -61,6 +61,8 @@
 
   // 每个参数的滑块定义：key → [min, max, step]
   var SLIDERS = {
+    mass:           [0.2, 5.0, 0.1],
+    friction:       [0,   10,   0.2],
     gravity:        [100, 1200, 10],
     moveSpeed:      [60,  400,  10],
     moveAccel:      [60,  500,  10],
@@ -73,7 +75,7 @@
     jetpackRecharge:[0.2, 2.5, 0.1],
   }
   var LABELS = {
-    gravity: '重力 GRAVITY', moveSpeed: '水平极速 MOVE_SPEED', moveAccel: '水平加速度 MOVE_ACCEL',
+    mass: '质量 MASS（越大越重）', friction: '地面摩擦 FRICTION（越大停越快）', gravity: '重力 GRAVITY', moveSpeed: '水平极速 MOVE_SPEED', moveAccel: '水平加速度 MOVE_ACCEL',
     jumpVel: '起跳 JUMP_VEL', maxFall: '终端下落 MAX_FALL', jetpackAccel: '喷射加速度 JETPACK_ACCEL',
     jetpackMaxUp: '喷射升速上限 JETPACK_MAX_UP', jetpackFuel: '燃料上限', jetpackDrain: '燃料消耗',
     jetpackRecharge: '燃料回充',

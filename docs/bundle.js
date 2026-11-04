@@ -16,6 +16,8 @@
   var JETPACK_DRAIN = 1;
   var JETPACK_RECHARGE = 0.8;
   var defaults = {
+    mass: 1,
+    friction: 2,
     gravity: GRAVITY,
     moveSpeed: MOVE_SPEED,
     moveAccel: MOVE_ACCEL,
@@ -44,19 +46,25 @@
     p.y += v.y * dt;
   }
   function applyGravity(v, dt) {
-    v.y += P.gravity * dt;
+    v.y += P.gravity / P.mass * dt;
     if (v.y > P.maxFall) v.y = P.maxFall;
   }
   function move(v, dir, dt) {
     const target = dir * P.moveSpeed;
-    if (v.x < target) v.x = Math.min(target, v.x + P.moveAccel * dt);
-    else if (v.x > target) v.x = Math.max(target, v.x - P.moveAccel * dt);
+    if (dir !== 0) {
+      if (v.x < target) v.x = Math.min(target, v.x + P.moveAccel / P.mass * dt);
+      else if (v.x > target) v.x = Math.max(target, v.x - P.moveAccel / P.mass * dt);
+    } else if (v.x !== 0) {
+      const f = Math.exp(-P.friction * dt);
+      v.x *= f;
+      if (Math.abs(v.x) < 2) v.x = 0;
+    }
   }
   function jump(v) {
     v.y = -P.jumpVel;
   }
   function jetpack(v, _aim, dt) {
-    v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel * dt);
+    v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel / P.mass * dt);
   }
   function updateJetpackFuel(fuel, active, dt) {
     const next = active ? fuel - P.jetpackDrain * dt : fuel + P.jetpackRecharge * dt;
