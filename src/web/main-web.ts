@@ -20,27 +20,31 @@ const world = new World()
 world.addTerrain(400, 460, 160, 14)  // 中央平台
 world.addTerrain(140, 360, 90, 14)   // 左高台
 world.addTerrain(730, 360, 90, 14)   // 右高台
+world.addTerrain(120, 400, 14, 60)   // 左侧悬浮掩体（y400-460，下方留 y460-540 通道，玩家可走/可跳越，挡高抛弹道）
 const player = world.addPlayer(220, GROUND_Y)
 const enemy = world.addPlayer(740, GROUND_Y)
 
 let playerInput = defaultWorldInput()
 let enemyInput = defaultWorldInput()
 
-// UI 按钮（触屏手柄）
+// UI 按钮（触屏手柄）：无跳跃，跳按钮改为"起飞"（按住=喷射）
 document.getElementById('btn-fullscreen')?.addEventListener('click', toggleFullscreen)
-document.getElementById('btn-jump')?.addEventListener('touchstart', (e) => { e.preventDefault(); controls.pressJump() })
-const btnJet = document.getElementById('btn-jet')
-btnJet?.addEventListener('touchstart', (e) => { e.preventDefault(); controls.setJetpack(true) })
-btnJet?.addEventListener('touchend', () => controls.setJetpack(false))
+for (const id of ['btn-jump', 'btn-jet']) {
+  const b = document.getElementById(id)
+  b?.addEventListener('touchstart', (e) => { e.preventDefault(); controls.setJetpack(true) })
+  b?.addEventListener('touchend', () => controls.setJetpack(false))
+}
 document.getElementById('btn-reload')?.addEventListener('touchstart', (e) => { e.preventDefault(); controls.pressReload() })
 
 function toIntents(t: ReturnType<Controls['getState']>): Intent[] {
   const out: Intent[] = []
-  if (t.moveX > 0.2) out.push({ t: 'move', dir: 1 })
-  else if (t.moveX < -0.2) out.push({ t: 'move', dir: -1 })
+  let moveDir: -1 | 0 | 1 = 0
+  if (t.moveX > 0.2) moveDir = 1
+  else if (t.moveX < -0.2) moveDir = -1
+  out.push({ t: 'move', dir: moveDir })   // 始终下发（含 0），松键后清零，避免方向卡住
   out.push({ t: 'aim', angle: t.aimAngle })
   out.push({ t: 'fire', on: t.fire })
-  if (t.jump) out.push({ t: 'jump' })
+  // 无跳跃：不再发 jump 意图；W/空格/↑/E 都是起飞（喷射）
   if (t.jetpack) out.push({ t: 'jetpack', on: true })
   else out.push({ t: 'jetpack', on: false })   // 始终下发，松开时关闭，避免燃料持续消耗
   if (t.reload) out.push({ t: 'reload' })

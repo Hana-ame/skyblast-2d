@@ -67,13 +67,15 @@ export class Controls {
     let moveX = 0
     if (k.has('a') || k.has('arrowleft')) moveX -= 1
     if (k.has('d') || k.has('arrowright')) moveX += 1
+    // 无跳跃：W/空格/↑ = 起飞（喷射），消耗能量；松键停
+    const jetpack = k.has('w') || k.has(' ') || k.has('arrowup') || k.has('e')
     const aim = Math.atan2(this.mouse.y - this.playerWorld.y, this.mouse.x - this.playerWorld.x)
     return {
       moveX,
       aimAngle: aim,
       fire: this.mouseDown,
-      jump: k.has('w') || k.has(' ') || k.has('arrowup'),
-      jetpack: k.has('e'),
+      jump: false,
+      jetpack,
       reload: k.has('r'),
     }
   }

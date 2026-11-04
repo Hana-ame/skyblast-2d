@@ -40,7 +40,7 @@
   var PROJECTILE_SPEED = 900;
   var PROJECTILE_LIFE = 2.5;
   var PROJECTILE_R = 5;
-  var PROJECTILE_BOUNCE = 0.5;
+  var GROUND_Y = 540;
   function fireProjectile(owner, pos, aim, id) {
     return {
       id,
@@ -54,9 +54,9 @@
   function stepProjectile(p, dt) {
     applyGravity(p.vel, dt);
     integrate(p.pos, p.vel, dt);
-    if (p.vel.y > 0 && p.pos.y > GROUND_Y) {
-      p.pos.y = GROUND_Y;
-      p.vel.y = -p.vel.y * PROJECTILE_BOUNCE;
+    if (p.pos.y > GROUND_Y + 20) {
+      p.life = 0;
+      return;
     }
     p.life -= dt;
   }
@@ -67,7 +67,7 @@
   }
 
   // src/core/sim/world.ts
-  var GROUND_Y = 540;
+  var GROUND_Y2 = 540;
   var WALL_L = 40;
   var WALL_R = 920;
   var PLAYER_R = 18;
@@ -75,8 +75,8 @@
   var MAG_SIZE = 8;
   var FIRE_DAMAGE = 34;
   var SPAWNS = [
-    { x: 200, y: GROUND_Y },
-    { x: 760, y: GROUND_Y }
+    { x: 200, y: GROUND_Y2 },
+    { x: 760, y: GROUND_Y2 }
   ];
   var World = class {
     constructor() {
@@ -151,8 +151,8 @@
     physics(p, dt) {
       applyGravity(p.vel, dt);
       integrate(p.pos, p.vel, dt);
-      if (p.pos.y >= GROUND_Y) {
-        p.pos.y = GROUND_Y;
+      if (p.pos.y >= GROUND_Y2) {
+        p.pos.y = GROUND_Y2;
         p.vel.y = 0;
       }
       if (p.pos.x < WALL_L) {
@@ -217,7 +217,7 @@
       }
     }
     onGround(p) {
-      return p.pos.y >= GROUND_Y - 0.5;
+      return p.pos.y >= GROUND_Y2 - 0.5;
     }
     collide() {
       for (const pr of this.projectiles) {
@@ -454,8 +454,9 @@
   world.addTerrain(400, 460, 160, 14);
   world.addTerrain(140, 360, 90, 14);
   world.addTerrain(730, 360, 90, 14);
-  var player = world.addPlayer(220, GROUND_Y);
-  var enemy = world.addPlayer(740, GROUND_Y);
+  world.addTerrain(120, 400, 14, 60);
+  var player = world.addPlayer(220, GROUND_Y2);
+  var enemy = world.addPlayer(740, GROUND_Y2);
   var playerInput = defaultWorldInput();
   var enemyInput = defaultWorldInput();
   document.getElementById("btn-fullscreen")?.addEventListener("click", toggleFullscreen);
@@ -475,8 +476,10 @@
   });
   function toIntents(t) {
     const out = [];
-    if (t.moveX > 0.2) out.push({ t: "move", dir: 1 });
-    else if (t.moveX < -0.2) out.push({ t: "move", dir: -1 });
+    let moveDir = 0;
+    if (t.moveX > 0.2) moveDir = 1;
+    else if (t.moveX < -0.2) moveDir = -1;
+    out.push({ t: "move", dir: moveDir });
     out.push({ t: "aim", angle: t.aimAngle });
     out.push({ t: "fire", on: t.fire });
     if (t.jump) out.push({ t: "jump" });
@@ -519,7 +522,7 @@
     ctx.fillStyle = "#10141c";
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#2a3340";
-    ctx.fillRect(WALL_L - 10, GROUND_Y, WALL_R - WALL_L + 20, H - GROUND_Y);
+    ctx.fillRect(WALL_L - 10, GROUND_Y2, WALL_R - WALL_L + 20, H - GROUND_Y2);
     ctx.fillStyle = "#3a4a5f";
     for (const t of world.terrains) ctx.fillRect(t.x, t.y, t.w, t.h);
     ctx.fillStyle = "#ffd166";
