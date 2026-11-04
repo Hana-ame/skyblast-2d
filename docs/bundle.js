@@ -308,7 +308,8 @@
       this.canvas = canvas2;
       this.logicalW = logicalW;
       this.logicalH = logicalH;
-      this.isTouch = "ontouchstart" in window;
+      const forcedTouch = new URLSearchParams(location.search).get("touch") === "1";
+      this.isTouch = forcedTouch || "ontouchstart" in window;
       window.addEventListener("keydown", (e) => this.onKey(e, true));
       window.addEventListener("keyup", (e) => this.onKey(e, false));
       window.addEventListener("mousemove", (e) => {
@@ -558,6 +559,7 @@
   requestAnimationFrame(frame);
   window.__dbg = {
     world,
+    controls,
     get player() {
       return player;
     },

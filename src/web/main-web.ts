@@ -135,6 +135,7 @@ requestAnimationFrame(frame)
 // 调试暴露：便于真实操作验证（读回状态）
 ;(window as unknown as { __dbg: unknown }).__dbg = {
   world,
+  controls,
   get player() { return player },
   get enemy() { return enemy },
   get fuel() { return world.fuelOf(player.id) },

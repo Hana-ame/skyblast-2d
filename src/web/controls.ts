@@ -35,7 +35,9 @@ export class Controls {
     this.canvas = canvas
     this.logicalW = logicalW
     this.logicalH = logicalH
-    this.isTouch = 'ontouchstart' in window
+    // 触屏判定：URL ?touch=1 强制触屏（便于测试），否则按设备能力
+    const forcedTouch = new URLSearchParams(location.search).get('touch') === '1'
+    this.isTouch = forcedTouch || 'ontouchstart' in window
     window.addEventListener('keydown', (e) => this.onKey(e, true))
     window.addEventListener('keyup', (e) => this.onKey(e, false))
     window.addEventListener('mousemove', (e) => { this.mouse = this.toWorld(e.clientX, e.clientY) })
