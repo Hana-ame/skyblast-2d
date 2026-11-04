@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Noita 风可破坏地形射击 — 原型</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  #game { display: block; width: 100%; height: 100%; }
+  .btn { position: fixed; z-index: 10; border: 0; border-radius: 12px; background: rgba(255,255,255,.15); color: #fff;
+    font-size: 16px; padding: 12px 16px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #btn-fullscreen { top: 10px; right: 10px; }
+  #hint { position: fixed; bottom: 6px; left: 12px; color: rgba(255,255,255,.6); font-size: 12px; z-index: 10; max-width: 70%; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<button id="btn-fullscreen" class="btn">⛶ 全屏</button>
+<div id="hint">仿 Noita：A/D 移动 · W/空格 悬浮（耗能量，落地回充）· 鼠标 360° 瞄准 · 左键 开火（弹丸炸坑可挖地形）· 地形会被打碎、沙会下落</div>
+<script src="./noita-bundle.js"></script>
+</body>
+</html>
