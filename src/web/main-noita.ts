@@ -133,6 +133,10 @@ function drawPlayer(p: typeof player, color: string, label: string): void {
 
 function render(): void {
   vp.applyTransform()
+  // 背景层：每帧先清屏再铺底色，否则 drawImage 只写非透明像素，旧帧残留 → 拖影
+  ctx.clearRect(0, 0, LW, LH)
+  ctx.fillStyle = '#0e1420'   // 深夜空底色（与地形 offscreen 透明区一致）
+  ctx.fillRect(0, 0, LW, LH)
   // 地形（像素放大）
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(terrainCv, 0, 0, W, H, 0, 0, LW, LH)

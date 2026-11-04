@@ -376,6 +376,9 @@
   }
   function render() {
     vp.applyTransform();
+    ctx.clearRect(0, 0, LW, LH);
+    ctx.fillStyle = "#0e1420";
+    ctx.fillRect(0, 0, LW, LH);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(terrainCv, 0, 0, W, H, 0, 0, LW, LH);
     ctx.fillStyle = "#ffd166";
