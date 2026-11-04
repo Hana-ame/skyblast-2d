@@ -272,6 +272,7 @@
       p.vel = { x: 0, y: 0 };
       p.hp = 100;
       p.ammo = MAG_SIZE;
+      this.fuel.set(p.id, getPhysicsParams().jetpackFuel);
       p.alive = true;
       this.pushOutOfTerrains(p);
     }

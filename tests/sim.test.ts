@@ -2,6 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { World, GROUND_Y, PLAYER_R } from '../src/core/sim/world.ts'
+import { getPhysicsParams } from '../src/core/sim/physics.ts'
 import { defaultWorldInput } from '../src/core/types.ts'
 import type { WorldInput } from '../src/core/types.ts'
 import { ServerSim } from '../src/net/ServerSim.ts'
@@ -130,4 +131,18 @@ test('重生安全：重生点不与地形重叠（不卡地里）', () => {
     })
     assert.ok(!overlapped, `respawn should not overlap terrain, pos=(${a.pos.x},${a.pos.y})`)
   }
+})
+
+test('死亡完全恢复：重生时 hp/弹药/燃料全满', () => {
+  const w = new World()
+  const a = w.addPlayer(200, GROUND_Y)
+  const b = w.addPlayer(760, GROUND_Y)
+  // 把 a 耗到残状态：掉血、打空弹药、喷空燃料
+  a.hp = 30
+  a.ammo = 0
+  w.fuel.set(a.id, 0) // 燃料清零（Map 私有，测试用公开途径：直接喷射耗尽太慢，这里借同结构赋值）
+  ;(w as unknown as { kill: (v: typeof a, k: number) => void }).kill(a, b.id)
+  assert.equal(a.hp, 100, 'hp should be 100')
+  assert.equal(a.ammo, 8, 'ammo should be full (MAG_SIZE)')
+  assert.equal(w.fuelOf(a.id), getPhysicsParams().jetpackFuel, 'fuel should be full')
 })

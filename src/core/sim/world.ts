@@ -184,6 +184,8 @@ export class World {
     p.vel = { x: 0, y: 0 }
     p.hp = 100
     p.ammo = MAG_SIZE
+    // 完全恢复：燃料也回满（否则死后带着空能量重生，手感像"没重生完"）
+    this.fuel.set(p.id, getPhysicsParams().jetpackFuel)
     p.alive = true
     // 防御：若重生点与地形重叠（卡地里），推出到无重叠位置，防死亡后卡住
     this.pushOutOfTerrains(p)
