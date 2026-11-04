@@ -2,11 +2,11 @@
 import type { Vec2 } from '../types.ts'
 
 // 屏幕坐标系：y 向下为正，重力为 +y
-export const GRAVITY = 1200       // px/s²
-export const MOVE_SPEED = 260     // px/s
+export const GRAVITY = 800        // px/s²（原1200，降低→下落更轻、不砸地）
+export const MOVE_SPEED = 300     // px/s（原260，稍快）
 export const JUMP_VEL = 520       // 起跳初速（向上，-y）
-export const MAX_FALL = 1400      // 终端下落速度
-export const JETPACK_ACCEL = 1800  // 喷射器加速度（沿 -aim 方向；>GRAVITY 才能对抗重力浮起）
+export const MAX_FALL = 900       // 终端下落速度（原1400，降低→下落不那么沉）
+export const JETPACK_ACCEL = 1700  // 喷射器加速度（垂直向上 -y；>GRAVITY=800 才能浮起，净升900）
 
 // 喷射器燃料：有上限，不能无限飘
 export const JETPACK_FUEL = 2.5    // 燃料上限（秒）
