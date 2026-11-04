@@ -8,18 +8,14 @@
   var defaults = {
     mass: 1,
     gravity: 1250,
-    groundControlSpeed: 500,
-    groundControlAccel: 5e3,
-    groundFriction: 34.7,
-    airControlSpeed: 250,
-    airControlAccel: 3750,
-    airFriction: 2.56,
-    groundJumpImpulse: 660,
-    airJumpImpulse: 600,
+    moveSpeed: 300,
+    // 水平极速（无惯性：按下即达，松开即停）
+    jumpImpulse: 660,
     maxFall: 1200,
-    jetpackAccel: 2600,
-    // 净升 2600-1250=1350，0.46s 冲到升速上限，爆发力对齐参考起跳脉冲 660
+    jetpackAccel: 1870,
+    // 推力 = gravity(1250) + maxUp(620)/1s → 净加速 620/s，约 1s 预热到升空极速
     jetpackMaxUp: 620,
+    // 升空速度上限（受力平衡态，可调）
     jetpackFuel: 2.5,
     jetpackDrain: 1,
     jetpackRecharge: 0.8
@@ -40,29 +36,17 @@
     p.x += v.x * dt;
     p.y += v.y * dt;
   }
-  function saturatedAdd(min, max, current, add) {
-    if (add < 0) return current > min ? Math.max(current + add, min) : current;
-    return current < max ? Math.min(current + add, max) : current;
-  }
   function applyGravity(v, dt) {
     v.y += P.gravity / P.mass * dt;
     if (v.y > P.maxFall) v.y = P.maxFall;
   }
-  function move(v, dir, dt, grounded) {
-    const speed = grounded ? P.groundControlSpeed : P.airControlSpeed;
-    const accel = (grounded ? P.groundControlAccel : P.airControlAccel) / P.mass * dt;
-    const fric = grounded ? P.groundFriction : P.airFriction;
-    if (dir < 0) v.x = saturatedAdd(-speed, speed, v.x, -accel);
-    else if (dir > 0) v.x = saturatedAdd(-speed, speed, v.x, accel);
-    else {
-      v.x *= Math.exp(-fric * dt);
-      if (Math.abs(v.x) < 1) v.x = 0;
-    }
+  function move(v, dir) {
+    v.x = dir * P.moveSpeed;
   }
-  function jump(v, grounded) {
-    v.y = -(grounded ? P.groundJumpImpulse : P.airJumpImpulse);
+  function jump(v) {
+    v.y = -P.jumpImpulse;
   }
-  function jetpack(v, _aim, dt) {
+  function jetpack(v, dt) {
     v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel / P.mass * dt);
   }
   function updateJetpackFuel(fuel, active, dt) {
@@ -162,11 +146,11 @@
     }
     apply(p, w, dt) {
       p.aim = w.aim;
-      move(p.vel, w.move, dt, this.onGround(p));
-      if (w.jump && this.onGround(p)) jump(p.vel, true);
+      move(p.vel, w.move);
+      if (w.jump && this.onGround(p)) jump(p.vel);
       const fuel = this.fuel.get(p.id) ?? 0;
       const canJet = w.jetpack && fuel > 0;
-      if (canJet) jetpack(p.vel, p.aim, dt);
+      if (canJet) jetpack(p.vel, dt);
       this.fuel.set(p.id, updateJetpackFuel(fuel, w.jetpack, dt));
       if (w.reload && p.ammo < MAG_SIZE) p.ammo = MAG_SIZE;
       const cd = this.cooldowns.get(p.id) ?? 0;

@@ -64,12 +64,12 @@ export class World {
 
   private apply(p: PlayerState, w: WorldInput, dt: number): void {
     p.aim = w.aim
-    move(p.vel, w.move, dt, this.onGround(p))
-    if (w.jump && this.onGround(p)) jump(p.vel, true)
+    move(p.vel, w.move)
+    if (w.jump && this.onGround(p)) jump(p.vel)
     // 喷射受燃料门控：燃料>0 才生效，并随开/关消耗/回充
     const fuel = this.fuel.get(p.id) ?? 0
     const canJet = w.jetpack && fuel > 0
-    if (canJet) jetpack(p.vel, p.aim, dt)
+    if (canJet) jetpack(p.vel, dt)
     this.fuel.set(p.id, updateJetpackFuel(fuel, w.jetpack, dt))
     if (w.reload && p.ammo < MAG_SIZE) p.ammo = MAG_SIZE
     const cd = this.cooldowns.get(p.id) ?? 0

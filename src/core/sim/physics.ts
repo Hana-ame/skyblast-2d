@@ -1,25 +1,17 @@
-// core/sim/physics.ts —— 物理模型（移植自开源横版射击的 CCharacterCore 模型，纯 TS 无依赖，纯 web）
-// 原实现 50 tick/s、参数 per-tick；换算：速度 ×50 → px/s，加速度 ×2500 → px/s²，
-// 摩擦按每 tick 乘数 f 换算成指数衰减 e^(-λ·t)，λ = -ln(f)·50
-//   gravity 0.5/tick²    → 1250 px/s²
-//   ground_speed 10/tick → 500 px/s      ground_accel 2/tick² → 5000 px/s²   ground_friction 0.5  → λ=34.7
-//   air_speed 5/tick     → 250 px/s      air_accel 1.5/tick²  → 3750 px/s²   air_friction 0.95    → λ=2.56
-//   ground_jump 13.2/tick→ 660 px/s      air_jump 12/tick     → 600 px/s
+// core/sim/physics.ts —— 物理模型（纯 TS，纯 web）
+// 手感需求（用户 2026-11-05）：
+//   - 水平：空中/地面同一套，无惯性 —— 按下即极速，松开即停（不保留动量、无摩擦滑行）
+//   - 升空：喷射推力>重力，vy 在 ~1s 内渐变到升空极速（预热），之后受力平衡匀速上升
+//   - 松开：失去推力只剩重力，vy 从 -maxUp 被重力加速向下坠（物理规律），直到 maxFall
+// 极速 = 受力平衡态：喷射净加速 620/s ≈ 1s 从 0 预热到 -620（jetpackAccel = gravity + maxUp）
 // 屏幕坐标系：y 向下为正，重力为 +y
 import type { Vec2 } from '../types.ts'
 
-/** 全部可调物理参数（默认值=上述换算基线；mass 是本项目自加的惯性缩放，1=无影响） */
 export interface PhysicsParams {
   mass: number
   gravity: number
-  groundControlSpeed: number
-  groundControlAccel: number
-  groundFriction: number
-  airControlSpeed: number
-  airControlAccel: number
-  airFriction: number
-  groundJumpImpulse: number
-  airJumpImpulse: number
+  moveSpeed: number
+  jumpImpulse: number
   maxFall: number
   jetpackAccel: number
   jetpackMaxUp: number
@@ -31,17 +23,11 @@ export interface PhysicsParams {
 const defaults: PhysicsParams = {
   mass: 1,
   gravity: 1250,
-  groundControlSpeed: 500,
-  groundControlAccel: 5000,
-  groundFriction: 34.7,
-  airControlSpeed: 250,
-  airControlAccel: 3750,
-  airFriction: 2.56,
-  groundJumpImpulse: 660,
-  airJumpImpulse: 600,
+  moveSpeed: 300,        // 水平极速（无惯性：按下即达，松开即停）
+  jumpImpulse: 660,
   maxFall: 1200,
-  jetpackAccel: 2600,   // 净升 2600-1250=1350，0.46s 冲到升速上限，爆发力对齐参考起跳脉冲 660
-  jetpackMaxUp: 620,
+  jetpackAccel: 1870,    // 推力 = gravity(1250) + maxUp(620)/1s → 净加速 620/s，约 1s 预热到升空极速
+  jetpackMaxUp: 620,     // 升空速度上限（受力平衡态，可调）
   jetpackFuel: 2.5,
   jetpackDrain: 1.0,
   jetpackRecharge: 0.8,
@@ -69,39 +55,22 @@ export function integrate(p: Vec2, v: Vec2, dt: number): void {
   p.y += v.y * dt
 }
 
-/** SaturatedAdd（移植）：把 current 朝 [min,max] 内加 add，不越界；已在界外则不动（不硬拉回） */
-function saturatedAdd(min: number, max: number, current: number, add: number): number {
-  if (add < 0) return current > min ? Math.max(current + add, min) : current
-  return current < max ? Math.min(current + add, max) : current
-}
-
 export function applyGravity(v: Vec2, dt: number): void {
   v.y += (P.gravity / P.mass) * dt
   if (v.y > P.maxFall) v.y = P.maxFall
 }
 
-/**
- * 水平移动（移植）：地面/空中各自的速度上限/加速度/摩擦；
- * 有输入 → SaturatedAdd 朝目标加速（饱和不越界）；无输入 → 指数摩擦衰减
- */
-export function move(v: Vec2, dir: -1 | 0 | 1, dt: number, grounded: boolean): void {
-  const speed = grounded ? P.groundControlSpeed : P.airControlSpeed
-  const accel = ((grounded ? P.groundControlAccel : P.airControlAccel) / P.mass) * dt
-  const fric = grounded ? P.groundFriction : P.airFriction
-  if (dir < 0) v.x = saturatedAdd(-speed, speed, v.x, -accel)
-  else if (dir > 0) v.x = saturatedAdd(-speed, speed, v.x, accel)
-  else {
-    v.x *= Math.exp(-fric * dt)
-    if (Math.abs(v.x) < 1) v.x = 0
-  }
+/** 水平移动：无惯性 —— dir 即极速，松开（dir=0）即停；空中/地面不区分 */
+export function move(v: Vec2, dir: -1 | 0 | 1): void {
+  v.x = dir * P.moveSpeed
 }
 
-export function jump(v: Vec2, grounded: boolean): void {
-  v.y = -(grounded ? P.groundJumpImpulse : P.airJumpImpulse)
+export function jump(v: Vec2): void {
+  v.y = -P.jumpImpulse
 }
 
-/** 喷射器（起飞）：垂直向上推进；有上升速度上限，不会无限加速 */
-export function jetpack(v: Vec2, _aim: number, dt: number): void {
+/** 喷射器（升空）：推力>重力，vy 朝升空极速渐变（~1s 预热），封顶后受力平衡匀速 */
+export function jetpack(v: Vec2, dt: number): void {
   v.y = Math.max(-P.jetpackMaxUp, v.y - (P.jetpackAccel / P.mass) * dt)
 }
 
