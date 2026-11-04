@@ -513,7 +513,8 @@
   world.addTerrain(730, 360, 90, 14);
   world.addTerrain(120, 400, 14, 60);
   var player = world.addPlayer(220, GROUND_Y2);
-  var enemy = world.addPlayer(740, GROUND_Y2);
+  var isTuning = document.currentScript && document.currentScript.src.includes("tune") || new URLSearchParams(location.search).has("tune");
+  var enemy = isTuning ? null : world.addPlayer(740, GROUND_Y2);
   var playerInput = defaultWorldInput();
   var enemyInput = defaultWorldInput();
   document.getElementById("btn-fullscreen")?.addEventListener("click", toggleFullscreen);
@@ -543,6 +544,7 @@
     return out;
   }
   function aiIntent() {
+    if (!enemy) return defaultWorldInput();
     const dx = player.pos.x - enemy.pos.x;
     const dy = player.pos.y - enemy.pos.y;
     const aim = Math.atan2(dy, dx);
@@ -586,11 +588,12 @@
       ctx.fill();
     }
     drawPlayer(player, "#4ade80", "YOU");
-    drawPlayer(enemy, "#f87171", "AI");
+    if (enemy) drawPlayer(enemy, "#f87171", "AI");
     ctx.fillStyle = "#fff";
     ctx.font = "12px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(`\u4F60 K/D=${player.kills}/${player.deaths}   AI K/D=${enemy.kills}/${enemy.deaths}   \u71C3\u6599=${world.fuelOf(player.id).toFixed(1)}   tick=${world.tick}`, 12, 20);
+    const kd = enemy ? `   AI K/D=${enemy.kills}/${enemy.deaths}` : "   [\u8C03\u4F18\u53F0 \xB7 \u65E0\u654C\u4EBA]";
+    ctx.fillText(`\u4F60 K/D=${player.kills}/${player.deaths}${kd}   \u71C3\u6599=${world.fuelOf(player.id).toFixed(1)}   tick=${world.tick}`, 12, 20);
   }
   var last = performance.now();
   var acc = 0;
@@ -603,8 +606,12 @@
     while (acc >= FIXED && guard < 5) {
       const t = controls.getState();
       playerInput = applyIntents(playerInput, toIntents(t));
-      enemyInput = aiIntent();
-      world.step(FIXED, /* @__PURE__ */ new Map([[player.id, playerInput], [enemy.id, enemyInput]]));
+      const inputs = /* @__PURE__ */ new Map([[player.id, playerInput]]);
+      if (enemy) {
+        enemyInput = aiIntent();
+        inputs.set(enemy.id, enemyInput);
+      }
+      world.step(FIXED, inputs);
       controls.consumeMomentary();
       acc -= FIXED;
       guard++;

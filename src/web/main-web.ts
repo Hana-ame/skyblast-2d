@@ -24,7 +24,10 @@ world.addTerrain(140, 360, 90, 14)   // 左高台
 world.addTerrain(730, 360, 90, 14)   // 右高台
 world.addTerrain(120, 400, 14, 60)   // 左侧悬浮掩体（y400-460，下方留 y460-540 通道，玩家可走/可跳越，挡高抛弹道）
 const player = world.addPlayer(220, GROUND_Y)
-const enemy = world.addPlayer(740, GROUND_Y)
+// 调优台：bundle 以 ?tune 加载（tuning.html 的 <script src="./bundle.js?tune">）→ 无敌人，只有玩家测手感
+const isTuning = (document.currentScript && document.currentScript.src.includes('tune')) ||
+  new URLSearchParams(location.search).has('tune')
+const enemy = isTuning ? null : world.addPlayer(740, GROUND_Y)
 
 let playerInput = defaultWorldInput()
 let enemyInput = defaultWorldInput()
@@ -53,8 +56,9 @@ function toIntents(t: ReturnType<Controls['getState']>): Intent[] {
   return out
 }
 
-// AI 对手：朝玩家瞄准 + 开火 + 逼近
+// AI 对手：朝玩家瞄准 + 开火 + 逼近（调优台无敌人，AI 输入固定为空）
 function aiIntent(): WorldInput {
+  if (!enemy) return defaultWorldInput()
   const dx = player.pos.x - enemy.pos.x
   const dy = player.pos.y - enemy.pos.y
   const aim = Math.atan2(dy, dx)
@@ -104,12 +108,13 @@ function render(): void {
     ctx.fill()
   }
   drawPlayer(player, '#4ade80', 'YOU')
-  drawPlayer(enemy, '#f87171', 'AI')
+  if (enemy) drawPlayer(enemy, '#f87171', 'AI')
   // HUD
   ctx.fillStyle = '#fff'
   ctx.font = '12px sans-serif'
   ctx.textAlign = 'left'
-  ctx.fillText(`你 K/D=${player.kills}/${player.deaths}   AI K/D=${enemy.kills}/${enemy.deaths}   燃料=${world.fuelOf(player.id).toFixed(1)}   tick=${world.tick}`, 12, 20)
+  const kd = enemy ? `   AI K/D=${enemy.kills}/${enemy.deaths}` : '   [调优台 · 无敌人]'
+  ctx.fillText(`你 K/D=${player.kills}/${player.deaths}${kd}   燃料=${world.fuelOf(player.id).toFixed(1)}   tick=${world.tick}`, 12, 20)
 }
 
 // 主循环：固定步长（防高速穿透由 core 地形碰撞保证）
@@ -125,8 +130,12 @@ function frame(now: number): void {
   while (acc >= FIXED && guard < 5) {
     const t = controls.getState()
     playerInput = applyIntents(playerInput, toIntents(t))
-    enemyInput = aiIntent()
-    world.step(FIXED, new Map([[player.id, playerInput], [enemy.id, enemyInput]]))
+    const inputs = new Map<number, WorldInput>([[player.id, playerInput]])
+    if (enemy) {
+      enemyInput = aiIntent()
+      inputs.set(enemy.id, enemyInput)
+    }
+    world.step(FIXED, inputs)
     controls.consumeMomentary()
     acc -= FIXED
     guard++
