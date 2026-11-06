@@ -8,7 +8,7 @@ import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../core/wrap.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../core/weapons.ts'
 import { SPAWN_POINTS } from '../core/sim/world.ts'
-import { getTerrainPattern, makeStarField } from './textures.ts'
+import { getTerrainPattern, makeStarField, syncTerrainPatterns } from './textures.ts'
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
   drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, drawMineSprite,
@@ -558,6 +558,8 @@ function renderScene(): void {
   }
 
   // 1. 地形图元（程序化贴图）——按 ±WORLD_W/±WORLD_H 复制绘制，修复左右/上下接缝处缺块
+  //    每帧把花纹锚点补偿到相机：贴图随世界/方块/物体一起移动（此前花纹固定在屏幕上）
+  syncTerrainPatterns(camera.x, camera.y)
   for (const r of world.terrain.rects) {
     if (r.kind.startsWith('deco_')) continue
     const cx0 = sx(r.x + r.w / 2)

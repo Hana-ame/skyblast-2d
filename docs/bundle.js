@@ -2385,6 +2385,10 @@
     if (pat) cache.set(key, pat);
     return pat;
   }
+  function syncTerrainPatterns(camX, camY) {
+    const m = new DOMMatrix().translate(-camX, -camY);
+    for (const pat of cache.values()) pat.setTransform(m);
+  }
 
   // src/web/sprites.ts
   var TEAM_PALETTE = {
@@ -3873,6 +3877,7 @@
       ctx.arc(gx, gy, gl.r, 0, Math.PI * 2);
       ctx.fill();
     }
+    syncTerrainPatterns(camera.x, camera.y);
     for (const r of world.terrain.rects) {
       if (r.kind.startsWith("deco_")) continue;
       const cx0 = sx(r.x + r.w / 2);

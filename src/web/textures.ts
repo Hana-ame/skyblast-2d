@@ -288,6 +288,14 @@ export function getTerrainPattern(ctx: CanvasRenderingContext2D, kind: string): 
   return pat
 }
 
+/** 把地形花纹锚定到世界坐标：每帧按相机平移反向补偿。
+ *  否则 CanvasPattern 取样锚点固定在画布原点 → 花纹与方块/物体相对滑动（"花纹不跟着走"）。
+ *  参数为相机在渲染用户空间中的偏移（用户空间 = 世界坐标 - 相机）。 */
+export function syncTerrainPatterns(camX: number, camY: number): void {
+  const m = new DOMMatrix().translate(-camX, -camY)
+  for (const pat of cache.values()) pat.setTransform(m)
+}
+
 /** 视差星空：生成一次屏幕外渐变点阵（供背景用） */
 export function makeStarField(count = 140): { x: number; y: number; r: number; a: number }[] {
   const rnd = mulberry32(777)
