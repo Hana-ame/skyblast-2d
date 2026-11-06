@@ -27,7 +27,7 @@ const defaults: PhysicsParams = {
   maxFall: 1200,
   jetpackAccel: 4200,    // 更快响应：净加速 (4200-1250)/1.3 ≈ 2269/s → 约 0.12s 到升空极速（原 3000≈0.21s）
   jetpackMaxUp: 280,     // 用户调优值：升空速度上限（短促小跳手感）
-  jetpackFuel: 1.0,      // 飞行槽加倍：满能量可喷 2s（drain 0.5）
+  jetpackFuel: 1.0,      // 飞行槽 = 原值 0.5 的两倍：满能量可喷 2s（drain 0.5）
   jetpackDrain: 0.5,     // 每秒消耗半槽
   jetpackRecharge: 0.7,  // 落地回充：约 1.43s 回满（空中不回充）
 }

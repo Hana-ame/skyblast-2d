@@ -15,7 +15,7 @@
     jetpackMaxUp: 280,
     // 用户调优值：升空速度上限（短促小跳手感）
     jetpackFuel: 1,
-    // 飞行槽加倍：满能量可喷 2s（drain 0.5）
+    // 飞行槽 = 原值 0.5 的两倍：满能量可喷 2s（drain 0.5）
     jetpackDrain: 0.5,
     // 每秒消耗半槽
     jetpackRecharge: 0.7
@@ -4410,7 +4410,7 @@
   };
   (function loadSavedParams() {
     try {
-      const raw = localStorage.getItem("pvp-physics-params");
+      const raw = localStorage.getItem("pvp-physics-params-v2");
       if (raw) setPhysicsParams(JSON.parse(raw));
     } catch {
     }

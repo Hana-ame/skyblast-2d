@@ -330,7 +330,7 @@ requestAnimationFrame(frame)
 }
 
 // 调参暴露（tuning.html 用）
-const PARAM_KEY = 'pvp-physics-params'
+const PARAM_KEY = 'pvp-physics-params-v2'
 function persistParams(p: PhysicsParams): void {
   try { localStorage.setItem(PARAM_KEY, JSON.stringify(p)) } catch { /* 忽略 */ }
 }

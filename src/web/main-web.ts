@@ -1347,7 +1347,8 @@ requestAnimationFrame(gameLoop)
 }
 ;(function loadSavedParams(): void {
   try {
-    const raw = localStorage.getItem('pvp-physics-params')
+    // v2：飞行槽加倍后的默认值；旧 key 的存档（jetpackFuel 0.5）不再覆盖
+    const raw = localStorage.getItem('pvp-physics-params-v2')
     if (raw) setPhysicsParams(JSON.parse(raw) as Record<string, number>)
   } catch { /* 忽略 */ }
 })()
