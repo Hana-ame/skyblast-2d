@@ -575,10 +575,10 @@
       spread: 0,
       speed: 520,
       recoil: 420,
-      magSize: 1,
-      maxReserve: 5,
-      // 1 发/弹匣：射速间隔 = 换弹节奏
-      reloadTime: 1.5,
+      magSize: 20,
+      maxReserve: 20,
+      // 弹匣 20 / 换弹 2s
+      reloadTime: 2,
       fireDelay: 0.4,
       terrainRadius: 124,
       explosive: true,
