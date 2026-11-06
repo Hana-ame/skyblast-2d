@@ -954,3 +954,23 @@ test('伤害=0 的弹丸会被直接删除（不飞行/不参与命中）', () =
   assert.ok(!w.projectiles.some(pr => pr.id === 900002), 'zero-damage projectile removed')
   assert.ok(w.projectiles.some(pr => pr.id === 900003), 'positive-damage projectile kept')
 })
+
+
+test('手榴弹不黏：落地后仍有明显反弹与滚动', () => {
+  const w = new World(201)
+  const p = w.addPlayer('P', 'ffa')
+  // 向地面投掷（水平初速）
+  w.grenades.push({ id: 1, owner: p.id, pos: { x: 600, y: 2600 }, vel: { x: 420, y: 240 }, fuse: 3, bounces: 0 })
+  const g = w.grenades[0]
+  let bouncedVy = 0
+  let x0 = g.pos.x
+  for (let i = 0; i < 120; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    if (w.grenades.length === 0) break
+    const cur = w.grenades[0]
+    if (cur.vel.y < -60 && bouncedVy === 0) bouncedVy = cur.vel.y   // 记录首次反弹
+    if (bouncedVy !== 0 && i > 30 && cur.vel.x !== 0) { x0 = cur.pos.x; break }
+  }
+  assert.ok(bouncedVy < -60, `grenade bounces off floor, vy=${bouncedVy.toFixed(0)}`)
+  assert.ok(w.grenades.length === 0 || Math.abs(w.grenades[0].vel.x) > 20, 'grenade keeps sliding (not sticky)')
+})

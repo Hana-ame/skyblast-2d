@@ -1271,18 +1271,19 @@ export class World {
     const g0 = 1250
     for (const g of this.grenades) {
       g.vel.y += g0 * 0.88 * dt
-      g.vel.x *= 0.99
+      g.vel.x *= 0.995
       const nx = wrapX(g.pos.x + g.vel.x * dt)
-      if (this.terrain.isSolidAt(nx, g.pos.y) || this.obstacleAt(nx, g.pos.y)) g.vel.x *= -0.35
+      if (this.terrain.isSolidAt(nx, g.pos.y) || this.obstacleAt(nx, g.pos.y)) g.vel.x *= -0.55
       else g.pos.x = nx
       const ny = g.pos.y + g.vel.y * dt
       if (this.terrain.isSolidAt(g.pos.x, ny) || this.obstacleAt(g.pos.x, ny)) {
-        g.vel.y *= -0.28
-        g.vel.x *= 0.42
-        if (Math.abs(g.vel.y) < 81) {
+        // 不要黏：反弹与滚动保持率提高，落地后继续滑/弹一段
+        g.vel.y *= -0.45
+        g.vel.x *= 0.78
+        if (Math.abs(g.vel.y) < 72) {
           g.vel.y = 0
-          g.vel.x *= 0.60
-          if (Math.abs(g.vel.x) < 11) g.vel.x = 0
+          g.vel.x *= 0.88
+          if (Math.abs(g.vel.x) < 8) g.vel.x = 0
         }
       } else g.pos.y = wrapY(ny)
       g.fuse -= dt
