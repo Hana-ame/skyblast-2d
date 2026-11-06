@@ -130,7 +130,7 @@
         <span class="text-[11px] font-bold text-rose-300">副武器：</span>
         <button type="button" data-sec="frag" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-rose-400 bg-rose-500/20 text-xs font-extrabold text-white">手榴弹</button>
         <button type="button" data-sec="doll" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">替身人偶（补给专属）</button>
-        <span id="deathSecNote" class="text-[10px] text-slate-500">手榴弹 2 充能自然回复；人偶需特殊补给拾取</span>
+        <span id="deathSecNote" class="text-[10px] text-slate-500">手榴弹 1 充能自然回复；人偶需特殊补给拾取</span>
       </div>
 
       <div class="mt-4 text-[10px] text-slate-500">配装在倒计时结束重生时生效；游戏进行中下方 HUD 不再提供换枪。</div>
@@ -346,8 +346,8 @@
 
             <div id="lobbyGrenadeSelect" class="grid grid-cols-2 gap-1.5">
               <button type="button" data-sec="frag" class="lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition">
-                <div class="text-xs font-extrabold text-white">💣 手榴弹 ×2</div>
-                <div class="text-[10px] text-rose-200">充能制：上限 2，自然回复（6s/枚）</div>
+                <div class="text-xs font-extrabold text-white">💣 手榴弹 ×1</div>
+                <div class="text-[10px] text-rose-200">充能制：上限 1，自然回复（6s/枚）</div>
               </button>
               <button type="button" data-sec="doll" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
                 <div class="text-xs font-extrabold text-pink-300">🎎 替身人偶</div>
@@ -377,12 +377,12 @@
               <p>· <strong class="text-white">服务器权威</strong>：所有命中/副武器/占点/补给全部在权威 core 结算，客户端只发送意图（Intent）。</p>
               <p>· <strong class="text-white">快照同步</strong>：障碍物/地雷/占点/弹药点/补给箱全量进快照，多端一致（v2 的平行宇宙问题已消除）。</p>
               <p>· <strong class="text-white">环形世界</strong>：13200×4400 双轴无缝循环（上下也 wrap），跨缝瞄准/弹道/插值全部连续。</p>
-              <p>· <strong class="text-white">补给规则</strong>：激光炮/加特林/引力枪只能从空投特武箱获得；替身人偶只能从粉色特殊补给箱获得充能（上限 2），无充能时不可用。</p>
+              <p>· <strong class="text-white">补给规则</strong>：激光/M249/引力枪只能从空投特武箱获得；替身人偶只能从粉色特殊补给箱获得充能（上限 2），无充能时不可用。</p>
               <p>· <strong class="text-white">激光反弹</strong>：激光炮撞墙反弹 1 次后继续飞行。</p>
               <p class="text-slate-400">· PeerJS 配对面板将接入 net/transport/Peer.ts（联机入口为下一里程碑）。</p>
             </div>
             <div class="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-              <strong class="text-slate-200">战术规则：</strong>主武器重生前选定（重生后锁定）| 副武器只有手榴弹（2 充能自然回复）| 狙击/火箭无限射程 | 激光是即时光束、反射3次 | 手枪移速最快 | 靠近🗼瞭望塔/🌀传送门/🔥迫击炮按 E 互动 | 拾取📦弹药点与🎁特武箱/🎎人偶箱
+              <strong class="text-slate-200">战术规则：</strong>主武器重生前选定（重生后锁定）| 副武器只有手榴弹（1 充能自然回复）| 狙击/火箭无限射程 | 激光是即时光束、反射3次 | 手枪移速最快 | 靠近🗼瞭望塔/🌀传送门/🔥迫击炮按 E 互动 | 拾取📦弹药点与🎁特武箱/🎎人偶箱
             </div>
           </div>
         </div>
@@ -396,7 +396,7 @@
       <div class="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
         <div>
           <h2 class="text-base font-extrabold text-amber-300">⚙️ 游戏参数自由调校台 (全按钮组切换 · 实时生效)</h2>
-          <p class="text-xs text-slate-400">角色物理、7把主武器(含激光炮/加特林/引力枪)、副武器、地雷与迫击炮参数均可自由修改</p>
+          <p class="text-xs text-slate-400">角色物理、7把主武器(含激光/M249/引力枪)、副武器、地雷与迫击炮参数均可自由修改</p>
         </div>
         <div class="flex items-center gap-2">
           <button id="resetParamsBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">

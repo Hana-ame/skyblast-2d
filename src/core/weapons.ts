@@ -195,7 +195,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   respawnDelay: 4.0,
   loadoutLock: true,
   randomSpawn: false,
-  fragMaxCharges: 2,
+  fragMaxCharges: 1,
   fragRechargeSeconds: 6.0,
   dollMaxCharges: 2,
 }

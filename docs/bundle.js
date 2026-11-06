@@ -760,7 +760,7 @@
     respawnDelay: 4,
     loadoutLock: true,
     randomSpawn: false,
-    fragMaxCharges: 2,
+    fragMaxCharges: 1,
     fragRechargeSeconds: 6,
     dollMaxCharges: 2
   };

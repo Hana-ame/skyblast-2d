@@ -402,12 +402,12 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   // 手雷充能制：初始 2、投出消耗、6s 回复 1
   const w = new World(53)
   const p = w.addPlayer('P', 'red')
-  assert.equal(p.fragCharges, 2, 'starts with 2 frag charges')
+  assert.equal(p.fragCharges, 1, 'starts with 1 frag charge (max=1)')
   w.step(DT, new Map([[p.id, input({ secondary: sec('frag', p.pos.x + 100, p.pos.y) })]]))
-  assert.equal(p.fragCharges, 1, 'throw consumes one charge')
+  assert.equal(p.fragCharges, 0, 'throw consumes the only charge')
   assert.equal(w.grenades.length, 1, 'grenade spawned')
   for (let i = 0; i < 60 * 7; i++) w.step(DT, new Map([[p.id, input()]]))   // 7 秒
-  assert.equal(p.fragCharges, 2, 'charge regenerates after 6s')
+  assert.equal(p.fragCharges, 1, 'charge regenerates after 6s (max 1)')
   w.drainEvents()
 })
 
