@@ -4754,7 +4754,7 @@
     {
       const mx = sx(mouse.worldX);
       const my = sy(mouse.worldY);
-      if (mx > -40 && mx < canvas.width + 40 && my > -40 && my < canvas.height + 40) {
+      if (mx > -halfW && mx < halfW && my > -halfH && my < halfH) {
         ctx.save();
         ctx.strokeStyle = mountedNow ? "rgba(251, 146, 60, 0.95)" : "rgba(255, 255, 255, 0.8)";
         ctx.lineWidth = 1.5;

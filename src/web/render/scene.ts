@@ -288,7 +288,9 @@ export function renderScene(): void {
   {
     const mx = sx(mouse.worldX)
     const my = sy(mouse.worldY)
-    if (mx > -40 && mx < canvas.width + 40 && my > -40 && my < canvas.height + 40) {
+    // mx/my 是世界相对量（用户坐标，乘 zoom 后映射到屏幕）；这里必须用 halfW/halfH 判定可见性。
+    // 旧代码与画布像素比较 → 鼠标在屏幕左半区时被误判为不可见（“准星在左侧显示有问题”）。
+    if (mx > -halfW && mx < halfW && my > -halfH && my < halfH) {
       ctx.save()
       ctx.strokeStyle = mountedNow ? 'rgba(251, 146, 60, 0.95)' : 'rgba(255, 255, 255, 0.8)'
       ctx.lineWidth = 1.5
