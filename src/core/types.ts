@@ -76,7 +76,9 @@ export interface Projectile {
   weaponLabel: string
   color: string
   hitTargets: number[]     // 穿透弹已命中目标（防同目标重复结算）
-  bounces: number          // 剩余撞墙反弹次数（激光枪 1 次）
+  bounces: number          // 剩余撞墙反弹次数（激光枪 2 次）
+  passWalls: boolean       // 穿透原始地形（引力弹）
+  beam: boolean            // 光束渲染（激光）
 }
 
 export interface Grenade {

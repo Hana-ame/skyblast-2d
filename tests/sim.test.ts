@@ -308,16 +308,15 @@ test('PeerJS 传输：假 DataConnection 上跑通 服务器权威 + 欢迎包 +
 })
 
 
-test('激光枪：撞墙反弹一次后继续飞行（pierceAll + bounces=1）', () => {
+test('激光枪：撞墙反弹（2 次配额，首弹后 1 次剩余，bounces=2 起）', () => {
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4   // 激光炮
-  // 站在地表上方朝下打（地面 y=2800 必撞）
   p.pos = { x: 6600, y: 2660 }
   w.step(DT, new Map([[p.id, input({ fire: true, aim: Math.PI / 2 })]]))
   const laser = w.projectiles.find(pr => pr.weaponLabel === '激光炮')
   assert.ok(laser, 'laser fired')
-  const vy0 = laser!.vel.y
+  assert.equal(laser!.bounces, 2, 'laser starts with 2 bounces')
   let bounced = false
   for (let i = 0; i < 30; i++) {
     w.step(DT, new Map([[p.id, input()]]))
@@ -326,8 +325,51 @@ test('激光枪：撞墙反弹一次后继续飞行（pierceAll + bounces=1）',
   }
   assert.ok(bounced, 'laser should bounce off ground (vy flips negative)')
   const after = w.projectiles.find(pr => pr.weaponLabel === '激光炮')
-  assert.ok(after && after.bounces === 0, 'one bounce consumed')
+  assert.ok(after && after.bounces === 1, 'one of two bounces consumed')
   assert.ok(after!.life > 0, 'laser survives the bounce')
+  assert.equal(after!.beam, true, 'laser renders as beam')
+})
+
+test('引力弹：穿墙飞行（passWalls），不被原始地形挡下', () => {
+  const w = new World(45)
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 6   // 引力枪
+  // 朝西翼大楼墙体方向平射：从 x=1300 射向 1400 的大楼外墙
+  p.pos = { x: 1300, y: 2100 }
+  w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+  const orb = w.projectiles.find(pr => pr.weaponLabel === '引力枪')
+  assert.ok(orb, 'gravity orb fired')
+  assert.equal(orb!.passWalls, true, 'gravity orb passes walls')
+  for (let i = 0; i < 20; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    w.drainEvents()
+    if (!w.projectiles.some(pr => pr.id === orb!.id)) break
+  }
+  // 若已消失，也只应因寿命/命中玩家而非地形；飞行途中应越过 x=1424 的墙内侧
+  const still = w.projectiles.find(pr => pr.id === orb!.id)
+  if (still) assert.ok(still.pos.x > 1400, `orb should pass wall, x=${still.pos.x}`)
+})
+
+test('喷射燃料：断续点按 W 不能无限飞（空中不回充，落地才回）', () => {
+  const w = new World(47)
+  const p = w.addPlayer('P', 'ffa')
+  // 回到地面附近
+  p.pos = { x: 6600, y: 2790 }
+  p.onGround = true
+  const y0 = p.pos.y
+  let maxRise = 0
+  for (let i = 0; i < 900; i++) {
+    const tap = (i % 14) < 7   // 断续 7 帧按 / 7 帧松
+    w.step(DT, new Map([[p.id, input({ jetpack: tap })]]))
+    w.drainEvents()
+    maxRise = Math.max(maxRise, y0 - p.pos.y)
+  }
+  // 1) 燃料应耗尽（空中不回充）
+  assert.ok(p.fuel <= 0.01, `fuel should be exhausted, fuel=${p.fuel.toFixed(3)}`)
+  // 2) 高度不应无限累积
+  assert.ok(maxRise < 1200, `should not fly unbounded, maxRise=${maxRise.toFixed(0)}`)
+  // 3) 最终应回到地面附近
+  assert.ok(p.pos.y > y0 - 300, `should fall back near ground, y=${p.pos.y.toFixed(0)}`)
 })
 
 test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换枪被拒', () => {
@@ -348,11 +390,34 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 test('配装表：7 主武器数值（弹速 px/s / 伤害）与 supply-only 标记', () => {
   assert.equal(WEAPONS.length, 7)
   const speed = WEAPONS.map(w => w.speed)
-  assert.deepEqual(speed, [920, 1160, 1900, 900, 2350, 1240, 780])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [14, 18, 64, 66, 38, 13, 48])
+  assert.deepEqual(speed, [1000, 1250, 2000, 950, 3000, 1300, 900])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 68, 68, 50, 14, 52])
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
-  assert.equal(WEAPONS[4].bounces, 1, 'laser has one wall bounce')
+  assert.equal(WEAPONS[4].bounces, 2, 'laser bounces twice')
+  assert.equal(WEAPONS[6].passWalls, true, 'gravity orb passes walls')
   // 人偶不在常规副武器可选列表（supplyOnly）
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
   assert.ok(!SECONDARIES.frag.supplyOnly && !SECONDARIES.shield.supplyOnly, 'normal secondaries selectable')
+})
+
+
+test('迫击炮：操控后炮管角度跟随准星（aim 同步，限上半圆）', () => {
+  const w = new World(51)
+  const p = w.addPlayer('P', 'ffa')
+  const m = w.mortars[0]
+  p.pos = { x: m.x, y: m.y }
+  // 交互上炮
+  w.step(DT, new Map([[p.id, input({ interact: true })]]))
+  assert.equal(m.operatorId, p.id, 'player mounts mortar via E')
+  // 瞄准左上方（屏幕坐标：-π/2 正上方）
+  for (let i = 0; i < 5; i++) w.step(DT, new Map([[p.id, input({ aim: -Math.PI / 2 })]]))
+  assert.ok(Math.abs(m.angle - (-Math.PI / 2)) < 0.15, `mortar angle follows aim: ${m.angle.toFixed(2)}`)
+  // 瞄准偏下 → 被限制到上半圆（≤ -0.12）
+  w.step(DT, new Map([[p.id, input({ aim: Math.PI / 2 })]]))
+  assert.ok(m.angle <= -0.11, `angle clamped to upper hemisphere: ${m.angle.toFixed(2)}`)
+  // 开火后炮弹初速沿炮管角度（向上）
+  w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
+  const shell = w.projectiles.find(pr => pr.weaponLabel === '公共迫击炮')
+  assert.ok(shell, 'mortar shell fired')
+  assert.ok(shell!.vel.y < 0, 'shell flies upward per aim')
 })

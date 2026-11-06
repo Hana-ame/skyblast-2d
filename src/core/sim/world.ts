@@ -288,7 +288,7 @@ export class World {
     const canJet = w.jetpack && fuel > 0
     if (canJet) jetpack(p.vel, dt)
     p.jetpack = canJet
-    p.fuel = updateJetpackFuel(fuel, w.jetpack, dt)
+    p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt)
 
     // 冷却推进
     if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt)
@@ -319,6 +319,14 @@ export class World {
     if (p.doll) {
       p.doll.timer -= dt
       if (p.doll.timer <= 0) this.recallDoll(p, 'doll_recall')
+    }
+
+    // 迫击炮操控中：炮管角度跟随准星（限上半圆），修复"不能瞄准"
+    const mountedNow = this.mortars.find(m => m.operatorId === p.id)
+    if (mountedNow) {
+      let a = p.aim
+      if (a > -0.12) a = a < Math.PI * 0.5 ? -0.12 : -Math.PI + 0.12
+      mountedNow.angle = a
     }
 
     // 交互（E）：瞭望塔 / 迫击炮
@@ -371,7 +379,8 @@ export class World {
         damage: wep.damage, headshotMult: wep.headshotMult, terrainRadius: wep.terrainRadius,
         explosive: wep.explosive, gravityScale: wep.gravityScale ?? (wep.id === 4 ? 0.0 : 0.04),
         pierceOnHeadshot: !!wep.pierceOnHeadshot, pierceAll: !!wep.pierceAll,
-        isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, weaponLabel: wep.shortName, color: wep.color,
+        isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, passWalls: !!wep.passWalls, beam: !!wep.beam,
+        weaponLabel: wep.shortName, color: wep.color,
         r: wep.isGravityOrb ? 8.5 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
         life: (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       }))
@@ -380,14 +389,15 @@ export class World {
 
   private makeProjectile(p: PlayerState, x: number, y: number, vx: number, vy: number, o: {
     damage: number; headshotMult: number; terrainRadius: number; explosive: boolean; gravityScale?: number;
-    pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number; weaponLabel: string; color: string; r: number; life: number
+    pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number; passWalls?: boolean; beam?: boolean; weaponLabel: string; color: string; r: number; life: number
   }): Projectile {
     return {
       id: this.prj++, owner: p.id, pos: { x: wrapX(x), y: wrapY(y) }, vel: { x: vx, y: vy },
       life: o.life, r: o.r, damage: o.damage, headshotMult: o.headshotMult,
       explosive: o.explosive, terrainRadius: o.terrainRadius, gravityScale: o.gravityScale ?? 0.04,
       pierceOnHeadshot: !!o.pierceOnHeadshot, pierceAll: !!o.pierceAll,
-      isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, weaponLabel: o.weaponLabel, color: o.color,
+      isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, passWalls: !!o.passWalls, beam: !!o.beam,
+      weaponLabel: o.weaponLabel, color: o.color,
       hitTargets: [p.id],   // 发射者自身永远跳过
     }
   }
@@ -599,11 +609,16 @@ export class World {
   }
 
   // ── 弹道 ──────────────────────────────────────────────
+  // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
+  // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
   private stepProjectiles(dt: number): void {
-    const g = 1250   // physics.gravity（骨架调优值）
+    const g = getPhysicsParams().gravity
+    const SUBSTEP_PX = 8
+
     for (const pr of this.projectiles) {
       if (pr.life <= 0) continue
-      // 引力枪飞行途中牵引敌人
+
+      // 引力弹飞行途中牵引敌人
       if (pr.isGravityOrb) {
         for (const t of this.players) {
           if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue
@@ -617,88 +632,103 @@ export class World {
           }
         }
       }
+
       pr.vel.y += g * pr.gravityScale * dt
-      const prevX = pr.pos.x
-      const prevY = pr.pos.y
-      pr.pos.x = wrapX(pr.pos.x + pr.vel.x * dt)
-      pr.pos.y = wrapY(pr.pos.y + pr.vel.y * dt)
       pr.life -= dt
       if (pr.life <= 0) continue
 
-      let hit = false
-      // A. 玩家（头/躯干，爆头穿透）
-      for (const t of this.players) {
-        if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue
-        if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== 'ffa') continue
-        const dxHead = wrapDeltaX(t.pos.x, pr.pos.x)
-        const dyHead = wrapDeltaY(t.pos.y - 24, pr.pos.y)
-        if (Math.hypot(dxHead, dyHead) <= this.config.headRadius + pr.r) {
-          pr.hitTargets.push(t.id)
-          const piercing = pr.pierceOnHeadshot || pr.pierceAll
-          if (pr.explosive) {
-            this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult, 960, pr)
-            hit = true
-          } else {
-            this.damage(t, Math.round(pr.damage * pr.headshotMult), pr, true, piercing)
-            t.vel.x += pr.vel.x * 0.12
-            t.vel.y += pr.vel.y * 0.12 - 72
-            if (!piercing) hit = true
-          }
-          if (hit) break
-          continue
-        }
-        const dxBody = Math.abs(wrapDeltaX(t.pos.x, pr.pos.x))
-        const dyBody = wrapDeltaY(t.pos.y, pr.pos.y)
-        if (dxBody <= 13 + pr.r && dyBody >= -12 && dyBody <= 18) {
-          pr.hitTargets.push(t.id)
-          if (pr.explosive) {
-            this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr)
-            hit = true
-          } else {
-            this.damage(t, Math.round(pr.damage), pr, false, false)
-            t.vel.x += pr.vel.x * 0.09
-            t.vel.y += pr.vel.y * 0.09
-            if (!pr.pierceAll) hit = true
-          }
-          if (hit) break
-        }
-      }
-      if (hit) { pr.life = 0; continue }
+      const dx = pr.vel.x * dt
+      const dy = pr.vel.y * dt
+      const dist = Math.hypot(dx, dy)
+      const steps = Math.max(1, Math.ceil(dist / SUBSTEP_PX))
+      const sx = dx / steps
+      const sy = dy / steps
+      let dead = false
 
-      // B. 可破坏障碍物
-      const ob = this.obstacleAt(pr.pos.x, pr.pos.y, pr.r)
-      if (ob) {
-        if (pr.explosive) {
-          this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr)
-          hit = true
-        } else {
-          this.damageObstacle(ob, pr.damage, pr)
-          if (!pr.pierceAll) hit = true
+      for (let step = 0; step < steps; step++) {
+        const prevX = pr.pos.x
+        const prevY = pr.pos.y
+        pr.pos.x = wrapX(pr.pos.x + sx)
+        pr.pos.y = wrapY(pr.pos.y + sy)
+
+        // A. 玩家（头/躯干，爆头穿透）
+        let hit = false
+        for (const t of this.players) {
+          if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue
+          if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== 'ffa') continue
+          const dxHead = wrapDeltaX(t.pos.x, pr.pos.x)
+          const dyHead = wrapDeltaY(t.pos.y - 24, pr.pos.y)
+          if (Math.hypot(dxHead, dyHead) <= this.config.headRadius + pr.r) {
+            pr.hitTargets.push(t.id)
+            const piercing = pr.pierceOnHeadshot || pr.pierceAll
+            if (pr.explosive) {
+              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult, 960, pr)
+              hit = true
+            } else {
+              this.damage(t, Math.round(pr.damage * pr.headshotMult), pr, true, piercing)
+              t.vel.x += pr.vel.x * 0.12
+              t.vel.y += pr.vel.y * 0.12 - 72
+              if (!piercing) hit = true
+            }
+            if (hit) break
+            continue
+          }
+          const dxBody = Math.abs(wrapDeltaX(t.pos.x, pr.pos.x))
+          const dyBody = wrapDeltaY(t.pos.y, pr.pos.y)
+          if (dxBody <= 13 + pr.r && dyBody >= -12 && dyBody <= 18) {
+            pr.hitTargets.push(t.id)
+            if (pr.explosive) {
+              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr)
+              hit = true
+            } else {
+              this.damage(t, Math.round(pr.damage), pr, false, false)
+              t.vel.x += pr.vel.x * 0.09
+              t.vel.y += pr.vel.y * 0.09
+              if (!pr.pierceAll) hit = true
+            }
+            if (hit) break
+          }
         }
-        if (hit) { pr.life = 0; continue }
+        if (hit) { dead = true; break }
+
+        // B. 可破坏障碍物
+        const ob = this.obstacleAt(pr.pos.x, pr.pos.y, pr.r)
+        if (ob) {
+          if (pr.explosive) {
+            this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr)
+            dead = true
+          } else {
+            this.damageObstacle(ob, pr.damage, pr)
+            if (!pr.pierceAll) dead = true
+          }
+          if (dead) break
+        }
+
+        // C. 原始地形：引力弹穿墙；激光反弹；其余湮灭
+        if (this.terrain.isSolidAt(pr.pos.x, pr.pos.y)) {
+          if (pr.passWalls) continue
+          if (pr.explosive) {
+            this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr)
+            dead = true
+            break
+          }
+          if (pr.bounces > 0) {
+            const hitX = this.terrain.isSolidAt(pr.pos.x, prevY)
+            const hitY = this.terrain.isSolidAt(prevX, pr.pos.y)
+            pr.pos = { x: prevX, y: prevY }
+            if (hitX) pr.vel.x = -pr.vel.x
+            if (hitY) pr.vel.y = -pr.vel.y
+            if (!hitX && !hitY) { pr.vel.x = -pr.vel.x; pr.vel.y = -pr.vel.y }
+            pr.bounces--
+            pr.hitTargets = [pr.owner]
+            break   // 本 tick 剩余子步作废，下 tick 继续反射后的方向
+          }
+          dead = true
+          break
+        }
       }
 
-      // C. 原始地形：激光枪撞墙反弹一次（反弹后重置命中列表，可再次命中目标）
-      if (this.terrain.isSolidAt(pr.pos.x, pr.pos.y)) {
-        if (pr.explosive) {
-          this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr)
-          pr.life = 0
-          continue
-        }
-        if (pr.bounces > 0) {
-          const hitX = this.terrain.isSolidAt(pr.pos.x, prevY)   // 横向撞墙
-          const hitY = this.terrain.isSolidAt(prevX, pr.pos.y)   // 纵向撞地/顶
-          pr.pos = { x: prevX, y: prevY }
-          if (hitX) pr.vel.x = -pr.vel.x
-          if (hitY) pr.vel.y = -pr.vel.y
-          if (!hitX && !hitY) { pr.vel.x = -pr.vel.x; pr.vel.y = -pr.vel.y }
-          pr.bounces--
-          pr.hitTargets = [pr.owner]
-          continue
-        }
-        pr.life = 0
-        continue
-      }
+      if (dead) pr.life = 0
     }
   }
 

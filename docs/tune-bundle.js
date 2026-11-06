@@ -15,11 +15,11 @@
     jetpackMaxUp: 280,
     // 用户调优值：升空速度上限（短促小跳手感）
     jetpackFuel: 0.5,
-    // 用户调优值：满能量只够喷 1s（drain 0.5）
+    // 满能量只够喷 1s（drain 0.5）
     jetpackDrain: 0.5,
-    // 用户调优值
-    jetpackRecharge: 0.2
-    // 用户调优值：回满需 2.5s（短喷长充）
+    // 满槽 1s 用尽
+    jetpackRecharge: 0.35
+    // 落地回充：约 1.43s 回满（空中不回充）
   };
   var P = { ...defaults };
   function getPhysicsParams() {
@@ -46,8 +46,8 @@
   function jetpack(v, dt) {
     v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel / P.mass * dt);
   }
-  function updateJetpackFuel(fuel, active, dt) {
-    const next = active ? fuel - P.jetpackDrain * dt : fuel + P.jetpackRecharge * dt;
+  function updateJetpackFuel(fuel, active, onGround, dt) {
+    const next = active ? fuel - P.jetpackDrain * dt : onGround ? fuel + P.jetpackRecharge * dt : fuel;
     return Math.min(P.jetpackFuel, Math.max(0, next));
   }
 
@@ -255,11 +255,11 @@
       name: "\u63A8\u8FDB\u9730\u5F39\u67AA",
       shortName: "\u9730\u5F39\u67AA",
       isSupplyOnly: false,
-      damage: 14,
+      damage: 16,
       headshotMult: 1.8,
       pellets: 8,
       spread: 0.28,
-      speed: 920,
+      speed: 1e3,
       recoil: 780,
       magSize: 6,
       maxReserve: 30,
@@ -276,11 +276,11 @@
       name: "\u8109\u51B2\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 18,
+      damage: 19,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
-      speed: 1160,
+      speed: 1250,
       recoil: 84,
       magSize: 28,
       maxReserve: 140,
@@ -297,11 +297,11 @@
       name: "\u7535\u78C1\u72D9\u51FB\u6B65\u67AA",
       shortName: "\u7535\u78C1\u72D9\u51FB",
       isSupplyOnly: false,
-      damage: 64,
+      damage: 68,
       headshotMult: 2.5,
       pellets: 1,
       spread: 3e-3,
-      speed: 1900,
+      speed: 2e3,
       recoil: 390,
       magSize: 5,
       maxReserve: 25,
@@ -319,11 +319,11 @@
       name: "\u91CD\u578B\u69B4\u5F39\u70AE",
       shortName: "\u69B4\u5F39\u70AE",
       isSupplyOnly: false,
-      damage: 66,
+      damage: 68,
       headshotMult: 1.5,
       pellets: 1,
       spread: 0.025,
-      speed: 900,
+      speed: 950,
       recoil: 510,
       magSize: 4,
       maxReserve: 20,
@@ -341,11 +341,11 @@
       name: "\u26A1 \u805A\u53D8\u6FC0\u5149\u70AE",
       shortName: "\u6FC0\u5149\u70AE",
       isSupplyOnly: true,
-      damage: 38,
+      damage: 50,
       headshotMult: 2,
       pellets: 1,
       spread: 1e-3,
-      speed: 2350,
+      speed: 3e3,
       recoil: 150,
       magSize: 12,
       maxReserve: 24,
@@ -356,7 +356,8 @@
       laser: true,
       pierceAll: true,
       pierceOnHeadshot: true,
-      bounces: 1,
+      bounces: 2,
+      beam: true,
       fovMult: 1.15,
       color: "#22d3ee"
     },
@@ -365,11 +366,11 @@
       name: "\u{1F525} \u91CD\u88C5\u52A0\u7279\u6797",
       shortName: "\u52A0\u7279\u6797",
       isSupplyOnly: true,
-      damage: 13,
+      damage: 14,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
-      speed: 1240,
+      speed: 1300,
       recoil: 66,
       magSize: 90,
       maxReserve: 180,
@@ -386,11 +387,11 @@
       name: "\u{1F300} \u5947\u70B9\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 48,
+      damage: 52,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
-      speed: 780,
+      speed: 900,
       recoil: 240,
       magSize: 6,
       maxReserve: 18,
@@ -400,6 +401,7 @@
       explosive: true,
       isGravityOrb: true,
       gravityScale: 0.08,
+      passWalls: true,
       pierceOnHeadshot: false,
       fovMult: 1.1,
       color: "#a855f7"
@@ -748,7 +750,7 @@
       const canJet = w.jetpack && fuel > 0;
       if (canJet) jetpack(p.vel, dt);
       p.jetpack = canJet;
-      p.fuel = updateJetpackFuel(fuel, w.jetpack, dt);
+      p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt);
       if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt);
       if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt);
       if (p.shieldTimer > 0) {
@@ -776,6 +778,12 @@
       if (p.doll) {
         p.doll.timer -= dt;
         if (p.doll.timer <= 0) this.recallDoll(p, "doll_recall");
+      }
+      const mountedNow = this.mortars.find((m) => m.operatorId === p.id);
+      if (mountedNow) {
+        let a = p.aim;
+        if (a > -0.12) a = a < Math.PI * 0.5 ? -0.12 : -Math.PI + 0.12;
+        mountedNow.angle = a;
       }
       if (w.interact) this.interact(p);
       if (w.secondary) this.useSecondary(p, w.secondary, dt);
@@ -828,6 +836,8 @@
           pierceAll: !!wep.pierceAll,
           isGravityOrb: !!wep.isGravityOrb,
           bounces: wep.bounces ?? 0,
+          passWalls: !!wep.passWalls,
+          beam: !!wep.beam,
           weaponLabel: wep.shortName,
           color: wep.color,
           r: wep.isGravityOrb ? 8.5 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
@@ -852,6 +862,8 @@
         pierceAll: !!o.pierceAll,
         isGravityOrb: !!o.isGravityOrb,
         bounces: o.bounces ?? 0,
+        passWalls: !!o.passWalls,
+        beam: !!o.beam,
         weaponLabel: o.weaponLabel,
         color: o.color,
         hitTargets: [p.id]
@@ -1068,108 +1080,119 @@
       return !!p.onGround;
     }
     // ── 弹道 ──────────────────────────────────────────────
+    // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
+    // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
     stepProjectiles(dt) {
-      const g = 1250;
+      const g = getPhysicsParams().gravity;
+      const SUBSTEP_PX = 8;
       for (const pr of this.projectiles) {
         if (pr.life <= 0) continue;
         if (pr.isGravityOrb) {
           for (const t of this.players) {
             if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue;
-            const dx = wrapDeltaX(t.pos.x, pr.pos.x);
-            const dy = wrapDeltaY(t.pos.y - 12, pr.pos.y);
-            const d = Math.hypot(dx, dy);
+            const dx2 = wrapDeltaX(t.pos.x, pr.pos.x);
+            const dy2 = wrapDeltaY(t.pos.y - 12, pr.pos.y);
+            const d = Math.hypot(dx2, dy2);
             if (d < 190 && d > 8) {
               const pull = (1 - d / 190) * 620 * dt;
-              t.vel.x += dx / d * pull;
-              t.vel.y -= dy / d * pull;
+              t.vel.x += dx2 / d * pull;
+              t.vel.y -= dy2 / d * pull;
             }
           }
         }
         pr.vel.y += g * pr.gravityScale * dt;
-        const prevX = pr.pos.x;
-        const prevY = pr.pos.y;
-        pr.pos.x = wrapX(pr.pos.x + pr.vel.x * dt);
-        pr.pos.y = wrapY(pr.pos.y + pr.vel.y * dt);
         pr.life -= dt;
         if (pr.life <= 0) continue;
-        let hit = false;
-        for (const t of this.players) {
-          if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue;
-          if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== "ffa") continue;
-          const dxHead = wrapDeltaX(t.pos.x, pr.pos.x);
-          const dyHead = wrapDeltaY(t.pos.y - 24, pr.pos.y);
-          if (Math.hypot(dxHead, dyHead) <= this.config.headRadius + pr.r) {
-            pr.hitTargets.push(t.id);
-            const piercing = pr.pierceOnHeadshot || pr.pierceAll;
-            if (pr.explosive) {
-              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult, 960, pr);
-              hit = true;
-            } else {
-              this.damage(t, Math.round(pr.damage * pr.headshotMult), pr, true, piercing);
-              t.vel.x += pr.vel.x * 0.12;
-              t.vel.y += pr.vel.y * 0.12 - 72;
-              if (!piercing) hit = true;
+        const dx = pr.vel.x * dt;
+        const dy = pr.vel.y * dt;
+        const dist = Math.hypot(dx, dy);
+        const steps = Math.max(1, Math.ceil(dist / SUBSTEP_PX));
+        const sx = dx / steps;
+        const sy = dy / steps;
+        let dead = false;
+        for (let step = 0; step < steps; step++) {
+          const prevX = pr.pos.x;
+          const prevY = pr.pos.y;
+          pr.pos.x = wrapX(pr.pos.x + sx);
+          pr.pos.y = wrapY(pr.pos.y + sy);
+          let hit = false;
+          for (const t of this.players) {
+            if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue;
+            if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== "ffa") continue;
+            const dxHead = wrapDeltaX(t.pos.x, pr.pos.x);
+            const dyHead = wrapDeltaY(t.pos.y - 24, pr.pos.y);
+            if (Math.hypot(dxHead, dyHead) <= this.config.headRadius + pr.r) {
+              pr.hitTargets.push(t.id);
+              const piercing = pr.pierceOnHeadshot || pr.pierceAll;
+              if (pr.explosive) {
+                this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult, 960, pr);
+                hit = true;
+              } else {
+                this.damage(t, Math.round(pr.damage * pr.headshotMult), pr, true, piercing);
+                t.vel.x += pr.vel.x * 0.12;
+                t.vel.y += pr.vel.y * 0.12 - 72;
+                if (!piercing) hit = true;
+              }
+              if (hit) break;
+              continue;
             }
-            if (hit) break;
-            continue;
-          }
-          const dxBody = Math.abs(wrapDeltaX(t.pos.x, pr.pos.x));
-          const dyBody = wrapDeltaY(t.pos.y, pr.pos.y);
-          if (dxBody <= 13 + pr.r && dyBody >= -12 && dyBody <= 18) {
-            pr.hitTargets.push(t.id);
-            if (pr.explosive) {
-              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr);
-              hit = true;
-            } else {
-              this.damage(t, Math.round(pr.damage), pr, false, false);
-              t.vel.x += pr.vel.x * 0.09;
-              t.vel.y += pr.vel.y * 0.09;
-              if (!pr.pierceAll) hit = true;
+            const dxBody = Math.abs(wrapDeltaX(t.pos.x, pr.pos.x));
+            const dyBody = wrapDeltaY(t.pos.y, pr.pos.y);
+            if (dxBody <= 13 + pr.r && dyBody >= -12 && dyBody <= 18) {
+              pr.hitTargets.push(t.id);
+              if (pr.explosive) {
+                this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr);
+                hit = true;
+              } else {
+                this.damage(t, Math.round(pr.damage), pr, false, false);
+                t.vel.x += pr.vel.x * 0.09;
+                t.vel.y += pr.vel.y * 0.09;
+                if (!pr.pierceAll) hit = true;
+              }
+              if (hit) break;
             }
-            if (hit) break;
-          }
-        }
-        if (hit) {
-          pr.life = 0;
-          continue;
-        }
-        const ob = this.obstacleAt(pr.pos.x, pr.pos.y, pr.r);
-        if (ob) {
-          if (pr.explosive) {
-            this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr);
-            hit = true;
-          } else {
-            this.damageObstacle(ob, pr.damage, pr);
-            if (!pr.pierceAll) hit = true;
           }
           if (hit) {
-            pr.life = 0;
-            continue;
+            dead = true;
+            break;
           }
-        }
-        if (this.terrain.isSolidAt(pr.pos.x, pr.pos.y)) {
-          if (pr.explosive) {
-            this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr);
-            pr.life = 0;
-            continue;
-          }
-          if (pr.bounces > 0) {
-            const hitX = this.terrain.isSolidAt(pr.pos.x, prevY);
-            const hitY = this.terrain.isSolidAt(prevX, pr.pos.y);
-            pr.pos = { x: prevX, y: prevY };
-            if (hitX) pr.vel.x = -pr.vel.x;
-            if (hitY) pr.vel.y = -pr.vel.y;
-            if (!hitX && !hitY) {
-              pr.vel.x = -pr.vel.x;
-              pr.vel.y = -pr.vel.y;
+          const ob = this.obstacleAt(pr.pos.x, pr.pos.y, pr.r);
+          if (ob) {
+            if (pr.explosive) {
+              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr);
+              dead = true;
+            } else {
+              this.damageObstacle(ob, pr.damage, pr);
+              if (!pr.pierceAll) dead = true;
             }
-            pr.bounces--;
-            pr.hitTargets = [pr.owner];
-            continue;
+            if (dead) break;
           }
-          pr.life = 0;
-          continue;
+          if (this.terrain.isSolidAt(pr.pos.x, pr.pos.y)) {
+            if (pr.passWalls) continue;
+            if (pr.explosive) {
+              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr);
+              dead = true;
+              break;
+            }
+            if (pr.bounces > 0) {
+              const hitX = this.terrain.isSolidAt(pr.pos.x, prevY);
+              const hitY = this.terrain.isSolidAt(prevX, pr.pos.y);
+              pr.pos = { x: prevX, y: prevY };
+              if (hitX) pr.vel.x = -pr.vel.x;
+              if (hitY) pr.vel.y = -pr.vel.y;
+              if (!hitX && !hitY) {
+                pr.vel.x = -pr.vel.x;
+                pr.vel.y = -pr.vel.y;
+              }
+              pr.bounces--;
+              pr.hitTargets = [pr.owner];
+              break;
+            }
+            dead = true;
+            break;
+          }
         }
+        if (dead) pr.life = 0;
       }
     }
     ownerTeamOf(id) {

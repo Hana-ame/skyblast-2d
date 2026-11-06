@@ -27,9 +27,9 @@ const defaults: PhysicsParams = {
   maxFall: 1200,
   jetpackAccel: 3000,    // 用户调优值：净加速 (3000-1250)/1.3 ≈ 1346/s → 约 0.21s 预热到极速
   jetpackMaxUp: 280,     // 用户调优值：升空速度上限（短促小跳手感）
-  jetpackFuel: 0.5,      // 用户调优值：满能量只够喷 1s（drain 0.5）
-  jetpackDrain: 0.5,     // 用户调优值
-  jetpackRecharge: 0.2,  // 用户调优值：回满需 2.5s（短喷长充）
+  jetpackFuel: 0.5,      // 满能量只够喷 1s（drain 0.5）
+  jetpackDrain: 0.5,     // 满槽 1s 用尽
+  jetpackRecharge: 0.35, // 落地回充：约 1.43s 回满（空中不回充）
 }
 
 let P: PhysicsParams = { ...defaults }
@@ -73,9 +73,12 @@ export function jetpack(v: Vec2, dt: number): void {
   v.y = Math.max(-P.jetpackMaxUp, v.y - (P.jetpackAccel / P.mass) * dt)
 }
 
-/** 喷射器燃料更新：active 时按 drain 消耗，否则按 recharge 回充；夹到 [0, jetpackFuel] */
-export function updateJetpackFuel(fuel: number, active: boolean, dt: number): number {
-  const next = active ? fuel - P.jetpackDrain * dt : fuel + P.jetpackRecharge * dt
+/** 喷射器燃料更新：active 时按 drain 消耗；**仅在落地时**按 recharge 回充；
+ *  空中不回充 → 修复「断续点按 W 无限飞」的漏洞（此前空中也在回充，占空比足够就永动） */
+export function updateJetpackFuel(fuel: number, active: boolean, onGround: boolean, dt: number): number {
+  const next = active
+    ? fuel - P.jetpackDrain * dt
+    : (onGround ? fuel + P.jetpackRecharge * dt : fuel)
   return Math.min(P.jetpackFuel, Math.max(0, next))
 }
 

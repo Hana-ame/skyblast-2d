@@ -309,6 +309,15 @@ SkyBlast v2 是"每帧像素 @60fps"（隐含 60Hz）。本骨架是秒制：
   反弹后 `hitTargets` 重置为仅排除发射者。
 - **数值**：弹速 4–13% 下压、伤害小幅下调（见 README 数值表）；狙击爆头仍一枪。
 
-### 10.6 尚未完成（设计位）
+### 10.6 2026-11-07 操作与平衡修正
+
+- **弹道子步进**：`stepProjectiles` 按 ≤8px 子步推进 + 逐子步碰撞（高速弹不穿 20px 墙砖）；激光 `bounces=2`，每次反弹重置 `hitTargets`。
+- **引力弹穿墙**：`WeaponDef.passWalls` → `Projectile.passWalls`，忽略原始地形碰撞（仅玩家/障碍物/寿命）。
+- **激光光束**：`weapon.beam` → 渲染为速度方向 150px 光束（非圆点）；数值 3000px/s、50 伤害。
+- **迫击炮**：操控时 `mortar.angle = clamp(player.aim, 上半圆)`；渲染加虚线瞄准线 + 落点预示圈。
+- **喷射燃料**：`updateJetpackFuel(fuel, active, onGround, dt)`——空中不回充，落地按 recharge 回充（修复断续按 W 永动）。
+- **AI 队伍过滤**：`pickBotTarget` 只选不同队伍目标（FFA 除外）。
+
+### 10.7 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

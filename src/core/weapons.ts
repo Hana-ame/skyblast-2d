@@ -21,7 +21,9 @@ export interface WeaponDef {
   pierceOnHeadshot?: boolean
   pierceAll?: boolean
   gravityScale?: number    // 弹道重力缩放（0=直线）
-  bounces?: number         // 撞墙反弹次数（激光 1 次）
+  bounces?: number         // 撞墙反弹次数（激光 2 次）
+  passWalls?: boolean      // 穿透原始地形（引力弹）
+  beam?: boolean           // 渲染为光束（激光）
   isGravityOrb?: boolean
   fovMult?: number
   color: string
@@ -41,52 +43,52 @@ export interface SecondaryDef {
 export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '推进霰弹枪', shortName: '霰弹枪', isSupplyOnly: false,
-    damage: 14, headshotMult: 1.8, pellets: 8, spread: 0.28,
-    speed: 920, recoil: 780, magSize: 6, maxReserve: 30,
+    damage: 16, headshotMult: 1.8, pellets: 8, spread: 0.28,
+    speed: 1000, recoil: 780, magSize: 6, maxReserve: 30,
     reloadTime: 1.5, fireDelay: 0.50, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, fovMult: 1.0, color: '#fbbf24',
   },
   {
     id: 1, name: '脉冲突击步枪', shortName: '突击步枪', isSupplyOnly: false,
-    damage: 18, headshotMult: 2.2, pellets: 1, spread: 0.045,
-    speed: 1160, recoil: 84, magSize: 28, maxReserve: 140,
+    damage: 19, headshotMult: 2.2, pellets: 1, spread: 0.045,
+    speed: 1250, recoil: 84, magSize: 28, maxReserve: 140,
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, fovMult: 1.0, color: '#38bdf8',
   },
   {
     id: 2, name: '电磁狙击步枪', shortName: '电磁狙击', isSupplyOnly: false,
-    damage: 64, headshotMult: 2.5, pellets: 1, spread: 0.003,
-    speed: 1900, recoil: 390, magSize: 5, maxReserve: 25,
+    damage: 68, headshotMult: 2.5, pellets: 1, spread: 0.003,
+    speed: 2000, recoil: 390, magSize: 5, maxReserve: 25,
     reloadTime: 2.3, fireDelay: 0.92, terrainRadius: 16,
     explosive: false, laser: true, pierceOnHeadshot: true, fovMult: 1.30, color: '#c084fc',
   },
   {
     id: 3, name: '重型榴弹炮', shortName: '榴弹炮', isSupplyOnly: false,
-    damage: 66, headshotMult: 1.5, pellets: 1, spread: 0.025,
-    speed: 900, recoil: 510, magSize: 4, maxReserve: 20,
+    damage: 68, headshotMult: 1.5, pellets: 1, spread: 0.025,
+    speed: 950, recoil: 510, magSize: 4, maxReserve: 20,
     reloadTime: 2.4, fireDelay: 0.75, terrainRadius: 72,
     explosive: true, gravityScale: 0.45, pierceOnHeadshot: false, fovMult: 1.0, color: '#fb7185',
   },
   {
     id: 4, name: '⚡ 聚变激光炮', shortName: '激光炮', isSupplyOnly: true,
-    damage: 38, headshotMult: 2.0, pellets: 1, spread: 0.001,
-    speed: 2350, recoil: 150, magSize: 12, maxReserve: 24,
+    damage: 50, headshotMult: 2.0, pellets: 1, spread: 0.001,
+    speed: 3000, recoil: 150, magSize: 12, maxReserve: 24,
     reloadTime: 2.0, fireDelay: 0.26, terrainRadius: 18,
-    explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 1, fovMult: 1.15, color: '#22d3ee',
+    explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 2, beam: true, fovMult: 1.15, color: '#22d3ee',
   },
   {
     id: 5, name: '🔥 重装加特林', shortName: '加特林', isSupplyOnly: true,
-    damage: 13, headshotMult: 1.8, pellets: 1, spread: 0.11,
-    speed: 1240, recoil: 66, magSize: 90, maxReserve: 180,
+    damage: 14, headshotMult: 1.8, pellets: 1, spread: 0.11,
+    speed: 1300, recoil: 66, magSize: 90, maxReserve: 180,
     reloadTime: 2.8, fireDelay: 0.055, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, fovMult: 1.0, color: '#f97316',
   },
   {
     id: 6, name: '🌀 奇点引力枪', shortName: '引力枪', isSupplyOnly: true,
-    damage: 48, headshotMult: 1.6, pellets: 1, spread: 0.01,
-    speed: 780, recoil: 240, magSize: 6, maxReserve: 18,
+    damage: 52, headshotMult: 1.6, pellets: 1, spread: 0.01,
+    speed: 900, recoil: 240, magSize: 6, maxReserve: 18,
     reloadTime: 2.2, fireDelay: 0.68, terrainRadius: 95,
-    explosive: true, isGravityOrb: true, gravityScale: 0.08, pierceOnHeadshot: false, fovMult: 1.1, color: '#a855f7',
+    explosive: true, isGravityOrb: true, gravityScale: 0.08, passWalls: true, pierceOnHeadshot: false, fovMult: 1.1, color: '#a855f7',
   },
 ]
 

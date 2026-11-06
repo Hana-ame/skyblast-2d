@@ -703,6 +703,48 @@ function renderScene(): void {
     ctx.restore()
   }
 
+  // 10.5 迫击炮瞄准线 + 鼠标准星
+  const mountedNow = world.mortars.find(m => m.operatorId === localPlayer.id)
+  if (mountedNow) {
+    const mx = sx(mountedNow.x)
+    const my = sy(mountedNow.y)
+    const aimLen = 420
+    ctx.save()
+    ctx.setLineDash([10, 8])
+    ctx.strokeStyle = 'rgba(251, 146, 60, 0.75)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(mx + Math.cos(mountedNow.angle) * 30, my - 18 + Math.sin(mountedNow.angle) * 30)
+    ctx.lineTo(mx + Math.cos(mountedNow.angle) * aimLen, my - 18 + Math.sin(mountedNow.angle) * aimLen)
+    ctx.stroke()
+    ctx.setLineDash([])
+    // 落点预示（抛物线近似）
+    ctx.strokeStyle = 'rgba(251, 146, 60, 0.5)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(mx + Math.cos(mountedNow.angle) * aimLen, my - 18 + Math.sin(mountedNow.angle) * aimLen, 26, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+  // 鼠标准星（世界坐标 → 屏幕）
+  {
+    const mx = sx(mouse.worldX)
+    const my = sy(mouse.worldY)
+    if (mx > -40 && mx < canvas.width + 40 && my > -40 && my < canvas.height + 40) {
+      ctx.save()
+      ctx.strokeStyle = mountedNow ? 'rgba(251, 146, 60, 0.95)' : 'rgba(255, 255, 255, 0.8)'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(mx - 9, my); ctx.lineTo(mx - 3, my)
+      ctx.moveTo(mx + 3, my); ctx.lineTo(mx + 9, my)
+      ctx.moveTo(mx, my - 9); ctx.lineTo(mx, my - 3)
+      ctx.moveTo(mx, my + 3); ctx.lineTo(mx, my + 9)
+      ctx.stroke()
+      ctx.beginPath(); ctx.arc(mx, my, 2, 0, Math.PI * 2); ctx.stroke()
+      ctx.restore()
+    }
+  }
+
   // 11. 动态阴影（瞭望塔视野激活时不遮）
   if (localPlayer.watchtowerTimer <= 0) {
     for (const sz of world.terrain.shadows) {
@@ -728,9 +770,38 @@ function renderScene(): void {
   for (const pr of world.projectiles) {
     const px = sx(pr.pos.x)
     const py = sy(pr.pos.y)
-    if (!inView(px, py)) continue
-    ctx.fillStyle = pr.color || '#fbbf24'
-    ctx.beginPath(); ctx.arc(px, py, pr.r, 0, Math.PI * 2); ctx.fill()
+    if (!inView(px, py, 200)) continue
+    if (pr.beam) {
+      // 激光：沿速度方向画一段光束（不是圆点子弹）
+      const spd = Math.hypot(pr.vel.x, pr.vel.y) || 1
+      const len = 150
+      const ex = px - (pr.vel.x / spd) * len
+      const ey = py - (pr.vel.y / spd) * len
+      ctx.save()
+      ctx.globalAlpha = 0.85
+      ctx.strokeStyle = pr.color || '#22d3ee'
+      ctx.lineWidth = 6
+      ctx.lineCap = 'round'
+      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(px, py); ctx.stroke()
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2
+      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(px, py); ctx.stroke()
+      ctx.restore()
+    } else if (pr.isGravityOrb) {
+      ctx.save()
+      const grd = ctx.createRadialGradient(px, py, 2, px, py, 22)
+      grd.addColorStop(0, 'rgba(168, 85, 247, 0.9)')
+      grd.addColorStop(1, 'rgba(168, 85, 247, 0)')
+      ctx.fillStyle = grd
+      ctx.beginPath(); ctx.arc(px, py, 22, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#e9d5ff'
+      ctx.beginPath(); ctx.arc(px, py, pr.r, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+    } else {
+      ctx.fillStyle = pr.color || '#fbbf24'
+      ctx.beginPath(); ctx.arc(px, py, pr.r, 0, Math.PI * 2); ctx.fill()
+    }
   }
   for (const st of world.airstrikes) {
     const ax = sx(st.pos.x)
@@ -1021,15 +1092,22 @@ function bindAllEvents(): void {
 }
 
 // ── AI 输入（服务器权威） ──
-function botInput(bot: PlayerState): WorldInput {
-  const w = defaultWorldInput()
-  const enemies = [localPlayer, ...bots.filter(b => b !== bot)].filter(e => e.deployed && e.alive && e.respawnTimer <= 0)
+/** 目标选择：只选不同队伍（ffa 除外）——修复"AI 打同队队友" */
+function pickBotTarget(bot: PlayerState): PlayerState | null {
+  const enemies = [localPlayer, ...bots.filter(b => b !== bot)].filter(e =>
+    e.deployed && e.alive && e.respawnTimer <= 0 && (bot.team === 'ffa' || e.team !== bot.team))
   let target: PlayerState | null = null
   let best = Infinity
   for (const e of enemies) {
     const d = wrapDist(bot.pos.x, bot.pos.y, e.pos.x, e.pos.y)
     if (d < best) { best = d; target = e }
   }
+  return target
+}
+
+function botInput(bot: PlayerState): WorldInput {
+  const w = defaultWorldInput()
+  const target = pickBotTarget(bot)
   if (!target) return w
   const dx = wrapDeltaX(bot.pos.x, target.pos.x)
   const dy = wrapDeltaY(bot.pos.y - 12, target.pos.y - 12)
@@ -1156,6 +1234,7 @@ requestAnimationFrame(gameLoop)
   syncBotsCount,
   applyPendingLoadoutAndSpawn,
   get touch() { return touchState },
+  botTargets: () => bots.map(b => ({ bot: b.name, team: b.team, target: pickBotTarget(b)?.name ?? null, targetTeam: pickBotTarget(b)?.team ?? null })),
 }
 
 // 调参持久化（tuning 页共享）
