@@ -2,18 +2,18 @@
 import {
   ctx, canvas, camera, screenFx, world, localPlayer, effects, beams, mouse,
   worldStars, worldGlows,
-} from './app/context.ts'
-import { WEAPONS } from '../core/weapons.ts'
-import { getPhysicsParams } from '../core/sim/physics.ts'
-import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, clamp } from '../core/wrap.ts'
-import { JUMP_PADS } from '../core/sim/world.ts'
-import { getTerrainPattern, syncTerrainPatterns } from './textures.ts'
+} from '../app/context.ts'
+import { WEAPONS } from '../../core/weapons.ts'
+import { getPhysicsParams } from '../../core/sim/physics.ts'
+import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, clamp } from '../../core/wrap.ts'
+import { JUMP_PADS } from '../../core/sim/world.ts'
+import { getTerrainPattern, syncTerrainPatterns } from '../textures.ts'
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
   drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, drawMineSprite,
   drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, drawJumpPad,
   TEAM_PALETTE,
-} from './sprites.ts'
+} from '../sprites.ts'
 
 // ── 渲染：相机居中 + 双轴环形最短位移（跨缝自动走最近象限） ──
 const TEAM_COLOR: Record<string, string> = { red: '#f43f5e', blue: '#0ea5e9', green: '#10b981', ffa: '#eab308' }

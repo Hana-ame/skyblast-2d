@@ -117,13 +117,12 @@ main.ts  组合根：唯一接线点；web/main-web.ts 浏览器可玩入口（�
 src/core/       权威模拟：types / weapons / wrap / terrain / sim(world, physics) / noita
 src/input/      Intent 流：InputMapper → IntentBus
 src/net/        Transport（Loopback/PeerJS）+ ServerSim + StateSync
-src/web/        浏览器表现层：
-  main-web.ts     组合根（事件绑定/AI/主循环/启动）
-  app/context.ts  单一状态源（画布/相机/世界/输入/特效）
-  app/toast.ts    Toast / Killfeed
-  app/hud.ts      HUD / 配装按钮状态 / 记分板
-  app/events.ts   世界事件 → 表现层
-  render.ts       场景渲染
+src/web/        浏览器表现层（分类目录）：
+  main-web.ts     入口/组合根（52 行：装配 + 启动 + __dbg/__tune）
+  app/            context(状态源) / hud / toast / events / params
+  game/           loop(主循环) / bots(AI) / loadout(配装部署)
+  input/          bindings(所有 DOM 绑定) / device(设备检测)
+  render/         scene(场景渲染)
   sprites.ts / textures.ts / effects.ts / controls.ts / fullscreen.ts
 tests/           node --test（确定性/权威逻辑/网络/地图安全）
 ```

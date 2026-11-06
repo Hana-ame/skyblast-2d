@@ -742,3 +742,32 @@ test('弹射跳台：全部位于可站立地表、站立触发、空中经过�
   w2.step(DT, new Map([[q.id, input()]]))
   assert.ok(q.vel.y > -500, `no launch while airborne, vy=${q.vel.y.toFixed(0)}`)
 })
+
+
+test('工程化分层：入口仅装配、模块目录分类齐全、无反向依赖', async () => {
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const root = process.cwd()
+  const read = (rel: string) => fs.readFile(path.join(root, rel), 'utf8')
+  const webMain = await read('src/web/main-web.ts')
+  // 入口只做装配（≤120 行），负责启动循环与暴露调试/调参
+  assert.ok(webMain.split('\n').length <= 120, `main-web should stay small (${webMain.split('\n').length} lines)`)
+  assert.ok(webMain.includes('bindAllEvents') && webMain.includes('startGameLoop'), 'entry wires bindings + loop')
+  // 分类目录齐全
+  for (const f of [
+    'src/web/app/context.ts', 'src/web/app/hud.ts', 'src/web/app/toast.ts',
+    'src/web/app/events.ts', 'src/web/app/params.ts',
+    'src/web/game/bots.ts', 'src/web/game/loop.ts', 'src/web/game/loadout.ts',
+    'src/web/input/bindings.ts', 'src/web/input/device.ts',
+    'src/web/render/scene.ts',
+  ]) {
+    await fs.access(path.join(root, f))
+  }
+  // 模块不得反向 import 入口
+  for (const dir of ['src/web/app', 'src/web/game', 'src/web/input', 'src/web/render']) {
+    for (const f of await fs.readdir(path.join(root, dir))) {
+      const src = await fs.readFile(path.join(root, dir, f), 'utf8')
+      assert.ok(!src.includes('main-web.ts'), `${dir}/${f} must not import entry`)
+    }
+  }
+})

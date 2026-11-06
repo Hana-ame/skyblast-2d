@@ -397,6 +397,30 @@ src/web/
 不再有全局可变 `screenShake/pendingInteract/pendingSecondary` 散落——统一收敛到 `screenFx.shake` 与 `inputQueue`。
 验证：`tsc` 0 错、41/41 测试、`build:web` 195KB、浏览器冒烟（渲染采样/拾取激光→HUD 牌「激光」/死亡界面选狙→重生 weaponIndex=2/鼠标瞄准 0 与 -1.57/跳台 vy=-586）。
 
+**分类完成版（main-web 1407 → 52 行，仅装配）**：
+
+```
+src/web/
+├── main-web.ts          入口/组合根（52 行：装配 + 启动 + __dbg/__tune）
+├── app/                 应用状态与 UI 逻辑
+│   ├── context.ts       单一共享状态源
+│   ├── hud.ts           HUD / 只读武器牌 / 配装按钮态 / 记分板
+│   ├── toast.ts         Toast / Killfeed
+│   ├── events.ts        WorldEvent → 表现层
+│   └── params.ts        参数调校台（滑块绑定/回显）
+├── game/                游戏玩法编排
+│   ├── bots.ts          AI 数量/目标/输入
+│   ├── loop.ts          固定步长主循环 / 本机输入 / 阵亡重生
+│   └── loadout.ts       待部署配装 / 部署
+├── input/               输入层
+│   ├── bindings.ts      全部 DOM 事件绑定（键鼠/触屏/大厅/死亡界面）
+│   └── device.ts        设备检测 / 触屏层 / 设备徽章
+└── render/
+    └── scene.ts         场景渲染
+```
+
+新增架构测试（第 42 个）：入口 ≤120 行且装配 bindings+loop、11 个分类文件存在、app/game/input/render 任何文件不得反向 import 入口。
+
 ### 10.11 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。
