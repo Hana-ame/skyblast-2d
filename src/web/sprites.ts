@@ -429,11 +429,16 @@ export function drawTowerSprite(ctx: CanvasRenderingContext2D, tw: Watchtower, d
   const glow = 0.5 + Math.sin(tick * 0.08) * 0.3
   ctx.fillStyle = `rgba(250, 204, 21, ${glow})`
   ctx.beginPath(); ctx.arc(0, -h - 20, 10 + Math.sin(tick * 0.08) * 2, 0, Math.PI * 2); ctx.fill()
-  // 标签
+  // 标签（有人操控时高亮）
   ctx.font = 'bold 11px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillStyle = '#fef08a'
-  ctx.fillText(`🗼 ${tw.name} [E]`, 0, -h - 34)
+  if (tw.operatorId !== null) {
+    ctx.fillStyle = '#67e8f9'
+    ctx.fillText(`🗼 ${tw.name} · 观测中 200%`, 0, -h - 34)
+  } else {
+    ctx.fillStyle = '#fef08a'
+    ctx.fillText(`🗼 ${tw.name} [E]`, 0, -h - 34)
+  }
   ctx.restore()
 }
 

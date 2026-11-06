@@ -36,7 +36,8 @@ export interface PlayerState {
   // 战术状态
   shieldHp: number
   shieldTimer: number
-  watchtowerTimer: number
+  watchtowerTimer: number      // 旧 20s 加成（已废弃，保留下兼容）
+  mountedTowerId: string | null  // 正在操控的瞭望塔（上塔锁定，视野 200%，下塔即失效）
   warpCooldown: number
   doll: DollSnapshot | null   // 替身人偶锚（10s 生死回溯）
   dollCharges: number         // 替身人偶持有数（只从特殊补给箱获得）
@@ -168,7 +169,7 @@ export interface SupplyCrate {
   respawnTimer: number
 }
 
-export interface Watchtower { id: string; name: string; x: number; y: number }
+export interface Watchtower { id: string; name: string; x: number; y: number; operatorId: number | null }
 export interface Mortar { id: string; name: string; x: number; y: number; angle: number; power: number; cooldown: number; operatorId: number | null }
 export interface JumpPad { x: number; y: number; vx: number; vy: number }
 export interface WarpUse { x: number; y: number }   // 传送门特效事件（瞬态）

@@ -73,10 +73,10 @@ const MINE_PRESETS: { x: number; y: number }[] = [
 ]
 
 const WATCHTOWERS: Watchtower[] = [
-  { id: 'tower_1', name: '西部高空瞭望塔', x: 2580, y: 1620 },
-  { id: 'tower_2', name: '中央北塔瞭望台', x: 5840, y: 1600 },
-  { id: 'tower_3', name: '中央南塔瞭望台', x: 7360, y: 1600 },
-  { id: 'tower_4', name: '东部高空瞭望塔', x: 10580, y: 1620 },
+  { id: 'tower_1', name: '西部高空瞭望塔', x: 2580, y: 1620, operatorId: null },
+  { id: 'tower_2', name: '中央北塔瞭望台', x: 5840, y: 1600, operatorId: null },
+  { id: 'tower_3', name: '中央南塔瞭望台', x: 7360, y: 1600, operatorId: null },
+  { id: 'tower_4', name: '东部高空瞭望塔', x: 10580, y: 1620, operatorId: null },
 ]
 
 const WARP_PORTALS: WarpPortal[] = [
@@ -137,7 +137,7 @@ export class World {
   ammoPacks: AmmoPack[] = []
   supplyCrates: SupplyCrate[] = []
   mortars: Mortar[] = []
-  watchtowers: Watchtower[] = WATCHTOWERS
+  watchtowers: Watchtower[] = WATCHTOWERS.map(t => ({ ...t }))
   warpPortals: WarpPortal[] = WARP_PORTALS
   scores: Record<string, number> = { red: 0, blue: 0, green: 0, ffa: 0 }
   events: WorldEvent[] = []        // 每 tick 收集，net/ui 层取走（drainEvents）
@@ -170,6 +170,7 @@ export class World {
     this.obstacles = OBSTACLE_PRESETS.map(o => ({ ...o, maxHp: o.hp }))
     this.capturePoints = CP_INITS.map(c => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }))
     this.mortars = MORTARS_INIT.map(m => ({ ...m, cooldown: 0, operatorId: null }))
+    this.watchtowers = WATCHTOWERS.map(t => ({ ...t, operatorId: null }))
     this.landmines = MINE_PRESETS.map((m, i) => ({
       id: -(i + 1), owner: 0, pos: { x: m.x, y: m.y }, vel: { x: 0, y: 0 },
       armed: true, armTimer: 0, triggered: false, fuse: 0,
@@ -213,7 +214,7 @@ export class World {
       secondary: 'frag', secondaryCooldown: 0,
       fragCharges: DEFAULT_CONFIG.fragMaxCharges, fragRechargeTimer: 0,
       jetpack: false, fuel: getPhysicsParams().jetpackFuel,
-      shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0, warpCooldown: 0,
+      shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0, mountedTowerId: null, warpCooldown: 0,
       doll: null, dollCharges: 0, respawnTimer: 0,
       kills: 0, deaths: 0,
     }
@@ -253,6 +254,7 @@ export class World {
     p.shieldHp = 0
     p.shieldTimer = 0
     p.watchtowerTimer = 0
+    p.mountedTowerId = null
     p.warpCooldown = 0
     p.doll = null
     p.dollCharges = 0
@@ -333,13 +335,19 @@ export class World {
     }
 
     p.aim = w.aim
-    // 武器差异：重武器移动更慢（无惯性，直接给目标速度）
     const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
-    p.vel.x = w.move * getPhysicsParams().moveSpeed * (wepCur.moveSpeedMult ?? 1)
+    if (p.mountedTowerId) {
+      // 瞭望塔上：不可移动（锁定），只能瞄准/射击/互动
+      p.vel.x = 0
+      p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1))
+    } else {
+      // 武器差异：重武器移动更慢（无惯性，直接给目标速度）
+      p.vel.x = w.move * getPhysicsParams().moveSpeed * (wepCur.moveSpeedMult ?? 1)
+    }
     if (w.jump && this.onGround(p)) jump(p.vel)
     const fuelMax = getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1)
     const fuel = Math.min(p.fuel, fuelMax)
-    const canJet = w.jetpack && fuel > 0
+    const canJet = !p.mountedTowerId && w.jetpack && fuel > 0
     if (canJet) jetpack(p.vel, dt)
     p.jetpack = canJet
     p.fuel = Math.min(fuelMax, updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt))
@@ -631,11 +639,25 @@ export class World {
         return
       }
     }
-    // 战术瞭望塔：+65% 视野 20s
+    // 已在塔上 → 下塔（视野加成立即消失）
+    if (p.mountedTowerId) {
+      const tw = this.watchtowers.find(t => t.id === p.mountedTowerId)
+      if (tw) tw.operatorId = null
+      p.mountedTowerId = null
+      p.watchtowerTimer = 0
+      p.vel = { x: 0, y: -160 }   // 下塔后自然下落
+      this.events.push({ kind: 'warp', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: '离开瞭望塔' })
+      return
+    }
+    // 上塔：锁定在塔顶、不能移动、视野 200%
     for (const tw of this.watchtowers) {
-      if (wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 115) {
-        p.watchtowerTimer = this.config.watchtowerDuration
-        this.events.push({ kind: 'warp', x: tw.x, y: tw.y, playerId: p.id, weaponName: '瞭望塔视野' })
+      if (tw.operatorId === null && wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 130) {
+        tw.operatorId = p.id
+        p.mountedTowerId = tw.id
+        p.pos = { x: tw.x, y: tw.y - 150 + 12 }   // 塔顶平台
+        p.vel = { x: 0, y: 0 }
+        p.onGround = false
+        this.events.push({ kind: 'warp', x: tw.x, y: tw.y, playerId: p.id, weaponName: `登上${tw.name}（视野 200%）` })
         return
       }
     }
@@ -662,6 +684,16 @@ export class World {
       p.pos = { x: m.x, y: m.y - 16 }
       p.vel = { x: 0, y: 0 }
       return
+    }
+    // 瞭望塔上：锁定在塔顶平台
+    if (p.mountedTowerId) {
+      const tw = this.watchtowers.find(t => t.id === p.mountedTowerId)
+      if (tw) {
+        p.pos = { x: tw.x, y: tw.y - 150 + 12 }
+        p.vel = { x: 0, y: 0 }
+        p.onGround = false
+        return
+      }
     }
     // 与原来一致：上升加速由喷气推力渐变实现；下降加速按住下键 → 重力×1.55（原版数值）
     applyGravity(p.vel, dt, w.dive ? 1.55 : 1)

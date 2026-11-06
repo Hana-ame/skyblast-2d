@@ -512,3 +512,27 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
   w4.step(DT, new Map([[d2.id, input({ move: 0, dive: true })]]))
   assert.ok(Math.abs(d2.vel.x) < 1e-6, `no horizontal slide while diving (was ${vxFly})`)
 })
+
+
+test('瞭望塔：按 E 上塔锁定（不能移动）+ 下塔后视野加成消失；补给武器视野+30%', () => {
+  // FOV：狙击 + 三把补给特武都是 1.30
+  for (const id of [2, 4, 5, 6]) assert.equal(WEAPONS[id].fovMult, 1.30, `weapon ${id} +30% fov`)
+
+  const w = new World(81)
+  const p = w.addPlayer('P', 'ffa')
+  const tw = w.watchtowers[0]
+  p.pos = { x: tw.x, y: tw.y }
+  // 上塔
+  w.step(DT, new Map([[p.id, input({ interact: true })]]))
+  assert.equal(tw.operatorId, p.id, 'mounted tower')
+  assert.equal(p.mountedTowerId, tw.id, 'player mountedTowerId set')
+  assert.ok(Math.abs(p.pos.x - tw.x) < 1 && p.pos.y < tw.y, 'locked at tower top')
+  // 锁定：按住右移也不动
+  const x0 = p.pos.x
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ move: 1, jetpack: true })]]))
+  assert.ok(Math.abs(p.pos.x - x0) < 0.01, `cannot move while mounted, x=${p.pos.x}`)
+  // 下塔 → 加成消失
+  w.step(DT, new Map([[p.id, input({ interact: true })]]))
+  assert.equal(p.mountedTowerId, null, 'dismounted')
+  assert.equal(tw.operatorId, null, 'tower freed')
+})

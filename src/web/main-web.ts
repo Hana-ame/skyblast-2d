@@ -349,11 +349,12 @@ function updateHudUI(): void {
   }
   const fovBadge = document.getElementById('hudSniperFovBadge')
   if (fovBadge) {
-    if (localPlayer.watchtowerTimer > 0) {
-      fovBadge.textContent = `🗼 瞭望视野+65% (${localPlayer.watchtowerTimer.toFixed(0)}s)`
+    const wepForFov = WEAPONS[localPlayer.weaponIndex]
+    if (localPlayer.mountedTowerId) {
+      fovBadge.textContent = '🗼 瞭望视野 200%（按 E 下塔）'
       fovBadge.classList.remove('hidden')
-    } else if (localPlayer.weaponIndex === 2) {
-      fovBadge.textContent = '🔭 狙击视野+30%'
+    } else if ((wepForFov?.fovMult ?? 1) > 1.01) {
+      fovBadge.textContent = `🔭 ${wepForFov.shortName} 视野+30%`
       fovBadge.classList.remove('hidden')
     } else fovBadge.classList.add('hidden')
   }
@@ -430,10 +431,13 @@ function updateHudUI(): void {
         break
       }
     }
+    if (localPlayer.mountedTowerId) {
+      promptMsg = '🗼 瞭望塔上（视野 200%）：按 [E] 下塔，视野加成立即消失'
+    }
     if (!promptMsg) {
       for (const tw of world.watchtowers) {
-        if (wrapDist(localPlayer.pos.x, localPlayer.pos.y, tw.x, tw.y) < 115) {
-          promptMsg = `🗼 按 [E] 登上【${tw.name}】获取 +65% 全景视野`
+        if (tw.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, tw.x, tw.y) < 130) {
+          promptMsg = `🗼 按 [E] 登上【${tw.name}】（锁定 200% 视野，不能移动；下塔即失效）`
           break
         }
       }
@@ -485,8 +489,8 @@ function renderScene(): void {
   if (!ctx || !canvas) return
   const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
-  const targetFov = localPlayer.watchtowerTimer > 0
-    ? (world.config.watchtowerFovMult || 1.65)
+  const targetFov = localPlayer.mountedTowerId
+    ? 2.0   // 瞭望塔：视野 200%，下塔即失效
     : (mounted ? 1.0 : (wep.fovMult || 1.0))
   camera.fovFactor += (targetFov - camera.fovFactor) * 0.12
 
@@ -753,7 +757,7 @@ function renderScene(): void {
   }
 
   // 11. 动态阴影（瞭望塔视野激活时不遮）——同样按 ±WORLD 复制，修复接缝处漏光/缺遮
-  if (localPlayer.watchtowerTimer <= 0) {
+  if (!localPlayer.mountedTowerId) {
     for (const sz of world.terrain.shadows) {
       const cx0 = sx(sz.x + sz.w / 2)
       const cy0 = sy(sz.y + sz.h / 2)
@@ -1208,7 +1212,7 @@ function buildLocalInput(): WorldInput {
   const right = !!(keys['KeyD'] || keys['ArrowRight'])
   let move: -1 | 0 | 1 = left === right ? 0 : (left ? -1 : 1)
   if (touchState.moveActive && Math.abs(touchState.moveX) > 0.18) move = touchState.moveX > 0 ? 1 : -1
-  w.move = move
+  w.move = localPlayer.mountedTowerId ? 0 : move
   w.jetpack = !!(keys['KeyW'] || keys['Space'] || keys['ArrowUp']) || touchState.boostButtonDown || (touchState.moveActive && touchState.moveY < -0.32)
   // 下降加速：S / ↓ / 左摇杆下推；水平仍为零惯性（松手即停）
   w.dive = !!(keys['KeyS'] || keys['ArrowDown']) || (touchState.moveActive && touchState.moveY > 0.45)

@@ -478,7 +478,7 @@
       beam: true,
       moveSpeedMult: 0.95,
       fuelMult: 1,
-      fovMult: 1.15,
+      fovMult: 1.3,
       color: "#22d3ee"
     },
     {
@@ -501,7 +501,7 @@
       pierceOnHeadshot: false,
       moveSpeedMult: 0.78,
       fuelMult: 0.7,
-      fovMult: 1,
+      fovMult: 1.3,
       color: "#f97316"
     },
     {
@@ -527,7 +527,7 @@
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
       fuelMult: 0.8,
-      fovMult: 1.1,
+      fovMult: 1.3,
       color: "#a855f7"
     },
     {
@@ -655,10 +655,10 @@
     { x: 11420, y: 2760 }
   ];
   var WATCHTOWERS = [
-    { id: "tower_1", name: "\u897F\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 2580, y: 1620 },
-    { id: "tower_2", name: "\u4E2D\u592E\u5317\u5854\u77AD\u671B\u53F0", x: 5840, y: 1600 },
-    { id: "tower_3", name: "\u4E2D\u592E\u5357\u5854\u77AD\u671B\u53F0", x: 7360, y: 1600 },
-    { id: "tower_4", name: "\u4E1C\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 10580, y: 1620 }
+    { id: "tower_1", name: "\u897F\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 2580, y: 1620, operatorId: null },
+    { id: "tower_2", name: "\u4E2D\u592E\u5317\u5854\u77AD\u671B\u53F0", x: 5840, y: 1600, operatorId: null },
+    { id: "tower_3", name: "\u4E2D\u592E\u5357\u5854\u77AD\u671B\u53F0", x: 7360, y: 1600, operatorId: null },
+    { id: "tower_4", name: "\u4E1C\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 10580, y: 1620, operatorId: null }
   ];
   var WARP_PORTALS = [
     { id: "warp_1", name: "W1 \u897F\u7FFC\u5730\u8868\u4F20\u9001\u95E8", x: 880, y: 2760, targetId: "warp_2", color: "#06b6d4" },
@@ -721,7 +721,7 @@
     ammoPacks = [];
     supplyCrates = [];
     mortars = [];
-    watchtowers = WATCHTOWERS;
+    watchtowers = WATCHTOWERS.map((t) => ({ ...t }));
     warpPortals = WARP_PORTALS;
     scores = { red: 0, blue: 0, green: 0, ffa: 0 };
     events = [];
@@ -752,6 +752,7 @@
       this.obstacles = OBSTACLE_PRESETS.map((o) => ({ ...o, maxHp: o.hp }));
       this.capturePoints = CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
       this.mortars = MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
+      this.watchtowers = WATCHTOWERS.map((t) => ({ ...t, operatorId: null }));
       this.landmines = MINE_PRESETS.map((m, i) => ({
         id: -(i + 1),
         owner: 0,
@@ -833,6 +834,7 @@
         shieldHp: 0,
         shieldTimer: 0,
         watchtowerTimer: 0,
+        mountedTowerId: null,
         warpCooldown: 0,
         doll: null,
         dollCharges: 0,
@@ -873,6 +875,7 @@
       p.shieldHp = 0;
       p.shieldTimer = 0;
       p.watchtowerTimer = 0;
+      p.mountedTowerId = null;
       p.warpCooldown = 0;
       p.doll = null;
       p.dollCharges = 0;
@@ -943,11 +946,16 @@
       }
       p.aim = w.aim;
       const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
-      p.vel.x = w.move * getPhysicsParams().moveSpeed * (wepCur.moveSpeedMult ?? 1);
+      if (p.mountedTowerId) {
+        p.vel.x = 0;
+        p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1));
+      } else {
+        p.vel.x = w.move * getPhysicsParams().moveSpeed * (wepCur.moveSpeedMult ?? 1);
+      }
       if (w.jump && this.onGround(p)) jump(p.vel);
       const fuelMax = getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1);
       const fuel = Math.min(p.fuel, fuelMax);
-      const canJet = w.jetpack && fuel > 0;
+      const canJet = !p.mountedTowerId && w.jetpack && fuel > 0;
       if (canJet) jetpack(p.vel, dt);
       p.jetpack = canJet;
       p.fuel = Math.min(fuelMax, updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt));
@@ -1236,10 +1244,23 @@
           return;
         }
       }
+      if (p.mountedTowerId) {
+        const tw = this.watchtowers.find((t) => t.id === p.mountedTowerId);
+        if (tw) tw.operatorId = null;
+        p.mountedTowerId = null;
+        p.watchtowerTimer = 0;
+        p.vel = { x: 0, y: -160 };
+        this.events.push({ kind: "warp", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "\u79BB\u5F00\u77AD\u671B\u5854" });
+        return;
+      }
       for (const tw of this.watchtowers) {
-        if (wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 115) {
-          p.watchtowerTimer = this.config.watchtowerDuration;
-          this.events.push({ kind: "warp", x: tw.x, y: tw.y, playerId: p.id, weaponName: "\u77AD\u671B\u5854\u89C6\u91CE" });
+        if (tw.operatorId === null && wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 130) {
+          tw.operatorId = p.id;
+          p.mountedTowerId = tw.id;
+          p.pos = { x: tw.x, y: tw.y - 150 + 12 };
+          p.vel = { x: 0, y: 0 };
+          p.onGround = false;
+          this.events.push({ kind: "warp", x: tw.x, y: tw.y, playerId: p.id, weaponName: `\u767B\u4E0A${tw.name}\uFF08\u89C6\u91CE 200%\uFF09` });
           return;
         }
       }
@@ -1263,6 +1284,15 @@
         p.pos = { x: m.x, y: m.y - 16 };
         p.vel = { x: 0, y: 0 };
         return;
+      }
+      if (p.mountedTowerId) {
+        const tw = this.watchtowers.find((t) => t.id === p.mountedTowerId);
+        if (tw) {
+          p.pos = { x: tw.x, y: tw.y - 150 + 12 };
+          p.vel = { x: 0, y: 0 };
+          p.onGround = false;
+          return;
+        }
       }
       applyGravity(p.vel, dt, w.dive ? 1.55 : 1);
       for (const pad of JUMP_PADS) {
