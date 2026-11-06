@@ -203,123 +203,70 @@ export class Terrain {
     return true
   }
 
-  /** 补充结构：空洞骑士式多层平台网络 / 断崖 / 废墟拱门 / 洞窟跑酷 */
+  /** 补充结构（简化版）：地表台地 + 均布中/高平台 + 3 座废墟拱门 + 左中右 3 处洞窟 + 既有节点 */
   private buildExtraStructures(): void {
-    // ── A0. 地表台地 / 断崖（高低起伏的跳台地形）──
+    // ── A. 地表台地（左中右均匀 5 处，避免细碎台阶）──
     const hills = [
       { x: 160, y: 2680, w: 240, c: '#fb923c' },
-      { x: 440, y: 2600, w: 180, c: '#f97316' },
       { x: 2500, y: 2640, w: 300, c: '#38bdf8' },
-      { x: 3800, y: 2640, w: 260, c: '#f97316' },
-      { x: 5320, y: 2660, w: 140, c: '#10b981' },
       { x: 6240, y: 2680, w: 240, c: '#10b981' },
-      { x: 6780, y: 2680, w: 180, c: '#10b981' },
-      { x: 8040, y: 2660, w: 300, c: '#a855f7' },
-      { x: 8640, y: 2700, w: 240, c: '#a855f7' },
-      { x: 9920, y: 2620, w: 320, c: '#38bdf8' },
-      { x: 10600, y: 2680, w: 240, c: '#38bdf8' },
-      { x: 11820, y: 2660, w: 200, c: '#0ea5e9' },
+      { x: 9000, y: 2660, w: 280, c: '#a855f7' },
       { x: 12640, y: 2680, w: 300, c: '#0ea5e9' },
     ]
     for (const hl of hills) this.addHill(hl.x, hl.y, hl.w, hl.c)
-    // ── A. 低空石台链（贴地跳台，左右交错）——
-    const lowChains = [
-      { x0: 160, x1: 1360, y: 2700, dy: 40, step: 260, w: 180, c: '#fb923c' },
-      { x0: 2056, x1: 2860, y: 2680, dy: 50, step: 220, w: 160, c: '#38bdf8' },
-      { x0: 3784, x1: 5480, y: 2710, dy: 60, step: 300, w: 150, c: '#f97316' },
-      { x0: 6220, x1: 6980, y: 2680, dy: 60, step: 240, w: 150, c: '#10b981' },
-      { x0: 8010, x1: 9260, y: 2710, dy: 50, step: 240, w: 170, c: '#a855f7' },
-      { x0: 9884, x1: 11040, y: 2690, dy: 40, step: 240, w: 160, c: '#38bdf8' },
-      { x0: 11776, x1: 13120, y: 2710, dy: 60, step: 260, w: 170, c: '#0ea5e9' },
-    ]
-    for (const ch of lowChains) {
-      let k = 0
-      for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
-        this.addPlatformIfClear(x, ch.y + ((k % 2) ? ch.dy : 0), ch.w, 22, '#334155', ch.c, 'ledge', '石台')
-        k++
-      }
-    }
 
-    // ── B. 中层浮空平台链（跳上高楼/浮岛的踏脚石）——
-    const midChains = [
-      { x0: 200, x1: 1300, y: 2460, dy: 90, step: 300, w: 170, c: '#fb923c' },
-      { x0: 1500, x1: 2100, y: 2280, dy: 80, step: 280, w: 150, c: '#f43f5e' },
-      { x0: 3880, x1: 4080, y: 2500, dy: 0, step: 260, w: 150, c: '#38bdf8' },
-      { x0: 5350, x1: 5480, y: 2480, dy: 0, step: 220, w: 120, c: '#10b981' },
-      { x0: 6240, x1: 6980, y: 2260, dy: 70, step: 260, w: 160, c: '#10b981' },
-      { x0: 7720, x1: 7920, y: 2500, dy: 0, step: 200, w: 160, c: '#a855f7' },
-      { x0: 8090, x1: 9080, y: 2380, dy: 80, step: 280, w: 170, c: '#a855f7' },
-      { x0: 9880, x1: 10020, y: 2500, dy: 0, step: 200, w: 130, c: '#38bdf8' },
-      { x0: 10920, x1: 11060, y: 2480, dy: 0, step: 200, w: 130, c: '#0ea5e9' },
-      { x0: 11800, x1: 13080, y: 2440, dy: 90, step: 300, w: 170, c: '#38bdf8' },
+    // ── B. 中层浮空平台（横跨全图均匀 10 块，左右中都有东西可踩）──
+    const mids = [
+      { x: 320, y: 2360, w: 180, c: '#fb923c' },
+      { x: 1600, y: 2440, w: 170, c: '#f43f5e' },
+      { x: 2800, y: 2320, w: 190, c: '#38bdf8' },
+      { x: 4050, y: 2400, w: 180, c: '#38bdf8' },
+      { x: 5300, y: 2300, w: 180, c: '#10b981' },
+      { x: 6300, y: 2260, w: 190, c: '#10b981' },
+      { x: 7700, y: 2400, w: 180, c: '#a855f7' },
+      { x: 9000, y: 2320, w: 190, c: '#a855f7' },
+      { x: 10400, y: 2440, w: 170, c: '#38bdf8' },
+      { x: 12000, y: 2320, w: 180, c: '#0ea5e9' },
     ]
-    for (const ch of midChains) {
-      let k = 0
-      for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
-        this.addPlatformIfClear(x, ch.y + ((k % 2) ? ch.dy : 0), ch.w, 22, '#334155', ch.c, 'platform', '浮空平台')
-        k++
-      }
-    }
+    for (const m of mids) this.addPlatformIfClear(m.x, m.y, m.w, 22, '#334155', m.c, 'platform', '浮空平台')
 
-    // ── C. 高空悬空栈道（浮岛之间的高空跳跃路线）——
-    const highChains = [
-      { x0: 300, x1: 1280, y: 1960, dy: 110, step: 320, w: 160, c: '#fb923c' },
-      { x0: 1500, x1: 2260, y: 1760, dy: 90, step: 260, w: 140, c: '#f43f5e' },
-      { x0: 3080, x1: 3760, y: 1900, dy: 90, step: 260, w: 150, c: '#f97316' },
-      { x0: 5080, x1: 6220, y: 1760, dy: 110, step: 300, w: 160, c: '#38bdf8' },
-      { x0: 7100, x1: 7700, y: 1960, dy: 90, step: 260, w: 150, c: '#10b981' },
-      { x0: 9000, x1: 9100, y: 1900, dy: 0, step: 200, w: 140, c: '#a855f7' },
-      { x0: 9880, x1: 10980, y: 1760, dy: 100, step: 300, w: 160, c: '#38bdf8' },
-      { x0: 11860, x1: 13060, y: 1960, dy: 110, step: 300, w: 160, c: '#0ea5e9' },
+    // ── C. 高空平台（4 块：左/中/右都有高层落点）──
+    const highs = [
+      { x: 900, y: 1760, w: 170, c: '#fb923c' },
+      { x: 3600, y: 1840, w: 170, c: '#38bdf8' },
+      { x: 6600, y: 1700, w: 180, c: '#10b981' },
+      { x: 9800, y: 1760, w: 170, c: '#a855f7' },
+      { x: 12400, y: 1840, w: 160, c: '#0ea5e9' },
     ]
-    for (const ch of highChains) {
-      let k = 0
-      for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
-        this.addPlatformIfClear(x, ch.y + ((k % 2) ? ch.dy : 0), ch.w, 22, '#334155', ch.c, 'platform', '悬空栈道')
-        k++
-      }
-    }
+    for (const hl of highs) this.addPlatformIfClear(hl.x, hl.y, hl.w, 22, '#334155', hl.c, 'platform', '高空平台')
 
-    // ── D. 废墟拱门（两根立柱 + 顶部横梁，可穿行）——
+    // ── D. 废墟拱门（3 座：左 / 中 / 右）──
     const arches = [
-      { x: 2080, y: 2440, w: 240, h: 260, c: '#f97316' },
       { x: 3820, y: 2380, w: 220, h: 320, c: '#38bdf8' },
       { x: 6300, y: 2320, w: 260, h: 380, c: '#10b981' },
-      { x: 8020, y: 2420, w: 240, h: 280, c: '#a855f7' },
       { x: 9900, y: 2360, w: 200, h: 340, c: '#38bdf8' },
-      { x: 11920, y: 2380, w: 240, h: 320, c: '#0ea5e9' },
     ]
     for (const a of arches) {
-      const avail = this.addPlatformIfClear(a.x, a.y, 40, a.h - 70, '#334155', a.c, 'ruin_pillar')
-      if (!avail) continue
+      if (!this.addPlatformIfClear(a.x, a.y, 40, a.h - 70, '#334155', a.c, 'ruin_pillar')) continue
       this.addSolidBlock(a.x + 40, a.y, a.w - 80, 22, '#1e293b', a.c, 'ruin_lintel', '废墟拱门')
       this.addSolidBlock(a.x, a.y, a.w, 22, '#334155', a.c, 'ruin_lintel')
     }
 
-    // ── E. 中央高塔遗迹（可攀爬的层叠塔身）——
-    this.addPlatformIfClear(5840, 2360, 120, 22, '#334155', '#38bdf8', 'platform', '遗迹塔阶')
-    this.addPlatformIfClear(5980, 2240, 120, 22, '#334155', '#38bdf8', 'platform', '遗迹塔阶')
-    this.addPlatformIfClear(6120, 2120, 120, 22, '#334155', '#38bdf8', 'platform', '遗迹塔阶')
-
-    // ── F. 洞窟层：地表下方一层「上层洞窟」，用竖井连接 ──
-    // 西区苔藓洞窟
+    // ── E. 洞窟层（左/中/右各一处，结构简单：一层大厅 + 1~2 级台阶 + 地表竖井）──
     this.carveTunnel(1200, 2960, 1500, 220, '西区苔藓洞窟')
     this.addSolidBlock(1200, 3160, 1500, 20, '#14532d', '#4ade80', 'cave_floor')
-    for (const sx of [1360, 1680, 2050, 2380]) this.addSolidBlock(sx, 3120, 90, 20, '#1e3a2b', '#4ade80', 'cave_shelf')
+    this.addSolidBlock(1680, 3120, 90, 20, '#1e3a2b', '#4ade80', 'cave_shelf')
     this.carveTunnel(2460, 2800, 100, 200, '苔藓洞窟竖井')
-    this.addSolidBlock(2460, 2880, 40, 20, '#1e3a2b', '#4ade80', 'cave_shelf')
-    // 中央水晶洞窟
     this.carveTunnel(4620, 3040, 900, 200, '中央水晶洞窟')
     this.addSolidBlock(4620, 3220, 900, 20, '#1e1b4b', '#a78bfa', 'cave_floor')
-    for (const sx of [4760, 5080, 5380]) this.addSolidBlock(sx, 3170, 80, 20, '#241d4d', '#a78bfa', 'cave_shelf')
+    this.addSolidBlock(5080, 3170, 80, 20, '#241d4d', '#a78bfa', 'cave_shelf')
     this.carveTunnel(5000, 2800, 100, 250, '水晶洞窟竖井')
-    // 东区水晶洞窟
     this.carveTunnel(9600, 2980, 1500, 220, '东区水晶洞窟')
     this.addSolidBlock(9600, 3180, 1500, 20, '#1e1b4b', '#a78bfa', 'cave_floor')
-    for (const sx of [9760, 10100, 10500, 10850]) this.addSolidBlock(sx, 3130, 90, 20, '#241d4d', '#a78bfa', 'cave_shelf')
+    this.addSolidBlock(10100, 3130, 90, 20, '#241d4d', '#a78bfa', 'cave_shelf')
     this.carveTunnel(10700, 2800, 100, 200, '水晶洞窟竖井')
 
-    // ── G. 原有连桥/集装箱/掩体/立柱（保留，作为路线节点）——
+    // ── F. 既有节点：连桥 / 集装箱 / 据点掩体 / 地下立柱（保留）──
     this.addSolidBlock(6180, 2560, 840, 20, '#334155', '#38bdf8', 'bridge', '双子塔中层连桥')
     this.addSolidBlock(6180, 2070, 840, 20, '#334155', '#38bdf8', 'bridge', '双子塔高层连桥')
     this.addSolidBlock(2000, 2600, 280, 20, '#334155', '#f97316', 'bridge', '西翼连接桥')
@@ -353,25 +300,22 @@ export class Terrain {
       if (phase === 0) {
         this.addDeco(r.x + r.w * 0.3, r.y + r.h, 10, 30 + (Math.round(r.x) % 30), 'deco_vine', '#4ade80')
       }
-      if (phase === 1 && r.w > 140) {
-        this.addDeco(r.x + r.w * 0.72, r.y + r.h, 8, 24 + (Math.round(r.x) % 20), 'deco_vine', '#22c55e')
-      }
-      // 岩台顶面苔藓
-      if (phase === 2) this.addDeco(r.x + 6, r.y - 6, Math.min(r.w - 12, 60), 10, 'deco_moss', '#4ade80')
+      // 少量岩台苔藓（保持简洁）
+      if (phase === 1 && r.w > 170) this.addDeco(r.x + 6, r.y - 6, Math.min(r.w - 12, 50), 10, 'deco_moss', '#4ade80')
     }
     // 洞窟：从顶壁垂下钟乳石 + 地面苔藓
     for (const c of [...this.rects]) {
       if (c.kind !== 'tunnel_bg' || !(c.label ?? '').includes('洞窟')) continue
-      for (let x = c.x + 120; x < c.x + c.w - 80; x += 170) {
+      for (let x = c.x + 160; x < c.x + c.w - 100; x += 260) {
         const h = 16 + ((Math.round(x) * 7) % 24)
         this.addDeco(x, c.y, 12, h, 'deco_stalactite', '#475569')
       }
-      for (let x = c.x + 60; x < c.x + c.w - 40; x += 240) {
+      for (let x = c.x + 100; x < c.x + c.w - 60; x += 380) {
         this.addDeco(x, c.y + c.h - 18, 26, 12, 'deco_moss', '#22c55e')
       }
     }
     // 废墟拱门剪影（远景氛围）
-    for (const ax of [300, 1700, 2900, 4400, 5700, 7200, 8500, 9900, 11200, 12500]) {
+    for (const ax of [600, 2400, 4200, 7400, 10600, 12600]) {
       const ay = 2300 + (Math.round(ax / 100) % 3) * 90
       this.addDeco(ax, ay, 120, 70, 'deco_ruin_arch', '#334155')
     }
