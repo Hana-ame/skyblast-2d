@@ -573,8 +573,9 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
 
 
 test('瞭望塔：按 E 上塔锁定（不能移动）+ 下塔后视野加成消失；补给武器视野+30%', () => {
-  // FOV：狙击 + 三把补给特武都是 1.30
-  for (const id of [2, 4, 5, 6]) assert.equal(WEAPONS[id].fovMult, 1.30, `weapon ${id} +30% fov`)
+  // FOV：狙击 + 激光/M249 为 1.30；引力枪不再 +30%
+  for (const id of [2, 4, 5]) assert.equal(WEAPONS[id].fovMult, 1.30, `weapon ${id} +30% fov`)
+  assert.equal(WEAPONS[6].fovMult, 1.0, 'gravity gun fov normal')
 
   const w = new World(81)
   const p = w.addPlayer('P', 'ffa')
@@ -836,4 +837,32 @@ test('手枪：飞行容量为双倍（2.0）且落地能回满', () => {
   const fuelMaxPistol = getPhysicsParams().jetpackFuel * WEAPONS[7].fuelMult!
   assert.ok(Math.abs(p.fuel - fuelMaxPistol) < 0.02, `pistol fuel refills to ${fuelMaxPistol}, fuel=${p.fuel.toFixed(2)}`)
   assert.ok(p.fuel > getPhysicsParams().jetpackFuel + 0.5, 'pistol capacity exceeds base 1.0')
+})
+
+
+test('引力枪：引力场弯曲其他枪的子弹（自身弹道不受影响）', () => {
+  const w = new World(161)
+  w.terrain.addSolidBlock(2000, 1000, 2400, 20, '#334155', '#334155', 'platform', 'bend-floor')
+  const shooter = w.addPlayer('S', 'red')
+  const victim = w.addPlayer('V', 'blue')
+  shooter.weaponIndex = 1   // 突击步枪
+  shooter.pos = { x: 2300, y: 984 }
+  victim.pos = { x: 3300, y: 984 }
+  // 在弹道侧上方放一个静止引力弹（场半径 280）
+  w.projectiles.push({
+    id: 900001, owner: 1, pos: { x: 2750, y: 900 }, vel: { x: 0, y: 0 }, life: 8, r: 8.5,
+    damage: 0, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
+    pierceOnHeadshot: false, pierceAll: false, isGravityOrb: true, passWalls: true,
+    beam: false, rocket: false, bounces: 0, dragPerSecond: 0.45, weaponId: 6, curveRate: 0,
+    weaponLabel: '引力枪', color: '#a855f7', hitTargets: [],
+  } as never)
+  w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
+  const bullet = w.projectiles.find(p => p.weaponId === 1)
+  assert.ok(bullet, 'rifle bullet fired')
+  const vy0 = bullet!.vel.y
+  for (let i = 0; i < 12; i++) w.step(DT, new Map([[shooter.id, input()]]))
+  const cur = w.projectiles.find(p => !p.isGravityOrb && p.weaponId === 1)
+  if (cur) {
+    assert.ok(Math.abs(cur.vel.y) > Math.abs(vy0) + 50, `bullet bent by gravity field, vy ${vy0.toFixed(0)} -> ${cur.vel.y.toFixed(0)}`)
+  }
 })

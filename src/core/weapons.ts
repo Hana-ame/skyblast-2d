@@ -25,6 +25,7 @@ export interface WeaponDef {
   passWalls?: boolean      // 穿透原始地形（引力弹）
   dragPerSecond?: number   // 每秒速度保留比例（<1 表示逐渐减速；引力弹）
   beam?: boolean           // 渲染为光束（激光）
+  curveRate?: number       // 弹道弯曲速率 rad/s（引力枪的弯曲弹道）
   farRange?: number        // 远距阈值：超过该距离命中按 farDamage 结算（狙击）
   farDamage?: number       // 超过 farRange 时的伤害（狙击 99，非爆头留 1 血）
   chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
@@ -101,7 +102,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 900, recoil: 240, magSize: 6, maxReserve: 18,
     reloadTime: 2.2, fireDelay: 1.10, terrainRadius: 95, lifeSeconds: 2.2,
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.45,
-    pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.30, color: '#a855f7',
+    pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.0, color: '#a855f7',   // 引力场弯曲其他子弹
   },
   {
     id: 7, name: '手枪', shortName: '手枪', isSupplyOnly: false,

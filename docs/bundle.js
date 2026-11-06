@@ -668,8 +668,9 @@
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
       fuelMult: 0.8,
-      fovMult: 1.3,
+      fovMult: 1,
       color: "#a855f7"
+      // 引力场弯曲其他子弹
     },
     {
       id: 7,
@@ -1250,6 +1251,7 @@
           rocket: !!wep.rocket,
           dragPerSecond: wep.dragPerSecond ?? 1,
           weaponId: wep.id,
+          curveRate: wep.curveRate ?? 0,
           weaponLabel: wep.shortName,
           color: wep.color,
           r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
@@ -1367,6 +1369,7 @@
         rocket: !!o.rocket,
         dragPerSecond: o.dragPerSecond ?? 1,
         weaponId: o.weaponId ?? -1,
+        curveRate: o.curveRate ?? 0,
         weaponLabel: o.weaponLabel,
         color: o.color,
         hitTargets: [p.id]
@@ -1735,6 +1738,27 @@
           const k = Math.pow(pr.dragPerSecond, dt);
           pr.vel.x *= k;
           pr.vel.y *= k;
+        }
+        if (!pr.isGravityOrb && !pr.beam) {
+          for (const orb of this.projectiles) {
+            if (!orb.isGravityOrb || orb.life <= 0) continue;
+            const dx2 = wrapDeltaX(pr.pos.x, orb.pos.x);
+            const dy2 = wrapDeltaY(pr.pos.y, orb.pos.y);
+            const d = Math.hypot(dx2, dy2);
+            if (d <= 8 || d > 320) continue;
+            const falloff = 1 - d / 320;
+            const cur = Math.atan2(pr.vel.y, pr.vel.x);
+            const want = Math.atan2(dy2, dx2);
+            let delta = want - cur;
+            while (delta > Math.PI) delta -= Math.PI * 2;
+            while (delta < -Math.PI) delta += Math.PI * 2;
+            const bend = Math.sign(delta) * Math.min(Math.abs(delta), 4 * falloff * dt);
+            const cosB = Math.cos(bend);
+            const sinB = Math.sin(bend);
+            const vx = pr.vel.x;
+            pr.vel.x = vx * cosB - pr.vel.y * sinB;
+            pr.vel.y = vx * sinB + pr.vel.y * cosB;
+          }
         }
         pr.vel.y += g * pr.gravityScale * dt;
         pr.life -= dt;

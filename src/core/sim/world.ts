@@ -475,7 +475,7 @@ export class World {
         pierceOnHeadshot: !!wep.pierceOnHeadshot, pierceAll: !!wep.pierceAll,
         isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, passWalls: !!wep.passWalls, beam: !!wep.beam, rocket: !!wep.rocket,
         dragPerSecond: wep.dragPerSecond ?? 1,
-        weaponId: wep.id, weaponLabel: wep.shortName, color: wep.color,
+        weaponId: wep.id, curveRate: wep.curveRate ?? 0, weaponLabel: wep.shortName, color: wep.color,
         r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
         life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       }))
@@ -571,7 +571,7 @@ export class World {
   private makeProjectile(p: PlayerState, x: number, y: number, vx: number, vy: number, o: {
     damage: number; headshotMult: number; terrainRadius: number; explosive: boolean; gravityScale?: number;
     pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number
-    passWalls?: boolean; beam?: boolean; rocket?: boolean; dragPerSecond?: number; weaponId?: number
+    passWalls?: boolean; beam?: boolean; rocket?: boolean; dragPerSecond?: number; weaponId?: number; curveRate?: number
     weaponLabel: string; color: string; r: number; life: number
   }): Projectile {
     return {
@@ -580,7 +580,7 @@ export class World {
       explosive: o.explosive, terrainRadius: o.terrainRadius, gravityScale: o.gravityScale ?? 0.04,
       pierceOnHeadshot: !!o.pierceOnHeadshot, pierceAll: !!o.pierceAll,
       isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, passWalls: !!o.passWalls, beam: !!o.beam, rocket: !!o.rocket,
-      dragPerSecond: o.dragPerSecond ?? 1, weaponId: o.weaponId ?? -1,
+      dragPerSecond: o.dragPerSecond ?? 1, weaponId: o.weaponId ?? -1, curveRate: o.curveRate ?? 0,
       weaponLabel: o.weaponLabel, color: o.color,
       hitTargets: [p.id],   // 发射者自身永远跳过
     }
@@ -980,6 +980,29 @@ export class World {
         const k = Math.pow(pr.dragPerSecond, dt)   // 每秒保留比例 → 平滑减速
         pr.vel.x *= k
         pr.vel.y *= k
+      }
+      // 引力场：引力弹会弯曲**其他枪射出的子弹**——把弹道方向朝引力弹方向旋转（真正“弯”而非轻微加速）
+      if (!pr.isGravityOrb && !pr.beam) {
+        for (const orb of this.projectiles) {
+          if (!orb.isGravityOrb || orb.life <= 0) continue
+          const dx = wrapDeltaX(pr.pos.x, orb.pos.x)
+          const dy = wrapDeltaY(pr.pos.y, orb.pos.y)
+          const d = Math.hypot(dx, dy)
+          if (d <= 8 || d > 320) continue
+          const falloff = 1 - d / 320
+          // 期望方向 = 朝引力弹；速度方向绕该方向旋转
+          const cur = Math.atan2(pr.vel.y, pr.vel.x)
+          const want = Math.atan2(dy, dx)
+          let delta = want - cur
+          while (delta > Math.PI) delta -= Math.PI * 2
+          while (delta < -Math.PI) delta += Math.PI * 2
+          const bend = Math.sign(delta) * Math.min(Math.abs(delta), 4.0 * falloff * dt)  // 最大 4 rad/s
+          const cosB = Math.cos(bend)
+          const sinB = Math.sin(bend)
+          const vx = pr.vel.x
+          pr.vel.x = vx * cosB - pr.vel.y * sinB
+          pr.vel.y = vx * sinB + pr.vel.y * cosB
+        }
       }
       pr.vel.y += g * pr.gravityScale * dt
       pr.life -= dt
