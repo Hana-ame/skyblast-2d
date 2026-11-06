@@ -8,6 +8,13 @@ import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/
 import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../core/wrap.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../core/weapons.ts'
 import { SPAWN_POINTS } from '../core/sim/world.ts'
+import { getTerrainPattern, makeStarField } from './textures.ts'
+import {
+  drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
+  drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, drawMineSprite,
+  drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, TEAM_PALETTE,
+} from './sprites.ts'
+import { Effects } from './effects.ts'
 
 // ── 画布与相机 ──
 const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement
@@ -130,6 +137,10 @@ function autoDetectDeviceInput(): void {
   setTouchLayerVisible(Boolean(coarse || (touchPoints && window.innerWidth <= 1024)), true)
 }
 
+// ── 客户端特效（纯表现层） ──
+const effects = new Effects()
+const stars = makeStarField(150)
+
 // ── Toast / Killfeed ──
 function escapeHtml(str: string): string {
   return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -166,14 +177,33 @@ function addKillFeed(killerName: string, killerTeam: string, victimName: string,
 
 function handleEvents(evs: WorldEvent[]): void {
   for (const e of evs) {
-    if (e.kind === 'kill') addKillFeed(e.killerName ?? '?', e.killerTeam ?? 'ffa', e.victimName ?? '?', e.victimTeam ?? 'ffa', e.weaponLabel ?? '', e.isHeadshot, e.isPierced)
-    else if (e.kind === 'explosion') screenShake = Math.max(screenShake, Math.min(14, (e.radius ?? 60) * 0.15))
-    else if (e.kind === 'capture') showToast(`🚩 据点 ${e.pointCode} 被 ${e.team} 占领！`)
-    else if (e.kind === 'supply_pickup') showToast(`📦 拾取【${e.weaponName}】`)
-    else if (e.kind === 'doll_recall') showToast('🎎 替身人偶生效：回到锚点位置与状态！')
-    else if (e.kind === 'shield_break') showToast('💥 护盾破碎！')
-    else if (e.kind === 'mortar_fire') screenShake = Math.max(screenShake, 9)
-    else if (e.kind === 'warp') showToast(`🌀 ${e.weaponName ?? '传送'}！`)
+    if (e.kind === 'kill') {
+      addKillFeed(e.killerName ?? '?', e.killerTeam ?? 'ffa', e.victimName ?? '?', e.victimTeam ?? 'ffa', e.weaponLabel ?? '', e.isHeadshot, e.isPierced)
+      if (e.x !== undefined && e.y !== undefined) effects.killBurst(e.x, e.y, TEAM_PALETTE[e.victimTeam ?? 'red']?.light ?? '#fda4af')
+    } else if (e.kind === 'explosion') {
+      screenShake = Math.max(screenShake, Math.min(14, (e.radius ?? 60) * 0.15))
+      if (e.x !== undefined && e.y !== undefined) effects.explosion(e.x, e.y, e.radius ?? 60)
+    } else if (e.kind === 'obstacle_destroy') {
+      if (e.x !== undefined && e.y !== undefined) effects.debris(e.x, e.y, 50, 60, '#9a3412', '#f97316')
+    } else if (e.kind === 'capture') showToast(`🚩 据点 ${e.pointCode} 被 ${e.team} 占领！`)
+    else if (e.kind === 'supply_pickup') {
+      showToast(`📦 拾取【${e.weaponName}】`)
+      if (e.x !== undefined && e.y !== undefined) effects.sparkle(e.x, e.y, '#a5f3fc')
+    } else if (e.kind === 'ammo_pickup') {
+      if (e.x !== undefined && e.y !== undefined) effects.sparkle(e.x, e.y, '#4ade80')
+    } else if (e.kind === 'doll_recall') {
+      showToast('🎎 替身人偶生效：回到锚点位置与状态！')
+      if (e.x !== undefined && e.y !== undefined) effects.sparkle(e.x, e.y, '#f472b6')
+    } else if (e.kind === 'shield_break') showToast('💥 护盾破碎！')
+    else if (e.kind === 'mortar_fire') {
+      screenShake = Math.max(screenShake, 9)
+      if (e.x !== undefined && e.y !== undefined) effects.muzzle(e.x, e.y - 20, '#fde047')
+    } else if (e.kind === 'airstrike_drop') {
+      if (e.x !== undefined && e.y !== undefined) {
+        effects.explosion(e.x, e.y, 120)
+        screenShake = Math.max(screenShake, 12)
+      }
+    } else if (e.kind === 'warp') showToast(`🌀 ${e.weaponName ?? '传送'}！`)
   }
 }
 
@@ -431,13 +461,33 @@ function renderScene(): void {
   const halfW = (canvas.width * camera.fovFactor) / 2 + 160
   const halfH = (canvas.height * camera.fovFactor) / 2 + 160
 
-  // 天空
+  // ── 背景：渐变天幕 + 视差星空 + 远景光晕 ──
   ctx.save()
   const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height)
   skyGrad.addColorStop(0, '#050811')
   skyGrad.addColorStop(0.55, '#0f172a')
   skyGrad.addColorStop(1, '#1e1b4b')
   ctx.fillStyle = skyGrad
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  // 星空（视差 0.04，屏幕空间平铺）
+  const starOffX = (camera.x * 0.04) % canvas.width
+  const starOffY = (camera.y * 0.04) % canvas.height
+  for (const st of stars) {
+    const px = ((st.x * canvas.width - starOffX) % canvas.width + canvas.width) % canvas.width
+    const py = ((st.y * canvas.height - starOffY) % canvas.height + canvas.height) % canvas.height
+    ctx.globalAlpha = st.a * (0.55 + 0.45 * Math.sin(performance.now() * 0.001 + st.x * 40))
+    ctx.fillStyle = '#dbeafe'
+    ctx.beginPath(); ctx.arc(px, py, st.r, 0, Math.PI * 2); ctx.fill()
+  }
+  ctx.globalAlpha = 1
+  // 远景观测光晕（模拟远处城市灯光/地心辉光）
+  const glowX = canvas.width * 0.5 - (camera.x * 0.06) % canvas.width
+  const glowY = canvas.height * 0.75 - (camera.y * 0.06) % canvas.height
+  const glow = ctx.createRadialGradient(glowX, glowY, 10, glowX, glowY, canvas.width * 0.45)
+  glow.addColorStop(0, 'rgba(56, 189, 248, 0.06)')
+  glow.addColorStop(0.5, 'rgba(129, 140, 248, 0.04)')
+  glow.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = glow
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   ctx.scale(zoom, zoom)
@@ -448,17 +498,27 @@ function renderScene(): void {
   const inView = (dx: number, dy: number, pad = 0): boolean =>
     dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad
 
-  // 1. 地形图元
+  // 1. 地形图元（程序化贴图）
   for (const r of world.terrain.rects) {
     const cx = sx(r.x + r.w / 2)
     const cy = sy(r.y + r.h / 2)
     if (!inView(cx, cy, Math.max(r.w, r.h))) continue
-    ctx.fillStyle = r.color
-    ctx.fillRect(cx - r.w / 2, cy - r.h / 2, r.w, r.h)
+    const left = cx - r.w / 2
+    const top = cy - r.h / 2
+    const pat = getTerrainPattern(ctx, r.kind)
+    ctx.fillStyle = pat ?? r.color
+    ctx.fillRect(left, top, r.w, r.h)
+    // 顶面高光 + 底面阴影（体积感）
+    if (r.kind !== 'tunnel_bg' && r.kind !== 'pipe_bg' && r.kind !== 'building_bg') {
+      ctx.fillStyle = 'rgba(255,255,255,0.10)'
+      ctx.fillRect(left, top, r.w, 2)
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'
+      ctx.fillRect(left, top + r.h - 3, r.w, 3)
+    }
     if (r.borderColor) {
       ctx.strokeStyle = r.borderColor
       ctx.lineWidth = r.kind === 'pipe_wall' ? 3 : 2
-      ctx.strokeRect(cx - r.w / 2 + 1, cy - r.h / 2 + 1, r.w - 2, r.h - 2)
+      ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2)
     }
     if (r.label && (r.kind === 'building_roof' || r.kind === 'pipe_wall')) {
       ctx.fillStyle = 'rgba(226, 232, 240, 0.75)'
@@ -468,82 +528,36 @@ function renderScene(): void {
     }
   }
 
-  // 2. 可破坏障碍物
+  // 2. 可破坏障碍物（受损裂纹 sprite）
   for (const ob of world.obstacles) {
     const ox = sx(ob.x + ob.w / 2)
     const oy = sy(ob.y + ob.h / 2)
     if (!inView(ox, oy, Math.max(ob.w, ob.h))) continue
-    ctx.fillStyle = ob.color
-    ctx.strokeStyle = ob.borderColor || '#f97316'
-    ctx.lineWidth = 2.5
-    ctx.fillRect(ox - ob.w / 2, oy - ob.h / 2, ob.w, ob.h)
-    ctx.strokeRect(ox - ob.w / 2 + 1, oy - ob.h / 2 + 1, ob.w - 2, ob.h - 2)
-    const ratio = ob.hp / ob.maxHp
-    const barW = Math.max(40, ob.w)
-    const barX = ox - barW / 2
-    const barY = oy - ob.h / 2 - 10
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-    ctx.fillRect(barX, barY, barW, 5)
-    ctx.fillStyle = ratio > 0.5 ? '#22c55e' : ratio > 0.25 ? '#f59e0b' : '#ef4444'
-    ctx.fillRect(barX, barY, barW * ratio, 5)
+    drawObstacleSprite(ctx, ob, ox, oy)
   }
 
-  // 3. 占领点
+  // 3. 占领点（旗帜 sprite，旗面飘动）
   for (const cp of world.capturePoints) {
     const cx = sx(cp.x)
     const cy = sy(cp.y)
-    if (!inView(cx, cy)) continue
-    const ownerColor = cp.ownerTeam ? (TEAM_COLOR[cp.ownerTeam] ?? '#94a3b8') : '#94a3b8'
-    ctx.save()
-    ctx.translate(cx, cy)
-    ctx.strokeStyle = ownerColor
-    ctx.lineWidth = 3
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -95); ctx.stroke()
-    ctx.fillStyle = ownerColor
-    ctx.beginPath(); ctx.moveTo(0, -95); ctx.lineTo(54, -76); ctx.lineTo(0, -58); ctx.closePath(); ctx.fill()
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 12px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(`🚩 [${cp.code}] ${cp.name} (${Math.round(cp.progress)}%)`, 0, -106)
-    ctx.restore()
+    if (!inView(cx, cy, 140)) continue
+    drawFlagSprite(ctx, cp, cx, cy, world.tick)
   }
 
-  // 4. 传送门
+  // 4. 传送门（旋转光环）
   for (const wp of world.warpPortals) {
     const wx = sx(wp.x)
     const wy = sy(wp.y)
     if (!inView(wx, wy)) continue
-    ctx.save()
-    ctx.translate(wx, wy - 28)
-    ctx.strokeStyle = wp.color
-    ctx.lineWidth = 3.5
-    ctx.beginPath(); ctx.ellipse(0, 0, 22, 34, 0, 0, Math.PI * 2); ctx.stroke()
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.18)'
-    ctx.fill()
-    ctx.fillStyle = '#67e8f9'
-    ctx.font = 'bold 11px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(`🌀 ${wp.name} [E]`, 0, -42)
-    ctx.restore()
+    drawWarpSprite(ctx, wp, wx, wy, world.tick)
   }
 
   // 5. 瞭望塔
   for (const tw of world.watchtowers) {
     const tx = sx(tw.x)
     const ty = sy(tw.y)
-    if (!inView(tx, ty)) continue
-    const h = 150
-    ctx.save()
-    ctx.translate(tx, ty)
-    ctx.strokeStyle = '#eab308'
-    ctx.lineWidth = 3
-    ctx.beginPath(); ctx.moveTo(-22, 0); ctx.lineTo(-10, -h); ctx.lineTo(10, -h); ctx.lineTo(22, 0); ctx.stroke()
-    ctx.fillStyle = '#fef08a'
-    ctx.fillRect(-26, -h - 16, 52, 16)
-    ctx.font = 'bold 12px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(`🗼 ${tw.name} [按E获视野]`, 0, -h - 24)
-    ctx.restore()
+    if (!inView(tx, ty, 200)) continue
+    drawTowerSprite(ctx, tw, tx, ty, world.tick)
   }
 
   // 6. 弹药点
@@ -551,36 +565,16 @@ function renderScene(): void {
     const px = sx(pack.x)
     const py = sy(pack.y)
     if (!inView(px, py)) continue
-    ctx.save()
-    ctx.translate(px, py - 14)
-    ctx.fillStyle = '#15803d'
-    ctx.strokeStyle = '#4ade80'
-    ctx.lineWidth = 2
-    ctx.fillRect(-14, -12, 28, 24); ctx.strokeRect(-14, -12, 28, 24)
-    ctx.fillStyle = '#bbf7d0'
-    ctx.font = 'bold 10px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('📦 单人弹药', 0, -18)
-    ctx.restore()
+    drawAmmoSprite(ctx, pack, px, py, world.tick)
   }
 
-  // 7. 补给箱
+  // 7. 补给箱（武器/人偶）
   for (const crate of world.supplyCrates) {
     if (!crate.active) continue
     const cx = sx(crate.x)
     const cy = sy(crate.y)
     if (!inView(cx, cy)) continue
-    ctx.save()
-    ctx.translate(cx, cy - 18)
-    ctx.fillStyle = crate.kind === 'doll' ? '#4a1d3a' : '#1e1b4b'
-    ctx.strokeStyle = crate.color
-    ctx.lineWidth = 2.5
-    ctx.fillRect(-18, -16, 36, 32); ctx.strokeRect(-18, -16, 36, 32)
-    ctx.fillStyle = crate.color
-    ctx.font = 'bold 11px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(crate.kind === 'doll' ? '🎎 替身人偶补给' : `🎁 ${crate.weaponName}`, 0, -22)
-    ctx.restore()
+    drawCrateSprite(ctx, crate, cx, cy, world.tick)
   }
 
   // 8. 迫击炮
@@ -588,20 +582,7 @@ function renderScene(): void {
     const mx = sx(m.x)
     const my = sy(m.y)
     if (!inView(mx, my)) continue
-    ctx.save()
-    ctx.translate(mx, my)
-    ctx.save()
-    ctx.translate(0, -12); ctx.rotate(m.angle)
-    ctx.fillStyle = '#475569'; ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2.2
-    ctx.fillRect(0, -7, 38, 14); ctx.strokeRect(0, -7, 38, 14)
-    ctx.restore()
-    ctx.fillStyle = '#1e293b'; ctx.strokeStyle = '#fb923c'; ctx.lineWidth = 2
-    ctx.beginPath(); ctx.arc(0, 0, 18, Math.PI, 0); ctx.fill(); ctx.stroke()
-    ctx.fillStyle = m.operatorId ? '#fde047' : '#fb923c'
-    ctx.font = 'bold 11px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(m.operatorId ? '🎯 迫击炮发射中' : '🔥 公共迫击炮 [E]', 0, -32)
-    ctx.restore()
+    drawMortarSprite(ctx, m, mx, my, world.tick)
   }
 
   // 9. 地雷
@@ -610,33 +591,25 @@ function renderScene(): void {
     const mx = sx(m.pos.x)
     const my = sy(m.pos.y)
     if (!inView(mx, my)) continue
-    ctx.strokeStyle = m.triggered ? 'rgba(244, 63, 94, 0.75)' : (m.instant ? 'rgba(56, 189, 248, 0.30)' : 'rgba(244, 63, 94, 0.18)')
-    ctx.lineWidth = 1.5
-    ctx.beginPath(); ctx.arc(mx, my, world.config.mineTriggerRadius, 0, Math.PI * 2); ctx.stroke()
-    ctx.fillStyle = m.instant ? '#0284c7' : '#334155'
-    ctx.beginPath(); ctx.arc(mx, my, 9, Math.PI, 0); ctx.fill()
-    const blink = m.triggered || Math.floor(Date.now() / 220) % 2 === 0
-    ctx.fillStyle = blink ? (m.instant ? '#38bdf8' : '#f43f5e') : '#fbbf24'
-    ctx.beginPath(); ctx.arc(mx, my - 6, 3.5, 0, Math.PI * 2); ctx.fill()
+    drawMineSprite(ctx, m, mx, my, world.tick, world.config.mineTriggerRadius)
   }
 
-  // 10. 玩家 + 替身人偶 + 激光线
+  // 10. 玩家 sprite + 头顶标签（含替身人偶幻影/激光武器瞄准线）
   for (const p of world.players) {
     if (p.respawnTimer > 0 || !p.deployed) continue
-    const tColor = TEAM_COLOR[p.team] ?? '#f43f5e'
-    const tLight = TEAM_LIGHT2[p.team] ?? '#fda4af'
     const w = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
     const pMounted = world.mortars.some(m => m.operatorId === p.id)
 
+    // 替身人偶幻影
     if (p.doll) {
       const dx = sx(p.doll.pos.x)
       const dy = sy(p.doll.pos.y)
       if (inView(dx, dy)) {
         ctx.save()
         ctx.translate(dx, dy)
-        ctx.globalAlpha = 0.68
+        ctx.globalAlpha = 0.62
         ctx.strokeStyle = '#f472b6'
-        ctx.fillStyle = 'rgba(244, 114, 182, 0.25)'
+        ctx.fillStyle = 'rgba(244, 114, 182, 0.22)'
         ctx.lineWidth = 2
         ctx.beginPath(); ctx.roundRect(-11, -12, 22, 28, 6); ctx.fill(); ctx.stroke()
         ctx.beginPath(); ctx.arc(0, -24, world.config.headRadius, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
@@ -644,7 +617,7 @@ function renderScene(): void {
         ctx.fillStyle = '#f472b6'
         ctx.font = 'bold 11px Inter, sans-serif'
         ctx.textAlign = 'center'
-        ctx.fillText(`🎎 替身人偶 (${p.doll.timer.toFixed(1)}s)`, 0, -44)
+        ctx.fillText(`🎎 ${p.doll.timer.toFixed(1)}s`, 0, -44)
         ctx.restore()
       }
     }
@@ -652,55 +625,28 @@ function renderScene(): void {
     const px = sx(p.pos.x)
     const py = sy(p.pos.y)
     if (!inView(px, py)) continue
-    ctx.save()
-    ctx.translate(px, py)
-    const facingRight = Math.cos(p.aim) >= 0
-    ctx.fillStyle = '#475569'
-    ctx.fillRect(facingRight ? -15 : 7, -10, 8, 20)
-    ctx.fillStyle = tColor
-    ctx.strokeStyle = '#0f172a'
-    ctx.lineWidth = 2
-    ctx.beginPath(); ctx.roundRect(-11, -12, 22, 28, 6); ctx.fill(); ctx.stroke()
-    ctx.fillStyle = tLight
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 1.8
-    ctx.beginPath(); ctx.arc(0, -24, world.config.headRadius, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
-    ctx.fillStyle = '#0f172a'
-    ctx.beginPath(); ctx.arc(facingRight ? 4 : -4, -25, world.config.headRadius * 0.42, 0, Math.PI * 2); ctx.fill()
-    if (p.shieldTimer > 0 && p.shieldHp > 0) {
-      ctx.strokeStyle = '#38bdf8'
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.18)'
-      ctx.lineWidth = 2.5
-      ctx.beginPath(); ctx.arc(0, -8, 34, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
-    }
+
+    // 激光类武器的长瞄准线
     if (w.laser && !pMounted) {
-      ctx.strokeStyle = w.id === 4 ? 'rgba(34, 211, 238, 0.55)' : 'rgba(192, 132, 252, 0.48)'
-      ctx.lineWidth = 1.6
+      ctx.save()
+      ctx.translate(px, py)
+      ctx.strokeStyle = w.id === 4 ? 'rgba(34, 211, 238, 0.35)' : 'rgba(192, 132, 252, 0.32)'
+      ctx.lineWidth = 1.4
       ctx.beginPath()
       ctx.moveTo(0, -10)
       ctx.lineTo(Math.cos(p.aim) * 820, -10 + Math.sin(p.aim) * 820)
       ctx.stroke()
-    }
-    if (!pMounted) {
-      ctx.save()
-      ctx.translate(0, -8)
-      ctx.rotate(p.aim)
-      ctx.fillStyle = '#1e293b'
-      ctx.strokeStyle = w.color
-      ctx.lineWidth = 2
-      ctx.fillRect(4, -4, 24, 8); ctx.strokeRect(4, -4, 24, 8)
       ctx.restore()
     }
-    ctx.font = 'bold 11px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillStyle = '#f8fafc'
-    ctx.fillText(p.name + (p.id === localPlayer.id ? ' (你)' : ''), 0, -48)
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-    ctx.fillRect(-20, -43, 40, 5)
-    const hpRatio = clamp(p.hp / p.maxHp, 0, 1)
-    ctx.fillStyle = hpRatio > 0.4 ? tColor : '#ef4444'
-    ctx.fillRect(-20, -43, 40 * hpRatio, 5)
-    ctx.restore()
+
+    drawPlayerSprite(ctx, p, px, py, {
+      tick: world.tick,
+      isLocal: p.id === localPlayer.id,
+      movingX: p.vel.x,
+      floating: p.jetpack,
+      mounted: pMounted,
+    })
+    drawPlayerTag(ctx, p, px, py, p.id === localPlayer.id)
   }
 
   // 10.5 迫击炮瞄准线 + 鼠标准星
@@ -759,58 +705,28 @@ function renderScene(): void {
     }
   }
 
-  // 12. 手雷 / 弹丸 / 空袭信标
+  // 12. 手雷 / 弹丸 / 空袭信标（sprite）
   for (const g of world.grenades) {
     const gx = sx(g.pos.x)
     const gy = sy(g.pos.y)
     if (!inView(gx, gy)) continue
-    ctx.fillStyle = '#f43f5e'
-    ctx.beginPath(); ctx.arc(gx, gy, 6.5, 0, Math.PI * 2); ctx.fill()
+    drawGrenadeSprite(ctx, g, gx, gy, world.tick)
   }
   for (const pr of world.projectiles) {
     const px = sx(pr.pos.x)
     const py = sy(pr.pos.y)
     if (!inView(px, py, 200)) continue
-    if (pr.beam) {
-      // 激光：沿速度方向画一段光束（不是圆点子弹）
-      const spd = Math.hypot(pr.vel.x, pr.vel.y) || 1
-      const len = 150
-      const ex = px - (pr.vel.x / spd) * len
-      const ey = py - (pr.vel.y / spd) * len
-      ctx.save()
-      ctx.globalAlpha = 0.85
-      ctx.strokeStyle = pr.color || '#22d3ee'
-      ctx.lineWidth = 6
-      ctx.lineCap = 'round'
-      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(px, py); ctx.stroke()
-      ctx.globalAlpha = 1
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 2
-      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(px, py); ctx.stroke()
-      ctx.restore()
-    } else if (pr.isGravityOrb) {
-      ctx.save()
-      const grd = ctx.createRadialGradient(px, py, 2, px, py, 22)
-      grd.addColorStop(0, 'rgba(168, 85, 247, 0.9)')
-      grd.addColorStop(1, 'rgba(168, 85, 247, 0)')
-      ctx.fillStyle = grd
-      ctx.beginPath(); ctx.arc(px, py, 22, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = '#e9d5ff'
-      ctx.beginPath(); ctx.arc(px, py, pr.r, 0, Math.PI * 2); ctx.fill()
-      ctx.restore()
-    } else {
-      ctx.fillStyle = pr.color || '#fbbf24'
-      ctx.beginPath(); ctx.arc(px, py, pr.r, 0, Math.PI * 2); ctx.fill()
-    }
+    drawProjectileSprite(ctx, pr, px, py, world.tick)
   }
   for (const st of world.airstrikes) {
     const ax = sx(st.pos.x)
     const ay = sy(st.pos.y)
-    if (!inView(ax, ay)) continue
-    ctx.strokeStyle = '#ef4444'
-    ctx.lineWidth = 2
-    ctx.beginPath(); ctx.arc(ax, ay, 40, 0, Math.PI * 2); ctx.stroke()
+    if (!inView(ax, ay, 60)) continue
+    drawAirstrikeSprite(ctx, st, ax, ay, world.tick)
   }
+
+  // 13. 客户端粒子（爆炸/击杀/拾取/喷气/枪口）
+  effects.render(ctx, (x, y) => ({ x: sx(x), y: sy(y) }), (x, y) => inView(x, y))
 
   ctx.restore()
 }
@@ -1121,6 +1037,7 @@ function botInput(bot: PlayerState): WorldInput {
 
 // ── 主循环 ──
 let playerInput: WorldInput = defaultWorldInput()
+let prevFireCooldown = 0
 let lastFrame = performance.now()
 let acc = 0
 let wasDead = false
@@ -1199,6 +1116,25 @@ function gameLoop(now: number): void {
     if (dead && !wasDead) onLocalDeath()
     if (!dead && wasDead) onLocalRespawn()
     wasDead = dead
+
+    // 表现层：粒子更新 + 喷气尾焰 + 枪口火焰
+    effects.update(FIXED)
+    if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
+      if (localPlayer.jetpack) {
+        const back = Math.cos(localPlayer.aim) >= 0 ? -1 : 1
+        effects.jet(localPlayer.pos.x + back * 14, localPlayer.pos.y + 6)
+      }
+      // fireCooldown 被重新点满 → 视为开火，喷枪口火焰
+      if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
+        const w = WEAPONS[localPlayer.weaponIndex]
+        effects.muzzle(
+          localPlayer.pos.x + Math.cos(localPlayer.aim) * 26,
+          localPlayer.pos.y - 12 + Math.sin(localPlayer.aim) * 26,
+          w?.color ?? '#fbbf24',
+        )
+      }
+    }
+    prevFireCooldown = localPlayer.fireCooldown
 
     acc -= FIXED
     guard++
