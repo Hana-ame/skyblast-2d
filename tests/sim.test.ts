@@ -10,6 +10,7 @@ import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
+import { runDuelSim } from '../src/balance/duelSim.ts'
 import { getPhysicsParams } from '../src/core/sim/physics.ts'
 import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
 
@@ -84,7 +85,8 @@ test('弹道：狙击爆头穿透（hitTargets 去重，弹不消失）', () => 
   const victim = w.addPlayer('V', 'blue')
   victim.pos = { x: shooter.pos.x + 60, y: shooter.pos.y }   // 平射打头
   const vHp0 = victim.hp
-  for (let i = 0; i < 10; i++) w.step(DT, new Map([[shooter.id, input({ fire: i === 0, aim: 0 })]]))
+  // 狙击需 0.65s 蓄力：持续按住开火直到出膛
+  for (let i = 0; i < 60; i++) w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
   assert.ok(victim.hp < vHp0 || victim.deaths > 0, `expected headshot damage, hp=${victim.hp}`)
 })
 
@@ -352,8 +354,8 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
-  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1250, 4000, 520, 3000, 1300, 900, 1500, 1400])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 19, 100, 105, 50, 19, 30, 25, 14])   // M249=突击步枪(19)；引力枪已下调
+  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 900, 1500, 1500])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 23, 100, 115, 50, 23, 30, 24, 14])   // M249=突击步枪(23)；引力枪 30；手枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：只有 8 丸全中才致死（8×13=104 ≥100，7×13=91 <100）；无爆头加成；射速降低
@@ -362,12 +364,14 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[0].headshotMult, 1.0, 'no headshot bonus (only full hit kills)')
   assert.ok(WEAPONS[0].fireDelay >= 0.9, 'shotgun fire rate lowered')
   assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
+  assert.ok((WEAPONS[2].chargeSeconds ?? 0) >= 0.5, 'sniper needs aim charge time (balance)')
   assert.equal(WEAPONS[3].lifeSeconds, 999, 'bazooka infinite range')
   assert.equal(WEAPONS[3].gravityScale, 0, 'bazooka flies straight')
   assert.equal(WEAPONS[3].speed, 520, 'bazooka slow')
   assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
   assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
+  assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
   assert.ok(WEAPONS[5].fireDelay <= 0.05, 'gatling high fire rate')
   assert.ok(WEAPONS[6].fireDelay >= 1.0 && WEAPONS[6].damage <= 30, 'gravity gun slower & weaker')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
@@ -466,10 +470,11 @@ test('狙击：无限射程 + 一击必杀（身体命中 100 伤害）', () => 
   const shooter = w.addPlayer('S', 'red')
   shooter.weaponIndex = 2
   const victim = w.addPlayer('V', 'blue')
-  // 高空净空区（避开新地图平台），保证 900px 视线无遮挡
-  shooter.pos = { x: 2200, y: 800 }
-  victim.pos = { x: 3100, y: 800 }
-  for (let i = 0; i < 30; i++) w.step(DT, new Map([[shooter.id, input({ fire: i === 0, aim: 0 })]]))
+  // 空中长平台（避免两人蓄力期间自由落体导致弹道散布），保证 900px 视线无遮挡
+  w.terrain.addSolidBlock(2100, 1000, 1100, 20, '#334155', '#334155', 'platform', 'test-floor')
+  shooter.pos = { x: 2200, y: 984 }
+  victim.pos = { x: 3100, y: 984 }
+  for (let i = 0; i < 80; i++) w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
   assert.ok(victim.deaths > 0 || victim.hp <= 0, `sniper should one-shot at 900px, hp=${victim.hp}`)
 })
 
@@ -770,4 +775,20 @@ test('工程化分层：入口仅装配、模块目录分类齐全、无反向�
       assert.ok(!src.includes('main-web.ts'), `${dir}/${f} must not import entry`)
     }
   }
+})
+
+
+test('平衡回归：20 种子对射矩阵下各武器胜率/距离定位/平均 TTK 在合理区间', () => {
+  const res = runDuelSim({ seeds: 20 })
+  const byName = Object.fromEntries(res.table.map(r => [r.name, r]))
+  // 总体胜率：全体 30%~70%，避免一家独大
+  for (const r of res.table) assert.ok(r.winRate >= 30 && r.winRate <= 70, `${r.name} win ${r.winRate}% out of [30,70]`)
+  // 距离定位：霰弹近距/火箭近距/狙远距必须强；长枪中远距可用
+  assert.ok((byName['霰弹']?.byDist['180'] ?? 0) >= 60, 'shotgun close-range niche')
+  assert.ok((byName['火箭筒']?.byDist['180'] ?? 0) >= 55, 'rocket close-range niche')
+  assert.ok((byName['狙']?.byDist['700'] ?? 0) >= 60, 'sniper long-range niche')
+  assert.ok((byName['突击步枪']?.byDist['380'] ?? 0) >= 35, 'rifle mid-range viable')
+  // 战斗节奏：平均击杀时间不超过 3s
+  const ttkAvg = res.table.reduce((a, r) => a + (r.avgTTK ?? 0), 0) / res.table.length
+  assert.ok(ttkAvg < 3, `average TTK ${ttkAvg.toFixed(2)}s too slow`)
 })

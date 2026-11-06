@@ -25,6 +25,7 @@ export interface WeaponDef {
   passWalls?: boolean      // 穿透原始地形（引力弹）
   dragPerSecond?: number   // 每秒速度保留比例（<1 表示逐渐减速；引力弹）
   beam?: boolean           // 渲染为光束（激光）
+  chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
   damagePerSecond?: number // 持续光束每秒伤害（beam 武器）
   ammoPerSecond?: number   // 持续光束每秒耗弹（beam 武器）
   rocket?: boolean         // 渲染为火箭弹（直线慢速爆炸弹）
@@ -50,30 +51,30 @@ export interface SecondaryDef {
 export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
-    damage: 13, headshotMult: 1.0, pellets: 8, spread: 0.28,
+    damage: 13, headshotMult: 1.0, pellets: 8, spread: 0.24,
     speed: 1000, recoil: 780, magSize: 6, maxReserve: 30,
-    reloadTime: 1.5, fireDelay: 0.95, terrainRadius: 12,
+    reloadTime: 1.5, fireDelay: 0.90, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
   },
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
-    damage: 19, headshotMult: 2.2, pellets: 1, spread: 0.045,
-    speed: 1250, recoil: 84, magSize: 28, maxReserve: 140,
+    damage: 23, headshotMult: 2.2, pellets: 1, spread: 0.045,
+    speed: 1500, recoil: 84, magSize: 28, maxReserve: 140,
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
   },
   {
     id: 2, name: '狙击步枪', shortName: '狙', isSupplyOnly: false,
     damage: 100, headshotMult: 2.5, pellets: 1, spread: 0.003,
-    speed: 4000, recoil: 390, magSize: 5, maxReserve: 25,
-    reloadTime: 2.3, fireDelay: 0.92, terrainRadius: 16,
+    speed: 4000, recoil: 390, magSize: 3, maxReserve: 15,
+    reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.60, terrainRadius: 16,
     explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.92, fuelMult: 0.9, fovMult: 1.30, color: '#c084fc',
   },
   {
     id: 3, name: '火箭筒', shortName: '火箭筒', isSupplyOnly: false,
-    damage: 105, headshotMult: 1.5, pellets: 1, spread: 0.0,
-    speed: 520, recoil: 420, magSize: 4, maxReserve: 20,
-    reloadTime: 2.4, fireDelay: 0.9, terrainRadius: 92,
+    damage: 115, headshotMult: 1.5, pellets: 1, spread: 0.0,
+    speed: 520, recoil: 420, magSize: 6, maxReserve: 24,
+    reloadTime: 2.0, fireDelay: 0.80, terrainRadius: 124,
     explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.82, fuelMult: 0.72, fovMult: 1.0, color: '#fb7185',
   },
   {
@@ -86,7 +87,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,
-    damage: 19, headshotMult: 1.8, pellets: 1, spread: 0.11,
+    damage: 23, headshotMult: 1.8, pellets: 1, spread: 0.11,
     speed: 1300, recoil: 66, magSize: 120, maxReserve: 240,
     reloadTime: 3.0, fireDelay: 0.045, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.30, color: '#f97316',
@@ -101,17 +102,17 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 7, name: '手枪', shortName: '手枪', isSupplyOnly: false,
-    damage: 25, headshotMult: 2.0, pellets: 1, spread: 0.012,
+    damage: 24, headshotMult: 2.0, pellets: 1, spread: 0.090,
     speed: 1500, recoil: 60, magSize: 12, maxReserve: 48,
-    reloadTime: 0.9, fireDelay: 0.22, terrainRadius: 6,
+    reloadTime: 0.9, fireDelay: 0.17, terrainRadius: 6,
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
     moveSpeedMult: 1.30, fuelMult: 1.15, fovMult: 1.0, color: '#fde047',
   },
   {
     id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
-    damage: 14, headshotMult: 1.8, pellets: 1, spread: 0.07,
-    speed: 1400, recoil: 48, magSize: 40, maxReserve: 160,
-    reloadTime: 1.6, fireDelay: 0.08, terrainRadius: 8,
+    damage: 14, headshotMult: 1.8, pellets: 1, spread: 0.11,
+    speed: 1500, recoil: 48, magSize: 40, maxReserve: 160,
+    reloadTime: 1.6, fireDelay: 0.075, terrainRadius: 8,
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
     moveSpeedMult: 1.05, fuelMult: 1.05, fovMult: 1.0, color: '#4ade80',
   },

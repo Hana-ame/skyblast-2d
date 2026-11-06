@@ -550,13 +550,13 @@
       damage: 13,
       headshotMult: 1,
       pellets: 8,
-      spread: 0.28,
+      spread: 0.24,
       speed: 1e3,
       recoil: 780,
       magSize: 6,
       maxReserve: 30,
       reloadTime: 1.5,
-      fireDelay: 0.95,
+      fireDelay: 0.9,
       terrainRadius: 12,
       explosive: false,
       pierceOnHeadshot: false,
@@ -570,11 +570,11 @@
       name: "\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 19,
+      damage: 23,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
-      speed: 1250,
+      speed: 1500,
       recoil: 84,
       magSize: 28,
       maxReserve: 140,
@@ -599,10 +599,11 @@
       spread: 3e-3,
       speed: 4e3,
       recoil: 390,
-      magSize: 5,
-      maxReserve: 25,
-      reloadTime: 2.3,
-      fireDelay: 0.92,
+      magSize: 3,
+      maxReserve: 15,
+      reloadTime: 2.8,
+      fireDelay: 0.95,
+      chargeSeconds: 0.6,
       terrainRadius: 16,
       explosive: false,
       laser: true,
@@ -618,17 +619,17 @@
       name: "\u706B\u7BAD\u7B52",
       shortName: "\u706B\u7BAD\u7B52",
       isSupplyOnly: false,
-      damage: 105,
+      damage: 115,
       headshotMult: 1.5,
       pellets: 1,
       spread: 0,
       speed: 520,
       recoil: 420,
-      magSize: 4,
-      maxReserve: 20,
-      reloadTime: 2.4,
-      fireDelay: 0.9,
-      terrainRadius: 92,
+      magSize: 6,
+      maxReserve: 24,
+      reloadTime: 2,
+      fireDelay: 0.8,
+      terrainRadius: 124,
       explosive: true,
       gravityScale: 0,
       lifeSeconds: 999,
@@ -674,7 +675,7 @@
       name: "M249",
       shortName: "M249",
       isSupplyOnly: true,
-      damage: 19,
+      damage: 23,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
@@ -725,16 +726,16 @@
       name: "\u624B\u67AA",
       shortName: "\u624B\u67AA",
       isSupplyOnly: false,
-      damage: 25,
+      damage: 24,
       headshotMult: 2,
       pellets: 1,
-      spread: 0.012,
+      spread: 0.09,
       speed: 1500,
       recoil: 60,
       magSize: 12,
       maxReserve: 48,
       reloadTime: 0.9,
-      fireDelay: 0.22,
+      fireDelay: 0.17,
       terrainRadius: 6,
       explosive: false,
       gravityScale: 0.03,
@@ -752,13 +753,13 @@
       damage: 14,
       headshotMult: 1.8,
       pellets: 1,
-      spread: 0.07,
-      speed: 1400,
+      spread: 0.11,
+      speed: 1500,
       recoil: 48,
       magSize: 40,
       maxReserve: 160,
       reloadTime: 1.6,
-      fireDelay: 0.08,
+      fireDelay: 0.075,
       terrainRadius: 8,
       explosive: false,
       gravityScale: 0.04,
@@ -1041,6 +1042,7 @@
         reloading: false,
         reloadTimer: 0,
         fireCooldown: 0,
+        chargeTimer: 0,
         secondary: "frag",
         secondaryCooldown: 0,
         fragCharges: DEFAULT_CONFIG.fragMaxCharges,
@@ -1097,6 +1099,7 @@
       p.dollCharges = 0;
       p.reloading = false;
       p.fireCooldown = 0;
+      p.chargeTimer = 0;
       p.secondaryCooldown = 0;
       p.deployed = true;
       p.alive = true;
@@ -1227,9 +1230,19 @@
       if (w.secondary) this.useSecondary(p, w.secondary, dt);
       if (w.fire) {
         const wepNow = WEAPONS[p.weaponIndex];
-        if (wepNow?.beam) this.updateContinuousBeam(p, wepNow, dt);
-        else this.fire(p);
-      } else if (WEAPONS[p.weaponIndex]?.beam && !p.reloading && p.ammo[p.weaponIndex] > 0) {
+        if (wepNow?.beam) {
+          this.updateContinuousBeam(p, wepNow, dt);
+        } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
+          p.chargeTimer += dt;
+          if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
+            this.fire(p);
+            p.chargeTimer = 0;
+          }
+        } else {
+          this.fire(p);
+        }
+      } else {
+        p.chargeTimer = 0;
       }
     }
     // ── 开火 ──────────────────────────────────────────────
@@ -2608,7 +2621,8 @@
         fovBadge.textContent = "\u{1F5FC} \u77AD\u671B\u89C6\u91CE 200%\uFF08\u6309 E \u4E0B\u5854\uFF09";
         fovBadge.classList.remove("hidden");
       } else if ((wepForFov?.fovMult ?? 1) > 1.01) {
-        fovBadge.textContent = `\u{1F52D} ${wepForFov.shortName} \u89C6\u91CE+30%`;
+        const charge = (wepForFov?.chargeSeconds ?? 0) > 0 ? localPlayer.chargeTimer > 0 ? ` \xB7 \u84C4\u529B ${Math.min(100, Math.round(localPlayer.chargeTimer / (wepForFov?.chargeSeconds ?? 1) * 100))}%` : " \xB7 \u6309\u4F4F\u84C4\u529B" : "";
+        fovBadge.textContent = `\u{1F52D} ${wepForFov.shortName} \u89C6\u91CE+30%${charge}`;
         fovBadge.classList.remove("hidden");
       } else fovBadge.classList.add("hidden");
     }

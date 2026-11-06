@@ -24,6 +24,7 @@ export interface PlayerState {
   reloading: boolean
   reloadTimer: number
   fireCooldown: number
+  chargeTimer: number      // 开火蓄力计时（chargeSeconds 武器）
   // 副武器
   secondary: string      // SECONDARIES key（frag / doll）
   secondaryCooldown: number

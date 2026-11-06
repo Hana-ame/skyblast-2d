@@ -211,7 +211,7 @@ export class World {
       weaponIndex: 1,
       ammo: WEAPONS.map(w => w.magSize),
       reserveAmmo: WEAPONS.map(w => w.maxReserve),
-      reloading: false, reloadTimer: 0, fireCooldown: 0,
+      reloading: false, reloadTimer: 0, fireCooldown: 0, chargeTimer: 0,
       secondary: 'frag', secondaryCooldown: 0,
       fragCharges: DEFAULT_CONFIG.fragMaxCharges, fragRechargeTimer: 0,
       jetpack: false, fuel: getPhysicsParams().jetpackFuel,
@@ -261,6 +261,7 @@ export class World {
     p.dollCharges = 0
     p.reloading = false
     p.fireCooldown = 0
+    p.chargeTimer = 0
     p.secondaryCooldown = 0
     p.deployed = true
     p.alive = true
@@ -412,13 +413,22 @@ export class World {
     // 副武器（瞬时意图）
     if (w.secondary) this.useSecondary(p, w.secondary, dt)
 
-    // 开火：激光类为持续光束（按住输出，每 tick 结算），其余为弹丸
+    // 开火：激光类持续光束；蓄力武器先蓄力再出膛；其余直接弹丸
     if (w.fire) {
       const wepNow = WEAPONS[p.weaponIndex]
-      if (wepNow?.beam) this.updateContinuousBeam(p, wepNow, dt)
-      else this.fire(p)
-    } else if (WEAPONS[p.weaponIndex]?.beam && !p.reloading && (p.ammo[p.weaponIndex] > 0)) {
-      // 松开即停（无需处理，事件停止 → 客户端光束消失）
+      if (wepNow?.beam) {
+        this.updateContinuousBeam(p, wepNow, dt)
+      } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
+        p.chargeTimer += dt
+        if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
+          this.fire(p)
+          p.chargeTimer = 0
+        }
+      } else {
+        this.fire(p)
+      }
+    } else {
+      p.chargeTimer = 0   // 松手取消蓄力
     }
   }
 

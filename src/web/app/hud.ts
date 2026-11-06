@@ -120,7 +120,12 @@ export function updateHudUI(): void {
       fovBadge.textContent = '🗼 瞭望视野 200%（按 E 下塔）'
       fovBadge.classList.remove('hidden')
     } else if ((wepForFov?.fovMult ?? 1) > 1.01) {
-      fovBadge.textContent = `🔭 ${wepForFov.shortName} 视野+30%`
+      const charge = (wepForFov?.chargeSeconds ?? 0) > 0
+        ? (localPlayer.chargeTimer > 0
+          ? ` · 蓄力 ${Math.min(100, Math.round(localPlayer.chargeTimer / (wepForFov?.chargeSeconds ?? 1) * 100))}%`
+          : ' · 按住蓄力')
+        : ''
+      fovBadge.textContent = `🔭 ${wepForFov.shortName} 视野+30%${charge}`
       fovBadge.classList.remove('hidden')
     } else fovBadge.classList.add('hidden')
   }
