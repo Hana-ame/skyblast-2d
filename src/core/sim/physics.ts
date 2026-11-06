@@ -77,11 +77,11 @@ export function jetpack(v: Vec2, dt: number): void {
 
 /** 喷射器燃料更新：active 时按 drain 消耗；**仅在落地时**按 recharge 回充；
  *  空中不回充 → 修复「断续点按 W 无限飞」的漏洞（此前空中也在回充，占空比足够就永动） */
-export function updateJetpackFuel(fuel: number, active: boolean, onGround: boolean, dt: number): number {
+export function updateJetpackFuel(fuel: number, active: boolean, onGround: boolean, dt: number, maxFuel = P.jetpackFuel): number {
   const next = active
     ? fuel - P.jetpackDrain * dt
     : (onGround ? fuel + P.jetpackRecharge * dt : fuel)
-  return Math.min(P.jetpackFuel, Math.max(0, next))
+  return Math.min(maxFuel, Math.max(0, next))
 }
 
 /** 防穿透/防瞬移：把 dt 拆成不超过 maxStep 的小步数组，供调用方循环推进，避免高速物体一步穿过薄墙/平台 */

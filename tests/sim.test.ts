@@ -820,3 +820,20 @@ test('平衡回归：20 种子对射矩阵下各武器胜率/距离定位/平均
   const ttkAvg = res.table.reduce((a, r) => a + (r.avgTTK ?? 0), 0) / res.table.length
   assert.ok(ttkAvg < 3, `average TTK ${ttkAvg.toFixed(2)}s too slow`)
 })
+
+
+test('手枪：飞行容量为双倍（2.0）且落地能回满', () => {
+  const w = new World(151)
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 7
+  p.pos = { x: 6600, y: 2000 }
+  // 先在空中耗尽（飞 3s）
+  for (let i = 0; i < 180; i++) w.step(DT, new Map([[p.id, input({ jetpack: true })]]))
+  assert.ok(p.fuel < 0.05, `fuel drained, fuel=${p.fuel.toFixed(2)}`)
+  // 落地回充：0.7/s，2.0 槽约需 2.9s（多等 5s 确保回满）
+  p.pos = { x: 6600, y: 2784 }
+  for (let i = 0; i < 60 * 5; i++) w.step(DT, new Map([[p.id, input({ jetpack: false })]]))
+  const fuelMaxPistol = getPhysicsParams().jetpackFuel * WEAPONS[7].fuelMult!
+  assert.ok(Math.abs(p.fuel - fuelMaxPistol) < 0.02, `pistol fuel refills to ${fuelMaxPistol}, fuel=${p.fuel.toFixed(2)}`)
+  assert.ok(p.fuel > getPhysicsParams().jetpackFuel + 0.5, 'pistol capacity exceeds base 1.0')
+})

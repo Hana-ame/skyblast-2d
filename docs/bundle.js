@@ -44,9 +44,9 @@
   function jetpack(v, dt) {
     v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel / P.mass * dt);
   }
-  function updateJetpackFuel(fuel, active, onGround, dt) {
+  function updateJetpackFuel(fuel, active, onGround, dt, maxFuel = P.jetpackFuel) {
     const next = active ? fuel - P.jetpackDrain * dt : onGround ? fuel + P.jetpackRecharge * dt : fuel;
-    return Math.min(P.jetpackFuel, Math.max(0, next));
+    return Math.min(maxFuel, Math.max(0, next));
   }
 
   // src/core/wrap.ts
@@ -1137,7 +1137,7 @@
       const canJet = !p.mountedTowerId && w.jetpack && fuel > 0;
       if (canJet) jetpack(p.vel, dt);
       p.jetpack = canJet;
-      p.fuel = Math.min(fuelMax, updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt));
+      p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax);
       if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt);
       if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt);
       if (p.fragCharges < this.config.fragMaxCharges) {

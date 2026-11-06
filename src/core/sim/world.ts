@@ -358,7 +358,7 @@ export class World {
     const canJet = !p.mountedTowerId && w.jetpack && fuel > 0
     if (canJet) jetpack(p.vel, dt)
     p.jetpack = canJet
-    p.fuel = Math.min(fuelMax, updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt))
+    p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax)
 
     // 冷却推进
     if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt)
