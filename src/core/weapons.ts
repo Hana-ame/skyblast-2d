@@ -73,8 +73,8 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 3, name: '火箭筒', shortName: '火箭筒', isSupplyOnly: false,
     damage: 115, headshotMult: 1.5, pellets: 1, spread: 0.0,
-    speed: 520, recoil: 420, magSize: 20, maxReserve: 20,   // 弹匣 20 / 换弹 2s
-    reloadTime: 2.0, fireDelay: 0.4, terrainRadius: 124,
+    speed: 520, recoil: 420, magSize: 1, maxReserve: 20,   // 1 发/弹匣，共 20 个弹匣；换弹 2s
+    reloadTime: 2.0, fireDelay: 0, terrainRadius: 124,   // 射击间隔 = 0（节奏由 2s 换弹决定）
     explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.82, fuelMult: 0.72, fovMult: 1.0, color: '#fb7185',
   },
   {

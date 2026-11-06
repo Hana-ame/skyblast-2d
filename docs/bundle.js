@@ -575,12 +575,13 @@
       spread: 0,
       speed: 520,
       recoil: 420,
-      magSize: 20,
+      magSize: 1,
       maxReserve: 20,
-      // 弹匣 20 / 换弹 2s
+      // 1 发/弹匣，共 20 个弹匣；换弹 2s
       reloadTime: 2,
-      fireDelay: 0.4,
+      fireDelay: 0,
       terrainRadius: 124,
+      // 射击间隔 = 0（节奏由 2s 换弹决定）
       explosive: true,
       gravityScale: 0,
       lifeSeconds: 999,
