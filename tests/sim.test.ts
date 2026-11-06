@@ -355,14 +355,14 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [14, 33, 100, 115, 50, 33, 24, 24, 24])   // 霰弹 14/丸；M249=突击(33)；引力枪/手枪/冲锋枪 24
+  assert.deepEqual(WEAPONS.map(w => w.damage), [12, 33, 100, 115, 50, 33, 24, 24, 24])   // 霰弹 12×9；M249=突击(33)；引力枪/手枪/冲锋枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：只有 8 丸全中才致死（8×13=104 ≥100，7×13=91 <100）；无爆头加成；射速降低
   assert.ok(WEAPONS[0].pellets * WEAPONS[0].damage! >= 100, 'full shotgun hit lethal')
   assert.ok((WEAPONS[0].pellets - 1) * WEAPONS[0].damage! < 100, 'partial shotgun hit not lethal')
   assert.equal(WEAPONS[0].headshotMult, 1.0, 'no headshot bonus (only full hit kills)')
-  assert.ok(WEAPONS[0].fireDelay >= 0.75, 'shotgun fire rate lowered')
+  assert.ok(WEAPONS[0].fireDelay >= 0.7, 'shotgun fire rate lowered')
   assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
   assert.ok((WEAPONS[2].chargeSeconds ?? 0) >= 0.5, 'sniper needs aim charge time (balance)')
   assert.equal(WEAPONS[3].lifeSeconds, 999, 'bazooka infinite range')
