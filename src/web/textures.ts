@@ -256,6 +256,11 @@ export function texKindOf(kind: string): string {
     case 'sky_island': return 'island'
     case 'step': return 'grate'
     case 'bunker_floor': return 'plate'
+    case 'bridge': return 'metal'
+    case 'platform': return 'island'
+    case 'container': return 'plate'
+    case 'cover': return 'brick'
+    case 'pillar': return 'concrete'
     default: return 'earth'
   }
 }

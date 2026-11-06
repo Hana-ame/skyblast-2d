@@ -5,14 +5,14 @@ import { World } from '../core/sim/world.ts'
 import { defaultWorldInput } from '../core/types.ts'
 import type { WorldInput, WorldEvent, TeamId, PlayerState } from '../core/types.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
-import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../core/wrap.ts'
+import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../core/wrap.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../core/weapons.ts'
 import { SPAWN_POINTS } from '../core/sim/world.ts'
 import { getTerrainPattern, makeStarField } from './textures.ts'
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
   drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, drawMineSprite,
-  drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, TEAM_PALETTE,
+  drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, TEAM_PALETTE,
 } from './sprites.ts'
 import { Effects } from './effects.ts'
 
@@ -139,7 +139,29 @@ function autoDetectDeviceInput(): void {
 
 // ── 客户端特效（纯表现层） ──
 const effects = new Effects()
-const stars = makeStarField(150)
+// 世界锚定背景：星星按世界坐标生成（随地形一起移动，不会与方块相对滑动）
+const starRng = (() => {
+  let seed = 0x9e3779b9
+  return (): number => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = seed
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+})()
+const worldStars = (() => {
+  const out: { x: number; y: number; r: number; a: number }[] = []
+  for (let i = 0; i < 640; i++) {
+    out.push({ x: starRng() * WORLD_W, y: starRng() * WORLD_H, r: 0.6 + starRng() * 1.4, a: 0.2 + starRng() * 0.6 })
+  }
+  return out
+})()
+const worldGlows = [
+  { x: 6600, y: 1080, r: 620, c: '56,189,248', a: 0.09 },
+  { x: 4150, y: 3560, r: 520, c: '16,185,129', a: 0.07 },
+  { x: 10150, y: 3520, r: 520, c: '244,63,94', a: 0.07 },
+]
 
 // ── Toast / Killfeed ──
 function escapeHtml(str: string): string {
@@ -461,33 +483,17 @@ function renderScene(): void {
   const halfW = (canvas.width * camera.fovFactor) / 2 + 160
   const halfH = (canvas.height * camera.fovFactor) / 2 + 160
 
-  // ── 背景：渐变天幕 + 视差星空 + 远景光晕 ──
+  // ── 背景：与地形同坐标系的世界锚定层（不产生相对滑动） ──
   ctx.save()
   const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height)
-  skyGrad.addColorStop(0, '#050811')
-  skyGrad.addColorStop(0.55, '#0f172a')
-  skyGrad.addColorStop(1, '#1e1b4b')
+  // 天幕颜色随相机深度变化（地表附近偏夜空蓝，地下渐暗），避免"背景固定"的违和感
+  const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1)
+  const topR = Math.round(5 + depthT * 4)
+  const topB = Math.round(17 - depthT * 10)
+  skyGrad.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`)
+  skyGrad.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`)
+  skyGrad.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`)
   ctx.fillStyle = skyGrad
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  // 星空（视差 0.04，屏幕空间平铺）
-  const starOffX = (camera.x * 0.04) % canvas.width
-  const starOffY = (camera.y * 0.04) % canvas.height
-  for (const st of stars) {
-    const px = ((st.x * canvas.width - starOffX) % canvas.width + canvas.width) % canvas.width
-    const py = ((st.y * canvas.height - starOffY) % canvas.height + canvas.height) % canvas.height
-    ctx.globalAlpha = st.a * (0.55 + 0.45 * Math.sin(performance.now() * 0.001 + st.x * 40))
-    ctx.fillStyle = '#dbeafe'
-    ctx.beginPath(); ctx.arc(px, py, st.r, 0, Math.PI * 2); ctx.fill()
-  }
-  ctx.globalAlpha = 1
-  // 远景观测光晕（模拟远处城市灯光/地心辉光）
-  const glowX = canvas.width * 0.5 - (camera.x * 0.06) % canvas.width
-  const glowY = canvas.height * 0.75 - (camera.y * 0.06) % canvas.height
-  const glow = ctx.createRadialGradient(glowX, glowY, 10, glowX, glowY, canvas.width * 0.45)
-  glow.addColorStop(0, 'rgba(56, 189, 248, 0.06)')
-  glow.addColorStop(0.5, 'rgba(129, 140, 248, 0.04)')
-  glow.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = glow
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   ctx.scale(zoom, zoom)
@@ -498,33 +504,62 @@ function renderScene(): void {
   const inView = (dx: number, dy: number, pad = 0): boolean =>
     dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad
 
-  // 1. 地形图元（程序化贴图）
+  // 世界锚定星空（随地形移动，无相对滑动）
+  for (const st of worldStars) {
+    const px = sx(st.x)
+    const py = sy(st.y)
+    if (!inView(px, py)) continue
+    ctx.globalAlpha = st.a * (0.6 + 0.4 * Math.sin(world.tick * 0.02 + st.x * 0.05))
+    ctx.fillStyle = '#dbeafe'
+    ctx.beginPath(); ctx.arc(px, py, st.r, 0, Math.PI * 2); ctx.fill()
+  }
+  ctx.globalAlpha = 1
+  // 世界固定色光晕（地下掩体/中央浮岛的环境光）
+  for (const gl of worldGlows) {
+    const gx = sx(gl.x)
+    const gy = sy(gl.y)
+    if (!inView(gx, gy, gl.r)) continue
+    const grad = ctx.createRadialGradient(gx, gy, 10, gx, gy, gl.r)
+    grad.addColorStop(0, `rgba(${gl.c}, ${gl.a})`)
+    grad.addColorStop(1, `rgba(${gl.c}, 0)`)
+    ctx.fillStyle = grad
+    ctx.beginPath(); ctx.arc(gx, gy, gl.r, 0, Math.PI * 2); ctx.fill()
+  }
+
+  // 1. 地形图元（程序化贴图）——按 ±WORLD_W/±WORLD_H 复制绘制，修复左右/上下接缝处缺块
   for (const r of world.terrain.rects) {
-    const cx = sx(r.x + r.w / 2)
-    const cy = sy(r.y + r.h / 2)
-    if (!inView(cx, cy, Math.max(r.w, r.h))) continue
-    const left = cx - r.w / 2
-    const top = cy - r.h / 2
-    const pat = getTerrainPattern(ctx, r.kind)
-    ctx.fillStyle = pat ?? r.color
-    ctx.fillRect(left, top, r.w, r.h)
-    // 顶面高光 + 底面阴影（体积感）
-    if (r.kind !== 'tunnel_bg' && r.kind !== 'pipe_bg' && r.kind !== 'building_bg') {
-      ctx.fillStyle = 'rgba(255,255,255,0.10)'
-      ctx.fillRect(left, top, r.w, 2)
-      ctx.fillStyle = 'rgba(0,0,0,0.22)'
-      ctx.fillRect(left, top + r.h - 3, r.w, 3)
-    }
-    if (r.borderColor) {
-      ctx.strokeStyle = r.borderColor
-      ctx.lineWidth = r.kind === 'pipe_wall' ? 3 : 2
-      ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2)
-    }
-    if (r.label && (r.kind === 'building_roof' || r.kind === 'pipe_wall')) {
-      ctx.fillStyle = 'rgba(226, 232, 240, 0.75)'
-      ctx.font = 'bold 12px Inter, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(r.label, cx, cy - r.h / 2 - 8)
+    if (r.kind.startsWith('deco_')) continue
+    const cx0 = sx(r.x + r.w / 2)
+    const cy0 = sy(r.y + r.h / 2)
+    for (const ox of [-WORLD_W, 0, WORLD_W]) {
+      for (const oy of [-WORLD_H, 0, WORLD_H]) {
+        const cx = cx0 + ox
+        const cy = cy0 + oy
+        if (!inView(cx, cy, Math.max(r.w, r.h))) continue
+        const left = cx - r.w / 2
+        const top = cy - r.h / 2
+        const pat = getTerrainPattern(ctx, r.kind)
+        ctx.fillStyle = pat ?? r.color
+        ctx.fillRect(left, top, r.w, r.h)
+        // 顶面高光 + 底面阴影（体积感）
+        if (r.kind !== 'tunnel_bg' && r.kind !== 'pipe_bg' && r.kind !== 'building_bg') {
+          ctx.fillStyle = 'rgba(255,255,255,0.10)'
+          ctx.fillRect(left, top, r.w, 2)
+          ctx.fillStyle = 'rgba(0,0,0,0.22)'
+          ctx.fillRect(left, top + r.h - 3, r.w, 3)
+        }
+        if (r.borderColor) {
+          ctx.strokeStyle = r.borderColor
+          ctx.lineWidth = r.kind === 'pipe_wall' ? 3 : 2
+          ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2)
+        }
+        if (r.label && (r.kind === 'building_roof' || r.kind === 'pipe_wall' || r.kind === 'bridge')) {
+          ctx.fillStyle = 'rgba(226, 232, 240, 0.75)'
+          ctx.font = 'bold 12px Inter, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText(r.label, cx, top - 8)
+        }
+      }
     }
   }
 
@@ -691,17 +726,38 @@ function renderScene(): void {
     }
   }
 
-  // 11. 动态阴影（瞭望塔视野激活时不遮）
+  // 11. 动态阴影（瞭望塔视野激活时不遮）——同样按 ±WORLD 复制，修复接缝处漏光/缺遮
   if (localPlayer.watchtowerTimer <= 0) {
     for (const sz of world.terrain.shadows) {
-      const cx = sx(sz.x + sz.w / 2)
-      const cy = sy(sz.y + sz.h / 2)
-      if (!inView(cx, cy, Math.max(sz.w, sz.h))) continue
-      const inside = localPlayer.deployed &&
-        Math.abs(wrapDeltaX(localPlayer.pos.x, sz.x + sz.w / 2)) <= sz.w / 2 + 40 &&
-        Math.abs(wrapDeltaY(localPlayer.pos.y, sz.y + sz.h / 2)) <= sz.h / 2 + 40
-      ctx.fillStyle = inside ? 'rgba(2, 6, 23, 0.22)' : `rgba(2, 6, 23, ${sz.alpha ?? 0.74})`
-      ctx.fillRect(cx - sz.w / 2, cy - sz.h / 2, sz.w, sz.h)
+      const cx0 = sx(sz.x + sz.w / 2)
+      const cy0 = sy(sz.y + sz.h / 2)
+      for (const ox of [-WORLD_W, 0, WORLD_W]) {
+        for (const oy of [-WORLD_H, 0, WORLD_H]) {
+          const cx = cx0 + ox
+          const cy = cy0 + oy
+          if (!inView(cx, cy, Math.max(sz.w, sz.h))) continue
+          const inside = localPlayer.deployed &&
+            Math.abs(wrapDeltaX(localPlayer.pos.x, sz.x + sz.w / 2)) <= sz.w / 2 + 40 &&
+            Math.abs(wrapDeltaY(localPlayer.pos.y, sz.y + sz.h / 2)) <= sz.h / 2 + 40
+          ctx.fillStyle = inside ? 'rgba(2, 6, 23, 0.22)' : `rgba(2, 6, 23, ${sz.alpha ?? 0.74})`
+          ctx.fillRect(cx - sz.w / 2, cy - sz.h / 2, sz.w, sz.h)
+        }
+      }
+    }
+  }
+
+  // 11.5 装饰层（窗户灯/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌）——画在阴影之后，灯光不被压暗
+  for (const r of world.terrain.rects) {
+    if (!r.kind.startsWith('deco_')) continue
+    const cx0 = sx(r.x + r.w / 2)
+    const cy0 = sy(r.y + r.h / 2)
+    for (const ox of [-WORLD_W, 0, WORLD_W]) {
+      for (const oy of [-WORLD_H, 0, WORLD_H]) {
+        const cx = cx0 + ox
+        const cy = cy0 + oy
+        if (!inView(cx, cy, Math.max(r.w, r.h) + 40)) continue
+        drawDeco(ctx, r, cx, cy, world.tick)
+      }
     }
   }
 

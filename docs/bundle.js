@@ -102,6 +102,10 @@
       this.setGridRect(x, y, w, h, 2);
       this.rects.push({ x, y, w, h, color, borderColor, kind, label });
     }
+    /** 装饰图元：只进渲染列表、不写碰撞网格（窗户/路灯/缆线/天线/蒸汽口/警示条/桶/管道/梯子/标牌） */
+    addDeco(x, y, w, h, kind, color, borderColor = "") {
+      this.rects.push({ x, y, w, h, color, borderColor, kind, label: "" });
+    }
     /** 挖空（地道/掩体）：网格清 0 + 背景图元 + 阴影区 */
     carveTunnel(x, y, w, h, label = "\u5730\u4E0B\u5730\u9053") {
       this.setGridRect(x, y, w, h, 0);
@@ -182,6 +186,101 @@
         { x: 11980, y: 2180, w: 620, c: "#0ea5e9" }
       ];
       for (const s of sky) this.addSolidBlock(s.x, s.y, s.w, 36, "#334155", s.c, "sky_island");
+      this.buildExtraStructures();
+      this.buildDecorations();
+    }
+    /** 补充结构：连桥 / 高空平台 / 地面集装箱 / 据点掩体 / 地下立柱 */
+    buildExtraStructures() {
+      this.addSolidBlock(6180, 2560, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u4E2D\u5C42\u8FDE\u6865");
+      this.addSolidBlock(6180, 1360, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u9AD8\u5C42\u8FDE\u6865");
+      this.addSolidBlock(2e3, 2600, 280, 20, "#334155", "#f97316", "bridge", "\u897F\u7FFC\u8FDE\u63A5\u6865");
+      this.addSolidBlock(11760, 2600, 280, 20, "#334155", "#0ea5e9", "bridge", "\u4E1C\u7FFC\u8FDE\u63A5\u6865");
+      const platforms = [
+        { x: 2700, y: 1180, w: 300, c: "#fb923c" },
+        { x: 3700, y: 1900, w: 260, c: "#38bdf8" },
+        { x: 5250, y: 2060, w: 220, c: "#10b981" },
+        { x: 5400, y: 1e3, w: 220, c: "#a855f7" },
+        { x: 8800, y: 1860, w: 300, c: "#a855f7" },
+        { x: 9600, y: 1240, w: 320, c: "#38bdf8" },
+        { x: 11500, y: 1860, w: 280, c: "#0ea5e9" },
+        { x: 12900, y: 1500, w: 260, c: "#f43f5e" }
+      ];
+      for (const p of platforms) this.addSolidBlock(p.x, p.y, p.w, 22, "#334155", p.c, "platform");
+      const containers = [
+        { x: 5e3, y: 2720, w: 120, h: 80, c: "#f97316" },
+        { x: 7650, y: 2720, w: 120, h: 80, c: "#22d3ee" },
+        { x: 9800, y: 2720, w: 100, h: 80, c: "#a855f7" },
+        { x: 3850, y: 2740, w: 100, h: 60, c: "#eab308" }
+      ];
+      for (const c of containers) this.addSolidBlock(c.x, c.y, c.w, c.h, "#1f2937", c.c, "container");
+      const covers = [
+        { x: 1620, y: 1780, c: "#f43f5e" },
+        { x: 4200, y: 3500, c: "#38bdf8" },
+        { x: 6650, y: 3480, c: "#10b981" },
+        { x: 11360, y: 1780, c: "#0ea5e9" }
+      ];
+      for (const c of covers) this.addSolidBlock(c.x, c.y, 60, 60, "#334155", c.c, "cover");
+      this.addSolidBlock(4300, 3400, 60, 120, "#334155", "#38bdf8", "pillar");
+      this.addSolidBlock(6650, 3300, 60, 120, "#334155", "#10b981", "pillar");
+      this.addSolidBlock(9900, 3400, 60, 120, "#334155", "#f43f5e", "pillar");
+    }
+    /** 装饰层：窗户/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌（不参与碰撞） */
+    buildDecorations() {
+      const buildings = [
+        { bx: 1400, w: 640, floors: 4, name: "\u897F\u7FFC\u6307\u6325\u5927\u697C" },
+        { bx: 3200, w: 560, floors: 3, name: "\u897F\u533A\u5DE5\u4E1A\u5382\u623F" },
+        { bx: 5500, w: 680, floors: 5, name: "\u4E2D\u592E\u53CC\u5B50\u5317\u5854" },
+        { bx: 7020, w: 680, floors: 5, name: "\u4E2D\u592E\u53CC\u5B50\u5357\u5854" },
+        { bx: 9300, w: 560, floors: 3, name: "\u4E1C\u533A\u901A\u4FE1\u5927\u697C" },
+        { bx: 11100, w: 640, floors: 4, name: "\u4E1C\u7FFC\u8981\u585E\u5927\u697C" }
+      ];
+      const warm = ["#fbbf24", "#fde68a", "#fb923c", "#f97316"];
+      buildings.forEach((b, bi) => {
+        const topY = SURFACE_Y - b.floors * 240;
+        this.addDeco(b.bx + b.w / 2 - 3, topY - 64, 6, 64, "deco_antenna", "#94a3b8");
+        for (let f = 0; f < b.floors; f++) {
+          const fy = SURFACE_Y - f * 240;
+          for (let k = 0; k < 3; k++) {
+            const lit = (bi + f + k) % 3 !== 0;
+            const wx = b.bx + 40 + k * Math.max(60, (b.w - 120) / 3);
+            this.addDeco(wx, fy - 170, 42, 40, lit ? "deco_window_lit" : "deco_window_dark", lit ? warm[(bi + k) % warm.length] : "#0f172a");
+          }
+        }
+        this.addDeco(b.bx - 16, topY + 20, b.w + 32, 6, "deco_stripe", "#f59e0b");
+      });
+      for (let x = 400; x < WORLD_W; x += 720) {
+        this.addDeco(x, SURFACE_Y - 52, 8, 52, "deco_lamp", "#fbbf24");
+      }
+      const cables = [
+        { x: 6180, y: 1900, w: 840 },
+        { x: 2040, y: 2400, w: 300 },
+        { x: 11740, y: 2400, w: 260 },
+        { x: 2300, y: 1600, w: 800 },
+        { x: 8200, y: 1460, w: 1100 }
+      ];
+      for (const c of cables) this.addDeco(c.x, c.y, c.w, 60, "deco_cable", "#64748b");
+      for (const v of [3780, 6180, 9780]) this.addDeco(v, 3550, 26, 26, "deco_vent", "#94a3b8");
+      for (const b of [1560, 2100, 3200, 4300, 5400, 6300, 7200, 9800, 11300, 12600]) {
+        this.addDeco(b, SURFACE_Y - 30, 16, 30, "deco_barrel", "#f59e0b");
+      }
+      for (const p of [{ x: 2400, w: 620 }, { x: 8450, w: 520 }, { x: 12100, w: 300 }]) {
+        this.addDeco(p.x, SURFACE_Y - 22, p.w, 10, "deco_pipe_run", "#22d3ee");
+      }
+      for (const sx of [700, 2900, 5200, 7800, 10100, 12400]) {
+        this.addDeco(sx + 2, SURFACE_Y + 24, 14, 1200, "deco_ladder", "#94a3b8");
+      }
+      for (const cp of [
+        { x: 1620, y: 1840, t: "A" },
+        { x: 4050, y: 3560, t: "B" },
+        { x: 6500, y: 2800, t: "C" },
+        { x: 6500, y: 3540, t: "D" },
+        { x: 11360, y: 1840, t: "E" }
+      ]) {
+        this.addDeco(cp.x - 30, cp.y - 130, 60, 22, "deco_sign", "#22d3ee", cp.t);
+      }
+      for (const px of [2180, 4100, 6240, 7960, 10040]) {
+        this.addDeco(px - 10, 2240 + 160, 20, 30, "deco_bracket", "#22d3ee");
+      }
     }
     /** 点是否被原始地形挡住（双轴环形 x/y） */
     isSolidAt(x, y) {
@@ -1811,6 +1910,16 @@
         return "grate";
       case "bunker_floor":
         return "plate";
+      case "bridge":
+        return "metal";
+      case "platform":
+        return "island";
+      case "container":
+        return "plate";
+      case "cover":
+        return "brick";
+      case "pillar":
+        return "concrete";
       default:
         return "earth";
     }
@@ -1857,14 +1966,6 @@
     const pat = ctx2.createPattern(cv, "repeat");
     if (pat) cache.set(key, pat);
     return pat;
-  }
-  function makeStarField(count = 140) {
-    const rnd = mulberry32(777);
-    const out = [];
-    for (let i = 0; i < count; i++) {
-      out.push({ x: rnd(), y: rnd(), r: 0.5 + rnd() * 1.4, a: 0.15 + rnd() * 0.6 });
-    }
-    return out;
   }
 
   // src/web/sprites.ts
@@ -2451,6 +2552,224 @@
       ctx2.restore();
     }
   }
+  function drawDeco(ctx2, r, dx, dy, tick) {
+    const left = dx - r.w / 2;
+    const top = dy - r.h / 2;
+    switch (r.kind) {
+      case "deco_window_lit": {
+        const flick = 0.75 + Math.sin(tick * 0.05 + r.x * 0.013) * 0.12;
+        ctx2.save();
+        ctx2.globalAlpha = 0.9;
+        ctx2.fillStyle = r.color;
+        ctx2.fillRect(left, top, r.w, r.h);
+        ctx2.strokeStyle = "rgba(15,23,42,0.75)";
+        ctx2.lineWidth = 2;
+        ctx2.strokeRect(left, top, r.w, r.h);
+        ctx2.beginPath();
+        ctx2.moveTo(left + r.w / 2, top);
+        ctx2.lineTo(left + r.w / 2, top + r.h);
+        ctx2.moveTo(left, top + r.h / 2);
+        ctx2.lineTo(left + r.w, top + r.h / 2);
+        ctx2.stroke();
+        const g = ctx2.createRadialGradient(left + r.w / 2, top + r.h / 2, 2, left + r.w / 2, top + r.h / 2, r.w * 1.8);
+        g.addColorStop(0, `rgba(251, 191, 36, ${0.2 * flick})`);
+        g.addColorStop(1, "rgba(251, 191, 36, 0)");
+        ctx2.fillStyle = g;
+        ctx2.fillRect(left - r.w, top - r.h, r.w * 3, r.h * 3);
+        ctx2.restore();
+        break;
+      }
+      case "deco_window_dark":
+        ctx2.fillStyle = "#0b1220";
+        ctx2.fillRect(left, top, r.w, r.h);
+        ctx2.strokeStyle = "rgba(30,41,59,0.9)";
+        ctx2.lineWidth = 2;
+        ctx2.strokeRect(left, top, r.w, r.h);
+        break;
+      case "deco_lamp": {
+        ctx2.save();
+        ctx2.strokeStyle = "#475569";
+        ctx2.lineWidth = 3;
+        ctx2.beginPath();
+        ctx2.moveTo(dx, top + r.h);
+        ctx2.lineTo(dx, top + 10);
+        ctx2.stroke();
+        ctx2.fillStyle = "#1e293b";
+        ctx2.fillRect(dx - 7, top, 14, 10);
+        const g = ctx2.createRadialGradient(dx, top + 6, 2, dx, top + 6, 70);
+        g.addColorStop(0, "rgba(251,191,36,0.22)");
+        g.addColorStop(1, "rgba(251,191,36,0)");
+        ctx2.fillStyle = g;
+        ctx2.beginPath();
+        ctx2.arc(dx, top + 6, 70, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#fde68a";
+        ctx2.beginPath();
+        ctx2.arc(dx, top + 6, 3.5, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+        break;
+      }
+      case "deco_cable": {
+        ctx2.save();
+        ctx2.strokeStyle = "rgba(100,116,139,0.85)";
+        ctx2.lineWidth = 2;
+        ctx2.beginPath();
+        ctx2.moveTo(left, top);
+        ctx2.quadraticCurveTo(left + r.w / 2, top + r.h * 1.6, left + r.w, top);
+        ctx2.stroke();
+        ctx2.fillStyle = "#94a3b8";
+        ctx2.beginPath();
+        ctx2.arc(left, top, 3, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.beginPath();
+        ctx2.arc(left + r.w, top, 3, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+        break;
+      }
+      case "deco_antenna": {
+        ctx2.save();
+        ctx2.strokeStyle = r.color;
+        ctx2.lineWidth = 2;
+        ctx2.beginPath();
+        ctx2.moveTo(dx, top + r.h);
+        ctx2.lineTo(dx, top + 6);
+        ctx2.moveTo(dx - 10, top + 16);
+        ctx2.lineTo(dx + 10, top + 16);
+        ctx2.moveTo(dx - 7, top + 26);
+        ctx2.lineTo(dx + 7, top + 26);
+        ctx2.stroke();
+        const on = Math.floor(tick / 40) % 2 === 0;
+        ctx2.fillStyle = on ? "#ef4444" : "#7f1d1d";
+        ctx2.beginPath();
+        ctx2.arc(dx, top + 4, 3.5, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+        break;
+      }
+      case "deco_vent": {
+        ctx2.save();
+        ctx2.strokeStyle = "#64748b";
+        ctx2.lineWidth = 2;
+        ctx2.strokeRect(left, top, r.w, r.h);
+        ctx2.fillStyle = "rgba(148,163,184,0.35)";
+        for (let i = 0; i < 3; i++) {
+          const ph = (tick * 0.4 + i * 12) % 36 / 36;
+          ctx2.globalAlpha = (1 - ph) * 0.5;
+          ctx2.beginPath();
+          ctx2.arc(dx, top - 6 - ph * 26, 5 + ph * 8, 0, Math.PI * 2);
+          ctx2.fill();
+        }
+        ctx2.globalAlpha = 1;
+        ctx2.restore();
+        break;
+      }
+      case "deco_stripe": {
+        ctx2.save();
+        ctx2.beginPath();
+        ctx2.rect(left, top, r.w, r.h);
+        ctx2.clip();
+        for (let x = left - r.h; x < left + r.w; x += 14) {
+          ctx2.fillStyle = "rgba(245,158,11,0.55)";
+          ctx2.beginPath();
+          ctx2.moveTo(x, top + r.h);
+          ctx2.lineTo(x + 7, top);
+          ctx2.lineTo(x + 14, top);
+          ctx2.lineTo(x + 7, top + r.h);
+          ctx2.closePath();
+          ctx2.fill();
+        }
+        ctx2.restore();
+        break;
+      }
+      case "deco_barrel": {
+        ctx2.save();
+        const g = ctx2.createLinearGradient(left, 0, left + r.w, 0);
+        g.addColorStop(0, "#92400e");
+        g.addColorStop(0.5, "#f59e0b");
+        g.addColorStop(1, "#78350f");
+        ctx2.fillStyle = g;
+        roundRect(ctx2, left, top, r.w, r.h, 3);
+        ctx2.fill();
+        ctx2.strokeStyle = "#451a03";
+        ctx2.lineWidth = 1.5;
+        ctx2.stroke();
+        ctx2.fillStyle = "rgba(0,0,0,0.35)";
+        ctx2.fillRect(left, top + 6, r.w, 2);
+        ctx2.fillRect(left, top + r.h - 8, r.w, 2);
+        ctx2.restore();
+        break;
+      }
+      case "deco_pipe_run": {
+        ctx2.save();
+        const g = ctx2.createLinearGradient(0, top, 0, top + r.h);
+        g.addColorStop(0, "#0891b2");
+        g.addColorStop(0.5, "#22d3ee");
+        g.addColorStop(1, "#0e7490");
+        ctx2.fillStyle = g;
+        roundRect(ctx2, left, top, r.w, r.h, 4);
+        ctx2.fill();
+        ctx2.fillStyle = "rgba(0,0,0,0.4)";
+        for (let x = left + 40; x < left + r.w; x += 120) ctx2.fillRect(x, top - 2, 6, r.h + 4);
+        ctx2.restore();
+        break;
+      }
+      case "deco_ladder": {
+        ctx2.save();
+        ctx2.strokeStyle = "rgba(148,163,184,0.75)";
+        ctx2.lineWidth = 2;
+        const x1 = left + 2;
+        const x2 = left + r.w - 2;
+        ctx2.beginPath();
+        ctx2.moveTo(x1, top);
+        ctx2.lineTo(x1, top + r.h);
+        ctx2.moveTo(x2, top);
+        ctx2.lineTo(x2, top + r.h);
+        ctx2.stroke();
+        for (let y = top + 12; y < top + r.h; y += 22) {
+          ctx2.beginPath();
+          ctx2.moveTo(x1, y);
+          ctx2.lineTo(x2, y);
+          ctx2.stroke();
+        }
+        ctx2.restore();
+        break;
+      }
+      case "deco_sign": {
+        ctx2.save();
+        ctx2.fillStyle = "rgba(15,23,42,0.9)";
+        roundRect(ctx2, left, top, r.w, r.h, 4);
+        ctx2.fill();
+        ctx2.strokeStyle = r.color;
+        ctx2.lineWidth = 2;
+        ctx2.stroke();
+        ctx2.fillStyle = r.color;
+        ctx2.font = "bold 13px Inter, system-ui, sans-serif";
+        ctx2.textAlign = "center";
+        ctx2.textBaseline = "middle";
+        ctx2.fillText(`\u{1F6A9} ${r.borderColor ?? ""}`, dx, top + r.h / 2 + 1);
+        ctx2.restore();
+        break;
+      }
+      case "deco_bracket": {
+        ctx2.save();
+        ctx2.strokeStyle = "rgba(34,211,238,0.6)";
+        ctx2.lineWidth = 3;
+        ctx2.beginPath();
+        ctx2.moveTo(dx - 8, top + r.h);
+        ctx2.lineTo(dx - 8, top);
+        ctx2.lineTo(dx + 8, top);
+        ctx2.lineTo(dx + 8, top + r.h);
+        ctx2.stroke();
+        ctx2.restore();
+        break;
+      }
+      default:
+        ctx2.fillStyle = r.color;
+        ctx2.fillRect(left, top, r.w, r.h);
+    }
+  }
 
   // src/web/effects.ts
   var Effects = class {
@@ -2727,7 +3046,28 @@
     setTouchLayerVisible(Boolean(coarse || touchPoints && window.innerWidth <= 1024), true);
   }
   var effects = new Effects();
-  var stars = makeStarField(150);
+  var starRng = /* @__PURE__ */ (() => {
+    let seed = 2654435769;
+    return () => {
+      seed = seed + 1831565813 | 0;
+      let t = seed;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  })();
+  var worldStars = (() => {
+    const out = [];
+    for (let i = 0; i < 640; i++) {
+      out.push({ x: starRng() * WORLD_W, y: starRng() * WORLD_H, r: 0.6 + starRng() * 1.4, a: 0.2 + starRng() * 0.6 });
+    }
+    return out;
+  })();
+  var worldGlows = [
+    { x: 6600, y: 1080, r: 620, c: "56,189,248", a: 0.09 },
+    { x: 4150, y: 3560, r: 520, c: "16,185,129", a: 0.07 },
+    { x: 10150, y: 3520, r: 520, c: "244,63,94", a: 0.07 }
+  ];
   function escapeHtml(str) {
     return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
@@ -3009,61 +3349,74 @@
     const halfH = canvas.height * camera.fovFactor / 2 + 160;
     ctx.save();
     const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    skyGrad.addColorStop(0, "#050811");
-    skyGrad.addColorStop(0.55, "#0f172a");
-    skyGrad.addColorStop(1, "#1e1b4b");
+    const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1);
+    const topR = Math.round(5 + depthT * 4);
+    const topB = Math.round(17 - depthT * 10);
+    skyGrad.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`);
+    skyGrad.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`);
+    skyGrad.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`);
     ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const starOffX = camera.x * 0.04 % canvas.width;
-    const starOffY = camera.y * 0.04 % canvas.height;
-    for (const st of stars) {
-      const px = ((st.x * canvas.width - starOffX) % canvas.width + canvas.width) % canvas.width;
-      const py = ((st.y * canvas.height - starOffY) % canvas.height + canvas.height) % canvas.height;
-      ctx.globalAlpha = st.a * (0.55 + 0.45 * Math.sin(performance.now() * 1e-3 + st.x * 40));
-      ctx.fillStyle = "#dbeafe";
-      ctx.beginPath();
-      ctx.arc(px, py, st.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    const glowX = canvas.width * 0.5 - camera.x * 0.06 % canvas.width;
-    const glowY = canvas.height * 0.75 - camera.y * 0.06 % canvas.height;
-    const glow = ctx.createRadialGradient(glowX, glowY, 10, glowX, glowY, canvas.width * 0.45);
-    glow.addColorStop(0, "rgba(56, 189, 248, 0.06)");
-    glow.addColorStop(0.5, "rgba(129, 140, 248, 0.04)");
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.scale(zoom, zoom);
     ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
     const sx = (wx) => wrapDeltaX(camera.x, wx);
     const sy = (wy) => wrapDeltaY(camera.y, wy);
     const inView = (dx, dy, pad = 0) => dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad;
+    for (const st of worldStars) {
+      const px = sx(st.x);
+      const py = sy(st.y);
+      if (!inView(px, py)) continue;
+      ctx.globalAlpha = st.a * (0.6 + 0.4 * Math.sin(world.tick * 0.02 + st.x * 0.05));
+      ctx.fillStyle = "#dbeafe";
+      ctx.beginPath();
+      ctx.arc(px, py, st.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    for (const gl of worldGlows) {
+      const gx = sx(gl.x);
+      const gy = sy(gl.y);
+      if (!inView(gx, gy, gl.r)) continue;
+      const grad = ctx.createRadialGradient(gx, gy, 10, gx, gy, gl.r);
+      grad.addColorStop(0, `rgba(${gl.c}, ${gl.a})`);
+      grad.addColorStop(1, `rgba(${gl.c}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(gx, gy, gl.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     for (const r of world.terrain.rects) {
-      const cx = sx(r.x + r.w / 2);
-      const cy = sy(r.y + r.h / 2);
-      if (!inView(cx, cy, Math.max(r.w, r.h))) continue;
-      const left = cx - r.w / 2;
-      const top = cy - r.h / 2;
-      const pat = getTerrainPattern(ctx, r.kind);
-      ctx.fillStyle = pat ?? r.color;
-      ctx.fillRect(left, top, r.w, r.h);
-      if (r.kind !== "tunnel_bg" && r.kind !== "pipe_bg" && r.kind !== "building_bg") {
-        ctx.fillStyle = "rgba(255,255,255,0.10)";
-        ctx.fillRect(left, top, r.w, 2);
-        ctx.fillStyle = "rgba(0,0,0,0.22)";
-        ctx.fillRect(left, top + r.h - 3, r.w, 3);
-      }
-      if (r.borderColor) {
-        ctx.strokeStyle = r.borderColor;
-        ctx.lineWidth = r.kind === "pipe_wall" ? 3 : 2;
-        ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2);
-      }
-      if (r.label && (r.kind === "building_roof" || r.kind === "pipe_wall")) {
-        ctx.fillStyle = "rgba(226, 232, 240, 0.75)";
-        ctx.font = "bold 12px Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(r.label, cx, cy - r.h / 2 - 8);
+      if (r.kind.startsWith("deco_")) continue;
+      const cx0 = sx(r.x + r.w / 2);
+      const cy0 = sy(r.y + r.h / 2);
+      for (const ox of [-WORLD_W, 0, WORLD_W]) {
+        for (const oy of [-WORLD_H, 0, WORLD_H]) {
+          const cx = cx0 + ox;
+          const cy = cy0 + oy;
+          if (!inView(cx, cy, Math.max(r.w, r.h))) continue;
+          const left = cx - r.w / 2;
+          const top = cy - r.h / 2;
+          const pat = getTerrainPattern(ctx, r.kind);
+          ctx.fillStyle = pat ?? r.color;
+          ctx.fillRect(left, top, r.w, r.h);
+          if (r.kind !== "tunnel_bg" && r.kind !== "pipe_bg" && r.kind !== "building_bg") {
+            ctx.fillStyle = "rgba(255,255,255,0.10)";
+            ctx.fillRect(left, top, r.w, 2);
+            ctx.fillStyle = "rgba(0,0,0,0.22)";
+            ctx.fillRect(left, top + r.h - 3, r.w, 3);
+          }
+          if (r.borderColor) {
+            ctx.strokeStyle = r.borderColor;
+            ctx.lineWidth = r.kind === "pipe_wall" ? 3 : 2;
+            ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2);
+          }
+          if (r.label && (r.kind === "building_roof" || r.kind === "pipe_wall" || r.kind === "bridge")) {
+            ctx.fillStyle = "rgba(226, 232, 240, 0.75)";
+            ctx.font = "bold 12px Inter, sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(r.label, cx, top - 8);
+          }
+        }
       }
     }
     for (const ob of world.obstacles) {
@@ -3215,12 +3568,31 @@
     }
     if (localPlayer.watchtowerTimer <= 0) {
       for (const sz of world.terrain.shadows) {
-        const cx = sx(sz.x + sz.w / 2);
-        const cy = sy(sz.y + sz.h / 2);
-        if (!inView(cx, cy, Math.max(sz.w, sz.h))) continue;
-        const inside = localPlayer.deployed && Math.abs(wrapDeltaX(localPlayer.pos.x, sz.x + sz.w / 2)) <= sz.w / 2 + 40 && Math.abs(wrapDeltaY(localPlayer.pos.y, sz.y + sz.h / 2)) <= sz.h / 2 + 40;
-        ctx.fillStyle = inside ? "rgba(2, 6, 23, 0.22)" : `rgba(2, 6, 23, ${sz.alpha ?? 0.74})`;
-        ctx.fillRect(cx - sz.w / 2, cy - sz.h / 2, sz.w, sz.h);
+        const cx0 = sx(sz.x + sz.w / 2);
+        const cy0 = sy(sz.y + sz.h / 2);
+        for (const ox of [-WORLD_W, 0, WORLD_W]) {
+          for (const oy of [-WORLD_H, 0, WORLD_H]) {
+            const cx = cx0 + ox;
+            const cy = cy0 + oy;
+            if (!inView(cx, cy, Math.max(sz.w, sz.h))) continue;
+            const inside = localPlayer.deployed && Math.abs(wrapDeltaX(localPlayer.pos.x, sz.x + sz.w / 2)) <= sz.w / 2 + 40 && Math.abs(wrapDeltaY(localPlayer.pos.y, sz.y + sz.h / 2)) <= sz.h / 2 + 40;
+            ctx.fillStyle = inside ? "rgba(2, 6, 23, 0.22)" : `rgba(2, 6, 23, ${sz.alpha ?? 0.74})`;
+            ctx.fillRect(cx - sz.w / 2, cy - sz.h / 2, sz.w, sz.h);
+          }
+        }
+      }
+    }
+    for (const r of world.terrain.rects) {
+      if (!r.kind.startsWith("deco_")) continue;
+      const cx0 = sx(r.x + r.w / 2);
+      const cy0 = sy(r.y + r.h / 2);
+      for (const ox of [-WORLD_W, 0, WORLD_W]) {
+        for (const oy of [-WORLD_H, 0, WORLD_H]) {
+          const cx = cx0 + ox;
+          const cy = cy0 + oy;
+          if (!inView(cx, cy, Math.max(r.w, r.h) + 40)) continue;
+          drawDeco(ctx, r, cx, cy, world.tick);
+        }
       }
     }
     for (const g of world.grenades) {

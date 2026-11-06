@@ -614,3 +614,196 @@ export function drawProjectileSprite(ctx: CanvasRenderingContext2D, pr: Projecti
     ctx.restore()
   }
 }
+
+/** 装饰层 sprite：窗户灯 / 路灯 / 缆线 / 天线 / 蒸汽口 / 警示条 / 油桶 / 管道 / 梯子 / 标牌 */
+export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: number; h: number; kind: string; color: string; borderColor?: string }, dx: number, dy: number, tick: number): void {
+  const left = dx - r.w / 2
+  const top = dy - r.h / 2
+  switch (r.kind) {
+    case 'deco_window_lit': {
+      const flick = 0.75 + Math.sin(tick * 0.05 + r.x * 0.013) * 0.12
+      ctx.save()
+      ctx.globalAlpha = 0.9
+      ctx.fillStyle = r.color
+      ctx.fillRect(left, top, r.w, r.h)
+      // 窗格
+      ctx.strokeStyle = 'rgba(15,23,42,0.75)'
+      ctx.lineWidth = 2
+      ctx.strokeRect(left, top, r.w, r.h)
+      ctx.beginPath()
+      ctx.moveTo(left + r.w / 2, top); ctx.lineTo(left + r.w / 2, top + r.h)
+      ctx.moveTo(left, top + r.h / 2); ctx.lineTo(left + r.w, top + r.h / 2)
+      ctx.stroke()
+      // 光晕
+      const g = ctx.createRadialGradient(left + r.w / 2, top + r.h / 2, 2, left + r.w / 2, top + r.h / 2, r.w * 1.8)
+      g.addColorStop(0, `rgba(251, 191, 36, ${0.20 * flick})`)
+      g.addColorStop(1, 'rgba(251, 191, 36, 0)')
+      ctx.fillStyle = g
+      ctx.fillRect(left - r.w, top - r.h, r.w * 3, r.h * 3)
+      ctx.restore()
+      break
+    }
+    case 'deco_window_dark':
+      ctx.fillStyle = '#0b1220'
+      ctx.fillRect(left, top, r.w, r.h)
+      ctx.strokeStyle = 'rgba(30,41,59,0.9)'
+      ctx.lineWidth = 2
+      ctx.strokeRect(left, top, r.w, r.h)
+      break
+    case 'deco_lamp': {
+      ctx.save()
+      ctx.strokeStyle = '#475569'
+      ctx.lineWidth = 3
+      ctx.beginPath(); ctx.moveTo(dx, top + r.h); ctx.lineTo(dx, top + 10); ctx.stroke()
+      ctx.fillStyle = '#1e293b'
+      ctx.fillRect(dx - 7, top, 14, 10)
+      const g = ctx.createRadialGradient(dx, top + 6, 2, dx, top + 6, 70)
+      g.addColorStop(0, 'rgba(251,191,36,0.22)')
+      g.addColorStop(1, 'rgba(251,191,36,0)')
+      ctx.fillStyle = g
+      ctx.beginPath(); ctx.arc(dx, top + 6, 70, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#fde68a'
+      ctx.beginPath(); ctx.arc(dx, top + 6, 3.5, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+      break
+    }
+    case 'deco_cable': {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(100,116,139,0.85)'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(left, top)
+      ctx.quadraticCurveTo(left + r.w / 2, top + r.h * 1.6, left + r.w, top)
+      ctx.stroke()
+      // 挂点
+      ctx.fillStyle = '#94a3b8'
+      ctx.beginPath(); ctx.arc(left, top, 3, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.arc(left + r.w, top, 3, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+      break
+    }
+    case 'deco_antenna': {
+      ctx.save()
+      ctx.strokeStyle = r.color
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(dx, top + r.h); ctx.lineTo(dx, top + 6)
+      ctx.moveTo(dx - 10, top + 16); ctx.lineTo(dx + 10, top + 16)
+      ctx.moveTo(dx - 7, top + 26); ctx.lineTo(dx + 7, top + 26)
+      ctx.stroke()
+      // 航空障碍灯闪烁
+      const on = Math.floor(tick / 40) % 2 === 0
+      ctx.fillStyle = on ? '#ef4444' : '#7f1d1d'
+      ctx.beginPath(); ctx.arc(dx, top + 4, 3.5, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+      break
+    }
+    case 'deco_vent': {
+      ctx.save()
+      ctx.strokeStyle = '#64748b'
+      ctx.lineWidth = 2
+      ctx.strokeRect(left, top, r.w, r.h)
+      ctx.fillStyle = 'rgba(148,163,184,0.35)'
+      for (let i = 0; i < 3; i++) {
+        const ph = ((tick * 0.4 + i * 12) % 36) / 36
+        ctx.globalAlpha = (1 - ph) * 0.5
+        ctx.beginPath(); ctx.arc(dx, top - 6 - ph * 26, 5 + ph * 8, 0, Math.PI * 2); ctx.fill()
+      }
+      ctx.globalAlpha = 1
+      ctx.restore()
+      break
+    }
+    case 'deco_stripe': {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(left, top, r.w, r.h)
+      ctx.clip()
+      for (let x = left - r.h; x < left + r.w; x += 14) {
+        ctx.fillStyle = 'rgba(245,158,11,0.55)'
+        ctx.beginPath()
+        ctx.moveTo(x, top + r.h)
+        ctx.lineTo(x + 7, top)
+        ctx.lineTo(x + 14, top)
+        ctx.lineTo(x + 7, top + r.h)
+        ctx.closePath()
+        ctx.fill()
+      }
+      ctx.restore()
+      break
+    }
+    case 'deco_barrel': {
+      ctx.save()
+      const g = ctx.createLinearGradient(left, 0, left + r.w, 0)
+      g.addColorStop(0, '#92400e')
+      g.addColorStop(0.5, '#f59e0b')
+      g.addColorStop(1, '#78350f')
+      ctx.fillStyle = g
+      roundRect(ctx, left, top, r.w, r.h, 3)
+      ctx.fill()
+      ctx.strokeStyle = '#451a03'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'
+      ctx.fillRect(left, top + 6, r.w, 2)
+      ctx.fillRect(left, top + r.h - 8, r.w, 2)
+      ctx.restore()
+      break
+    }
+    case 'deco_pipe_run': {
+      ctx.save()
+      const g = ctx.createLinearGradient(0, top, 0, top + r.h)
+      g.addColorStop(0, '#0891b2')
+      g.addColorStop(0.5, '#22d3ee')
+      g.addColorStop(1, '#0e7490')
+      ctx.fillStyle = g
+      roundRect(ctx, left, top, r.w, r.h, 4)
+      ctx.fill()
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'
+      for (let x = left + 40; x < left + r.w; x += 120) ctx.fillRect(x, top - 2, 6, r.h + 4)
+      ctx.restore()
+      break
+    }
+    case 'deco_ladder': {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(148,163,184,0.75)'
+      ctx.lineWidth = 2
+      const x1 = left + 2
+      const x2 = left + r.w - 2
+      ctx.beginPath(); ctx.moveTo(x1, top); ctx.lineTo(x1, top + r.h); ctx.moveTo(x2, top); ctx.lineTo(x2, top + r.h); ctx.stroke()
+      for (let y = top + 12; y < top + r.h; y += 22) {
+        ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke()
+      }
+      ctx.restore()
+      break
+    }
+    case 'deco_sign': {
+      ctx.save()
+      ctx.fillStyle = 'rgba(15,23,42,0.9)'
+      roundRect(ctx, left, top, r.w, r.h, 4)
+      ctx.fill()
+      ctx.strokeStyle = r.color
+      ctx.lineWidth = 2
+      ctx.stroke()
+      ctx.fillStyle = r.color
+      ctx.font = 'bold 13px Inter, system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(`🚩 ${r.borderColor ?? ''}`, dx, top + r.h / 2 + 1)
+      ctx.restore()
+      break
+    }
+    case 'deco_bracket': {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(34,211,238,0.6)'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(dx - 8, top + r.h); ctx.lineTo(dx - 8, top); ctx.lineTo(dx + 8, top); ctx.lineTo(dx + 8, top + r.h)
+      ctx.stroke()
+      ctx.restore()
+      break
+    }
+    default:
+      ctx.fillStyle = r.color
+      ctx.fillRect(left, top, r.w, r.h)
+  }
+}

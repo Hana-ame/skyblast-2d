@@ -32,6 +32,11 @@ export class Terrain {
     this.rects.push({ x, y, w, h, color, borderColor, kind, label })
   }
 
+  /** 装饰图元：只进渲染列表、不写碰撞网格（窗户/路灯/缆线/天线/蒸汽口/警示条/桶/管道/梯子/标牌） */
+  addDeco(x: number, y: number, w: number, h: number, kind: string, color: string, borderColor = ''): void {
+    this.rects.push({ x, y, w, h, color, borderColor, kind, label: '' })
+  }
+
   /** 挖空（地道/掩体）：网格清 0 + 背景图元 + 阴影区 */
   carveTunnel(x: number, y: number, w: number, h: number, label = '地下地道'): void {
     this.setGridRect(x, y, w, h, 0)
@@ -129,6 +134,130 @@ export class Terrain {
       { x: 11980, y: 2180, w: 620, c: '#0ea5e9' },
     ]
     for (const s of sky) this.addSolidBlock(s.x, s.y, s.w, 36, '#334155', s.c, 'sky_island')
+
+    this.buildExtraStructures()
+    this.buildDecorations()
+  }
+
+  /** 补充结构：连桥 / 高空平台 / 地面集装箱 / 据点掩体 / 地下立柱 */
+  private buildExtraStructures(): void {
+    // 双子塔中层 / 高层连桥
+    this.addSolidBlock(6180, 2560, 840, 20, '#334155', '#38bdf8', 'bridge', '双子塔中层连桥')
+    this.addSolidBlock(6180, 1360, 840, 20, '#334155', '#38bdf8', 'bridge', '双子塔高层连桥')
+    // 西翼 / 东翼 连接桥
+    this.addSolidBlock(2000, 2600, 280, 20, '#334155', '#f97316', 'bridge', '西翼连接桥')
+    this.addSolidBlock(11760, 2600, 280, 20, '#334155', '#0ea5e9', 'bridge', '东翼连接桥')
+
+    // 高空战术平台
+    const platforms = [
+      { x: 2700, y: 1180, w: 300, c: '#fb923c' },
+      { x: 3700, y: 1900, w: 260, c: '#38bdf8' },
+      { x: 5250, y: 2060, w: 220, c: '#10b981' },
+      { x: 5400, y: 1000, w: 220, c: '#a855f7' },
+      { x: 8800, y: 1860, w: 300, c: '#a855f7' },
+      { x: 9600, y: 1240, w: 320, c: '#38bdf8' },
+      { x: 11500, y: 1860, w: 280, c: '#0ea5e9' },
+      { x: 12900, y: 1500, w: 260, c: '#f43f5e' },
+    ]
+    for (const p of platforms) this.addSolidBlock(p.x, p.y, p.w, 22, '#334155', p.c, 'platform')
+
+    // 地面集装箱 / 掩体堆
+    const containers = [
+      { x: 5000, y: 2720, w: 120, h: 80, c: '#f97316' },
+      { x: 7650, y: 2720, w: 120, h: 80, c: '#22d3ee' },
+      { x: 9800, y: 2720, w: 100, h: 80, c: '#a855f7' },
+      { x: 3850, y: 2740, w: 100, h: 60, c: '#eab308' },
+    ]
+    for (const c of containers) this.addSolidBlock(c.x, c.y, c.w, c.h, '#1f2937', c.c, 'container')
+
+    // 据点掩体
+    const covers = [
+      { x: 1620, y: 1780, c: '#f43f5e' },
+      { x: 4200, y: 3500, c: '#38bdf8' },
+      { x: 6650, y: 3480, c: '#10b981' },
+      { x: 11360, y: 1780, c: '#0ea5e9' },
+    ]
+    for (const c of covers) this.addSolidBlock(c.x, c.y, 60, 60, '#334155', c.c, 'cover')
+
+    // 地下立柱（掩体大厅内）
+    this.addSolidBlock(4300, 3400, 60, 120, '#334155', '#38bdf8', 'pillar')
+    this.addSolidBlock(6650, 3300, 60, 120, '#334155', '#10b981', 'pillar')
+    this.addSolidBlock(9900, 3400, 60, 120, '#334155', '#f43f5e', 'pillar')
+  }
+
+  /** 装饰层：窗户/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌（不参与碰撞） */
+  private buildDecorations(): void {
+    const buildings = [
+      { bx: 1400, w: 640, floors: 4, name: '西翼指挥大楼' },
+      { bx: 3200, w: 560, floors: 3, name: '西区工业厂房' },
+      { bx: 5500, w: 680, floors: 5, name: '中央双子北塔' },
+      { bx: 7020, w: 680, floors: 5, name: '中央双子南塔' },
+      { bx: 9300, w: 560, floors: 3, name: '东区通信大楼' },
+      { bx: 11100, w: 640, floors: 4, name: '东翼要塞大楼' },
+    ]
+    const warm = ['#fbbf24', '#fde68a', '#fb923c', '#f97316']
+    buildings.forEach((b, bi) => {
+      const topY = SURFACE_Y - b.floors * 240
+      // 天线
+      this.addDeco(b.bx + b.w / 2 - 3, topY - 64, 6, 64, 'deco_antenna', '#94a3b8')
+      // 楼面窗户
+      for (let f = 0; f < b.floors; f++) {
+        const fy = SURFACE_Y - f * 240
+        for (let k = 0; k < 3; k++) {
+          const lit = (bi + f + k) % 3 !== 0
+          const wx = b.bx + 40 + k * Math.max(60, (b.w - 120) / 3)
+          this.addDeco(wx, fy - 170, 42, 40, lit ? 'deco_window_lit' : 'deco_window_dark', lit ? warm[(bi + k) % warm.length] : '#0f172a')
+        }
+      }
+      // 屋顶警示条
+      this.addDeco(b.bx - 16, topY + 20, b.w + 32, 6, 'deco_stripe', '#f59e0b')
+    })
+
+    // 地表路灯
+    for (let x = 400; x < WORLD_W; x += 720) {
+      this.addDeco(x, SURFACE_Y - 52, 8, 52, 'deco_lamp', '#fbbf24')
+    }
+
+    // 高空缆线（悬垂）
+    const cables = [
+      { x: 6180, y: 1900, w: 840 },
+      { x: 2040, y: 2400, w: 300 },
+      { x: 11740, y: 2400, w: 260 },
+      { x: 2300, y: 1600, w: 800 },
+      { x: 8200, y: 1460, w: 1100 },
+    ]
+    for (const c of cables) this.addDeco(c.x, c.y, c.w, 60, 'deco_cable', '#64748b')
+
+    // 地下掩体蒸汽口
+    for (const v of [3780, 6180, 9780]) this.addDeco(v, 3550, 26, 26, 'deco_vent', '#94a3b8')
+
+    // 油桶（掩体入口/集装箱旁）
+    for (const b of [1560, 2100, 3200, 4300, 5400, 6300, 7200, 9800, 11300, 12600]) {
+      this.addDeco(b, SURFACE_Y - 30, 16, 30, 'deco_barrel', '#f59e0b')
+    }
+
+    // 地表管道跑线
+    for (const p of [{ x: 2400, w: 620 }, { x: 8450, w: 520 }, { x: 12100, w: 300 }]) {
+      this.addDeco(p.x, SURFACE_Y - 22, p.w, 10, 'deco_pipe_run', '#22d3ee')
+    }
+
+    // 竖井梯子
+    for (const sx of [700, 2900, 5200, 7800, 10100, 12400]) {
+      this.addDeco(sx + 2, SURFACE_Y + 24, 14, 1200, 'deco_ladder', '#94a3b8')
+    }
+
+    // 据点标牌
+    for (const cp of [
+      { x: 1620, y: 1840, t: 'A' }, { x: 4050, y: 3560, t: 'B' },
+      { x: 6500, y: 2800, t: 'C' }, { x: 6500, y: 3540, t: 'D' }, { x: 11360, y: 1840, t: 'E' },
+    ]) {
+      this.addDeco(cp.x - 30, cp.y - 130, 60, 22, 'deco_sign', '#22d3ee', cp.t)
+    }
+
+    // 管道支架
+    for (const px of [2180, 4100, 6240, 7960, 10040]) {
+      this.addDeco(px - 10, 2240 + 160, 20, 30, 'deco_bracket', '#22d3ee')
+    }
   }
 
   /** 点是否被原始地形挡住（双轴环形 x/y） */
