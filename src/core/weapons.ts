@@ -25,6 +25,7 @@ export interface WeaponDef {
   passWalls?: boolean      // 穿透原始地形（引力弹）
   dragPerSecond?: number   // 每秒速度保留比例（<1 表示逐渐减速；引力弹）
   beam?: boolean           // 渲染为光束（激光）
+  ascendMult?: number      // 升空速度倍率（喷气上升速度）
   curveRate?: number       // 弹道弯曲速率 rad/s（引力枪的弯曲弹道）
   farRange?: number        // 远距阈值：超过该距离命中按 farDamage 结算（狙击）
   farDamage?: number       // 超过 farRange 时的伤害（狙击 99，非爆头留 1 血）
@@ -110,7 +111,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1500, recoil: 60, magSize: 12, maxReserve: 48,
     reloadTime: 0.9, fireDelay: 0.17, terrainRadius: 6,
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
-    moveSpeedMult: 2.00, fuelMult: 2.00, fovMult: 1.0, color: '#fde047',   // 双倍移速/双倍飞行
+    moveSpeedMult: 1.50, fuelMult: 2.00, ascendMult: 1.25, fovMult: 1.0, color: '#fde047',   // 移速1.5/飞行容量2.0/升空速度1.25
   },
   {
     id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
@@ -118,7 +119,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1500, recoil: 48, magSize: 30, maxReserve: 150,
     reloadTime: 2.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
-    moveSpeedMult: 1.5, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',
+    moveSpeedMult: 1.25, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',
   },
 ]
 

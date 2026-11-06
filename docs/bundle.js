@@ -41,8 +41,8 @@
   function jump(v) {
     v.y = -P.jumpImpulse;
   }
-  function jetpack(v, dt) {
-    v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel / P.mass * dt);
+  function jetpack(v, dt, ascendMult = 1) {
+    v.y = Math.max(-P.jetpackMaxUp * ascendMult, v.y - P.jetpackAccel * ascendMult / P.mass * dt);
   }
   function updateJetpackFuel(fuel, active, onGround, dt, maxFuel = P.jetpackFuel) {
     const next = active ? fuel - P.jetpackDrain * dt : onGround ? fuel + P.jetpackRecharge * dt : fuel;
@@ -691,11 +691,12 @@
       explosive: false,
       gravityScale: 0.03,
       pierceOnHeadshot: false,
-      moveSpeedMult: 2,
+      moveSpeedMult: 1.5,
       fuelMult: 2,
+      ascendMult: 1.25,
       fovMult: 1,
       color: "#fde047"
-      // 双倍移速/双倍飞行
+      // 移速1.5/飞行容量2.0/升空速度1.25
     },
     {
       id: 8,
@@ -718,7 +719,7 @@
       explosive: false,
       gravityScale: 0.04,
       pierceOnHeadshot: false,
-      moveSpeedMult: 1.5,
+      moveSpeedMult: 1.25,
       fuelMult: 1,
       fovMult: 1,
       color: "#4ade80"
@@ -1136,7 +1137,7 @@
       const fuelMax = getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1);
       const fuel = Math.min(p.fuel, fuelMax);
       const canJet = !p.mountedTowerId && w.jetpack && fuel > 0;
-      if (canJet) jetpack(p.vel, dt);
+      if (canJet) jetpack(p.vel, dt, wepCur.ascendMult ?? 1);
       p.jetpack = canJet;
       p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax);
       if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt);

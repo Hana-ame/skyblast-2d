@@ -71,8 +71,9 @@ export function jump(v: Vec2): void {
 }
 
 /** 喷射器（升空）：推力>重力，vy 朝升空极速渐变（~1s 预热），封顶后受力平衡匀速 */
-export function jetpack(v: Vec2, dt: number): void {
-  v.y = Math.max(-P.jetpackMaxUp, v.y - (P.jetpackAccel / P.mass) * dt)
+export function jetpack(v: Vec2, dt: number, ascendMult = 1): void {
+  // ascendMult：武器对「升空速度」的倍率（手枪 1.25，其余 1）
+  v.y = Math.max(-P.jetpackMaxUp * ascendMult, v.y - (P.jetpackAccel * ascendMult / P.mass) * dt)
 }
 
 /** 喷射器燃料更新：active 时按 drain 消耗；**仅在落地时**按 recharge 回充；

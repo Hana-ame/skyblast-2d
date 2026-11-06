@@ -378,9 +378,10 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
   // 手枪：双倍移速 + 双倍飞行；冲锋枪：1.5 倍移速、1 倍飞行、极高射速、伤害=手枪
-  assert.equal(WEAPONS[7].moveSpeedMult, 2.0, 'pistol double move speed')
-  assert.equal(WEAPONS[7].fuelMult, 2.0, 'pistol double flight')
-  assert.equal(WEAPONS[8].moveSpeedMult, 1.5, 'SMG 1.5x move speed')
+  assert.equal(WEAPONS[7].moveSpeedMult, 1.5, 'pistol 1.5x move speed')
+  assert.equal(WEAPONS[7].fuelMult, 2.0, 'pistol double flight capacity')
+  assert.equal(WEAPONS[7].ascendMult, 1.25, 'pistol 1.25x ascent speed')
+  assert.equal(WEAPONS[8].moveSpeedMult, 1.25, 'SMG 1.25x move speed')
   assert.equal(WEAPONS[8].fuelMult, 1.0, 'SMG normal flight')
   assert.ok(WEAPONS[8].fireDelay <= 0.05, 'SMG extremely high fire rate')
   assert.equal(WEAPONS[8].damage, WEAPONS[7].damage, 'SMG damage equals pistol')
@@ -865,4 +866,24 @@ test('引力枪：引力场弯曲其他枪的子弹（自身弹道不受影响�
   if (cur) {
     assert.ok(Math.abs(cur.vel.y) > Math.abs(vy0) + 50, `bullet bent by gravity field, vy ${vy0.toFixed(0)} -> ${cur.vel.y.toFixed(0)}`)
   }
+})
+
+
+test('升空速度：手枪 1.25×（喷气上升极速更快），步枪正常', () => {
+  const base = getPhysicsParams()
+  const measure = (wepIdx: number): number => {
+    const w = new World(171)
+    const p = w.addPlayer('P', 'ffa')
+    p.weaponIndex = wepIdx
+    p.pos = { x: 6600, y: 2400 }
+    for (let i = 0; i < 40; i++) w.step(DT, new Map([[p.id, input({ jetpack: true })]]))
+    return -p.vel.y
+  }
+  const rifleUp = measure(1)
+  const pistolUp = measure(7)
+  // 实际上升极速 ≈ jetpackMaxUp*ascendMult − 一帧重力（apply 内先夹到 -maxUp，physics 再加重力）
+  const expectBase = base.jetpackMaxUp - (base.gravity / base.mass) * DT
+  assert.ok(Math.abs(rifleUp - expectBase) < 2, `rifle ascent ≈ ${expectBase.toFixed(1)}, got ${rifleUp.toFixed(1)}`)
+  assert.ok(Math.abs(pistolUp - (base.jetpackMaxUp * 1.25 - (base.gravity / base.mass) * DT)) < 2, `pistol ascent ≈ ${(base.jetpackMaxUp * 1.25 - (base.gravity / base.mass) * DT).toFixed(1)}, got ${pistolUp.toFixed(1)}`)
+  assert.ok(pistolUp > rifleUp * 1.2, 'pistol ascends visibly faster')
 })

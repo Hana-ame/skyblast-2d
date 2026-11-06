@@ -356,7 +356,7 @@ export class World {
     const fuelMax = getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1)
     const fuel = Math.min(p.fuel, fuelMax)
     const canJet = !p.mountedTowerId && w.jetpack && fuel > 0
-    if (canJet) jetpack(p.vel, dt)
+    if (canJet) jetpack(p.vel, dt, wepCur.ascendMult ?? 1)
     p.jetpack = canJet
     p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax)
 
