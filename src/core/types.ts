@@ -38,6 +38,7 @@ export interface PlayerState {
   shieldTimer: number
   watchtowerTimer: number
   doll: DollSnapshot | null   // 替身人偶锚（10s 生死回溯）
+  dollCharges: number         // 替身人偶持有数（只从特殊补给箱获得）
   respawnTimer: number
   kills: number
   deaths: number
@@ -74,6 +75,7 @@ export interface Projectile {
   weaponLabel: string
   color: string
   hitTargets: number[]     // 穿透弹已命中目标（防同目标重复结算）
+  bounces: number          // 剩余撞墙反弹次数（激光枪 1 次）
 }
 
 export interface Grenade {
@@ -154,6 +156,7 @@ export interface SupplyCrate {
   x: number
   y: number
   area: string
+  kind: 'weapon' | 'doll'   // weapon=空投特武（激光/加特林/引力枪）；doll=替身人偶（特殊补给）
   weaponId: number
   weaponName: string
   color: string

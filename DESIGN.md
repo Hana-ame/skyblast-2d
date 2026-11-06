@@ -300,6 +300,15 @@ SkyBlast v2 是"每帧像素 @60fps"（隐含 60Hz）。本骨架是秒制：
 - v2 的观战/阴影视野/小地图等纯表现层，未移植；渲染以快照为准。
 - v2 的 `0.peerjs.com` 硬编码不在 core/net 内出现，仅由 PeerJS 传输实现负责。
 
-### 10.5 尚未完成（设计位）
+### 10.5 2026-11-06 玩法调整（补给门槛 + 激光反弹 + 数值）
+
+- **补给专属**：`laser/gatling/gravity` 上已带 `isSupplyOnly`（常规 `switchWeapon` 拒绝，测试锁定）；
+  **替身人偶**改为 `SECONDARIES.doll.supplyOnly`，只能从新增的 2 个特殊补给位获得充能（`PlayerState.dollCharges`，上限 2），
+  无充能使用无效且不进 CD。
+- **激光反弹**：`WeaponDef.bounces = 1` → `Projectile.bounces`；命中地形时按轴向反射（`prevX/prevY` 探针判定横/纵撞面），
+  反弹后 `hitTargets` 重置为仅排除发射者。
+- **数值**：弹速 4–13% 下压、伤害小幅下调（见 README 数值表）；狙击爆头仍一枪。
+
+### 10.6 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

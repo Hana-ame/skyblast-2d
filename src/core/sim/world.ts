@@ -53,6 +53,12 @@ const SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
   { x: 10550, y: 1580, area: '东部高空平台' },
 ]
 
+/** 特殊补给位：只出「替身人偶」（不在常规配装里） */
+const DOLL_SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
+  { x: 4820, y: 2100, area: '中西部高空连廊旁' },
+  { x: 8560, y: 2740, area: '东区地表特殊补给点' },
+]
+
 const MORTARS_INIT: Omit<Mortar, 'cooldown' | 'operatorId'>[] = [
   { id: 'mortar_left', name: '西翼高台迫击炮', x: 920, y: 2180, angle: -Math.PI * 0.28, power: 24.0 },
   { id: 'mortar_mid_w', name: '中西浮岛迫击炮', x: 4620, y: 1460, angle: -Math.PI * 0.30, power: 23.0 },
@@ -129,10 +135,19 @@ export class World {
       armed: true, armTimer: 0, triggered: false, fuse: 0,
       instant: false, directHit: false, preset: true, respawnTimer: 0,
     }))
-    this.supplyCrates = SUPPLY_SPOTS.map((s, idx) => {
-      const w = WEAPONS[4 + (idx % 3)]
-      return { id: this.crate++, x: s.x, y: s.y, area: s.area, weaponId: w.id, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 }
-    })
+    this.supplyCrates = [
+      ...SUPPLY_SPOTS.map((spot, idx) => {
+        const w = WEAPONS[4 + (idx % 3)]
+        return {
+          id: this.crate++, x: spot.x, y: spot.y, area: spot.area, kind: 'weapon' as const,
+          weaponId: w.id, weaponName: w.name, color: w.color, active: true, respawnTimer: 0,
+        }
+      }),
+      ...DOLL_SUPPLY_SPOTS.map((spot) => ({
+        id: this.crate++, x: spot.x, y: spot.y, area: spot.area, kind: 'doll' as const,
+        weaponId: -1, weaponName: '🎎 替身人偶（特殊补给）', color: '#f472b6', active: true, respawnTimer: 0,
+      })),
+    ]
     this.ammoPacks = []
     this.usedAmmoSpots.clear()
     for (let i = 0; i < this.config.ammoPackMaxActive; i++) this.spawnAmmoPack()
@@ -159,7 +174,7 @@ export class World {
       pistolAmmo: 12, pistolReserve: 48,
       jetpack: false, fuel: getPhysicsParams().jetpackFuel,
       shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0,
-      doll: null, respawnTimer: 0,
+      doll: null, dollCharges: 0, respawnTimer: 0,
       kills: 0, deaths: 0,
     }
     this.respawnAt(p, team)
@@ -186,6 +201,7 @@ export class World {
     p.shieldTimer = 0
     p.watchtowerTimer = 0
     p.doll = null
+    p.dollCharges = 0
     p.reloading = false
     p.fireCooldown = 0
     p.secondaryCooldown = 0
@@ -334,7 +350,7 @@ export class World {
         damage: wep.damage, headshotMult: wep.headshotMult, terrainRadius: wep.terrainRadius,
         explosive: wep.explosive, gravityScale: wep.gravityScale ?? (wep.id === 4 ? 0.0 : 0.04),
         pierceOnHeadshot: !!wep.pierceOnHeadshot, pierceAll: !!wep.pierceAll,
-        isGravityOrb: !!wep.isGravityOrb, weaponLabel: wep.shortName, color: wep.color,
+        isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, weaponLabel: wep.shortName, color: wep.color,
         r: wep.isGravityOrb ? 8.5 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
         life: (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       }))
@@ -343,14 +359,14 @@ export class World {
 
   private makeProjectile(p: PlayerState, x: number, y: number, vx: number, vy: number, o: {
     damage: number; headshotMult: number; terrainRadius: number; explosive: boolean; gravityScale?: number;
-    pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; weaponLabel: string; color: string; r: number; life: number
+    pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number; weaponLabel: string; color: string; r: number; life: number
   }): Projectile {
     return {
       id: this.prj++, owner: p.id, pos: { x: wrapX(x), y: wrapY(y) }, vel: { x: vx, y: vy },
       life: o.life, r: o.r, damage: o.damage, headshotMult: o.headshotMult,
       explosive: o.explosive, terrainRadius: o.terrainRadius, gravityScale: o.gravityScale ?? 0.04,
       pierceOnHeadshot: !!o.pierceOnHeadshot, pierceAll: !!o.pierceAll,
-      isGravityOrb: !!o.isGravityOrb, weaponLabel: o.weaponLabel, color: o.color,
+      isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, weaponLabel: o.weaponLabel, color: o.color,
       hitTargets: [p.id],   // 发射者自身永远跳过
     }
   }
@@ -392,9 +408,13 @@ export class World {
       return
     }
 
+    // 替身人偶只从特殊补给获得：无充能时整次使用无效（不消耗 CD）
+    if (s.type === 'doll' && p.dollCharges <= 0) return
+
     p.secondaryCooldown = def.cd
 
     if (s.type === 'doll') {
+      p.dollCharges--
       p.doll = {
         pos: { x: p.pos.x, y: p.pos.y }, hp: p.hp, shieldHp: p.shieldHp, fuel: p.fuel,
         weaponIndex: p.weaponIndex, ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
@@ -557,6 +577,8 @@ export class World {
         }
       }
       pr.vel.y += g * pr.gravityScale * dt
+      const prevX = pr.pos.x
+      const prevY = pr.pos.y
       pr.pos.x = wrapX(pr.pos.x + pr.vel.x * dt)
       pr.pos.y = wrapY(pr.pos.y + pr.vel.y * dt)
       pr.life -= dt
@@ -615,9 +637,24 @@ export class World {
         if (hit) { pr.life = 0; continue }
       }
 
-      // C. 原始地形
+      // C. 原始地形：激光枪撞墙反弹一次（反弹后重置命中列表，可再次命中目标）
       if (this.terrain.isSolidAt(pr.pos.x, pr.pos.y)) {
-        if (pr.explosive) this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr)
+        if (pr.explosive) {
+          this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr)
+          pr.life = 0
+          continue
+        }
+        if (pr.bounces > 0) {
+          const hitX = this.terrain.isSolidAt(pr.pos.x, prevY)   // 横向撞墙
+          const hitY = this.terrain.isSolidAt(prevX, pr.pos.y)   // 纵向撞地/顶
+          pr.pos = { x: prevX, y: prevY }
+          if (hitX) pr.vel.x = -pr.vel.x
+          if (hitY) pr.vel.y = -pr.vel.y
+          if (!hitX && !hitY) { pr.vel.x = -pr.vel.x; pr.vel.y = -pr.vel.y }
+          pr.bounces--
+          pr.hitTargets = [pr.owner]
+          continue
+        }
         pr.life = 0
         continue
       }
@@ -892,9 +929,13 @@ export class World {
         if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 44) {
           crate.active = false
           crate.respawnTimer = this.config.supplyRespawnTime
-          p.weaponIndex = crate.weaponId
-          p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize
-          p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve
+          if (crate.kind === 'doll') {
+            p.dollCharges = Math.min(this.config.dollMaxCharges, p.dollCharges + 1)
+          } else {
+            p.weaponIndex = crate.weaponId
+            p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize
+            p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve
+          }
           this.events.push({ kind: 'supply_pickup', playerId: p.id, weaponName: crate.weaponName, x: crate.x, y: crate.y })
           break
         }

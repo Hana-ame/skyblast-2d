@@ -32,7 +32,7 @@ export class Presenter {
       `pos=(${p.pos.x.toFixed(0)},${p.pos.y.toFixed(0)})  ` +
       `aim=${Math.round((p.aim * 180) / Math.PI)}°  ` +
       `hp=${p.hp}  ${wep?.shortName ?? '?'}=${p.ammo[p.weaponIndex] ?? 0}/${p.reserveAmmo[p.weaponIndex] ?? 0}  ` +
-      `shield=${p.shieldTimer > 0 ? p.shieldHp : '-'}  ` +
+      `shield=${p.shieldTimer > 0 ? p.shieldHp : '-'}  dollCharges=${p.dollCharges}  ` +
       `K/D=${p.kills}/${p.deaths}  proj=${snap.projectiles.length}  ` +
       `obs=${snap.obstacles.length}  ` +
       `score R/B/G=${snap.scores.red ?? 0}/${snap.scores.blue ?? 0}/${snap.scores.green ?? 0}`

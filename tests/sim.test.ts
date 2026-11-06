@@ -8,7 +8,7 @@ import { ServerSim } from '../src/net/ServerSim.ts'
 import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
-import { WEAPONS } from '../src/core/weapons.ts'
+import { WEAPONS, SECONDARIES } from '../src/core/weapons.ts'
 import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
 
 const DT = 1 / 60
@@ -130,13 +130,22 @@ test('护盾：吸收伤害并按超时消散', () => {
   assert.ok(p.shieldHp < shieldHp0 || p.shieldTimer === 0 || p.hp < 100, 'shield should absorb/timeout')
 })
 
-test('替身人偶：致命伤触发回溯而非死亡', () => {
+test('替身人偶：只从特殊补给获得（无充能不可用）', () => {
   const w = new World(11)
   const p = w.addPlayer('P', 'red')
-  p.doll = null
-  // 先锚替身
+  // 无充能：使用无效、不进入 CD
+  w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
+  assert.equal(p.doll, null, 'no doll charge -> cannot anchor')
+  assert.equal(p.secondaryCooldown, 0, 'no cooldown consumed when unavailable')
+  // 拾取特殊补给箱 → 获得充能
+  const crate = w.supplyCrates.find(c => c.kind === 'doll')!
+  p.pos = { x: crate.x, y: crate.y }
+  w.step(DT, new Map([[p.id, input()]]))
+  assert.equal(p.dollCharges, 1, 'doll supply should grant a charge')
+  // 再使用 → 锚定 + 消耗充能
   w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
   assert.ok(p.doll !== null, 'doll should be anchored')
+  assert.equal(p.dollCharges, 0, 'charge consumed')
   const anchorPos = { ...p.pos }
   // 走远一点再挨致死伤（狙击 68×2.5=170 > 100）
   for (let i = 0; i < 60; i++) w.step(DT, new Map([[p.id, input({ move: 1 })]]))
@@ -242,7 +251,7 @@ test('Loopback 集成：两客户端对局跑通，服务器权威产生命中�
   const snap = csA.lastSnapshot!
   assert.ok(Array.isArray(snap.obstacles) && snap.obstacles.length > 0, 'snapshot has obstacles')
   assert.ok(snap.capturePoints.length === 5, 'snapshot has 5 capture points')
-  assert.ok(snap.supplyCrates.length === 6, 'snapshot has supply crates')
+  assert.ok(snap.supplyCrates.length === 8, 'snapshot has 8 supply crates (6 weapon + 2 doll)')
   assert.ok(snap.ammoPacks.length > 0, 'snapshot has ammo packs')
   assert.ok(snap.scores !== undefined, 'snapshot has scores')
 })
@@ -296,4 +305,54 @@ test('PeerJS 传输：假 DataConnection 上跑通 服务器权威 + 欢迎包 +
   }
   assert.ok(cs.lastSnapshot && cs.lastSnapshot.tick > 0, 'client received snapshots over peer transport')
   assert.ok(cs.lastSnapshot!.obstacles.length > 0, 'snapshot carries v2 entities over the wire')
+})
+
+
+test('激光枪：撞墙反弹一次后继续飞行（pierceAll + bounces=1）', () => {
+  const w = new World(41)
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 4   // 激光炮
+  // 站在地表上方朝下打（地面 y=2800 必撞）
+  p.pos = { x: 6600, y: 2660 }
+  w.step(DT, new Map([[p.id, input({ fire: true, aim: Math.PI / 2 })]]))
+  const laser = w.projectiles.find(pr => pr.weaponLabel === '激光炮')
+  assert.ok(laser, 'laser fired')
+  const vy0 = laser!.vel.y
+  let bounced = false
+  for (let i = 0; i < 30; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    if (w.projectiles.some(pr => pr.weaponLabel === '激光炮' && pr.vel.y < 0)) { bounced = true; break }
+    w.drainEvents()
+  }
+  assert.ok(bounced, 'laser should bounce off ground (vy flips negative)')
+  const after = w.projectiles.find(pr => pr.weaponLabel === '激光炮')
+  assert.ok(after && after.bounces === 0, 'one bounce consumed')
+  assert.ok(after!.life > 0, 'laser survives the bounce')
+})
+
+test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换枪被拒', () => {
+  const w = new World(43)
+  const p = w.addPlayer('P', 'red')
+  const start = p.weaponIndex
+  for (const idx of [4, 5, 6]) {
+    w.step(DT, new Map([[p.id, input({ switchWeapon: idx })]]))
+    assert.equal(p.weaponIndex, start, `supply-only weapon ${idx} must not be switchable`)
+  }
+  // 补给箱可换
+  const crate = w.supplyCrates.find(c => c.kind === 'weapon')!
+  p.pos = { x: crate.x, y: crate.y }
+  w.step(DT, new Map([[p.id, input()]]))
+  assert.equal(p.weaponIndex, crate.weaponId, 'supply crate grants its weapon')
+})
+
+test('配装表：7 主武器数值（弹速 px/s / 伤害）与 supply-only 标记', () => {
+  assert.equal(WEAPONS.length, 7)
+  const speed = WEAPONS.map(w => w.speed)
+  assert.deepEqual(speed, [920, 1160, 1900, 900, 2350, 1240, 780])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [14, 18, 64, 66, 38, 13, 48])
+  for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
+  assert.equal(WEAPONS[4].bounces, 1, 'laser has one wall bounce')
+  // 人偶不在常规副武器可选列表（supplyOnly）
+  assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
+  assert.ok(!SECONDARIES.frag.supplyOnly && !SECONDARIES.shield.supplyOnly, 'normal secondaries selectable')
 })

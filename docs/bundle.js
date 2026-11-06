@@ -255,12 +255,12 @@
       name: "\u63A8\u8FDB\u9730\u5F39\u67AA",
       shortName: "\u9730\u5F39\u67AA",
       isSupplyOnly: false,
-      damage: 15,
+      damage: 14,
       headshotMult: 1.8,
       pellets: 8,
       spread: 0.28,
-      speed: 960,
-      recoil: 810,
+      speed: 920,
+      recoil: 780,
       magSize: 6,
       maxReserve: 30,
       reloadTime: 1.5,
@@ -276,11 +276,11 @@
       name: "\u8109\u51B2\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 19,
+      damage: 18,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
-      speed: 1200,
+      speed: 1160,
       recoil: 84,
       magSize: 28,
       maxReserve: 140,
@@ -297,11 +297,11 @@
       name: "\u7535\u78C1\u72D9\u51FB\u6B65\u67AA",
       shortName: "\u7535\u78C1\u72D9\u51FB",
       isSupplyOnly: false,
-      damage: 68,
+      damage: 64,
       headshotMult: 2.5,
       pellets: 1,
       spread: 3e-3,
-      speed: 2040,
+      speed: 1900,
       recoil: 390,
       magSize: 5,
       maxReserve: 25,
@@ -319,11 +319,11 @@
       name: "\u91CD\u578B\u69B4\u5F39\u70AE",
       shortName: "\u69B4\u5F39\u70AE",
       isSupplyOnly: false,
-      damage: 68,
+      damage: 66,
       headshotMult: 1.5,
       pellets: 1,
       spread: 0.025,
-      speed: 930,
+      speed: 900,
       recoil: 510,
       magSize: 4,
       maxReserve: 20,
@@ -341,11 +341,11 @@
       name: "\u26A1 \u805A\u53D8\u6FC0\u5149\u70AE",
       shortName: "\u6FC0\u5149\u70AE",
       isSupplyOnly: true,
-      damage: 45,
+      damage: 38,
       headshotMult: 2,
       pellets: 1,
       spread: 1e-3,
-      speed: 2640,
+      speed: 2350,
       recoil: 150,
       magSize: 12,
       maxReserve: 24,
@@ -356,6 +356,7 @@
       laser: true,
       pierceAll: true,
       pierceOnHeadshot: true,
+      bounces: 1,
       fovMult: 1.15,
       color: "#22d3ee"
     },
@@ -364,11 +365,11 @@
       name: "\u{1F525} \u91CD\u88C5\u52A0\u7279\u6797",
       shortName: "\u52A0\u7279\u6797",
       isSupplyOnly: true,
-      damage: 14,
+      damage: 13,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
-      speed: 1320,
+      speed: 1240,
       recoil: 66,
       magSize: 90,
       maxReserve: 180,
@@ -385,11 +386,11 @@
       name: "\u{1F300} \u5947\u70B9\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 52,
+      damage: 48,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
-      speed: 810,
+      speed: 780,
       recoil: 240,
       magSize: 6,
       maxReserve: 18,
@@ -411,7 +412,7 @@
     airstrike: { id: "airstrike", name: "\u5B9A\u70B9\u7A7A\u88AD", icon: "\u2708\uFE0F", cd: 20 },
     barricade: { id: "barricade", name: "\u53EF\u7834\u574F\u969C\u788D\u7269", icon: "\u{1F9F1}", cd: 12 },
     shield: { id: "shield", name: "\u4E00\u6B21\u6027\u62A4\u76FE", icon: "\u{1F6E1}\uFE0F", cd: 16 },
-    doll: { id: "doll", name: "\u66FF\u8EAB\u4EBA\u5076", icon: "\u{1F38E}", cd: 24 },
+    doll: { id: "doll", name: "\u66FF\u8EAB\u4EBA\u5076", icon: "\u{1F38E}", cd: 24, supplyOnly: true },
     pistol: { id: "pistol", name: "\u6218\u672F\u624B\u67AA", icon: "\u{1F52B}", cd: 0.24 }
   };
   var DEFAULT_CONFIG = {
@@ -442,7 +443,8 @@
     watchtowerDuration: 20,
     watchtowerFovMult: 1.65,
     respawnDelay: 4,
-    loadoutLock: true
+    loadoutLock: true,
+    dollMaxCharges: 2
   };
 
   // src/core/types.ts
@@ -485,6 +487,10 @@
     { x: 10150, y: 3520, area: "\u4E1C\u533A\u5730\u4E0B\u88C5\u7532\u63A9\u4F53" },
     { x: 2600, y: 1580, area: "\u897F\u90E8\u9AD8\u7A7A\u5E73\u53F0" },
     { x: 10550, y: 1580, area: "\u4E1C\u90E8\u9AD8\u7A7A\u5E73\u53F0" }
+  ];
+  var DOLL_SUPPLY_SPOTS = [
+    { x: 4820, y: 2100, area: "\u4E2D\u897F\u90E8\u9AD8\u7A7A\u8FDE\u5ECA\u65C1" },
+    { x: 8560, y: 2740, area: "\u4E1C\u533A\u5730\u8868\u7279\u6B8A\u8865\u7ED9\u70B9" }
   ];
   var MORTARS_INIT = [
     { id: "mortar_left", name: "\u897F\u7FFC\u9AD8\u53F0\u8FEB\u51FB\u70AE", x: 920, y: 2180, angle: -Math.PI * 0.28, power: 24 },
@@ -569,10 +575,35 @@
         preset: true,
         respawnTimer: 0
       }));
-      this.supplyCrates = SUPPLY_SPOTS.map((s, idx) => {
-        const w = WEAPONS[4 + idx % 3];
-        return { id: this.crate++, x: s.x, y: s.y, area: s.area, weaponId: w.id, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 };
-      });
+      this.supplyCrates = [
+        ...SUPPLY_SPOTS.map((spot, idx) => {
+          const w = WEAPONS[4 + idx % 3];
+          return {
+            id: this.crate++,
+            x: spot.x,
+            y: spot.y,
+            area: spot.area,
+            kind: "weapon",
+            weaponId: w.id,
+            weaponName: w.name,
+            color: w.color,
+            active: true,
+            respawnTimer: 0
+          };
+        }),
+        ...DOLL_SUPPLY_SPOTS.map((spot) => ({
+          id: this.crate++,
+          x: spot.x,
+          y: spot.y,
+          area: spot.area,
+          kind: "doll",
+          weaponId: -1,
+          weaponName: "\u{1F38E} \u66FF\u8EAB\u4EBA\u5076\uFF08\u7279\u6B8A\u8865\u7ED9\uFF09",
+          color: "#f472b6",
+          active: true,
+          respawnTimer: 0
+        }))
+      ];
       this.ammoPacks = [];
       this.usedAmmoSpots.clear();
       for (let i = 0; i < this.config.ammoPackMaxActive; i++) this.spawnAmmoPack();
@@ -612,6 +643,7 @@
         shieldTimer: 0,
         watchtowerTimer: 0,
         doll: null,
+        dollCharges: 0,
         respawnTimer: 0,
         kills: 0,
         deaths: 0
@@ -639,6 +671,7 @@
       p.shieldTimer = 0;
       p.watchtowerTimer = 0;
       p.doll = null;
+      p.dollCharges = 0;
       p.reloading = false;
       p.fireCooldown = 0;
       p.secondaryCooldown = 0;
@@ -774,6 +807,7 @@
           pierceOnHeadshot: !!wep.pierceOnHeadshot,
           pierceAll: !!wep.pierceAll,
           isGravityOrb: !!wep.isGravityOrb,
+          bounces: wep.bounces ?? 0,
           weaponLabel: wep.shortName,
           color: wep.color,
           r: wep.isGravityOrb ? 8.5 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
@@ -797,6 +831,7 @@
         pierceOnHeadshot: !!o.pierceOnHeadshot,
         pierceAll: !!o.pierceAll,
         isGravityOrb: !!o.isGravityOrb,
+        bounces: o.bounces ?? 0,
         weaponLabel: o.weaponLabel,
         color: o.color,
         hitTargets: [p.id]
@@ -844,8 +879,10 @@
         }));
         return;
       }
+      if (s.type === "doll" && p.dollCharges <= 0) return;
       p.secondaryCooldown = def.cd;
       if (s.type === "doll") {
+        p.dollCharges--;
         p.doll = {
           pos: { x: p.pos.x, y: p.pos.y },
           hp: p.hp,
@@ -1011,6 +1048,8 @@
           }
         }
         pr.vel.y += g * pr.gravityScale * dt;
+        const prevX = pr.pos.x;
+        const prevY = pr.pos.y;
         pr.pos.x = wrapX(pr.pos.x + pr.vel.x * dt);
         pr.pos.y = wrapY(pr.pos.y + pr.vel.y * dt);
         pr.life -= dt;
@@ -1071,7 +1110,25 @@
           }
         }
         if (this.terrain.isSolidAt(pr.pos.x, pr.pos.y)) {
-          if (pr.explosive) this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr);
+          if (pr.explosive) {
+            this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 960, pr);
+            pr.life = 0;
+            continue;
+          }
+          if (pr.bounces > 0) {
+            const hitX = this.terrain.isSolidAt(pr.pos.x, prevY);
+            const hitY = this.terrain.isSolidAt(prevX, pr.pos.y);
+            pr.pos = { x: prevX, y: prevY };
+            if (hitX) pr.vel.x = -pr.vel.x;
+            if (hitY) pr.vel.y = -pr.vel.y;
+            if (!hitX && !hitY) {
+              pr.vel.x = -pr.vel.x;
+              pr.vel.y = -pr.vel.y;
+            }
+            pr.bounces--;
+            pr.hitTargets = [pr.owner];
+            continue;
+          }
           pr.life = 0;
           continue;
         }
@@ -1360,9 +1417,13 @@
           if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 44) {
             crate.active = false;
             crate.respawnTimer = this.config.supplyRespawnTime;
-            p.weaponIndex = crate.weaponId;
-            p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize;
-            p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve;
+            if (crate.kind === "doll") {
+              p.dollCharges = Math.min(this.config.dollMaxCharges, p.dollCharges + 1);
+            } else {
+              p.weaponIndex = crate.weaponId;
+              p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize;
+              p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve;
+            }
             this.events.push({ kind: "supply_pickup", playerId: p.id, weaponName: crate.weaponName, x: crate.x, y: crate.y });
             break;
           }
@@ -1686,11 +1747,20 @@
   var wantSwitch = null;
   var secOrder = Object.keys(SECONDARIES);
   var secIndex = 0;
+  function availableSecondaries() {
+    return secOrder.filter((id) => !SECONDARIES[id].supplyOnly || player.dollCharges > 0);
+  }
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     if (weaponKeyMap[k] !== void 0) wantSwitch = weaponKeyMap[k];
-    if (k === "g") wantSecondary = secOrder[secIndex];
-    if (k === "t") secIndex = (secIndex + 1) % secOrder.length;
+    if (k === "g") {
+      const list = availableSecondaries();
+      wantSecondary = list[secIndex % list.length];
+    }
+    if (k === "t") {
+      const list = availableSecondaries();
+      secIndex = (secIndex + 1) % list.length;
+    }
     if (k === "e") wantInteract = true;
   });
   for (const id of ["btn-jump", "btn-jet"]) {
@@ -1834,6 +1904,12 @@
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 1;
       ctx.strokeRect(p.x - 9, p.y - 9, 18, 18);
+      if (c.kind === "doll") {
+        ctx.fillStyle = "#fff";
+        ctx.font = "10px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("\u{1F38E}", p.x, p.y - 14);
+      }
     }
     for (const m of world.mortars) {
       const p = screenOf(m.x, m.y);
@@ -1877,9 +1953,11 @@
     }
     drawPlayer(player, "#4ade80", "YOU");
     for (const b of bots) drawPlayer(b, "#f87171", b.name);
+    const secList = availableSecondaries();
+    const curSec = secList[secIndex % secList.length] ?? "frag";
     const hud = [
-      `\u2764 ${player.hp}/${player.maxHp}   ${WEAPONS[player.weaponIndex].shortName} ${player.ammo[player.weaponIndex]}/${player.reserveAmmo[player.weaponIndex]}   \u{1F6E1}${player.shieldTimer > 0 ? player.shieldHp : "-"}`,
-      `\u526F\u6B66\u5668: ${SECONDARIES[secOrder[secIndex]].icon} ${SECONDARIES[secOrder[secIndex]].name} [T\u5207\u6362 G\u4F7F\u7528]   \u{1F6A9} ${world.capturePoints.map((c) => `${c.code}:${Math.round(c.progress)}%`).join(" ")}`,
+      `\u2764 ${player.hp}/${player.maxHp}   ${WEAPONS[player.weaponIndex].shortName} ${player.ammo[player.weaponIndex]}/${player.reserveAmmo[player.weaponIndex]}   \u{1F6E1}${player.shieldTimer > 0 ? player.shieldHp : "-"}   \u{1F38E}${player.dollCharges}`,
+      `\u526F\u6B66\u5668: ${SECONDARIES[curSec].icon} ${SECONDARIES[curSec].name} [T\u5207\u6362 G\u4F7F\u7528]   \u{1F6A9} ${world.capturePoints.map((c) => `${c.code}:${Math.round(c.progress)}%`).join(" ")}`,
       `\u6BD4\u5206 R/B/G ${world.scores.red}/${world.scores.blue}/${world.scores.green}   pos=(${player.pos.x.toFixed(0)},${player.pos.y.toFixed(0)})   tick=${world.tick}`
     ];
     ctx.fillStyle = "rgba(0,0,0,.45)";
@@ -1964,6 +2042,15 @@
     },
     get camera() {
       return cam;
+    },
+    get secIndex() {
+      return secIndex;
+    },
+    get secList() {
+      return availableSecondaries();
+    },
+    get pendingSecondary() {
+      return wantSecondary;
     }
   };
   var PARAM_KEY = "pvp-physics-params";

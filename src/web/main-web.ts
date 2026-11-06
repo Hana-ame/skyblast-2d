@@ -46,12 +46,16 @@ let wantInteract = false
 let wantSwitch: number | null = null
 const secOrder = Object.keys(SECONDARIES)
 let secIndex = 0
+/** 常规可选副武器（排除特殊补给专属；替身人偶只在有充能时进入循环） */
+function availableSecondaries(): string[] {
+  return secOrder.filter(id => !SECONDARIES[id].supplyOnly || player.dollCharges > 0)
+}
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase()
   if (weaponKeyMap[k] !== undefined) wantSwitch = weaponKeyMap[k]
-  if (k === 'g') wantSecondary = secOrder[secIndex]
-  if (k === 't') secIndex = (secIndex + 1) % secOrder.length
+  if (k === 'g') { const list = availableSecondaries(); wantSecondary = list[secIndex % list.length] }
+  if (k === 't') { const list = availableSecondaries(); secIndex = (secIndex + 1) % list.length }
   if (k === 'e') wantInteract = true
 })
 
@@ -200,6 +204,12 @@ function render(): void {
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 1
     ctx.strokeRect(p.x - 9, p.y - 9, 18, 18)
+    if (c.kind === 'doll') {
+      ctx.fillStyle = '#fff'
+      ctx.font = '10px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText('🎎', p.x, p.y - 14)
+    }
   }
   for (const m of world.mortars) {
     const p = screenOf(m.x, m.y)
@@ -245,9 +255,11 @@ function render(): void {
   for (const b of bots) drawPlayer(b, '#f87171', b.name)
 
   // HUD
+  const secList = availableSecondaries()
+  const curSec = secList[secIndex % secList.length] ?? 'frag'
   const hud = [
-    `❤ ${player.hp}/${player.maxHp}   ${WEAPONS[player.weaponIndex].shortName} ${player.ammo[player.weaponIndex]}/${player.reserveAmmo[player.weaponIndex]}   🛡${player.shieldTimer > 0 ? player.shieldHp : '-'}`,
-    `副武器: ${SECONDARIES[secOrder[secIndex]].icon} ${SECONDARIES[secOrder[secIndex]].name} [T切换 G使用]   🚩 ${world.capturePoints.map(c => `${c.code}:${Math.round(c.progress)}%`).join(' ')}`,
+    `❤ ${player.hp}/${player.maxHp}   ${WEAPONS[player.weaponIndex].shortName} ${player.ammo[player.weaponIndex]}/${player.reserveAmmo[player.weaponIndex]}   🛡${player.shieldTimer > 0 ? player.shieldHp : '-'}   🎎${player.dollCharges}`,
+    `副武器: ${SECONDARIES[curSec].icon} ${SECONDARIES[curSec].name} [T切换 G使用]   🚩 ${world.capturePoints.map(c => `${c.code}:${Math.round(c.progress)}%`).join(' ')}`,
     `比分 R/B/G ${world.scores.red}/${world.scores.blue}/${world.scores.green}   pos=(${player.pos.x.toFixed(0)},${player.pos.y.toFixed(0)})   tick=${world.tick}`,
   ]
   ctx.fillStyle = 'rgba(0,0,0,.45)'
@@ -327,6 +339,8 @@ requestAnimationFrame(frame)
 ;(window as unknown as { __dbg: unknown }).__dbg = {
   world, controls, get player() { return player }, get bots() { return bots },
   get camera() { return cam },
+  get secIndex() { return secIndex }, get secList() { return availableSecondaries() },
+  get pendingSecondary() { return wantSecondary },
 }
 
 // 调参暴露（tuning.html 用）
