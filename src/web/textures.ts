@@ -258,6 +258,12 @@ export function texKindOf(kind: string): string {
     case 'bunker_floor': return 'plate'
     case 'bridge': return 'metal'
     case 'platform': return 'island'
+    case 'ledge': return 'concrete'
+    case 'cliff': return 'brick'
+    case 'ruin_pillar':
+    case 'ruin_lintel': return 'brick'
+    case 'cave_floor':
+    case 'cave_shelf': return 'plate'
     case 'container': return 'plate'
     case 'cover': return 'brick'
     case 'pillar': return 'concrete'

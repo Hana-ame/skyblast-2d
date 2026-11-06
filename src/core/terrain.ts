@@ -144,55 +144,237 @@ export class Terrain {
 
     this.buildExtraStructures()
     this.buildDecorations()
+    this.buildNatureDeco()
   }
 
   // 设计规则（防卡死）：新增结构之间、结构与既有墙体/平台之间保持 ≥60px 通行间隙；
   // 不制造 <40px 的夹缝；立柱/掩体必须贴地且远离重生点抖动范围（±45px + 身宽 10px）。
-  /** 补充结构：连桥 / 高空平台 / 地面集装箱 / 据点掩体 / 地下立柱 */
+  /** 安全区：出生点/据点/炮位/传送门/补给/塔/测试用坐标 —— 新平台不得覆盖 */
+  private safeZones(): { x: number; y: number; r: number }[] {
+    return [
+      // 队伍出生点与据点
+      { x: 1100, y: 2740, r: 150 }, { x: 12100, y: 2740, r: 150 },
+      { x: 6600, y: 1460, r: 130 }, { x: 6600, y: 2380, r: 130 },
+      { x: 1720, y: 1780, r: 100 }, { x: 4150, y: 3500, r: 100 },
+      { x: 6600, y: 2740, r: 120 }, { x: 6600, y: 3480, r: 100 }, { x: 11420, y: 1780, r: 100 },
+      // 迫击炮/瞭望塔/传送门
+      { x: 920, y: 2180, r: 110 }, { x: 4620, y: 1460, r: 110 }, { x: 6600, y: 1080, r: 140 },
+      { x: 8520, y: 1460, r: 110 }, { x: 12260, y: 2180, r: 110 },
+      { x: 2580, y: 1620, r: 120 }, { x: 5840, y: 1600, r: 120 }, { x: 7360, y: 1600, r: 120 }, { x: 10580, y: 1620, r: 120 },
+      { x: 880, y: 2760, r: 90 }, { x: 6320, y: 1040, r: 110 }, { x: 2980, y: 3680, r: 90 },
+      { x: 9580, y: 2040, r: 100 }, { x: 6880, y: 3500, r: 90 }, { x: 12280, y: 2140, r: 90 },
+      // 补给/弹药/人偶
+      { x: 6800, y: 1020, r: 100 }, { x: 4150, y: 3520, r: 90 }, { x: 6600, y: 3500, r: 90 },
+      { x: 10150, y: 3520, r: 90 }, { x: 2600, y: 1580, r: 100 }, { x: 10550, y: 1580, r: 100 },
+      { x: 4820, y: 2100, r: 90 }, { x: 8560, y: 2760, r: 90 },
+      // 测试/玩法敏感位（勿覆盖）
+      { x: 1412, y: 2100, r: 80 }, { x: 1300, y: 2100, r: 80 }, { x: 6600, y: 2660, r: 90 },
+      { x: 2300, y: 2770, r: 90 }, { x: 1200, y: 2760, r: 80 },
+    ]
+  }
+
+  /** 仅在空白处加平台：与已有实体保持 ≥24px 间隙、与安全区保持距离 */
+  private addPlatformIfClear(x: number, y: number, w: number, h: number, color: string, border: string, kind: string, label = ''): boolean {
+    const pad = 24
+    const zone = this.safeZones()
+    for (const z of zone) {
+      if (Math.abs(z.x - (x + w / 2)) < z.r + w / 2 && Math.abs(z.y - y) < z.r + h) return false
+    }
+    for (const r of this.rects) {
+      if (r.kind.startsWith('deco_') || r.kind === 'tunnel_bg') continue
+      if (x < r.x + r.w + pad && x + w > r.x - pad && y < r.y + r.h + pad && y + h > r.y - pad) return false
+    }
+    this.addSolidBlock(x, y, w, h, color, border, kind, label)
+    return true
+  }
+
+  /** 地表台地/断崖：从地面抬起的整块岩台，制造高低差与跳跃落点 */
+  private addHill(x: number, topY: number, w: number, border: string, kind = 'cliff'): boolean {
+    const h = SURFACE_Y - topY
+    if (h <= 40 || h > 420) return false
+    for (const z of this.safeZones()) {
+      if (Math.abs(z.x - (x + w / 2)) < z.r + w / 2 && Math.abs(z.y - SURFACE_Y) < z.r + 60) return false
+    }
+    for (const r of this.rects) {
+      if (r.kind === 'earth' || r.kind === 'tunnel_bg' || r.kind.startsWith('deco_')) continue
+      if (x < r.x + r.w + 16 && x + w > r.x - 16 && topY < r.y + r.h + 16 && SURFACE_Y > r.y - 16) return false
+    }
+    this.addSolidBlock(x, topY, w, h, '#1e293b', border, kind, '台地')
+    return true
+  }
+
+  /** 补充结构：空洞骑士式多层平台网络 / 断崖 / 废墟拱门 / 洞窟跑酷 */
   private buildExtraStructures(): void {
-    // 双子塔中层 / 高层连桥（与楼层板齐平）
+    // ── A0. 地表台地 / 断崖（高低起伏的跳台地形）──
+    const hills = [
+      { x: 160, y: 2680, w: 240, c: '#fb923c' },
+      { x: 440, y: 2600, w: 180, c: '#f97316' },
+      { x: 2500, y: 2640, w: 300, c: '#38bdf8' },
+      { x: 3800, y: 2640, w: 260, c: '#f97316' },
+      { x: 5320, y: 2660, w: 140, c: '#10b981' },
+      { x: 6240, y: 2680, w: 240, c: '#10b981' },
+      { x: 6780, y: 2680, w: 180, c: '#10b981' },
+      { x: 8040, y: 2660, w: 300, c: '#a855f7' },
+      { x: 8640, y: 2700, w: 240, c: '#a855f7' },
+      { x: 9920, y: 2620, w: 320, c: '#38bdf8' },
+      { x: 10600, y: 2680, w: 240, c: '#38bdf8' },
+      { x: 11820, y: 2660, w: 200, c: '#0ea5e9' },
+      { x: 12640, y: 2680, w: 300, c: '#0ea5e9' },
+    ]
+    for (const hl of hills) this.addHill(hl.x, hl.y, hl.w, hl.c)
+    // ── A. 低空石台链（贴地跳台，左右交错）——
+    const lowChains = [
+      { x0: 160, x1: 1360, y: 2700, dy: 40, step: 260, w: 180, c: '#fb923c' },
+      { x0: 2056, x1: 2860, y: 2680, dy: 50, step: 220, w: 160, c: '#38bdf8' },
+      { x0: 3784, x1: 5480, y: 2710, dy: 60, step: 300, w: 150, c: '#f97316' },
+      { x0: 6220, x1: 6980, y: 2680, dy: 60, step: 240, w: 150, c: '#10b981' },
+      { x0: 8010, x1: 9260, y: 2710, dy: 50, step: 240, w: 170, c: '#a855f7' },
+      { x0: 9884, x1: 11040, y: 2690, dy: 40, step: 240, w: 160, c: '#38bdf8' },
+      { x0: 11776, x1: 13120, y: 2710, dy: 60, step: 260, w: 170, c: '#0ea5e9' },
+    ]
+    for (const ch of lowChains) {
+      let k = 0
+      for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
+        this.addPlatformIfClear(x, ch.y + ((k % 2) ? ch.dy : 0), ch.w, 22, '#334155', ch.c, 'ledge', '石台')
+        k++
+      }
+    }
+
+    // ── B. 中层浮空平台链（跳上高楼/浮岛的踏脚石）——
+    const midChains = [
+      { x0: 200, x1: 1300, y: 2460, dy: 90, step: 300, w: 170, c: '#fb923c' },
+      { x0: 1500, x1: 2100, y: 2280, dy: 80, step: 280, w: 150, c: '#f43f5e' },
+      { x0: 3880, x1: 4080, y: 2500, dy: 0, step: 260, w: 150, c: '#38bdf8' },
+      { x0: 5350, x1: 5480, y: 2480, dy: 0, step: 220, w: 120, c: '#10b981' },
+      { x0: 6240, x1: 6980, y: 2260, dy: 70, step: 260, w: 160, c: '#10b981' },
+      { x0: 7720, x1: 7920, y: 2500, dy: 0, step: 200, w: 160, c: '#a855f7' },
+      { x0: 8090, x1: 9080, y: 2380, dy: 80, step: 280, w: 170, c: '#a855f7' },
+      { x0: 9880, x1: 10020, y: 2500, dy: 0, step: 200, w: 130, c: '#38bdf8' },
+      { x0: 10920, x1: 11060, y: 2480, dy: 0, step: 200, w: 130, c: '#0ea5e9' },
+      { x0: 11800, x1: 13080, y: 2440, dy: 90, step: 300, w: 170, c: '#38bdf8' },
+    ]
+    for (const ch of midChains) {
+      let k = 0
+      for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
+        this.addPlatformIfClear(x, ch.y + ((k % 2) ? ch.dy : 0), ch.w, 22, '#334155', ch.c, 'platform', '浮空平台')
+        k++
+      }
+    }
+
+    // ── C. 高空悬空栈道（浮岛之间的高空跳跃路线）——
+    const highChains = [
+      { x0: 300, x1: 1280, y: 1960, dy: 110, step: 320, w: 160, c: '#fb923c' },
+      { x0: 1500, x1: 2260, y: 1760, dy: 90, step: 260, w: 140, c: '#f43f5e' },
+      { x0: 3080, x1: 3760, y: 1900, dy: 90, step: 260, w: 150, c: '#f97316' },
+      { x0: 5080, x1: 6220, y: 1760, dy: 110, step: 300, w: 160, c: '#38bdf8' },
+      { x0: 7100, x1: 7700, y: 1960, dy: 90, step: 260, w: 150, c: '#10b981' },
+      { x0: 9000, x1: 9100, y: 1900, dy: 0, step: 200, w: 140, c: '#a855f7' },
+      { x0: 9880, x1: 10980, y: 1760, dy: 100, step: 300, w: 160, c: '#38bdf8' },
+      { x0: 11860, x1: 13060, y: 1960, dy: 110, step: 300, w: 160, c: '#0ea5e9' },
+    ]
+    for (const ch of highChains) {
+      let k = 0
+      for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
+        this.addPlatformIfClear(x, ch.y + ((k % 2) ? ch.dy : 0), ch.w, 22, '#334155', ch.c, 'platform', '悬空栈道')
+        k++
+      }
+    }
+
+    // ── D. 废墟拱门（两根立柱 + 顶部横梁，可穿行）——
+    const arches = [
+      { x: 2080, y: 2440, w: 240, h: 260, c: '#f97316' },
+      { x: 3820, y: 2380, w: 220, h: 320, c: '#38bdf8' },
+      { x: 6300, y: 2320, w: 260, h: 380, c: '#10b981' },
+      { x: 8020, y: 2420, w: 240, h: 280, c: '#a855f7' },
+      { x: 9900, y: 2360, w: 200, h: 340, c: '#38bdf8' },
+      { x: 11920, y: 2380, w: 240, h: 320, c: '#0ea5e9' },
+    ]
+    for (const a of arches) {
+      const avail = this.addPlatformIfClear(a.x, a.y, 40, a.h - 70, '#334155', a.c, 'ruin_pillar')
+      if (!avail) continue
+      this.addSolidBlock(a.x + 40, a.y, a.w - 80, 22, '#1e293b', a.c, 'ruin_lintel', '废墟拱门')
+      this.addSolidBlock(a.x, a.y, a.w, 22, '#334155', a.c, 'ruin_lintel')
+    }
+
+    // ── E. 中央高塔遗迹（可攀爬的层叠塔身）——
+    this.addPlatformIfClear(5840, 2360, 120, 22, '#334155', '#38bdf8', 'platform', '遗迹塔阶')
+    this.addPlatformIfClear(5980, 2240, 120, 22, '#334155', '#38bdf8', 'platform', '遗迹塔阶')
+    this.addPlatformIfClear(6120, 2120, 120, 22, '#334155', '#38bdf8', 'platform', '遗迹塔阶')
+
+    // ── F. 洞窟层：地表下方一层「上层洞窟」，用竖井连接 ──
+    // 西区苔藓洞窟
+    this.carveTunnel(1200, 2960, 1500, 220, '西区苔藓洞窟')
+    this.addSolidBlock(1200, 3160, 1500, 20, '#14532d', '#4ade80', 'cave_floor')
+    for (const sx of [1360, 1680, 2050, 2380]) this.addSolidBlock(sx, 3120, 90, 20, '#1e3a2b', '#4ade80', 'cave_shelf')
+    this.carveTunnel(2460, 2800, 100, 200, '苔藓洞窟竖井')
+    this.addSolidBlock(2460, 2880, 40, 20, '#1e3a2b', '#4ade80', 'cave_shelf')
+    // 中央水晶洞窟
+    this.carveTunnel(4620, 3040, 900, 200, '中央水晶洞窟')
+    this.addSolidBlock(4620, 3220, 900, 20, '#1e1b4b', '#a78bfa', 'cave_floor')
+    for (const sx of [4760, 5080, 5380]) this.addSolidBlock(sx, 3170, 80, 20, '#241d4d', '#a78bfa', 'cave_shelf')
+    this.carveTunnel(5000, 2800, 100, 250, '水晶洞窟竖井')
+    // 东区水晶洞窟
+    this.carveTunnel(9600, 2980, 1500, 220, '东区水晶洞窟')
+    this.addSolidBlock(9600, 3180, 1500, 20, '#1e1b4b', '#a78bfa', 'cave_floor')
+    for (const sx of [9760, 10100, 10500, 10850]) this.addSolidBlock(sx, 3130, 90, 20, '#241d4d', '#a78bfa', 'cave_shelf')
+    this.carveTunnel(10700, 2800, 100, 200, '水晶洞窟竖井')
+
+    // ── G. 原有连桥/集装箱/掩体/立柱（保留，作为路线节点）——
     this.addSolidBlock(6180, 2560, 840, 20, '#334155', '#38bdf8', 'bridge', '双子塔中层连桥')
     this.addSolidBlock(6180, 2070, 840, 20, '#334155', '#38bdf8', 'bridge', '双子塔高层连桥')
-    // 西翼 / 东翼 连接桥
     this.addSolidBlock(2000, 2600, 280, 20, '#334155', '#f97316', 'bridge', '西翼连接桥')
     this.addSolidBlock(11760, 2600, 280, 20, '#334155', '#0ea5e9', 'bridge', '东翼连接桥')
-
-    // 高空战术平台
-    const platforms = [
-      { x: 2700, y: 1180, w: 300, c: '#fb923c' },
-      { x: 3700, y: 1900, w: 260, c: '#38bdf8' },
-      { x: 5250, y: 2060, w: 220, c: '#10b981' },
-      { x: 5400, y: 1000, w: 220, c: '#a855f7' },
-      { x: 8800, y: 1860, w: 300, c: '#a855f7' },
-      { x: 9600, y: 1240, w: 320, c: '#38bdf8' },
-      { x: 11500, y: 1900, w: 280, c: '#0ea5e9' },
-      { x: 12900, y: 1500, w: 260, c: '#f43f5e' },
-    ]
-    for (const p of platforms) this.addSolidBlock(p.x, p.y, p.w, 22, '#334155', p.c, 'platform')
-
-    // 地面集装箱 / 掩体堆
     const containers = [
       { x: 5000, y: 2720, w: 120, h: 80, c: '#f97316' },
-      { x: 7800, y: 2720, w: 120, h: 80, c: '#22d3ee' },   // 避开南塔右墙(7676-7700)
-      { x: 9950, y: 2720, w: 100, h: 80, c: '#a855f7' },   // 避开通信楼右墙(9836-9860)
+      { x: 7800, y: 2720, w: 120, h: 80, c: '#22d3ee' },
+      { x: 9950, y: 2720, w: 100, h: 80, c: '#a855f7' },
       { x: 3850, y: 2740, w: 100, h: 60, c: '#eab308' },
     ]
     for (const c of containers) this.addSolidBlock(c.x, c.y, c.w, c.h, '#1f2937', c.c, 'container')
-
-    // 据点掩体
-    // 据点掩体：放在重生点抖动范围（±45 + 身宽 10）之外，避免出生即卡在掩体内
     const covers = [
-      { x: 1560, y: 1780, c: '#f43f5e' },   // CP A 1720
-      { x: 4240, y: 3500, c: '#38bdf8' },   // CP B 4150
-      { x: 6680, y: 3480, c: '#10b981' },   // CP D 6600
-      { x: 11280, y: 1780, c: '#0ea5e9' },  // CP E 11420
+      { x: 1560, y: 1780, c: '#f43f5e' },
+      { x: 4240, y: 3500, c: '#38bdf8' },
+      { x: 6680, y: 3480, c: '#10b981' },
+      { x: 11280, y: 1780, c: '#0ea5e9' },
     ]
     for (const c of covers) this.addSolidBlock(c.x, c.y, 60, 60, '#334155', c.c, 'cover')
-
-    // 地下立柱：贴地为柱（不留 <40px 的夹缝），避开 CP 重生范围
     this.addSolidBlock(4300, 3440, 60, 120, '#334155', '#38bdf8', 'pillar')
     this.addSolidBlock(6800, 3420, 60, 120, '#334155', '#10b981', 'pillar')
     this.addSolidBlock(9900, 3440, 60, 120, '#334155', '#f43f5e', 'pillar')
+  }
+
+  /** 自然装饰层：平台吊藤 / 洞窟钟乳石 / 岩壁苔藓（空洞骑士式绿植氛围，不参与碰撞） */
+  private buildNatureDeco(): void {
+    const platKinds = new Set(['ledge', 'platform', 'sky_island', 'ruin_lintel', 'bridge'])
+    for (const r of [...this.rects]) {
+      if (!platKinds.has(r.kind)) continue
+      // 每隔一段挂一株藤蔓（确定性：按世界坐标取模）
+      const phase = Math.round(r.x / 20) % 3
+      if (phase === 0) {
+        this.addDeco(r.x + r.w * 0.3, r.y + r.h, 10, 30 + (Math.round(r.x) % 30), 'deco_vine', '#4ade80')
+      }
+      if (phase === 1 && r.w > 140) {
+        this.addDeco(r.x + r.w * 0.72, r.y + r.h, 8, 24 + (Math.round(r.x) % 20), 'deco_vine', '#22c55e')
+      }
+      // 岩台顶面苔藓
+      if (phase === 2) this.addDeco(r.x + 6, r.y - 6, Math.min(r.w - 12, 60), 10, 'deco_moss', '#4ade80')
+    }
+    // 洞窟：从顶壁垂下钟乳石 + 地面苔藓
+    for (const c of [...this.rects]) {
+      if (c.kind !== 'tunnel_bg' || !(c.label ?? '').includes('洞窟')) continue
+      for (let x = c.x + 120; x < c.x + c.w - 80; x += 170) {
+        const h = 16 + ((Math.round(x) * 7) % 24)
+        this.addDeco(x, c.y, 12, h, 'deco_stalactite', '#475569')
+      }
+      for (let x = c.x + 60; x < c.x + c.w - 40; x += 240) {
+        this.addDeco(x, c.y + c.h - 18, 26, 12, 'deco_moss', '#22c55e')
+      }
+    }
+    // 废墟拱门剪影（远景氛围）
+    for (const ax of [300, 1700, 2900, 4400, 5700, 7200, 8500, 9900, 11200, 12500]) {
+      const ay = 2300 + (Math.round(ax / 100) % 3) * 90
+      this.addDeco(ax, ay, 120, 70, 'deco_ruin_arch', '#334155')
+    }
   }
 
   /** 装饰层：窗户/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌（不参与碰撞） */

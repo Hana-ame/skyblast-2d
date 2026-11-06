@@ -852,6 +852,73 @@ export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: numbe
       ctx.restore()
       break
     }
+    case 'deco_vine': {
+      // 悬垂藤蔓（空洞骑士式绿植）
+      ctx.save()
+      ctx.strokeStyle = r.color
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.moveTo(dx, top)
+      const sway = Math.sin(tick * 0.04 + r.x * 0.02) * 4
+      ctx.quadraticCurveTo(dx + sway, top + r.h * 0.6, dx + sway * 1.6, top + r.h)
+      ctx.stroke()
+      // 叶片
+      ctx.fillStyle = 'rgba(74, 222, 128, 0.65)'
+      for (let i = 1; i <= 3; i++) {
+        const ly = top + (r.h / 4) * i
+        const off = Math.sin(tick * 0.04 + r.x * 0.02 + i) * 3
+        ctx.beginPath()
+        ctx.ellipse(dx + off, ly, 3.4, 5.2, off > 0 ? 0.6 : -0.6, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.restore()
+      break
+    }
+    case 'deco_stalactite': {
+      ctx.save()
+      ctx.fillStyle = r.color
+      ctx.beginPath()
+      ctx.moveTo(dx - r.w / 2, top)
+      ctx.lineTo(dx + r.w / 2, top)
+      ctx.lineTo(dx, top + r.h)
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'
+      ctx.beginPath()
+      ctx.moveTo(dx - r.w / 4, top)
+      ctx.lineTo(dx, top)
+      ctx.lineTo(dx, top + r.h * 0.7)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+      break
+    }
+    case 'deco_moss': {
+      ctx.save()
+      ctx.fillStyle = r.color
+      ctx.globalAlpha = 0.8
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath()
+        ctx.arc(left + (r.w / 4) * (i + 0.5), top + r.h * 0.6 + Math.sin(i * 2.1) * 3, r.h * 0.35, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.restore()
+      break
+    }
+    case 'deco_ruin_arch': {
+      ctx.save()
+      ctx.strokeStyle = r.color
+      ctx.lineWidth = 8
+      ctx.beginPath()
+      ctx.arc(dx, top + r.h, r.w / 2, Math.PI, 0)
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(15,23,42,0.55)'
+      ctx.beginPath()
+      ctx.arc(dx, top + r.h, r.w / 2 - 6, Math.PI, 0)
+      ctx.fill()
+      ctx.restore()
+      break
+    }
     default:
       ctx.fillStyle = r.color
       ctx.fillRect(left, top, r.w, r.h)

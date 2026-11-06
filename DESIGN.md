@@ -357,6 +357,11 @@ SkyBlast v2 是"每帧像素 @60fps"（隐含 60Hz）。本骨架是秒制：
 - **瞭望塔（2026-11-07 二次调整）**：按 E 上塔后**锁定在塔顶、不能移动**，视野 **200%**（下塔即失效，无计时）；
   塔上可瞄准/射击/互动；`Watchtower.operatorId` + `PlayerState.mountedTowerId` 表达；塔 sprite 显示观测状态。
 - **视野加成**：狙击与三把补给武器（激光/M249/引力枪）统一 `fovMult=1.30`（+30%）。
+- **2D 过关式地图重建（2026-11-07）**：`buildExtraStructures` 重写为空洞骑士式布局——地表台地/断崖（`addHill`，13 处过滤后 11 处）、
+  低/中/高三层交错平台链（`addPlatformIfClear`：安全区/重叠过滤）、可穿行废墟拱门（柱+梁）、遗迹塔阶；
+  新增地表下上层洞窟三层（苔藓洞窟/中央水晶洞窟/东区水晶洞窟，带 `cave_floor`/`cave_shelf` 与竖井入口）；
+  `buildNatureDeco`：平台吊藤（deco_vine 24）/洞窟钟乳石（deco_stalactite 21）/岩壁苔藓（deco_moss）/远景废墟拱剪影；
+  新 kind 贴图映射 cliff→brick、ledge/ruin→brick、cave_floor/shelf→plate。保留全部地标（出生点/据点/炮/塔/传送门/补给）与测试敏感坐标。
 - **贴图世界锚定（2026-11-07）**：CanvasPattern 默认取样锚点固定在画布原点 → 花纹与方块/物体相对滑动。`syncTerrainPatterns(camX,camY)` 每帧对缓存的 pattern `setTransform(translate(-camX,-camY))`，把贴图锚回世界坐标（用户空间 = 世界 - 相机）。隔离实验已验证矩阵方向：texture sample = user − t，故 t=−camera 即世界锚定。
 - **玩家间碰撞（2026-11-07）**：`playerHitsPoint`（6 采样点 vs 其他玩家 AABB，用于站立/阻挡）+ `playerBlockingAt`（整身体 AABB，用于水平阻挡）+ `tryNudge`（顶着人：被挡时轻推对方 1.4px/帧，避让地形/障碍/他人）+ `separatePlayers`（每 tick 两两重叠分离 0.6px）。注意脚底采样 y+16 贴地时不能当墙（nudge 用 y+15）。
 - **引力弹牵引（2026-11-07）**：位移式牵引（物理移动之后逐轴施加、碰撞安全），半径 260px、最大 240px/s（< 玩家 300px/s 移动 → **可被反向移动抵抗**）；

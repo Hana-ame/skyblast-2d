@@ -188,49 +188,234 @@
       for (const s of sky) this.addSolidBlock(s.x, s.y, s.w, 36, "#334155", s.c, "sky_island");
       this.buildExtraStructures();
       this.buildDecorations();
+      this.buildNatureDeco();
     }
     // 设计规则（防卡死）：新增结构之间、结构与既有墙体/平台之间保持 ≥60px 通行间隙；
     // 不制造 <40px 的夹缝；立柱/掩体必须贴地且远离重生点抖动范围（±45px + 身宽 10px）。
-    /** 补充结构：连桥 / 高空平台 / 地面集装箱 / 据点掩体 / 地下立柱 */
+    /** 安全区：出生点/据点/炮位/传送门/补给/塔/测试用坐标 —— 新平台不得覆盖 */
+    safeZones() {
+      return [
+        // 队伍出生点与据点
+        { x: 1100, y: 2740, r: 150 },
+        { x: 12100, y: 2740, r: 150 },
+        { x: 6600, y: 1460, r: 130 },
+        { x: 6600, y: 2380, r: 130 },
+        { x: 1720, y: 1780, r: 100 },
+        { x: 4150, y: 3500, r: 100 },
+        { x: 6600, y: 2740, r: 120 },
+        { x: 6600, y: 3480, r: 100 },
+        { x: 11420, y: 1780, r: 100 },
+        // 迫击炮/瞭望塔/传送门
+        { x: 920, y: 2180, r: 110 },
+        { x: 4620, y: 1460, r: 110 },
+        { x: 6600, y: 1080, r: 140 },
+        { x: 8520, y: 1460, r: 110 },
+        { x: 12260, y: 2180, r: 110 },
+        { x: 2580, y: 1620, r: 120 },
+        { x: 5840, y: 1600, r: 120 },
+        { x: 7360, y: 1600, r: 120 },
+        { x: 10580, y: 1620, r: 120 },
+        { x: 880, y: 2760, r: 90 },
+        { x: 6320, y: 1040, r: 110 },
+        { x: 2980, y: 3680, r: 90 },
+        { x: 9580, y: 2040, r: 100 },
+        { x: 6880, y: 3500, r: 90 },
+        { x: 12280, y: 2140, r: 90 },
+        // 补给/弹药/人偶
+        { x: 6800, y: 1020, r: 100 },
+        { x: 4150, y: 3520, r: 90 },
+        { x: 6600, y: 3500, r: 90 },
+        { x: 10150, y: 3520, r: 90 },
+        { x: 2600, y: 1580, r: 100 },
+        { x: 10550, y: 1580, r: 100 },
+        { x: 4820, y: 2100, r: 90 },
+        { x: 8560, y: 2760, r: 90 },
+        // 测试/玩法敏感位（勿覆盖）
+        { x: 1412, y: 2100, r: 80 },
+        { x: 1300, y: 2100, r: 80 },
+        { x: 6600, y: 2660, r: 90 },
+        { x: 2300, y: 2770, r: 90 },
+        { x: 1200, y: 2760, r: 80 }
+      ];
+    }
+    /** 仅在空白处加平台：与已有实体保持 ≥24px 间隙、与安全区保持距离 */
+    addPlatformIfClear(x, y, w, h, color, border, kind, label = "") {
+      const pad = 24;
+      const zone = this.safeZones();
+      for (const z of zone) {
+        if (Math.abs(z.x - (x + w / 2)) < z.r + w / 2 && Math.abs(z.y - y) < z.r + h) return false;
+      }
+      for (const r of this.rects) {
+        if (r.kind.startsWith("deco_") || r.kind === "tunnel_bg") continue;
+        if (x < r.x + r.w + pad && x + w > r.x - pad && y < r.y + r.h + pad && y + h > r.y - pad) return false;
+      }
+      this.addSolidBlock(x, y, w, h, color, border, kind, label);
+      return true;
+    }
+    /** 地表台地/断崖：从地面抬起的整块岩台，制造高低差与跳跃落点 */
+    addHill(x, topY, w, border, kind = "cliff") {
+      const h = SURFACE_Y - topY;
+      if (h <= 40 || h > 420) return false;
+      for (const z of this.safeZones()) {
+        if (Math.abs(z.x - (x + w / 2)) < z.r + w / 2 && Math.abs(z.y - SURFACE_Y) < z.r + 60) return false;
+      }
+      for (const r of this.rects) {
+        if (r.kind === "earth" || r.kind === "tunnel_bg" || r.kind.startsWith("deco_")) continue;
+        if (x < r.x + r.w + 16 && x + w > r.x - 16 && topY < r.y + r.h + 16 && SURFACE_Y > r.y - 16) return false;
+      }
+      this.addSolidBlock(x, topY, w, h, "#1e293b", border, kind, "\u53F0\u5730");
+      return true;
+    }
+    /** 补充结构：空洞骑士式多层平台网络 / 断崖 / 废墟拱门 / 洞窟跑酷 */
     buildExtraStructures() {
+      const hills = [
+        { x: 160, y: 2680, w: 240, c: "#fb923c" },
+        { x: 440, y: 2600, w: 180, c: "#f97316" },
+        { x: 2500, y: 2640, w: 300, c: "#38bdf8" },
+        { x: 3800, y: 2640, w: 260, c: "#f97316" },
+        { x: 5320, y: 2660, w: 140, c: "#10b981" },
+        { x: 6240, y: 2680, w: 240, c: "#10b981" },
+        { x: 6780, y: 2680, w: 180, c: "#10b981" },
+        { x: 8040, y: 2660, w: 300, c: "#a855f7" },
+        { x: 8640, y: 2700, w: 240, c: "#a855f7" },
+        { x: 9920, y: 2620, w: 320, c: "#38bdf8" },
+        { x: 10600, y: 2680, w: 240, c: "#38bdf8" },
+        { x: 11820, y: 2660, w: 200, c: "#0ea5e9" },
+        { x: 12640, y: 2680, w: 300, c: "#0ea5e9" }
+      ];
+      for (const hl of hills) this.addHill(hl.x, hl.y, hl.w, hl.c);
+      const lowChains = [
+        { x0: 160, x1: 1360, y: 2700, dy: 40, step: 260, w: 180, c: "#fb923c" },
+        { x0: 2056, x1: 2860, y: 2680, dy: 50, step: 220, w: 160, c: "#38bdf8" },
+        { x0: 3784, x1: 5480, y: 2710, dy: 60, step: 300, w: 150, c: "#f97316" },
+        { x0: 6220, x1: 6980, y: 2680, dy: 60, step: 240, w: 150, c: "#10b981" },
+        { x0: 8010, x1: 9260, y: 2710, dy: 50, step: 240, w: 170, c: "#a855f7" },
+        { x0: 9884, x1: 11040, y: 2690, dy: 40, step: 240, w: 160, c: "#38bdf8" },
+        { x0: 11776, x1: 13120, y: 2710, dy: 60, step: 260, w: 170, c: "#0ea5e9" }
+      ];
+      for (const ch of lowChains) {
+        let k = 0;
+        for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
+          this.addPlatformIfClear(x, ch.y + (k % 2 ? ch.dy : 0), ch.w, 22, "#334155", ch.c, "ledge", "\u77F3\u53F0");
+          k++;
+        }
+      }
+      const midChains = [
+        { x0: 200, x1: 1300, y: 2460, dy: 90, step: 300, w: 170, c: "#fb923c" },
+        { x0: 1500, x1: 2100, y: 2280, dy: 80, step: 280, w: 150, c: "#f43f5e" },
+        { x0: 3880, x1: 4080, y: 2500, dy: 0, step: 260, w: 150, c: "#38bdf8" },
+        { x0: 5350, x1: 5480, y: 2480, dy: 0, step: 220, w: 120, c: "#10b981" },
+        { x0: 6240, x1: 6980, y: 2260, dy: 70, step: 260, w: 160, c: "#10b981" },
+        { x0: 7720, x1: 7920, y: 2500, dy: 0, step: 200, w: 160, c: "#a855f7" },
+        { x0: 8090, x1: 9080, y: 2380, dy: 80, step: 280, w: 170, c: "#a855f7" },
+        { x0: 9880, x1: 10020, y: 2500, dy: 0, step: 200, w: 130, c: "#38bdf8" },
+        { x0: 10920, x1: 11060, y: 2480, dy: 0, step: 200, w: 130, c: "#0ea5e9" },
+        { x0: 11800, x1: 13080, y: 2440, dy: 90, step: 300, w: 170, c: "#38bdf8" }
+      ];
+      for (const ch of midChains) {
+        let k = 0;
+        for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
+          this.addPlatformIfClear(x, ch.y + (k % 2 ? ch.dy : 0), ch.w, 22, "#334155", ch.c, "platform", "\u6D6E\u7A7A\u5E73\u53F0");
+          k++;
+        }
+      }
+      const highChains = [
+        { x0: 300, x1: 1280, y: 1960, dy: 110, step: 320, w: 160, c: "#fb923c" },
+        { x0: 1500, x1: 2260, y: 1760, dy: 90, step: 260, w: 140, c: "#f43f5e" },
+        { x0: 3080, x1: 3760, y: 1900, dy: 90, step: 260, w: 150, c: "#f97316" },
+        { x0: 5080, x1: 6220, y: 1760, dy: 110, step: 300, w: 160, c: "#38bdf8" },
+        { x0: 7100, x1: 7700, y: 1960, dy: 90, step: 260, w: 150, c: "#10b981" },
+        { x0: 9e3, x1: 9100, y: 1900, dy: 0, step: 200, w: 140, c: "#a855f7" },
+        { x0: 9880, x1: 10980, y: 1760, dy: 100, step: 300, w: 160, c: "#38bdf8" },
+        { x0: 11860, x1: 13060, y: 1960, dy: 110, step: 300, w: 160, c: "#0ea5e9" }
+      ];
+      for (const ch of highChains) {
+        let k = 0;
+        for (let x = ch.x0; x <= ch.x1 - ch.w; x += ch.step) {
+          this.addPlatformIfClear(x, ch.y + (k % 2 ? ch.dy : 0), ch.w, 22, "#334155", ch.c, "platform", "\u60AC\u7A7A\u6808\u9053");
+          k++;
+        }
+      }
+      const arches = [
+        { x: 2080, y: 2440, w: 240, h: 260, c: "#f97316" },
+        { x: 3820, y: 2380, w: 220, h: 320, c: "#38bdf8" },
+        { x: 6300, y: 2320, w: 260, h: 380, c: "#10b981" },
+        { x: 8020, y: 2420, w: 240, h: 280, c: "#a855f7" },
+        { x: 9900, y: 2360, w: 200, h: 340, c: "#38bdf8" },
+        { x: 11920, y: 2380, w: 240, h: 320, c: "#0ea5e9" }
+      ];
+      for (const a of arches) {
+        const avail = this.addPlatformIfClear(a.x, a.y, 40, a.h - 70, "#334155", a.c, "ruin_pillar");
+        if (!avail) continue;
+        this.addSolidBlock(a.x + 40, a.y, a.w - 80, 22, "#1e293b", a.c, "ruin_lintel", "\u5E9F\u589F\u62F1\u95E8");
+        this.addSolidBlock(a.x, a.y, a.w, 22, "#334155", a.c, "ruin_lintel");
+      }
+      this.addPlatformIfClear(5840, 2360, 120, 22, "#334155", "#38bdf8", "platform", "\u9057\u8FF9\u5854\u9636");
+      this.addPlatformIfClear(5980, 2240, 120, 22, "#334155", "#38bdf8", "platform", "\u9057\u8FF9\u5854\u9636");
+      this.addPlatformIfClear(6120, 2120, 120, 22, "#334155", "#38bdf8", "platform", "\u9057\u8FF9\u5854\u9636");
+      this.carveTunnel(1200, 2960, 1500, 220, "\u897F\u533A\u82D4\u85D3\u6D1E\u7A9F");
+      this.addSolidBlock(1200, 3160, 1500, 20, "#14532d", "#4ade80", "cave_floor");
+      for (const sx of [1360, 1680, 2050, 2380]) this.addSolidBlock(sx, 3120, 90, 20, "#1e3a2b", "#4ade80", "cave_shelf");
+      this.carveTunnel(2460, 2800, 100, 200, "\u82D4\u85D3\u6D1E\u7A9F\u7AD6\u4E95");
+      this.addSolidBlock(2460, 2880, 40, 20, "#1e3a2b", "#4ade80", "cave_shelf");
+      this.carveTunnel(4620, 3040, 900, 200, "\u4E2D\u592E\u6C34\u6676\u6D1E\u7A9F");
+      this.addSolidBlock(4620, 3220, 900, 20, "#1e1b4b", "#a78bfa", "cave_floor");
+      for (const sx of [4760, 5080, 5380]) this.addSolidBlock(sx, 3170, 80, 20, "#241d4d", "#a78bfa", "cave_shelf");
+      this.carveTunnel(5e3, 2800, 100, 250, "\u6C34\u6676\u6D1E\u7A9F\u7AD6\u4E95");
+      this.carveTunnel(9600, 2980, 1500, 220, "\u4E1C\u533A\u6C34\u6676\u6D1E\u7A9F");
+      this.addSolidBlock(9600, 3180, 1500, 20, "#1e1b4b", "#a78bfa", "cave_floor");
+      for (const sx of [9760, 10100, 10500, 10850]) this.addSolidBlock(sx, 3130, 90, 20, "#241d4d", "#a78bfa", "cave_shelf");
+      this.carveTunnel(10700, 2800, 100, 200, "\u6C34\u6676\u6D1E\u7A9F\u7AD6\u4E95");
       this.addSolidBlock(6180, 2560, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u4E2D\u5C42\u8FDE\u6865");
       this.addSolidBlock(6180, 2070, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u9AD8\u5C42\u8FDE\u6865");
       this.addSolidBlock(2e3, 2600, 280, 20, "#334155", "#f97316", "bridge", "\u897F\u7FFC\u8FDE\u63A5\u6865");
       this.addSolidBlock(11760, 2600, 280, 20, "#334155", "#0ea5e9", "bridge", "\u4E1C\u7FFC\u8FDE\u63A5\u6865");
-      const platforms = [
-        { x: 2700, y: 1180, w: 300, c: "#fb923c" },
-        { x: 3700, y: 1900, w: 260, c: "#38bdf8" },
-        { x: 5250, y: 2060, w: 220, c: "#10b981" },
-        { x: 5400, y: 1e3, w: 220, c: "#a855f7" },
-        { x: 8800, y: 1860, w: 300, c: "#a855f7" },
-        { x: 9600, y: 1240, w: 320, c: "#38bdf8" },
-        { x: 11500, y: 1900, w: 280, c: "#0ea5e9" },
-        { x: 12900, y: 1500, w: 260, c: "#f43f5e" }
-      ];
-      for (const p of platforms) this.addSolidBlock(p.x, p.y, p.w, 22, "#334155", p.c, "platform");
       const containers = [
         { x: 5e3, y: 2720, w: 120, h: 80, c: "#f97316" },
         { x: 7800, y: 2720, w: 120, h: 80, c: "#22d3ee" },
-        // 避开南塔右墙(7676-7700)
         { x: 9950, y: 2720, w: 100, h: 80, c: "#a855f7" },
-        // 避开通信楼右墙(9836-9860)
         { x: 3850, y: 2740, w: 100, h: 60, c: "#eab308" }
       ];
       for (const c of containers) this.addSolidBlock(c.x, c.y, c.w, c.h, "#1f2937", c.c, "container");
       const covers = [
         { x: 1560, y: 1780, c: "#f43f5e" },
-        // CP A 1720
         { x: 4240, y: 3500, c: "#38bdf8" },
-        // CP B 4150
         { x: 6680, y: 3480, c: "#10b981" },
-        // CP D 6600
         { x: 11280, y: 1780, c: "#0ea5e9" }
-        // CP E 11420
       ];
       for (const c of covers) this.addSolidBlock(c.x, c.y, 60, 60, "#334155", c.c, "cover");
       this.addSolidBlock(4300, 3440, 60, 120, "#334155", "#38bdf8", "pillar");
       this.addSolidBlock(6800, 3420, 60, 120, "#334155", "#10b981", "pillar");
       this.addSolidBlock(9900, 3440, 60, 120, "#334155", "#f43f5e", "pillar");
+    }
+    /** 自然装饰层：平台吊藤 / 洞窟钟乳石 / 岩壁苔藓（空洞骑士式绿植氛围，不参与碰撞） */
+    buildNatureDeco() {
+      const platKinds = /* @__PURE__ */ new Set(["ledge", "platform", "sky_island", "ruin_lintel", "bridge"]);
+      for (const r of [...this.rects]) {
+        if (!platKinds.has(r.kind)) continue;
+        const phase = Math.round(r.x / 20) % 3;
+        if (phase === 0) {
+          this.addDeco(r.x + r.w * 0.3, r.y + r.h, 10, 30 + Math.round(r.x) % 30, "deco_vine", "#4ade80");
+        }
+        if (phase === 1 && r.w > 140) {
+          this.addDeco(r.x + r.w * 0.72, r.y + r.h, 8, 24 + Math.round(r.x) % 20, "deco_vine", "#22c55e");
+        }
+        if (phase === 2) this.addDeco(r.x + 6, r.y - 6, Math.min(r.w - 12, 60), 10, "deco_moss", "#4ade80");
+      }
+      for (const c of [...this.rects]) {
+        if (c.kind !== "tunnel_bg" || !(c.label ?? "").includes("\u6D1E\u7A9F")) continue;
+        for (let x = c.x + 120; x < c.x + c.w - 80; x += 170) {
+          const h = 16 + Math.round(x) * 7 % 24;
+          this.addDeco(x, c.y, 12, h, "deco_stalactite", "#475569");
+        }
+        for (let x = c.x + 60; x < c.x + c.w - 40; x += 240) {
+          this.addDeco(x, c.y + c.h - 18, 26, 12, "deco_moss", "#22c55e");
+        }
+      }
+      for (const ax of [300, 1700, 2900, 4400, 5700, 7200, 8500, 9900, 11200, 12500]) {
+        const ay = 2300 + Math.round(ax / 100) % 3 * 90;
+        this.addDeco(ax, ay, 120, 70, "deco_ruin_arch", "#334155");
+      }
     }
     /** 装饰层：窗户/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌（不参与碰撞） */
     buildDecorations() {
@@ -2332,6 +2517,16 @@
         return "metal";
       case "platform":
         return "island";
+      case "ledge":
+        return "concrete";
+      case "cliff":
+        return "brick";
+      case "ruin_pillar":
+      case "ruin_lintel":
+        return "brick";
+      case "cave_floor":
+      case "cave_shelf":
+        return "plate";
       case "container":
         return "plate";
       case "cover":
@@ -3239,6 +3434,71 @@
         ctx2.lineTo(dx + 8, top);
         ctx2.lineTo(dx + 8, top + r.h);
         ctx2.stroke();
+        ctx2.restore();
+        break;
+      }
+      case "deco_vine": {
+        ctx2.save();
+        ctx2.strokeStyle = r.color;
+        ctx2.lineWidth = 2.5;
+        ctx2.beginPath();
+        ctx2.moveTo(dx, top);
+        const sway = Math.sin(tick * 0.04 + r.x * 0.02) * 4;
+        ctx2.quadraticCurveTo(dx + sway, top + r.h * 0.6, dx + sway * 1.6, top + r.h);
+        ctx2.stroke();
+        ctx2.fillStyle = "rgba(74, 222, 128, 0.65)";
+        for (let i = 1; i <= 3; i++) {
+          const ly = top + r.h / 4 * i;
+          const off = Math.sin(tick * 0.04 + r.x * 0.02 + i) * 3;
+          ctx2.beginPath();
+          ctx2.ellipse(dx + off, ly, 3.4, 5.2, off > 0 ? 0.6 : -0.6, 0, Math.PI * 2);
+          ctx2.fill();
+        }
+        ctx2.restore();
+        break;
+      }
+      case "deco_stalactite": {
+        ctx2.save();
+        ctx2.fillStyle = r.color;
+        ctx2.beginPath();
+        ctx2.moveTo(dx - r.w / 2, top);
+        ctx2.lineTo(dx + r.w / 2, top);
+        ctx2.lineTo(dx, top + r.h);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.fillStyle = "rgba(255,255,255,0.18)";
+        ctx2.beginPath();
+        ctx2.moveTo(dx - r.w / 4, top);
+        ctx2.lineTo(dx, top);
+        ctx2.lineTo(dx, top + r.h * 0.7);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.restore();
+        break;
+      }
+      case "deco_moss": {
+        ctx2.save();
+        ctx2.fillStyle = r.color;
+        ctx2.globalAlpha = 0.8;
+        for (let i = 0; i < 4; i++) {
+          ctx2.beginPath();
+          ctx2.arc(left + r.w / 4 * (i + 0.5), top + r.h * 0.6 + Math.sin(i * 2.1) * 3, r.h * 0.35, 0, Math.PI * 2);
+          ctx2.fill();
+        }
+        ctx2.restore();
+        break;
+      }
+      case "deco_ruin_arch": {
+        ctx2.save();
+        ctx2.strokeStyle = r.color;
+        ctx2.lineWidth = 8;
+        ctx2.beginPath();
+        ctx2.arc(dx, top + r.h, r.w / 2, Math.PI, 0);
+        ctx2.stroke();
+        ctx2.fillStyle = "rgba(15,23,42,0.55)";
+        ctx2.beginPath();
+        ctx2.arc(dx, top + r.h, r.w / 2 - 6, Math.PI, 0);
+        ctx2.fill();
         ctx2.restore();
         break;
       }
