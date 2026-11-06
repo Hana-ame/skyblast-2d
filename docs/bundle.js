@@ -1759,6 +1759,9 @@
     // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
     // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
     stepProjectiles(dt) {
+      for (let i = this.projectiles.length - 1; i >= 0; i--) {
+        if (this.projectiles[i].damage <= 0) this.projectiles.splice(i, 1);
+      }
       const g = getPhysicsParams().gravity;
       const SUBSTEP_PX = 8;
       for (const pr of this.projectiles) {

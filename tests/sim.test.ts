@@ -852,7 +852,7 @@ test('引力枪：引力场弯曲其他枪的子弹（自身弹道不受影响�
   // 在弹道侧上方放一个静止引力弹（场半径 280）
   w.projectiles.push({
     id: 900001, owner: 1, pos: { x: 2750, y: 900 }, vel: { x: 0, y: 0 }, life: 8, r: 8.5,
-    damage: 0, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
+    damage: 1, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
     pierceOnHeadshot: false, pierceAll: false, isGravityOrb: true, passWalls: true,
     beam: false, rocket: false, bounces: 0, dragPerSecond: 0.45, weaponId: 6, curveRate: 0,
     weaponLabel: '引力枪', color: '#a855f7', hitTargets: [],
@@ -929,4 +929,28 @@ test('距离衰减：霰弹随距离掉伤；引力枪大幅衰减', () => {
     WEAPONS[0].pellets = oldPellets
     WEAPONS[0].spread = oldSpread
   }
+})
+
+
+test('伤害=0 的弹丸会被直接删除（不飞行/不参与命中）', () => {
+  const w = new World(191)
+  const p = w.addPlayer('P', 'ffa')
+  w.projectiles.push({
+    id: 900002, owner: p.id, pos: { x: p.pos.x + 100, y: p.pos.y }, vel: { x: 500, y: 0 }, life: 10, r: 4,
+    damage: 0, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
+    pierceOnHeadshot: false, pierceAll: false, isGravityOrb: false, passWalls: false,
+    beam: false, rocket: false, bounces: 0, dragPerSecond: 1, weaponId: 1, curveRate: 0,
+    weaponLabel: '测试', color: '#fff', hitTargets: [],
+  } as never)
+  const keep = {
+    id: 900003, owner: p.id, pos: { x: p.pos.x + 100, y: p.pos.y }, vel: { x: 500, y: 0 }, life: 10, r: 4,
+    damage: 1, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
+    pierceOnHeadshot: false, pierceAll: false, isGravityOrb: false, passWalls: false,
+    beam: false, rocket: false, bounces: 0, dragPerSecond: 1, weaponId: 1, curveRate: 0,
+    weaponLabel: '测试', color: '#fff', hitTargets: [],
+  } as never
+  w.projectiles.push(keep)
+  w.step(DT, new Map([[p.id, input()]]))
+  assert.ok(!w.projectiles.some(pr => pr.id === 900002), 'zero-damage projectile removed')
+  assert.ok(w.projectiles.some(pr => pr.id === 900003), 'positive-damage projectile kept')
 })

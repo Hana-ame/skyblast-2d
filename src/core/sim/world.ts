@@ -981,6 +981,10 @@ export class World {
   // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
   // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
   private stepProjectiles(dt: number): void {
+    // 伤害为 0 的弹丸没有任何战斗作用 → 直接删除（不推进、不参与碰撞/牵引/渲染）
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      if (this.projectiles[i].damage <= 0) this.projectiles.splice(i, 1)
+    }
     const g = getPhysicsParams().gravity
     const SUBSTEP_PX = 8
 
