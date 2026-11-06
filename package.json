@@ -1,17 +1,21 @@
 {
-  "name": "teeworlds-style-pvp",
-  "version": "0.1.0",
-  "description": "Teeworlds-style 2D side-view shooter PVP — 三层分离（input/net/ui）可运行骨架",
+  "name": "skyblast-2d",
+  "version": "0.2.0",
+  "description": "SkyBlast 2D — 环形大世界 2D 横版 PVP（Teeworlds 风格底座 + 服务器权威三层架构）",
   "type": "module",
   "scripts": {
     "start": "node src/main.ts",
     "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build:web": "esbuild src/web/main-web.ts --bundle --format=iife --outfile=docs/bundle.js",
     "build:site": "node scripts/build-site.ts"
   },
   "engines": {
     "node": ">=22.18"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }

@@ -261,3 +261,45 @@ presenter.onIntent(bus.publish);                  // UI 动作 → 回抛意图
 - **服务器权威**换一致性与反作弊，牺牲一点实现复杂度；预测+插值补回手感。
 - **实时自由瞄准**是卖点，故放弃"角度+力度抛物线"（炮战类）路线。
 - 三层强制单向依赖，`core` 零 IO，保证可单测、可服务端复用、可替换传输/输入。
+
+---
+
+## 10. 合并落地：SkyBlast 2D 内容 + 本骨架（2026-11-06）
+
+**来源**：玩法内容来自 SkyBlast 2D v2（`peerjs_battle_arena (1).zip`）；本仓库原为 teeworlds-style-pvp 骨架。
+
+### 10.1 落点对照
+
+| 原骨架 | 合并后 |
+|---|---|
+| `core/sim/world.ts` 简化世界（960×600 单屏） | 环形大世界 13200×4400（**双轴**无缝循环）+ 全量玩法系统 |
+| `core/types.ts` 单武器 | `core/weapons.ts` 7 主武器 + 8 副武器 + GameConfig |
+| — | `core/terrain.ts` 660×220 碰撞网格（楼房/管道/地道/掩体/浮岛/障碍物） |
+| — | `core/rng.ts` seeded RNG（联机 seed 服务器下发） |
+| `net/transport/Loopback.ts` | 增加 `Peer.ts`（PeerJS DataConnection → Transport，可单测） |
+| `net/ServerSim.ts` 单武器意图 | 新意图 interact/secondary/switchWeapon + 事件流广播 |
+| `net/StateSync.ts` 纯 x/y 插值 | 环形感知插值（跨缝最短位移）+ 离散实体直取最新帧 |
+| `ui/HUDViewModel.ts` 简化 HUD | 武器/备弹/护盾/副武器冷却/比分 |
+
+### 10.2 单位制（合并时统一）
+
+SkyBlast v2 是"每帧像素 @60fps"（隐含 60Hz）。本骨架是秒制：
+- 速度 **×60**（px/frame → px/s）：霰弹 16→960、狙击 34→2040、激光 44→2640…
+- 后坐力/投掷速度同理 ×60；重力仍用骨架调优值（1250 px/s²，用户确认），弹道重力按 `gravityScale × 1250` 缩放。
+- 冷却/换弹/引信本来就是秒，直接沿用。
+
+### 10.3 确定性约束（新增代码必须遵守）
+
+1. `core/` 不 import `input/net/ui`（静态检查测试守门）。
+2. **禁止 `Math.random`/`Date.now` 进入 core 逻辑**：随机量一律 `this.rng.*`；id 用自增计数器（不得用时间戳）。
+3. `step(dt, inputs)` 必须是纯函数式的：同 seed + 同输入序列 ⇒ 快照逐字节一致（测试覆盖含霰弹 RNG 消费）。
+
+### 10.4 与 v2 的取舍
+
+- v2 的"待机整备/配装锁定/按钮组大厅"是 UI 层规则，本次只保留 `loadoutLock` 开关（默认开；原型页关闭便于试玩）。
+- v2 的观战/阴影视野/小地图等纯表现层，未移植；渲染以快照为准。
+- v2 的 `0.peerjs.com` 硬编码不在 core/net 内出现，仅由 PeerJS 传输实现负责。
+
+### 10.5 尚未完成（设计位）
+
+联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

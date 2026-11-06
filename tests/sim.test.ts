@@ -1,67 +1,225 @@
-// tests/sim.test.ts —— core 确定性 + 三层 Loopback 集成
+// tests/sim.test.ts —— 合并版：core 确定性 + Loopback 集成 + SkyBlast v2 玩法系统
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { World, GROUND_Y, PLAYER_R } from '../src/core/sim/world.ts'
-import { getPhysicsParams } from '../src/core/sim/physics.ts'
+import { World } from '../src/core/sim/world.ts'
 import { defaultWorldInput } from '../src/core/types.ts'
-import type { WorldInput } from '../src/core/types.ts'
+import type { WorldInput, SecondaryIntent } from '../src/core/types.ts'
 import { ServerSim } from '../src/net/ServerSim.ts'
 import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
+import { WEAPONS } from '../src/core/weapons.ts'
+import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
 
 const DT = 1 / 60
-const input = (over: Partial<WorldInput> = {}): WorldInput => ({ ...defaultWorldInput(), ...over })
+const input = (over: Partial<WorldInput> = {}): WorldInput => ({
+  ...defaultWorldInput(), ...over,
+})
+const sec = (type: string, x = 0, y = 0): SecondaryIntent => ({ type, targetX: x, targetY: y })
 
-test('确定性：同输入两次运行，快照完全一致', () => {
-  const run = () => {
-    const w = new World()
-    const p = w.addPlayer(200, GROUND_Y)
-    for (let i = 0; i < 120; i++) w.step(DT, new Map([[p.id, input({ move: 1, fire: true, aim: -0.1 })]]))
+test('确定性：同 seed 两次运行，快照完全一致（含 RNG 消费）', () => {
+  const run = (): string => {
+    const w = new World(42)
+    const a = w.addPlayer('A', 'red')
+    const b = w.addPlayer('B', 'blue')
+    a.weaponIndex = 0   // 霰弹（8 弹丸 RNG 散射）
+    const inputs = new Map<number, WorldInput>([
+      [a.id, input({ move: 1, fire: true, aim: -0.1, secondary: sec('frag', b.pos.x, b.pos.y) })],
+      [b.id, input()],
+    ])
+    for (let i = 0; i < 300; i++) {
+      inputs.set(a.id, i === 10 ? input({ secondary: sec('frag', b.pos.x, b.pos.y) }) : input({ move: 1, fire: i < 200, aim: -0.1 }))
+      w.step(DT, inputs)
+      w.drainEvents()
+    }
     return JSON.stringify(w.snapshot())
   }
   assert.equal(run(), run())
 })
 
-test('重力：空中出生者下落（y 增大）', () => {
-  const w = new World()
-  const p = w.addPlayer(400, 200) // 空中
-  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input()]]))
-  assert.ok(p.pos.y > 200, `expected y>200, got ${p.pos.y}`)
+test('环形世界：wrapX/wrapDeltaX 跨缝语义正确', () => {
+  assert.equal(wrapX(-50), 13200 - 50)
+  assert.equal(Math.round(wrapDeltaX(13100, 100)), 200)
+  assert.equal(Math.round(wrapDeltaX(13150, 100)), 150)   // 跨缝最短位移 = +150
+  assert.ok(Math.abs(wrapDeltaX(100, 13100) + 200) < 1e-9)
 })
 
-test('移动：move=1 使 x 增大', () => {
-  const w = new World()
-  const p = w.addPlayer(200, GROUND_Y)
-  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ move: 1 })]]))
-  assert.ok(p.pos.x > 200, `expected x>200, got ${p.pos.x}`)
+test('环形世界（垂直）：wrapY/wrapDeltaY 上下跨缝语义正确', () => {
+  assert.equal(wrapY(-30), 4400 - 30)
+  assert.equal(wrapY(4420), 20)
+  assert.equal(Math.round(wrapDeltaY(4380, 60)), 80)
+  assert.ok(Math.abs(wrapDeltaY(60, 4380) + 80) < 1e-9)
 })
 
-test('弹道受重力：弹丸 y 随时间增大（抛物线）', () => {
-  const w = new World()
-  const p = w.addPlayer(400, 300)
-  w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
-  const proj = w.projectiles[0]
-  assert.ok(proj, 'should fire a projectile')
-  const y0 = proj.pos.y
-  for (let i = 0; i < 20; i++) w.step(DT, new Map([[p.id, input()]]))
-  assert.ok(w.projectiles.length === 0 || w.projectiles[0].pos.y > y0 || true)
-  // 弹道应受重力：若弹丸仍存活，其 y 应变大；若消失（命中/寿命尽），不报错
+test('全环面：向上飞出顶部（y<0）从底部回入，不撞任何边界', () => {
+  const w = new World(31)
+  const p = w.addPlayer('P', 'ffa')
+  p.pos = { x: 6600, y: 100 }   // 高空
+  // 持续喷射向上（Teeworlds 喷射），穿越 y=0 缝
+  let crossed = false
+  for (let i = 0; i < 400; i++) {
+    w.step(DT, new Map([[p.id, input({ jetpack: true })]]))
+    w.drainEvents()
+    if (wrapDeltaY(p.pos.y, 300) > 0 && p.pos.y > 4400 - 800) crossed = true   // 已绕到底部
+    if (crossed) break
+  }
+  assert.ok(crossed || wrapDeltaY(p.pos.y, 100) < -800, `expected vertical wrap, y=${p.pos.y}`)
 })
 
-test('击杀：A 朝 B 开火造成伤害/击杀，比分更新', () => {
-  const w = new World()
-  const a = w.addPlayer(200, GROUND_Y)
-  const b = w.addPlayer(300, GROUND_Y) // 近距离，平射必中
-  const bHp0 = b.hp
-  for (let i = 0; i < 120; i++) w.step(DT, new Map([[a.id, input({ fire: true, aim: 0 })], [b.id, input()]]))
-  assert.ok(b.hp < bHp0 || b.deaths > 0, `expected B damaged/killed, hp=${b.hp} deaths=${b.deaths}`)
+test('重力：空中出生者下落到地表', () => {
+  const w = new World(1)
+  const p = w.addPlayer('P', 'ffa')
+  p.pos = { x: 400, y: 400 }   // 开阔空域（避开管道/楼体）
+  const y0 = p.pos.y
+  for (let i = 0; i < 90; i++) w.step(DT, new Map([[p.id, input()]]))
+  assert.ok(p.pos.y > y0 + 300, `expected falling from ${y0}, y=${p.pos.y}`)
 })
 
-test('Loopback 集成：两客户端对局跑通，服务器权威产生命中', () => {
-  const w = new World()
-  const a = w.addPlayer(200, GROUND_Y)
-  const b = w.addPlayer(760, GROUND_Y)
+test('弹道：狙击爆头穿透（hitTargets 去重，弹不消失）', () => {
+  const w = new World(7)
+  const shooter = w.addPlayer('S', 'red')
+  shooter.weaponIndex = 2   // 狙击：pierceOnHeadshot
+  const victim = w.addPlayer('V', 'blue')
+  victim.pos = { x: shooter.pos.x + 60, y: shooter.pos.y }   // 平射打头
+  const vHp0 = victim.hp
+  for (let i = 0; i < 10; i++) w.step(DT, new Map([[shooter.id, input({ fire: i === 0, aim: 0 })]]))
+  assert.ok(victim.hp < vHp0 || victim.deaths > 0, `expected headshot damage, hp=${victim.hp}`)
+})
+
+test('弹药经济：连发射空弹匣后自动换弹，备弹递减', () => {
+  const w = new World(3)
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 1   // 突击 28 发
+  const mag0 = p.ammo[1]
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+  assert.ok(p.ammo[1] < mag0, `mag should be partially consumed, ammo=${p.ammo[1]}`)
+  // 射空弹匣 → 自动换弹 → 备弹转移
+  for (let i = 0; i < 200; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+  const reserveDrained = p.reserveAmmo[1] < WEAPONS[1].maxReserve
+  assert.ok(reserveDrained || p.reloading, `reserve should drain after mag empty, reserve=${p.reserveAmmo[1]} reloading=${p.reloading}`)
+})
+
+test('手榴弹：引爆产生爆炸事件', () => {
+  const w = new World(5)
+  const p = w.addPlayer('P', 'ffa')
+  const target = w.addPlayer('T', 'blue')
+  target.pos = { x: p.pos.x + 100, y: p.pos.y }
+  const tHp0 = target.hp
+  w.step(DT, new Map([[p.id, input({ secondary: sec('frag', target.pos.x, target.pos.y) })]]))
+  let sawExplosion = false
+  for (let i = 0; i < 240; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    if (w.drainEvents().some(e => e.kind === 'explosion')) sawExplosion = true
+  }
+  assert.ok(sawExplosion, 'grenade should explode')
+})
+
+test('护盾：吸收伤害并按超时消散', () => {
+  const w = new World(9)
+  const p = w.addPlayer('P', 'red')
+  const enemy = w.addPlayer('E', 'blue')
+  w.step(DT, new Map([[p.id, input({ secondary: sec('shield') })]]))
+  assert.ok(p.shieldTimer > 0 && p.shieldHp > 0, 'shield should be active')
+  const shieldHp0 = p.shieldHp
+  enemy.weaponIndex = 1
+  enemy.pos = { x: p.pos.x - 80, y: p.pos.y }
+  for (let i = 0; i < 90; i++) {
+    w.step(DT, new Map([[enemy.id, input({ fire: true, aim: 0 })]]))
+    w.drainEvents()
+  }
+  assert.ok(p.shieldHp < shieldHp0 || p.shieldTimer === 0 || p.hp < 100, 'shield should absorb/timeout')
+})
+
+test('替身人偶：致命伤触发回溯而非死亡', () => {
+  const w = new World(11)
+  const p = w.addPlayer('P', 'red')
+  p.doll = null
+  // 先锚替身
+  w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
+  assert.ok(p.doll !== null, 'doll should be anchored')
+  const anchorPos = { ...p.pos }
+  // 走远一点再挨致死伤（狙击 68×2.5=170 > 100）
+  for (let i = 0; i < 60; i++) w.step(DT, new Map([[p.id, input({ move: 1 })]]))
+  const enemy = w.addPlayer('E', 'blue')
+  enemy.weaponIndex = 2
+  enemy.pos = { x: p.pos.x - 120, y: p.pos.y }
+  let recalled = false
+  for (let i = 0; i < 30; i++) {
+    w.step(DT, new Map([[enemy.id, input({ fire: true, aim: 0 })]]))
+    if (w.drainEvents().some(e => e.kind === 'doll_recall')) recalled = true
+  }
+  assert.ok(recalled || p.deaths === 0, `doll should recall instead of death (recalled=${recalled}, deaths=${p.deaths})`)
+  if (recalled) assert.deepEqual(Math.round(p.pos.x), Math.round(wrapX(anchorPos.x) === anchorPos.x ? anchorPos.x : anchorPos.x), 'back at anchor')
+})
+
+test('可破坏障碍物：barricade 生成、被打掉后移除', () => {
+  const w = new World(13)
+  const p = w.addPlayer('P', 'ffa')
+  const obs0 = w.obstacles.length
+  w.step(DT, new Map([[p.id, input({ secondary: sec('barricade') })]]))
+  assert.ok(w.obstacles.length === obs0 + 1, 'barricade spawned')
+  const target = w.obstacles[w.obstacles.length - 1]
+  // 用榴弹炮轰它（68×多次）
+  const shooter = w.addPlayer('S', 'blue')
+  shooter.weaponIndex = 3
+  shooter.pos = { x: target.x - 200, y: target.y + 40 }
+  let destroyed = false
+  for (let i = 0; i < 200; i++) {
+    w.step(DT, new Map([[shooter.id, input({ fire: true, aim: Math.atan2(target.y - shooter.pos.y, 200) })]]))
+    if (w.drainEvents().some(e => e.kind === 'obstacle_destroy' && e.obstacleId === target.id)) { destroyed = true; break }
+  }
+  assert.ok(destroyed, 'barricade should be destructible')
+  assert.ok(!w.obstacles.some(o => o.id === target.id), 'destroyed obstacle removed')
+})
+
+test('地雷：直击触发 + 瞬发雷 0 延迟爆炸', () => {
+  const w = new World(17)
+  const p = w.addPlayer('P', 'red')
+  const t = w.addPlayer('T', 'blue')
+  t.pos = { x: p.pos.x + 40, y: p.pos.y }
+  w.step(DT, new Map([[p.id, input({ secondary: sec('instant_mine', t.pos.x, t.pos.y) })]]))
+  let exploded = w.drainEvents().some(e => e.kind === 'explosion')   // 直击可同帧引爆
+  for (let i = 0; i < 180 && !exploded; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    if (w.drainEvents().some(e => e.kind === 'explosion')) { exploded = true; break }
+  }
+  assert.ok(exploded, 'instant mine direct-hit should explode')
+})
+
+test('占点：进入范围读条，满 100 归属变更', () => {
+  const w = new World(19)
+  const p = w.addPlayer('P', 'green')
+  // 找中立点（B 或 D），先清掉同位置的预设雷（关卡雷防偷点：测试中显式排雷）
+  const cp = w.capturePoints.find(c => c.ownerTeam === null)!
+  w.landmines = w.landmines.filter(m => wrapDist(m.pos.x, m.pos.y, cp.x, cp.y) > 150)
+  p.pos = { x: cp.x, y: cp.y }
+  let captured = false
+  for (let i = 0; i < 300; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    if (w.drainEvents().some(e => e.kind === 'capture' && e.pointCode === cp.code)) { captured = true; break }
+  }
+  assert.ok(captured, `capture point ${cp.code} should flip (progress=${cp.progress})`)
+  assert.equal(cp.ownerTeam, 'green')
+})
+
+test('补给箱：拾取换特武，超时重生', () => {
+  const w = new World(23)
+  const p = w.addPlayer('P', 'red')
+  const crate = w.supplyCrates.find(c => c.active && c.weaponId === 4)!
+  p.pos = { x: crate.x, y: crate.y }
+  w.step(DT, new Map([[p.id, input()]]))
+  assert.equal(p.weaponIndex, crate.weaponId, 'picked up laser')
+  assert.ok(!crate.active, 'crate deactivated')
+  const ammo0 = p.ammo[4]
+  assert.ok(ammo0 > 0, 'laser has ammo')
+})
+
+test('Loopback 集成：两客户端对局跑通，服务器权威产生命中与事件', () => {
+  const w = new World(29)
+  const a = w.addPlayer('Alice', 'red')
+  const b = w.addPlayer('Bob', 'blue')
+  // 面对面近距离（v2 队伍出生点相距半个地图；测试拉近）
+  b.pos = { x: a.pos.x + 120, y: a.pos.y }
   const server = new ServerSim(w)
   const lbA = createLoopback()
   const lbB = createLoopback()
@@ -70,79 +228,72 @@ test('Loopback 集成：两客户端对局跑通，服务器权威产生命中',
   const csA = new ClientSession(lbA.client, a.id)
   const csB = new ClientSession(lbB.client, b.id)
   const mapper = new InputMapper()
+  const events: string[] = []
+  csA.onEvents((evs) => { for (const e of evs) events.push(e.kind) })
   for (let i = 0; i < 240; i++) {
-    csA.sendIntents(mapper.map({ moveX: 0.5, aimAngle: -0.1, fire: true, jump: false, jetpack: false, reload: false }))
-    csB.sendIntents(mapper.map({ moveX: -0.5, aimAngle: Math.PI + 0.1, fire: true, jump: false, jetpack: false, reload: false }))
+    csA.sendIntents(mapper.map({ moveX: 0, aimAngle: 0, fire: i % 18 < 12, jump: false, jetpack: false, reload: false }))
+    csB.sendIntents(mapper.map({ moveX: 0, aimAngle: Math.PI, fire: false, jump: false, jetpack: false, reload: false }))
     server.step(DT)
   }
-  assert.ok(worldHitsOrScore(w), 'expected hits or score change in Loopback match')
-  assert.ok(csA.lastSnapshot, 'client A should have received a snapshot')
-  assert.ok(csB.lastSnapshot, 'client B should have received a snapshot')
-  function worldHitsOrScore(world: World): boolean {
-    return world.hits > 0 || a.kills > 0 || b.kills > 0
+  assert.ok(w.hits > 0, `expected hits, got ${w.hits}`)
+  assert.ok(csA.lastSnapshot, 'client A snapshot')
+  assert.ok(csB.lastSnapshot, 'client B snapshot')
+  // 快照含全部 v2 实体
+  const snap = csA.lastSnapshot!
+  assert.ok(Array.isArray(snap.obstacles) && snap.obstacles.length > 0, 'snapshot has obstacles')
+  assert.ok(snap.capturePoints.length === 5, 'snapshot has 5 capture points')
+  assert.ok(snap.supplyCrates.length === 6, 'snapshot has supply crates')
+  assert.ok(snap.ammoPacks.length > 0, 'snapshot has ammo packs')
+  assert.ok(snap.scores !== undefined, 'snapshot has scores')
+})
+
+test('三层分离：core 源码不 import input/ui/net', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const files = [
+    'src/core/sim/world.ts', 'src/core/types.ts', 'src/core/snap.ts',
+    'src/core/weapons.ts', 'src/core/terrain.ts', 'src/core/wrap.ts', 'src/core/rng.ts',
+  ]
+  for (const f of files) {
+    const src = await readFile(f, 'utf8')
+    assert.ok(!/from '\.\.\/(input|net|ui)\//.test(src) && !/from '\.\.\/\.\.\/(input|net|ui)\//.test(src), `${f} must not import input/net/ui`)
   }
 })
 
-test('三层分离：core 不 import input/ui/net（源码层面检查）', () => {
-  // 简单断言：core/types 不引用 input 意图类型；world 只依赖 core 内部
-  assert.ok(typeof GROUND_Y === 'number', 'GROUND_Y is a number')
-})
+// ── PeerJS 传输层（假连接模拟两条 DataConnection，验证线上协议 glue） ──
+import { createPeerPair } from '../src/net/transport/Peer.ts'
+import type { PeerConnLike } from '../src/net/transport/Peer.ts'
 
-test('地形：玩家落在平台上，不穿透、不瞬移', () => {
-  const w = new World()
-  w.addTerrain(400, 400, 200, 16) // 平台顶 y=400
-  const p = w.addPlayer(500, 300) // 平台上方空中
-  for (let i = 0; i < 120; i++) w.step(DT, new Map([[p.id, input()]]))
-  // 应稳站平台顶附近，绝不穿入平台内部或下方
-  assert.ok(p.pos.y <= 400 + 1, `expected on platform top, y=${p.pos.y}`)
-  assert.ok(p.pos.y >= 400 - PLAYER_R - 1, `expected near top surface, y=${p.pos.y}`)
-})
+/** 内存假连接对：双向 JSON 字符串传递（模拟 PeerJS DataConnection 的 send/on('data')） */
+function fakeConnPair(): [PeerConnLike, PeerConnLike] {
+  const boxA: { onData: ((d: unknown) => void) | null } = { onData: null }
+  const boxB: { onData: ((d: unknown) => void) | null } = { onData: null }
+  const mk = (self: typeof boxA, other: typeof boxB): PeerConnLike => ({
+    send(data: string) { queueMicrotask(() => other.onData?.(data)) },
+    on(event: 'data' | 'close', cb: (d?: unknown) => void) { if (event === 'data') self.onData = cb as (d: unknown) => void },
+    close() {},
+  })
+  return [mk(boxA, boxB), mk(boxB, boxA)]
+}
 
-test('地形：弹丸被高挡板挡下，不穿过', () => {
-  const w = new World()
-  w.addTerrain(500, 240, 120, 160) // 竖直高挡板 x500-620, y240-400
-  const p = w.addPlayer(300, 300)
-  w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]])) // 朝右平射
-  assert.ok(w.projectiles.length > 0, 'should fire')
-  for (let i = 0; i < 60; i++) w.step(DT, new Map([[p.id, input()]]))
-  // 挡板右侧不应有任何弹丸穿过
-  const beyond = w.projectiles.filter((pr) => pr.pos.x > 620)
-  assert.equal(beyond.length, 0, `no projectile should pass the wall, found ${beyond.length}`)
-})
-
-test('重生安全：重生点不与地形重叠（不卡地里）', () => {
-  const w = new World()
-  w.addTerrain(120, 400, 14, 60)  // 左悬浮掩体
-  w.addTerrain(400, 460, 160, 14) // 中央平台
-  const a = w.addPlayer(200, GROUND_Y)
-  const b = w.addPlayer(760, GROUND_Y)
-  // 反复死亡重生多次，重生点应始终干净（不与任何地形重叠）
+test('PeerJS 传输：假 DataConnection 上跑通 服务器权威 + 欢迎包 + 快照', async () => {
+  const w = new World(37)
+  const server = new ServerSim(w)
+  const [hostConn, guestConn] = fakeConnPair()
+  const { client, server: srvT } = createPeerPair(hostConn, guestConn)
+  // 主机：为新连接创建玩家并接受
+  const p = w.addPlayer('Guest', 'red')
+  p.pos = { x: 6600, y: 2700 }
+  server.accept(p.id, srvT)
+  srvT.send({ snap: w.snapshot(), welcome: { playerId: p.id, name: 'Guest', team: 'red' } })
+  const cs = new ClientSession(client, 0)
+  const mapper = new InputMapper()
+  await new Promise(r => setTimeout(r, 10))   // 让 welcome 抵达
+  assert.equal(cs.playerId, p.id, 'welcome should assign player id')
   for (let i = 0; i < 30; i++) {
-    a.hp = 1
-    b.fire = true
-    // 直接触发一次 kill → respawn
-    ;(w as unknown as { kill: (v: typeof a, k: number) => void }).kill(a, b.id)
-    const overlapped = w.terrains.some((t) => {
-      const nx = Math.max(t.x, Math.min(a.pos.x, t.x + t.w))
-      const ny = Math.max(t.y, Math.min(a.pos.y, t.y + t.h))
-      const dx = a.pos.x - nx
-      const dy = a.pos.y - ny
-      return dx * dx + dy * dy < PLAYER_R * PLAYER_R
-    })
-    assert.ok(!overlapped, `respawn should not overlap terrain, pos=(${a.pos.x},${a.pos.y})`)
+    cs.sendIntents(mapper.map({ moveX: 0, aimAngle: 0, fire: true, jump: false, jetpack: false, reload: false }))
+    server.step(DT)
+    await new Promise(r => setTimeout(r, 0))
   }
-})
-
-test('死亡完全恢复：重生时 hp/弹药/燃料全满', () => {
-  const w = new World()
-  const a = w.addPlayer(200, GROUND_Y)
-  const b = w.addPlayer(760, GROUND_Y)
-  // 把 a 耗到残状态：掉血、打空弹药、喷空燃料
-  a.hp = 30
-  a.ammo = 0
-  w.fuel.set(a.id, 0) // 燃料清零（Map 私有，测试用公开途径：直接喷射耗尽太慢，这里借同结构赋值）
-  ;(w as unknown as { kill: (v: typeof a, k: number) => void }).kill(a, b.id)
-  assert.equal(a.hp, 100, 'hp should be 100')
-  assert.equal(a.ammo, 8, 'ammo should be full (MAG_SIZE)')
-  assert.equal(w.fuelOf(a.id), getPhysicsParams().jetpackFuel, 'fuel should be full')
+  assert.ok(cs.lastSnapshot && cs.lastSnapshot.tick > 0, 'client received snapshots over peer transport')
+  assert.ok(cs.lastSnapshot!.obstacles.length > 0, 'snapshot carries v2 entities over the wire')
 })

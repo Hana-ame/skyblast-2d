@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Test
+        run: node --test tests/*.test.ts
+      - name: Build web bundle
+        run: npm run build:web
+      - name: Build replay site
+        run: npm run build:site
+      - name: Lobby server smoke
+        run: |
+          node server/server.js &
+          sleep 1
+          curl -sf "http://localhost:3000/api/lobby?since=0" > /dev/null
+          kill %1

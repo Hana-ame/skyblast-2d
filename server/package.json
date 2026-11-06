@@ -1,0 +1,13 @@
+{
+  "name": "skyblast-2d-api-server",
+  "version": "1.1.0",
+  "description": "Lightweight REST API server for SkyBlast 2D room search, waiting queue, and chat (PeerJS relay fixed to 0.peerjs.com)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "license": "MIT"
+}
