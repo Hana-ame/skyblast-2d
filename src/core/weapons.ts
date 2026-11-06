@@ -66,9 +66,9 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
-    damage: 23, headshotMult: 2.2, pellets: 1, spread: 0.045,
+    damage: 46, headshotMult: 2.2, pellets: 1, spread: 0.045,
     speed: 1500, recoil: 84, magSize: 28, maxReserve: 140,
-    reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
+    reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,   // 伤害 46（用户要求 ×2），射速保持原值
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
   },
   {
@@ -84,7 +84,7 @@ export const WEAPONS: WeaponDef[] = [
     damage: 115, headshotMult: 1.5, pellets: 1, spread: 0.0,
     speed: 520, recoil: 420, magSize: 1, maxReserve: 20,   // 1 发/弹匣，共 20 个弹匣；换弹 2s
     reloadTime: 2.0, fireDelay: 0, terrainRadius: 124,   // 射击间隔 = 0（节奏由 2s 换弹决定）
-    explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.5, fuelMult: 0.5, fovMult: 1.0, color: '#fb7185',
+    explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.7, fuelMult: 0.7, ascendMult: 0.7, fovMult: 1.0, color: '#fb7185',
   },
   {
     id: 4, name: '激光', shortName: '激光', isSupplyOnly: true,
@@ -96,9 +96,9 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,
-    damage: 23, headshotMult: 1.8, pellets: 1, spread: 0.11,
+    damage: 46, headshotMult: 1.8, pellets: 1, spread: 0.11,
     speed: 1300, recoil: 66, magSize: 120, maxReserve: 240,
-    reloadTime: 3.0, fireDelay: 0.045, terrainRadius: 8,
+    reloadTime: 3.0, fireDelay: 0.045, terrainRadius: 8,   // M249 伤害=突击(46)
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.30, color: '#f97316',
   },
   {
@@ -113,7 +113,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 7, name: '手枪', shortName: '手枪', isSupplyOnly: false,
     damage: 24, headshotMult: 2.0, pellets: 1, spread: 0.090,
-    speed: 1500, recoil: 60, magSize: 12, maxReserve: 48,
+    speed: 1000, recoil: 60, magSize: 12, maxReserve: 60,
     reloadTime: 0.9, fireDelay: 0.17, terrainRadius: 6,
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
     moveSpeedMult: 1.50, fuelMult: 2.00, ascendMult: 1.25, fovMult: 1.0, color: '#fde047',   // 移速1.5/飞行容量2.0/升空速度1.25
@@ -121,7 +121,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
     damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
-    speed: 1500, recoil: 48, magSize: 30, maxReserve: 150,
+    speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,
     reloadTime: 2.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
     moveSpeedMult: 1.25, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',

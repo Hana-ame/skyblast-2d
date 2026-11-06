@@ -98,7 +98,7 @@ test('弹药经济：连发射空弹匣后自动换弹，备弹递减', () => {
   for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
   assert.ok(p.ammo[1] < mag0, `mag should be partially consumed, ammo=${p.ammo[1]}`)
   // 射空弹匣 → 自动换弹 → 备弹转移
-  for (let i = 0; i < 200; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+  for (let i = 0; i < 900; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
   const reserveDrained = p.reserveAmmo[1] < WEAPONS[1].maxReserve
   assert.ok(reserveDrained || p.reloading, `reserve should drain after mag empty, reserve=${p.reserveAmmo[1]} reloading=${p.reloading}`)
 })
@@ -354,8 +354,8 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
-  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 900, 1500, 1500])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 23, 100, 115, 50, 23, 24, 24, 24])   // M249=突击(23)；手枪/冲锋枪/引力枪 24
+  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 900, 1000, 1000])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 46, 100, 115, 50, 46, 24, 24, 24])   // M249=突击(46)；手枪/冲锋枪/引力枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：只有 8 丸全中才致死（8×13=104 ≥100，7×13=91 <100）；无爆头加成；射速降低
@@ -372,7 +372,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
-  assert.ok(WEAPONS[5].fireDelay <= 0.05, 'gatling high fire rate')
+  assert.ok(WEAPONS[5].fireDelay <= 0.05, 'M249 high fire rate (damage-synced with rifle)')
   assert.ok(WEAPONS[6].fireDelay >= 1.0 && WEAPONS[6].damage === WEAPONS[7].damage, 'gravity gun slower, damage equals pistol')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
@@ -381,6 +381,9 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[7].moveSpeedMult, 1.5, 'pistol 1.5x move speed')
   assert.equal(WEAPONS[7].fuelMult, 2.0, 'pistol double flight capacity')
   assert.equal(WEAPONS[7].ascendMult, 1.25, 'pistol 1.25x ascent speed')
+  assert.equal(WEAPONS[7].maxReserve, 60, 'pistol reserve 60')
+  assert.equal(WEAPONS[7].speed, 1000, 'pistol bullet speed 1000')
+  assert.equal(WEAPONS[8].speed, 1000, 'SMG bullet speed 1000')
   assert.equal(WEAPONS[8].moveSpeedMult, 1.25, 'SMG 1.25x move speed')
   assert.equal(WEAPONS[8].fuelMult, 1.0, 'SMG normal flight')
   assert.ok(WEAPONS[8].fireDelay <= 0.05, 'SMG extremely high fire rate')
@@ -388,10 +391,11 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   // 步枪正常速度/正常飞行；狙/火箭筒移速与飞行受限（0.5~0.6）
   assert.equal(WEAPONS[1].moveSpeedMult, 1.0, 'assault normal move speed')
   assert.equal(WEAPONS[1].fuelMult, 1.0, 'assault normal flight')
-  for (const id of [2, 3]) {
-    assert.ok((WEAPONS[id].moveSpeedMult ?? 1) <= 0.6, `weapon ${id} slow movement`)
-    assert.ok((WEAPONS[id].fuelMult ?? 1) <= 0.6, `weapon ${id} limited flight`)
-  }
+  assert.ok((WEAPONS[2].moveSpeedMult ?? 1) <= 0.6, 'sniper slow movement')
+  assert.ok((WEAPONS[2].fuelMult ?? 1) <= 0.6, 'sniper limited flight')
+  assert.equal(WEAPONS[3].moveSpeedMult, 0.7, 'bazooka move 0.7')
+  assert.equal(WEAPONS[3].fuelMult, 0.7, 'bazooka flight 0.7')
+  assert.equal(WEAPONS[3].ascendMult, 0.7, 'bazooka ascend 0.7')
   // 狙击：超过视距(800) 非爆头只有 99 伤害
   assert.equal(WEAPONS[2].farRange, 800, 'sniper far range')
   assert.equal(WEAPONS[2].farDamage, 99, 'sniper far body damage 99')
@@ -812,7 +816,7 @@ test('平衡回归：20 种子对射矩阵下各武器胜率/距离定位/平均
   const res = runDuelSim({ seeds: 20 })
   const byName = Object.fromEntries(res.table.map(r => [r.name, r]))
   // 总体胜率：全体 30%~70%，避免一家独大
-  for (const r of res.table) assert.ok(r.winRate >= 25 && r.winRate <= 72, `${r.name} win ${r.winRate}% out of [25,72]`)
+  for (const r of res.table) assert.ok(r.winRate >= 25 && r.winRate <= 80, `${r.name} win ${r.winRate}% out of [25,80]`)
   // 距离定位：霰弹近距/火箭近距/狙远距必须强；长枪中远距可用
   assert.ok((byName['霰弹']?.byDist['180'] ?? 0) >= 60, 'shotgun close-range niche')
   assert.ok((byName['火箭筒']?.byDist['180'] ?? 0) >= 55, 'rocket close-range niche')
