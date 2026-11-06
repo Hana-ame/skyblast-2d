@@ -25,6 +25,8 @@ export interface WeaponDef {
   passWalls?: boolean      // 穿透原始地形（引力弹）
   dragPerSecond?: number   // 每秒速度保留比例（<1 表示逐渐减速；引力弹）
   beam?: boolean           // 渲染为光束（激光）
+  farRange?: number        // 远距阈值：超过该距离命中按 farDamage 结算（狙击）
+  farDamage?: number       // 超过 farRange 时的伤害（狙击 99，非爆头留 1 血）
   chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
   damagePerSecond?: number // 持续光束每秒伤害（beam 武器）
   ammoPerSecond?: number   // 持续光束每秒耗弹（beam 武器）
@@ -68,14 +70,15 @@ export const WEAPONS: WeaponDef[] = [
     damage: 100, headshotMult: 2.5, pellets: 1, spread: 0.003,
     speed: 4000, recoil: 390, magSize: 3, maxReserve: 15,
     reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.60, terrainRadius: 16,
-    explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.92, fuelMult: 0.9, fovMult: 1.30, color: '#c084fc',
+    explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.6, fuelMult: 0.6, fovMult: 1.30, color: '#c084fc',
+    farRange: 800, farDamage: 99,   // 超过视距的非爆头命中只造成 99（留 1 血）
   },
   {
     id: 3, name: '火箭筒', shortName: '火箭筒', isSupplyOnly: false,
     damage: 115, headshotMult: 1.5, pellets: 1, spread: 0.0,
     speed: 520, recoil: 420, magSize: 1, maxReserve: 20,   // 1 发/弹匣，共 20 个弹匣；换弹 2s
     reloadTime: 2.0, fireDelay: 0, terrainRadius: 124,   // 射击间隔 = 0（节奏由 2s 换弹决定）
-    explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.82, fuelMult: 0.72, fovMult: 1.0, color: '#fb7185',
+    explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.5, fuelMult: 0.5, fovMult: 1.0, color: '#fb7185',
   },
   {
     id: 4, name: '激光', shortName: '激光', isSupplyOnly: true,
@@ -106,15 +109,15 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1500, recoil: 60, magSize: 12, maxReserve: 48,
     reloadTime: 0.9, fireDelay: 0.17, terrainRadius: 6,
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
-    moveSpeedMult: 1.30, fuelMult: 1.15, fovMult: 1.0, color: '#fde047',
+    moveSpeedMult: 2.00, fuelMult: 2.00, fovMult: 1.0, color: '#fde047',   // 双倍移速/双倍飞行
   },
   {
     id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
-    damage: 14, headshotMult: 1.8, pellets: 1, spread: 0.11,
-    speed: 1500, recoil: 48, magSize: 40, maxReserve: 160,
-    reloadTime: 1.6, fireDelay: 0.075, terrainRadius: 8,
+    damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
+    speed: 1500, recoil: 48, magSize: 30, maxReserve: 150,
+    reloadTime: 2.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
-    moveSpeedMult: 1.05, fuelMult: 1.05, fovMult: 1.0, color: '#4ade80',
+    moveSpeedMult: 1.5, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',
   },
 ]
 

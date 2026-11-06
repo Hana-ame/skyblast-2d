@@ -110,33 +110,27 @@
       this.rects.push({ x, y, w, h, color: "#090d16", borderColor: "#1e293b", kind: "tunnel_bg", label });
       this.shadows.push({ x, y, w, h, label, alpha: 0.76 });
     }
-    /** 多层楼房：楼板/外墙/天井/射击窗（v2 布局原样保留） */
+    /** 简单迷宫式建筑：外墙（底部留门）+ 两道交错内墙 + 实心天台（不做楼板/窗户/坑洼结构） */
     buildMultiStoryBuilding(bx, groundY, width, floors, floorHeight, name, accent) {
       const totalH = floors * floorHeight;
       const topY = groundY - totalH;
       this.rects.push({ x: bx, y: topY, w: width, h: totalH, color: "#111827", borderColor: accent, kind: "building_bg", label: name });
       this.shadows.push({ x: bx + 20, y: topY + 20, w: width - 40, h: totalH - 20, label: `${name}\u5BA4\u5185`, alpha: 0.62 });
       this.addSolidBlock(bx - 20, topY, width + 40, 24, "#334155", accent, "building_roof", `${name}\u5929\u53F0`);
-      for (let f = 0; f < floors; f++) {
-        const fy = groundY - f * floorHeight;
-        if (f > 0) {
-          if (f % 2 === 0) this.addSolidBlock(bx + 120, fy - 20, width - 120, 20, "#475569", "#64748b", "floor_slab");
-          else this.addSolidBlock(bx, fy - 20, width - 120, 20, "#475569", "#64748b", "floor_slab");
-        }
-        const slabTop = f > 0 ? fy - 20 : fy - 20;
-        const wallBase = fy - floorHeight + 20;
-        if (f === 0) {
-          this.addSolidBlock(bx, slabTop, 24, fy - 110 - slabTop, "#334155", accent, "wall");
-          this.addSolidBlock(bx + width - 24, slabTop, 24, fy - 110 - slabTop, "#334155", accent, "wall");
-        } else {
-          const winBottom = fy - 150;
-          const winTop = fy - 60;
-          this.addSolidBlock(bx, wallBase - 20, 24, winBottom - (wallBase - 20), "#334155", accent, "wall");
-          this.addSolidBlock(bx + width - 24, wallBase - 20, 24, winBottom - (wallBase - 20), "#334155", accent, "wall");
-          this.addSolidBlock(bx, winTop, 24, fy - winTop, "#334155", accent, "wall");
-          this.addSolidBlock(bx + width - 24, winTop, 24, fy - winTop, "#334155", accent, "wall");
-        }
+      const wallTop = topY + 24;
+      const doorTop = groundY - 110;
+      for (const wx of [bx, bx + width - 24]) {
+        this.addSolidBlock(wx, wallTop, 24, doorTop - wallTop, "#334155", accent, "wall");
       }
+      const inner1 = bx + Math.round(width * 0.33);
+      const inner2 = bx + Math.round(width * 0.66);
+      const lowerH = Math.min(460, Math.round(totalH * 0.42));
+      const upperH = Math.min(420, Math.round(totalH * 0.38));
+      this.addSolidBlock(inner1, doorTop - lowerH, 24, lowerH, "#334155", accent, "wall");
+      this.addSolidBlock(inner2, wallTop, 24, upperH, "#334155", accent, "wall");
+      const midY = topY + Math.round(totalH * 0.5);
+      this.addSolidBlock(bx + 24, midY, Math.round(width * 0.28), 20, "#334155", accent, "wall");
+      this.addSolidBlock(bx + width - 24 - Math.round(width * 0.24), midY, Math.round(width * 0.24), 20, "#334155", accent, "wall");
     }
     buildHollowPipe(px, py, length, height, label) {
       const t = 22;
@@ -382,8 +376,9 @@
         const topY = SURFACE_Y - b.floors * 240;
         this.addDeco(b.bx + b.w / 2 - 3, topY - 64, 6, 64, "deco_antenna", "#94a3b8");
         for (let f = 0; f < b.floors; f++) {
+          if (f % 2 !== 0) continue;
           const fy = SURFACE_Y - f * 240;
-          for (let k = 0; k < 3; k++) {
+          for (let k = 0; k < 2; k++) {
             const lit = (bi + f + k) % 3 !== 0;
             const wx = b.bx + 40 + k * Math.max(60, (b.w - 120) / 3);
             this.addDeco(wx, fy - 170, 42, 40, lit ? "deco_window_lit" : "deco_window_dark", lit ? warm[(bi + k) % warm.length] : "#0f172a");
@@ -559,10 +554,13 @@
       laser: true,
       pierceOnHeadshot: true,
       lifeSeconds: 999,
-      moveSpeedMult: 0.92,
-      fuelMult: 0.9,
+      moveSpeedMult: 0.6,
+      fuelMult: 0.6,
       fovMult: 1.3,
-      color: "#c084fc"
+      color: "#c084fc",
+      farRange: 800,
+      farDamage: 99
+      // 超过视距的非爆头命中只造成 99（留 1 血）
     },
     {
       id: 3,
@@ -587,8 +585,8 @@
       lifeSeconds: 999,
       rocket: true,
       pierceOnHeadshot: false,
-      moveSpeedMult: 0.82,
-      fuelMult: 0.72,
+      moveSpeedMult: 0.5,
+      fuelMult: 0.5,
       fovMult: 1,
       color: "#fb7185"
     },
@@ -692,32 +690,35 @@
       explosive: false,
       gravityScale: 0.03,
       pierceOnHeadshot: false,
-      moveSpeedMult: 1.3,
-      fuelMult: 1.15,
+      moveSpeedMult: 2,
+      fuelMult: 2,
       fovMult: 1,
       color: "#fde047"
+      // 双倍移速/双倍飞行
     },
     {
       id: 8,
       name: "\u51B2\u950B\u67AA",
       shortName: "\u51B2\u950B\u67AA",
       isSupplyOnly: false,
-      damage: 14,
+      damage: 24,
       headshotMult: 1.8,
       pellets: 1,
-      spread: 0.11,
+      spread: 0.24,
+      // 伤害 = 手枪；极高射速用大散布/弹匣平衡
       speed: 1500,
       recoil: 48,
-      magSize: 40,
-      maxReserve: 160,
-      reloadTime: 1.6,
-      fireDelay: 0.075,
+      magSize: 30,
+      maxReserve: 150,
+      reloadTime: 2.2,
+      fireDelay: 0.05,
       terrainRadius: 8,
+      // 射速极高
       explosive: false,
       gravityScale: 0.04,
       pierceOnHeadshot: false,
-      moveSpeedMult: 1.05,
-      fuelMult: 1.05,
+      moveSpeedMult: 1.5,
+      fuelMult: 1,
       fovMult: 1,
       color: "#4ade80"
     }
@@ -1248,6 +1249,7 @@
           beam: !!wep.beam,
           rocket: !!wep.rocket,
           dragPerSecond: wep.dragPerSecond ?? 1,
+          weaponId: wep.id,
           weaponLabel: wep.shortName,
           color: wep.color,
           r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
@@ -1364,6 +1366,7 @@
         beam: !!o.beam,
         rocket: !!o.rocket,
         dragPerSecond: o.dragPerSecond ?? 1,
+        weaponId: o.weaponId ?? -1,
         weaponLabel: o.weaponLabel,
         color: o.color,
         hitTargets: [p.id]
@@ -1777,7 +1780,16 @@
                 this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr);
                 hit = true;
               } else {
-                this.damage(t, Math.round(pr.damage), pr, false, false);
+                let dmg = Math.round(pr.damage);
+                const wep = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
+                if (wep?.farRange && pr.weaponId === 2) {
+                  const owner = this.players.find((x) => x.id === pr.owner);
+                  if (owner) {
+                    const dist2 = wrapDist(owner.pos.x, owner.pos.y - 12, t.pos.x, t.pos.y - 12);
+                    if (dist2 > wep.farRange) dmg = Math.min(dmg, wep.farDamage ?? dmg);
+                  }
+                }
+                this.damage(t, dmg, pr, false, false);
                 t.vel.x += pr.vel.x * 0.09;
                 t.vel.y += pr.vel.y * 0.09;
                 if (!pr.pierceAll) hit = true;

@@ -475,7 +475,7 @@ export class World {
         pierceOnHeadshot: !!wep.pierceOnHeadshot, pierceAll: !!wep.pierceAll,
         isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, passWalls: !!wep.passWalls, beam: !!wep.beam, rocket: !!wep.rocket,
         dragPerSecond: wep.dragPerSecond ?? 1,
-        weaponLabel: wep.shortName, color: wep.color,
+        weaponId: wep.id, weaponLabel: wep.shortName, color: wep.color,
         r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
         life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       }))
@@ -571,7 +571,7 @@ export class World {
   private makeProjectile(p: PlayerState, x: number, y: number, vx: number, vy: number, o: {
     damage: number; headshotMult: number; terrainRadius: number; explosive: boolean; gravityScale?: number;
     pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number
-    passWalls?: boolean; beam?: boolean; rocket?: boolean; dragPerSecond?: number
+    passWalls?: boolean; beam?: boolean; rocket?: boolean; dragPerSecond?: number; weaponId?: number
     weaponLabel: string; color: string; r: number; life: number
   }): Projectile {
     return {
@@ -580,7 +580,7 @@ export class World {
       explosive: o.explosive, terrainRadius: o.terrainRadius, gravityScale: o.gravityScale ?? 0.04,
       pierceOnHeadshot: !!o.pierceOnHeadshot, pierceAll: !!o.pierceAll,
       isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, passWalls: !!o.passWalls, beam: !!o.beam, rocket: !!o.rocket,
-      dragPerSecond: o.dragPerSecond ?? 1,
+      dragPerSecond: o.dragPerSecond ?? 1, weaponId: o.weaponId ?? -1,
       weaponLabel: o.weaponLabel, color: o.color,
       hitTargets: [p.id],   // 发射者自身永远跳过
     }
@@ -1029,7 +1029,17 @@ export class World {
               this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr)
               hit = true
             } else {
-              this.damage(t, Math.round(pr.damage), pr, false, false)
+              // 狙击远距规则：超过视距(farRange)的非爆头命中只造成 farDamage（99 → 留 1 血）
+              let dmg = Math.round(pr.damage)
+              const wep = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : undefined
+              if (wep?.farRange && pr.weaponId === 2) {
+                const owner = this.players.find(x => x.id === pr.owner)
+                if (owner) {
+                  const dist = wrapDist(owner.pos.x, owner.pos.y - 12, t.pos.x, t.pos.y - 12)
+                  if (dist > wep.farRange) dmg = Math.min(dmg, wep.farDamage ?? dmg)
+                }
+              }
+              this.damage(t, dmg, pr, false, false)
               t.vel.x += pr.vel.x * 0.09
               t.vel.y += pr.vel.y * 0.09
               if (!pr.pierceAll) hit = true

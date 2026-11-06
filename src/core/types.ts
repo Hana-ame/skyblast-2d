@@ -75,6 +75,7 @@ export interface Projectile {
   pierceOnHeadshot: boolean
   pierceAll: boolean
   isGravityOrb: boolean
+  weaponId: number          // 发射武器 id（狙击远距衰减用）
   weaponLabel: string
   color: string
   hitTargets: number[]     // 穿透弹已命中目标（防同目标重复结算）

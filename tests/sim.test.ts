@@ -355,7 +355,7 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 900, 1500, 1500])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 23, 100, 115, 50, 23, 30, 24, 14])   // M249=突击步枪(23)；引力枪 30；手枪 24
+  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 23, 100, 115, 50, 23, 30, 24, 24])   // M249=突击(23)；手枪/冲锋枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：只有 8 丸全中才致死（8×13=104 ≥100，7×13=91 <100）；无爆头加成；射速降低
@@ -377,6 +377,23 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
+  // 手枪：双倍移速 + 双倍飞行；冲锋枪：1.5 倍移速、1 倍飞行、极高射速、伤害=手枪
+  assert.equal(WEAPONS[7].moveSpeedMult, 2.0, 'pistol double move speed')
+  assert.equal(WEAPONS[7].fuelMult, 2.0, 'pistol double flight')
+  assert.equal(WEAPONS[8].moveSpeedMult, 1.5, 'SMG 1.5x move speed')
+  assert.equal(WEAPONS[8].fuelMult, 1.0, 'SMG normal flight')
+  assert.ok(WEAPONS[8].fireDelay <= 0.05, 'SMG extremely high fire rate')
+  assert.equal(WEAPONS[8].damage, WEAPONS[7].damage, 'SMG damage equals pistol')
+  // 步枪正常速度/正常飞行；狙/火箭筒移速与飞行受限（0.5~0.6）
+  assert.equal(WEAPONS[1].moveSpeedMult, 1.0, 'assault normal move speed')
+  assert.equal(WEAPONS[1].fuelMult, 1.0, 'assault normal flight')
+  for (const id of [2, 3]) {
+    assert.ok((WEAPONS[id].moveSpeedMult ?? 1) <= 0.6, `weapon ${id} slow movement`)
+    assert.ok((WEAPONS[id].fuelMult ?? 1) <= 0.6, `weapon ${id} limited flight`)
+  }
+  // 狙击：超过视距(800) 非爆头只有 99 伤害
+  assert.equal(WEAPONS[2].farRange, 800, 'sniper far range')
+  assert.equal(WEAPONS[2].farDamage, 99, 'sniper far body damage 99')
   assert.deepEqual(Object.keys(SECONDARIES).sort(), ['doll', 'frag'], 'only frag + doll secondaries')
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
   assert.ok(!SECONDARIES.frag.supplyOnly, 'frag selectable')
@@ -465,24 +482,35 @@ test('防卡死：出生/传送进实体内部后会自动推出', () => {
   assert.ok(!w.terrain.isSolidAt(wx, p.pos.y - 6), `pushed out of solid, pos=(${Math.round(p.pos.x)},${Math.round(p.pos.y)})`)
 })
 
-test('狙击：无限射程 + 一击必杀（身体命中 100 伤害）', () => {
-  const w = new World(65)
-  const shooter = w.addPlayer('S', 'red')
-  shooter.weaponIndex = 2
-  const victim = w.addPlayer('V', 'blue')
-  // 空中长平台（避免两人蓄力期间自由落体导致弹道散布），保证 900px 视线无遮挡
-  w.terrain.addSolidBlock(2100, 1000, 1100, 20, '#334155', '#334155', 'platform', 'test-floor')
-  shooter.pos = { x: 2200, y: 984 }
-  victim.pos = { x: 3100, y: 984 }
-  for (let i = 0; i < 80; i++) w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
-  assert.ok(victim.deaths > 0 || victim.hp <= 0, `sniper should one-shot at 900px, hp=${victim.hp}`)
+test('狙击：视距内身体一击必杀；超过视距(800)非爆头只造成 99（留 1 血）', () => {
+  const arena = (): World => {
+    const w = new World(65)
+    w.terrain.addSolidBlock(2100, 1000, 1400, 20, '#334155', '#334155', 'platform', 'test-floor')
+    return w
+  }
+  const shoot = (dist: number, aimY = -12): number => {
+    const w = arena()
+    const shooter = w.addPlayer('S', 'red')
+    shooter.weaponIndex = 2
+    const victim = w.addPlayer('V', 'blue')
+    shooter.pos = { x: 2200, y: 984 }
+    victim.pos = { x: 2200 + dist, y: 984 }
+    for (let i = 0; i < 90; i++) w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
+    return victim.hp
+  }
+  // 视距内 600px：身体命中 100 → 死
+  assert.ok(shoot(600) <= 0, 'within view range body shot is lethal')
+  // 超过视距 900px：非爆头 99 → 剩 1 血
+  const farHp = shoot(900)
+  assert.ok(Math.abs(farHp - 1) < 1e-6, `beyond view body shot leaves 1 hp, hp=${farHp}`)
 })
 
 test('火箭筒：直线飞行（不落）+ 慢速 + 无限射程 + 命中爆炸', () => {
   const w = new World(67)
+  w.terrain.addSolidBlock(2100, 1000, 1600, 20, '#334155', '#334155', 'platform', 'test-floor')
   const p = w.addPlayer('P', 'red')
   p.weaponIndex = 3
-  p.pos = { x: 3000, y: 2600 }
+  p.pos = { x: 2300, y: 984 }
   w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
   const rocket = w.projectiles.find(pr => pr.rocket)
   assert.ok(rocket, 'rocket fired')

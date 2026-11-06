@@ -44,38 +44,32 @@ export class Terrain {
     this.shadows.push({ x, y, w, h, label, alpha: 0.76 })
   }
 
-  /** 多层楼房：楼板/外墙/天井/射击窗（v2 布局原样保留） */
+  /** 简单迷宫式建筑：外墙（底部留门）+ 两道交错内墙 + 实心天台（不做楼板/窗户/坑洼结构） */
   private buildMultiStoryBuilding(bx: number, groundY: number, width: number, floors: number, floorHeight: number, name: string, accent: string): void {
     const totalH = floors * floorHeight
     const topY = groundY - totalH
+    // 室内暗色背景 + 阴影
     this.rects.push({ x: bx, y: topY, w: width, h: totalH, color: '#111827', borderColor: accent, kind: 'building_bg', label: name })
     this.shadows.push({ x: bx + 20, y: topY + 20, w: width - 40, h: totalH - 20, label: `${name}室内`, alpha: 0.62 })
+    // 实心天台（+40 外沿），可正常占点/站立
     this.addSolidBlock(bx - 20, topY, width + 40, 24, '#334155', accent, 'building_roof', `${name}天台`)
-    for (let f = 0; f < floors; f++) {
-      const fy = groundY - f * floorHeight
-      if (f > 0) {
-        if (f % 2 === 0) this.addSolidBlock(bx + 120, fy - 20, width - 120, 20, '#475569', '#64748b', 'floor_slab')
-        else this.addSolidBlock(bx, fy - 20, width - 120, 20, '#475569', '#64748b', 'floor_slab')
-      }
-      // 碰撞箱规则：墙体上/下端与楼板搭接 20px（消除 20px 夹缝），窗口留 90px 可通行；
-      // 门洞 110px；避免任何 <60px 的夹缝把人卡住。
-      const slabTop = f > 0 ? fy - 20 : fy - 20   // 本层顶板（上方楼板底）
-      const wallBase = fy - floorHeight + 20       // 本层墙底（与下层板搭接）
-      if (f === 0) {
-        // 一层：门洞以上整段墙（上端搭接楼板，无夹缝）
-        this.addSolidBlock(bx, slabTop, 24, (fy - 110) - slabTop, '#334155', accent, 'wall')
-        this.addSolidBlock(bx + width - 24, slabTop, 24, (fy - 110) - slabTop, '#334155', accent, 'wall')
-      } else {
-        const winBottom = fy - 150
-        const winTop = fy - 60
-        // 下段墙：向下搭接楼板 20px
-        this.addSolidBlock(bx, wallBase - 20, 24, winBottom - (wallBase - 20), '#334155', accent, 'wall')
-        this.addSolidBlock(bx + width - 24, wallBase - 20, 24, winBottom - (wallBase - 20), '#334155', accent, 'wall')
-        // 上段墙：向上搭接顶板（延伸到 fy，与顶板重叠）
-        this.addSolidBlock(bx, winTop, 24, fy - winTop, '#334155', accent, 'wall')
-        this.addSolidBlock(bx + width - 24, winTop, 24, fy - winTop, '#334155', accent, 'wall')
-      }
+    // 外墙：左右整面，底部留 110px 门洞（简单、干净）
+    const wallTop = topY + 24
+    const doorTop = groundY - 110
+    for (const wx of [bx, bx + width - 24]) {
+      this.addSolidBlock(wx, wallTop, 24, doorTop - wallTop, '#334155', accent, 'wall')
     }
+    // 迷宫内墙：两道交错竖墙（下贴地 / 上挂顶），形成绕行路径
+    const inner1 = bx + Math.round(width * 0.33)
+    const inner2 = bx + Math.round(width * 0.66)
+    const lowerH = Math.min(460, Math.round(totalH * 0.42))
+    const upperH = Math.min(420, Math.round(totalH * 0.38))
+    this.addSolidBlock(inner1, doorTop - lowerH, 24, lowerH, '#334155', accent, 'wall')
+    this.addSolidBlock(inner2, wallTop, 24, upperH, '#334155', accent, 'wall')
+    // 中部一道横向短墙（简单迷宫转折），左右各留 ≥120px 通道
+    const midY = topY + Math.round(totalH * 0.5)
+    this.addSolidBlock(bx + 24, midY, Math.round(width * 0.28), 20, '#334155', accent, 'wall')
+    this.addSolidBlock(bx + width - 24 - Math.round(width * 0.24), midY, Math.round(width * 0.24), 20, '#334155', accent, 'wall')
   }
 
   private buildHollowPipe(px: number, py: number, length: number, height: number, label: string): void {
@@ -336,10 +330,11 @@ export class Terrain {
       const topY = SURFACE_Y - b.floors * 240
       // 天线
       this.addDeco(b.bx + b.w / 2 - 3, topY - 64, 6, 64, 'deco_antenna', '#94a3b8')
-      // 楼面窗户
+      // 楼面窗户（简化版：每两层一排、每排两扇，避免视觉杂乱）
       for (let f = 0; f < b.floors; f++) {
+        if (f % 2 !== 0) continue
         const fy = SURFACE_Y - f * 240
-        for (let k = 0; k < 3; k++) {
+        for (let k = 0; k < 2; k++) {
           const lit = (bi + f + k) % 3 !== 0
           const wx = b.bx + 40 + k * Math.max(60, (b.w - 120) / 3)
           this.addDeco(wx, fy - 170, 42, 40, lit ? 'deco_window_lit' : 'deco_window_dark', lit ? warm[(bi + k) % warm.length] : '#0f172a')
