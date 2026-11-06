@@ -50,9 +50,9 @@ export interface SecondaryDef {
 export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
-    damage: 16, headshotMult: 1.8, pellets: 8, spread: 0.28,
+    damage: 13, headshotMult: 1.0, pellets: 8, spread: 0.28,
     speed: 1000, recoil: 780, magSize: 6, maxReserve: 30,
-    reloadTime: 1.5, fireDelay: 0.50, terrainRadius: 12,
+    reloadTime: 1.5, fireDelay: 0.95, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
   },
   {

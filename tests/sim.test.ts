@@ -352,9 +352,14 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1250, 4000, 520, 3000, 1300, 900, 1500, 1400])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 100, 105, 50, 19, 30, 25, 14])   // M249=突击步枪(19)；引力枪已下调
+  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 19, 100, 105, 50, 19, 30, 25, 14])   // M249=突击步枪(19)；引力枪已下调
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
+  // 霰弹：只有 8 丸全中才致死（8×13=104 ≥100，7×13=91 <100）；无爆头加成；射速降低
+  assert.ok(WEAPONS[0].pellets * WEAPONS[0].damage! >= 100, 'full shotgun hit lethal')
+  assert.ok((WEAPONS[0].pellets - 1) * WEAPONS[0].damage! < 100, 'partial shotgun hit not lethal')
+  assert.equal(WEAPONS[0].headshotMult, 1.0, 'no headshot bonus (only full hit kills)')
+  assert.ok(WEAPONS[0].fireDelay >= 0.9, 'shotgun fire rate lowered')
   assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
   assert.equal(WEAPONS[3].lifeSeconds, 999, 'bazooka infinite range')
   assert.equal(WEAPONS[3].gravityScale, 0, 'bazooka flies straight')
@@ -686,4 +691,27 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
   const f0 = f.pos.x
   for (let i = 0; i < 120; i++) w3.step(DT, new Map([[e.id, input({ move: 1 })], [f.id, input()]]))
   assert.ok(f.pos.x > f0 + 5, `pushed by walking into them: ${f0.toFixed(0)} -> ${f.pos.x.toFixed(0)}`)
+})
+
+
+test('霰弹：贴脸全中 8 丸一发致死；中距离不全中不死', () => {
+  // 贴脸 60px：散布横向 ±8.4px < 身体半宽 → 8 丸全中 = 104 伤害
+  const w = new World(121)
+  const shooter = w.addPlayer('S', 'red')
+  const victim = w.addPlayer('V', 'blue')
+  shooter.weaponIndex = 0
+  shooter.pos = { x: 2200, y: 2784 }
+  victim.pos = { x: 2260, y: 2784 }
+  for (let i = 0; i < 20; i++) w.step(DT, new Map([[shooter.id, input({ fire: i === 0, aim: 0 })]]))
+  assert.ok(victim.hp <= 0 || victim.deaths > 0, `point-blank full hit one-shots, hp=${victim.hp}`)
+
+  // 中距离 600px：散布横向 ±84px → 不可能 8 丸全中 → 不死
+  const w2 = new World(122)
+  const s2 = w2.addPlayer('S', 'red')
+  const v2 = w2.addPlayer('V', 'blue')
+  s2.weaponIndex = 0
+  s2.pos = { x: 2000, y: 800 }
+  v2.pos = { x: 2600, y: 800 }
+  for (let i = 0; i < 60; i++) w2.step(DT, new Map([[s2.id, input({ fire: i === 0, aim: 0 })]]))
+  assert.ok(v2.hp > 0, `mid-range partial hit survives, hp=${v2.hp}`)
 })
