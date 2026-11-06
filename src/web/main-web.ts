@@ -209,6 +209,7 @@ function handleEvents(evs: WorldEvent[]): void {
   for (const e of evs) {
     if (e.kind === 'kill') {
       addKillFeed(e.killerName ?? '?', e.killerTeam ?? 'ffa', e.victimName ?? '?', e.victimTeam ?? 'ffa', e.weaponLabel ?? '', e.isHeadshot, e.isPierced)
+      if (e.victimId === localPlayer.id) deathInfo = { killer: e.killerName ?? '战场环境', weapon: e.weaponLabel ?? '' }
       if (e.x !== undefined && e.y !== undefined) effects.killBurst(e.x, e.y, TEAM_PALETTE[e.victimTeam ?? 'red']?.light ?? '#fda4af')
     } else if (e.kind === 'explosion') {
       screenShake = Math.max(screenShake, Math.min(14, (e.radius ?? 60) * 0.15))
@@ -245,14 +246,35 @@ function handleEvents(evs: WorldEvent[]): void {
 }
 
 // ── HUD 更新 ──
+let deathInfo: { killer: string; weapon: string } | null = null
+
 function updateHudWeaponButtons(): void {
-  const activeWepIdx = localPlayer.deployed ? localPlayer.weaponIndex : pendingLoadout.weaponIndex
-  const activeSec = localPlayer.deployed ? localPlayer.secondary : pendingLoadout.secondaryType
-  document.querySelectorAll('.weapon-slot-btn').forEach((btn) => {
-    const slot = Number(btn.getAttribute('data-slot') || 0)
-    btn.className = slot === activeWepIdx
-      ? 'weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border-2 border-amber-400 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]'
-      : 'weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px] opacity-75'
+  // 游戏中下方 HUD：只读显示当前主武器/副武器（不可点选换枪；换枪只在死亡界面）
+  const curWep = WEAPONS[localPlayer.weaponIndex]
+  const nameEl = document.getElementById('hudCurrentWeaponName')
+  if (nameEl) nameEl.textContent = curWep?.shortName ?? '—'
+  const secChip = document.getElementById('hudSecondaryChipText')
+  if (secChip) {
+    if (localPlayer.secondary === 'doll') secChip.textContent = `🎎 替身人偶 [${localPlayer.dollCharges}]`
+    else secChip.textContent = `💣 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
+  }
+  // 死亡界面：主/副武器选中态（重生时套用 pendingLoadout）
+  document.querySelectorAll('.death-wep-btn').forEach((btn) => {
+    const slot = Number(btn.getAttribute('data-wep') || 0)
+    btn.className = slot === pendingLoadout.weaponIndex
+      ? 'death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition'
+      : 'death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500'
+  })
+  document.querySelectorAll('.death-sec-btn').forEach((btn) => {
+    const sec = btn.getAttribute('data-sec')
+    const def = sec ? SECONDARIES[sec] : undefined
+    const noCharge = sec === 'doll' && localPlayer.dollCharges <= 0
+    btn.className = 'death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs ' +
+      (sec === pendingLoadout.secondaryType
+        ? 'border-rose-400 bg-rose-500/20 font-extrabold text-white'
+        : 'border-slate-700 bg-slate-950/60 font-semibold text-slate-400') +
+      (noCharge || def?.supplyOnly && sec === 'doll' ? ' opacity-60 cursor-not-allowed' : '')
+    ;(btn as HTMLButtonElement).disabled = sec === 'doll' && localPlayer.dollCharges <= 0
   })
   document.querySelectorAll('.lobby-wep-btn').forEach((btn) => {
     const slot = Number(btn.getAttribute('data-wep') || 0)
@@ -270,12 +292,6 @@ function updateHudWeaponButtons(): void {
         ? 'lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition'
         : 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500'
     }
-  })
-  document.querySelectorAll('.hud-sec-btn').forEach((btn) => {
-    const sec = btn.getAttribute('data-sec')
-    btn.className = sec === activeSec
-      ? 'hud-sec-btn px-1.5 py-0.5 rounded bg-rose-500 text-white text-[10px] font-extrabold border border-rose-300'
-      : 'hud-sec-btn px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 text-[10px] font-semibold border border-slate-700 opacity-75'
   })
 }
 
@@ -421,7 +437,7 @@ function updateHudUI(): void {
   if (!localPlayer.deployed) {
     promptMsg = '🏠 待机整备中：点击此处或「立即进入战场」部署；可自由更换主/副武器与队伍'
   } else if (localPlayer.respawnTimer > 0) {
-    promptMsg = `💀 阵亡倒计时 ${localPlayer.respawnTimer.toFixed(1)}s：点击此处打开整备面板更换配装与重生点`
+    promptMsg = ''
   } else if (mounted) {
     promptMsg = '🎯 迫击炮操控中：移动鼠标调节落点，按住开火发射 | 按 [E] 或点击此处离开'
   } else {
@@ -934,14 +950,21 @@ function bindAllEvents(): void {
   canvas?.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.down = false })
   canvas?.addEventListener('contextmenu', (e) => e.preventDefault())
 
-  document.querySelectorAll('.weapon-slot-btn').forEach((btn) =>
-    btn.addEventListener('click', () => tryChangePrimaryWeapon(Number(btn.getAttribute('data-slot') || 0))))
   document.querySelectorAll('.lobby-wep-btn').forEach((btn) =>
     btn.addEventListener('click', () => tryChangePrimaryWeapon(Number(btn.getAttribute('data-wep') || 0))))
   document.querySelectorAll('.lobby-sec-btn').forEach((btn) =>
     btn.addEventListener('click', () => tryChangeSecondaryWeapon(btn.getAttribute('data-sec') || 'frag')))
-  document.querySelectorAll('.hud-sec-btn').forEach((btn) =>
-    btn.addEventListener('click', () => tryChangeSecondaryWeapon(btn.getAttribute('data-sec') || 'frag')))
+  // 死亡界面：唯一的换枪入口
+  document.querySelectorAll('.death-wep-btn').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      tryChangePrimaryWeapon(Number(btn.getAttribute('data-wep') || 0))
+      updateHudWeaponButtons()
+    }))
+  document.querySelectorAll('.death-sec-btn').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      tryChangeSecondaryWeapon(btn.getAttribute('data-sec') || 'frag')
+      updateHudWeaponButtons()
+    }))
 
   document.querySelectorAll('.spawn-select-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1241,11 +1264,14 @@ function buildLocalInput(): WorldInput {
 }
 
 function onLocalDeath(): void {
-  // 阵亡：解锁配装 + 提示（v2 规则：重生前可重新选主/副武器与重生点）
-  pendingLoadout.weaponIndex = localPlayer.weaponIndex
-  pendingLoadout.secondaryType = localPlayer.secondary
+  // 阵亡：打开死亡界面（唯一可换枪处），当前配装作为默认选中
+  pendingLoadout.weaponIndex = WEAPONS[localPlayer.weaponIndex] && !WEAPONS[localPlayer.weaponIndex].isSupplyOnly
+    ? localPlayer.weaponIndex : 0
+  pendingLoadout.secondaryType = localPlayer.secondary === 'doll' ? 'frag' : localPlayer.secondary
   updateHudWeaponButtons()
-  showToast('💀 已阵亡！重生前可更换主/副武器与重生点（点击横幅打开整备面板）')
+  const ds = document.getElementById('deathScreen')
+  if (ds) ds.classList.remove('hidden')
+  showToast('💀 已阵亡：在死亡界面选择重生配装')
 }
 
 function onLocalRespawn(): void {
@@ -1278,6 +1304,20 @@ function gameLoop(now: number): void {
     if (dead && !wasDead) onLocalDeath()
     if (!dead && wasDead) onLocalRespawn()
     wasDead = dead
+    // 死亡界面：显示/隐藏 + 倒计时 + 击杀者
+    const deathEl = document.getElementById('deathScreen')
+    if (deathEl) {
+      deathEl.classList.toggle('hidden', !dead)
+      deathEl.classList.toggle('flex', dead)
+      if (dead) {
+        const cd = document.getElementById('deathCountdown')
+        if (cd) cd.textContent = localPlayer.respawnTimer.toFixed(1)
+        const kl = document.getElementById('deathKillerLine')
+        if (kl) kl.textContent = deathInfo
+          ? `被 ${deathInfo.killer}${deathInfo.weapon ? ` 的 ${deathInfo.weapon}` : ''} 击杀`
+          : '等待重生…'
+      }
+    }
 
     // 表现层：粒子/光束寿命 + 喷气尾焰 + 枪口火焰
     effects.update(FIXED)

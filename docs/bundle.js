@@ -3831,6 +3831,7 @@
     for (const e of evs) {
       if (e.kind === "kill") {
         addKillFeed(e.killerName ?? "?", e.killerTeam ?? "ffa", e.victimName ?? "?", e.victimTeam ?? "ffa", e.weaponLabel ?? "", e.isHeadshot, e.isPierced);
+        if (e.victimId === localPlayer.id) deathInfo = { killer: e.killerName ?? "\u6218\u573A\u73AF\u5883", weapon: e.weaponLabel ?? "" };
         if (e.x !== void 0 && e.y !== void 0) effects.killBurst(e.x, e.y, TEAM_PALETTE[e.victimTeam ?? "red"]?.light ?? "#fda4af");
       } else if (e.kind === "explosion") {
         screenShake = Math.max(screenShake, Math.min(14, (e.radius ?? 60) * 0.15));
@@ -3865,12 +3866,26 @@
       } else if (e.kind === "warp") showToast(`\u{1F300} ${e.weaponName ?? "\u4F20\u9001"}\uFF01`);
     }
   }
+  var deathInfo = null;
   function updateHudWeaponButtons() {
-    const activeWepIdx = localPlayer.deployed ? localPlayer.weaponIndex : pendingLoadout.weaponIndex;
-    const activeSec = localPlayer.deployed ? localPlayer.secondary : pendingLoadout.secondaryType;
-    document.querySelectorAll(".weapon-slot-btn").forEach((btn) => {
-      const slot = Number(btn.getAttribute("data-slot") || 0);
-      btn.className = slot === activeWepIdx ? "weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border-2 border-amber-400 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]" : "weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px] opacity-75";
+    const curWep = WEAPONS[localPlayer.weaponIndex];
+    const nameEl = document.getElementById("hudCurrentWeaponName");
+    if (nameEl) nameEl.textContent = curWep?.shortName ?? "\u2014";
+    const secChip = document.getElementById("hudSecondaryChipText");
+    if (secChip) {
+      if (localPlayer.secondary === "doll") secChip.textContent = `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]`;
+      else secChip.textContent = `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+    }
+    document.querySelectorAll(".death-wep-btn").forEach((btn) => {
+      const slot = Number(btn.getAttribute("data-wep") || 0);
+      btn.className = slot === pendingLoadout.weaponIndex ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+    });
+    document.querySelectorAll(".death-sec-btn").forEach((btn) => {
+      const sec = btn.getAttribute("data-sec");
+      const def = sec ? SECONDARIES[sec] : void 0;
+      const noCharge = sec === "doll" && localPlayer.dollCharges <= 0;
+      btn.className = "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs " + (sec === pendingLoadout.secondaryType ? "border-rose-400 bg-rose-500/20 font-extrabold text-white" : "border-slate-700 bg-slate-950/60 font-semibold text-slate-400") + (noCharge || def?.supplyOnly && sec === "doll" ? " opacity-60 cursor-not-allowed" : "");
+      btn.disabled = sec === "doll" && localPlayer.dollCharges <= 0;
     });
     document.querySelectorAll(".lobby-wep-btn").forEach((btn) => {
       const slot = Number(btn.getAttribute("data-wep") || 0);
@@ -3884,10 +3899,6 @@
       } else {
         btn.className = sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
       }
-    });
-    document.querySelectorAll(".hud-sec-btn").forEach((btn) => {
-      const sec = btn.getAttribute("data-sec");
-      btn.className = sec === activeSec ? "hud-sec-btn px-1.5 py-0.5 rounded bg-rose-500 text-white text-[10px] font-extrabold border border-rose-300" : "hud-sec-btn px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 text-[10px] font-semibold border border-slate-700 opacity-75";
     });
   }
   function updateSpawnPointButtonsUI() {
@@ -4021,7 +4032,7 @@
     if (!localPlayer.deployed) {
       promptMsg = "\u{1F3E0} \u5F85\u673A\u6574\u5907\u4E2D\uFF1A\u70B9\u51FB\u6B64\u5904\u6216\u300C\u7ACB\u5373\u8FDB\u5165\u6218\u573A\u300D\u90E8\u7F72\uFF1B\u53EF\u81EA\u7531\u66F4\u6362\u4E3B/\u526F\u6B66\u5668\u4E0E\u961F\u4F0D";
     } else if (localPlayer.respawnTimer > 0) {
-      promptMsg = `\u{1F480} \u9635\u4EA1\u5012\u8BA1\u65F6 ${localPlayer.respawnTimer.toFixed(1)}s\uFF1A\u70B9\u51FB\u6B64\u5904\u6253\u5F00\u6574\u5907\u9762\u677F\u66F4\u6362\u914D\u88C5\u4E0E\u91CD\u751F\u70B9`;
+      promptMsg = "";
     } else if (mounted) {
       promptMsg = "\u{1F3AF} \u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D\uFF1A\u79FB\u52A8\u9F20\u6807\u8C03\u8282\u843D\u70B9\uFF0C\u6309\u4F4F\u5F00\u706B\u53D1\u5C04 | \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u79BB\u5F00";
     } else {
@@ -4470,10 +4481,16 @@
       if (e.button === 0) mouse.down = false;
     });
     canvas?.addEventListener("contextmenu", (e) => e.preventDefault());
-    document.querySelectorAll(".weapon-slot-btn").forEach((btn) => btn.addEventListener("click", () => tryChangePrimaryWeapon(Number(btn.getAttribute("data-slot") || 0))));
     document.querySelectorAll(".lobby-wep-btn").forEach((btn) => btn.addEventListener("click", () => tryChangePrimaryWeapon(Number(btn.getAttribute("data-wep") || 0))));
     document.querySelectorAll(".lobby-sec-btn").forEach((btn) => btn.addEventListener("click", () => tryChangeSecondaryWeapon(btn.getAttribute("data-sec") || "frag")));
-    document.querySelectorAll(".hud-sec-btn").forEach((btn) => btn.addEventListener("click", () => tryChangeSecondaryWeapon(btn.getAttribute("data-sec") || "frag")));
+    document.querySelectorAll(".death-wep-btn").forEach((btn) => btn.addEventListener("click", () => {
+      tryChangePrimaryWeapon(Number(btn.getAttribute("data-wep") || 0));
+      updateHudWeaponButtons();
+    }));
+    document.querySelectorAll(".death-sec-btn").forEach((btn) => btn.addEventListener("click", () => {
+      tryChangeSecondaryWeapon(btn.getAttribute("data-sec") || "frag");
+      updateHudWeaponButtons();
+    }));
     document.querySelectorAll(".spawn-select-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const spId = btn.getAttribute("data-spawn") || "base";
@@ -4801,10 +4818,12 @@
     return w;
   }
   function onLocalDeath() {
-    pendingLoadout.weaponIndex = localPlayer.weaponIndex;
-    pendingLoadout.secondaryType = localPlayer.secondary;
+    pendingLoadout.weaponIndex = WEAPONS[localPlayer.weaponIndex] && !WEAPONS[localPlayer.weaponIndex].isSupplyOnly ? localPlayer.weaponIndex : 0;
+    pendingLoadout.secondaryType = localPlayer.secondary === "doll" ? "frag" : localPlayer.secondary;
     updateHudWeaponButtons();
-    showToast("\u{1F480} \u5DF2\u9635\u4EA1\uFF01\u91CD\u751F\u524D\u53EF\u66F4\u6362\u4E3B/\u526F\u6B66\u5668\u4E0E\u91CD\u751F\u70B9\uFF08\u70B9\u51FB\u6A2A\u5E45\u6253\u5F00\u6574\u5907\u9762\u677F\uFF09");
+    const ds = document.getElementById("deathScreen");
+    if (ds) ds.classList.remove("hidden");
+    showToast("\u{1F480} \u5DF2\u9635\u4EA1\uFF1A\u5728\u6B7B\u4EA1\u754C\u9762\u9009\u62E9\u91CD\u751F\u914D\u88C5");
   }
   function onLocalRespawn() {
     const wantW = Number(pendingLoadout.weaponIndex);
@@ -4831,6 +4850,17 @@
       if (dead && !wasDead) onLocalDeath();
       if (!dead && wasDead) onLocalRespawn();
       wasDead = dead;
+      const deathEl = document.getElementById("deathScreen");
+      if (deathEl) {
+        deathEl.classList.toggle("hidden", !dead);
+        deathEl.classList.toggle("flex", dead);
+        if (dead) {
+          const cd = document.getElementById("deathCountdown");
+          if (cd) cd.textContent = localPlayer.respawnTimer.toFixed(1);
+          const kl = document.getElementById("deathKillerLine");
+          if (kl) kl.textContent = deathInfo ? `\u88AB ${deathInfo.killer}${deathInfo.weapon ? ` \u7684 ${deathInfo.weapon}` : ""} \u51FB\u6740` : "\u7B49\u5F85\u91CD\u751F\u2026";
+        }
+      }
       effects.update(FIXED);
       for (let i = beams.length - 1; i >= 0; i--) {
         beams[i].life -= FIXED;
