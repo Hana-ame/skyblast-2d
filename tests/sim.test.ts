@@ -659,3 +659,36 @@ test('手雷：命中范围一发致死（衰减到最远仍 ≥100 伤害）', 
   assert.ok(killed || t.deaths > 0 || t.hp <= 0, `grenade should one-shot, hp=${t.hp} deaths=${t.deaths}`)
   assert.ok(DEFAULT_CONFIG.grenadeDamage * 0.2 >= 100, 'min falloff still lethal')
 })
+
+
+test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
+  // ① 水平阻挡：A 撞向 B 不会穿过
+  const w = new World(111)
+  const a = w.addPlayer('A', 'ffa')
+  const b = w.addPlayer('B', 'ffa')
+  a.pos = { x: 2300, y: 2740 }   // 开阔地表（避开竖井/建筑/障碍）
+  b.pos = { x: 2340, y: 2740 }
+  for (let i = 0; i < 60; i++) w.step(DT, new Map([[a.id, input({ move: 1 })], [b.id, input()]]))
+  const gap = Math.abs(b.pos.x - a.pos.x)
+  assert.ok(gap >= 20, `players collide (gap=${gap.toFixed(1)})`)
+
+  // ② 站头顶：A 落到 B 头上并站稳
+  const w2 = new World(112)
+  const c = w2.addPlayer('C', 'ffa')
+  const d = w2.addPlayer('D', 'ffa')
+  d.pos = { x: 2300, y: 2760 }
+  c.pos = { x: 2300, y: 2600 }   // 正上方
+  for (let i = 0; i < 90; i++) w2.step(DT, new Map([[c.id, input()], [d.id, input()]]))
+  assert.ok(Math.abs(c.pos.x - d.pos.x) < 6, `stays above head, dx=${(c.pos.x - d.pos.x).toFixed(1)}`)
+  assert.ok(c.pos.y <= d.pos.y - 40 && c.pos.y >= d.pos.y - 50, `stands on head: c.y=${c.pos.y.toFixed(0)} d.y=${d.pos.y.toFixed(0)}`)
+
+  // ③ 顶着走：A 持续推 B，B 位置被推走
+  const w3 = new World(113)
+  const e = w3.addPlayer('E', 'ffa')
+  const f = w3.addPlayer('F', 'ffa')
+  e.pos = { x: 2300, y: 2740 }
+  f.pos = { x: 2320, y: 2740 }
+  const f0 = f.pos.x
+  for (let i = 0; i < 120; i++) w3.step(DT, new Map([[e.id, input({ move: 1 })], [f.id, input()]]))
+  assert.ok(f.pos.x > f0 + 5, `pushed by walking into them: ${f0.toFixed(0)} -> ${f.pos.x.toFixed(0)}`)
+})

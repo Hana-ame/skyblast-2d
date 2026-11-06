@@ -296,6 +296,8 @@ export class World {
       }
     }
 
+    this.separatePlayers()
+
     this.stepProjectiles(dt)
     this.stepGrenades(dt)
     this.stepLandmines(dt)
@@ -728,7 +730,8 @@ export class World {
     const hitBody = (x: number, y: number): boolean => {
       const wx = wrapX(x)
       if (this.terrain.isSolidAt(wx, y)) return true
-      return this.obstacleAt(wx, y) !== null
+      if (this.obstacleAt(wx, y) !== null) return true
+      return this.playerHitsPoint(wx, y, p.id)
     }
     const pts = (cx: number, cy: number): boolean =>
       hitBody(cx - BODY_HALF_W, cy + BODY_BOTTOM) || hitBody(cx + BODY_HALF_W, cy + BODY_BOTTOM) ||
@@ -738,7 +741,12 @@ export class World {
     const nx = wrapX(p.pos.x + p.vel.x * dt)
     if (!pts(nx, p.pos.y)) p.pos.x = nx
     else if (!pts(nx, p.pos.y - 10)) { p.pos.x = nx; p.pos.y -= 10 }   // 自动上台阶
-    else p.vel.x = 0   // 不要滑：撞墙直接停住，不做反弹滑步
+    else {
+      // 被其他玩家挡住：轻推对方（"顶着人"），否则直接停住（不滑）
+      const blocker = this.playerBlockingAt(nx, p.pos.y, p.id)
+      if (blocker) this.tryNudge(blocker, Math.sign(nx - p.pos.x), 1.4)
+      p.vel.x = 0
+    }
 
     const nyRaw = p.pos.y + p.vel.y * dt
     const ny = wrapY(nyRaw)
@@ -800,6 +808,49 @@ export class World {
   private stuckTicks = new Map<number, number>()
 
   /** 身体 AABB（脚底锚点）：宽±10，高 -30..+16 */
+  /** 两个玩家身体 AABB 是否相交（宽 20，高 -30..+16，脚底锚点） */
+  private bodiesOverlap(ax: number, ay: number, bx: number, by: number): boolean {
+    const dx = Math.abs(wrapDeltaX(ax, bx))
+    if (dx >= 20) return false
+    return (ay + 16) > (by - 30) && (ay - 30) < (by + 16)
+  }
+
+  /** 单个点是否落在其他玩家身体 AABB 内（用于 6 采样点碰撞；不能把采样点当整具身体） */
+  private playerHitsPoint(x: number, y: number, selfId: number): boolean {
+    for (const other of this.players) {
+      if (other.id === selfId) continue
+      if (!other.deployed || !other.alive || other.respawnTimer > 0) continue
+      if (Math.abs(wrapDeltaX(x, other.pos.x)) > 10) continue
+      if (y > other.pos.y - 30 && y < other.pos.y + 16) return true
+    }
+    return false
+  }
+
+  /** 找指定位置与玩家 selfId 身体相交的其他玩家（用于玩家间碰撞） */
+  private playerBlockingAt(x: number, y: number, selfId: number): PlayerState | null {
+    for (const other of this.players) {
+      if (other.id === selfId) continue
+      if (!other.deployed || !other.alive || other.respawnTimer > 0) continue
+      if (this.bodiesOverlap(x, y, other.pos.x, other.pos.y)) return other
+    }
+    return null
+  }
+
+  /** 轻推另一个玩家（"顶着人"：被挡住时把对方朝同方向推一点，仍需避让地形/障碍/其他人） */
+  private tryNudge(other: PlayerState, dir: number, amount: number): void {
+    if (dir === 0) return
+    const nx = wrapX(other.pos.x + dir * amount)
+    if (this.terrain.isSolidAt(nx, other.pos.y - 6)) return
+    if (this.terrain.isSolidAt(nx, other.pos.y + 15)) return   // y+16 是脚底贴地采样，别把地面当墙
+    if (this.obstacleAt(nx, other.pos.y)) return
+    for (const t of this.players) {
+      if (t.id === other.id) continue
+      if (!t.deployed || !t.alive || t.respawnTimer > 0) continue
+      if (this.bodiesOverlap(nx, other.pos.y, t.pos.x, t.pos.y)) return
+    }
+    other.pos.x = nx
+  }
+
   bodyOverlapsAt(x: number, y: number): boolean {
     const wx = wrapX(x)
     const halfW = 10
@@ -1353,6 +1404,21 @@ export class World {
           this.events.push({ kind: 'ammo_pickup', playerId: p.id, x: pack.x, y: pack.y })
           break
         }
+      }
+    }
+  }
+
+  /** 玩家重叠分离：两两检查，沿 x 各推 0.5px（受地形/障碍/其他人限制），避免叠人卡死 */
+  private separatePlayers(): void {
+    const list = this.players.filter(p => p.deployed && p.alive && p.respawnTimer <= 0)
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i]
+        const b = list[j]
+        if (!this.bodiesOverlap(a.pos.x, a.pos.y, b.pos.x, b.pos.y)) continue
+        const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1
+        this.tryNudge(b, dir, 0.6)
+        this.tryNudge(a, -dir, 0.6)
       }
     }
   }
