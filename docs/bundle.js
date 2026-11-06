@@ -655,11 +655,11 @@
       name: "\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 33,
+      damage: 24,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
-      // 伤害 = 突击步枪
+      // 伤害降低（=手枪）
       speed: 1100,
       recoil: 240,
       magSize: 6,
@@ -671,7 +671,7 @@
       explosive: true,
       isGravityOrb: true,
       gravityScale: 0.02,
-      passWalls: false,
+      passWalls: true,
       dragPerSecond: 0.7,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
@@ -679,10 +679,10 @@
       fovMult: 1,
       color: "#a855f7",
       // 引力场弯曲其他子弹
-      falloffStart: 60,
-      falloffEnd: 320,
+      falloffStart: 200,
+      falloffEnd: 700,
       falloffMin: 0.12
-      // 引力枪随距离大幅衰减
+      // 射程与霰弹类似（200→700），远端衰减更狠
     },
     {
       id: 7,

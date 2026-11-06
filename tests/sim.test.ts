@@ -291,7 +291,7 @@ test('激光：按住持续输出（射速无限），一梭子可打 8 秒；�
   assert.equal(afterRelease, 0, 'no beam after release')
 })
 
-test('引力弹：不再穿墙（passWalls=false），撞到原始地形即爆炸消失', () => {
+test('引力弹：恢复穿墙（passWalls=true），不被原始地形挡下', () => {
   const w = new World(45)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 6   // 引力枪
@@ -299,14 +299,16 @@ test('引力弹：不再穿墙（passWalls=false），撞到原始地形即爆�
   w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
   const orb = w.projectiles.find(pr => pr.weaponLabel === '引力枪')
   assert.ok(orb, 'gravity orb fired')
-  assert.equal(orb!.passWalls, false, 'gravity orb no longer passes walls')
-  let exploded = false
-  for (let i = 0; i < 40; i++) {
+  assert.equal(orb!.passWalls, true, 'gravity orb passes walls again')
+  let maxX = orb!.pos.x
+  for (let i = 0; i < 25; i++) {
     w.step(DT, new Map([[p.id, input()]]))
-    for (const e of w.drainEvents()) if (e.kind === 'explosion') exploded = true
-    if (!w.projectiles.some(pr => pr.id === orb!.id) && exploded) break
+    w.drainEvents()
+    const cur = w.projectiles.find(pr => pr.id === orb!.id)
+    if (cur) maxX = Math.max(maxX, cur.pos.x)
+    else break
   }
-  assert.ok(exploded, 'orb explodes on hitting the building wall (does not fly through)')
+  assert.ok(maxX > 1424, `orb flew past the wall (maxX=${maxX.toFixed(0)})`)
 })
 
 test('喷射燃料：槽已加倍（默认 1.0s 续航），断续点按仍不能无限飞', () => {
@@ -353,7 +355,7 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [14, 33, 100, 115, 50, 33, 33, 24, 24])   // 霰弹 14/丸；M249/引力枪=突击(33)；手枪/冲锋枪 24
+  assert.deepEqual(WEAPONS.map(w => w.damage), [14, 33, 100, 115, 50, 33, 24, 24, 24])   // 霰弹 14/丸；M249=突击(33)；引力枪/手枪/冲锋枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：只有 8 丸全中才致死（8×13=104 ≥100，7×13=91 <100）；无爆头加成；射速降低
@@ -371,7 +373,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
   assert.ok(WEAPONS[5].fireDelay <= 0.1, 'M249 high fire rate (damage-synced with rifle, DPS preserved)')
-  assert.ok(WEAPONS[6].fireDelay >= 0.8 && WEAPONS[6].damage === WEAPONS[1].damage, 'gravity gun slower, damage equals assault rifle')
+  assert.ok(WEAPONS[6].fireDelay >= 0.8 && WEAPONS[6].damage === WEAPONS[7].damage, 'gravity gun slower, damage equals pistol')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
@@ -627,7 +629,7 @@ test('穿模解算：卡进大楼墙体 / 障碍物内部都会被最小轴推�
 })
 
 
-test('引力弹：限射程 + 弹速逐渐衰减（不再穿墙）', () => {
+test('引力弹：穿墙 + 限射程 + 弹速逐渐衰减', () => {
   const w = new World(95)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 6   // 引力枪
@@ -635,7 +637,7 @@ test('引力弹：限射程 + 弹速逐渐衰减（不再穿墙）', () => {
   w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
   const orb = w.projectiles.find(pr => pr.isGravityOrb)
   assert.ok(orb, 'orb fired')
-  assert.equal(orb!.passWalls, false, 'no wall pass')
+  assert.equal(orb!.passWalls, true, 'passes walls')
   assert.ok(orb!.dragPerSecond < 1, 'has gradual slowdown')
   const speed0 = Math.hypot(orb!.vel.x, orb!.vel.y)
   // 跑 1 秒：速度应明显衰减
@@ -896,8 +898,8 @@ test('距离衰减：霰弹随距离掉伤；引力枪大幅衰减', () => {
   assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 100) - 1) < 1e-9, 'shotgun full damage close')
   assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 700) - 0.45) < 1e-9, 'shotgun min multiplier at 700')
   assert.ok(weaponFalloff(WEAPONS[0], 400) < 0.95 && weaponFalloff(WEAPONS[0], 400) > 0.5, 'shotgun mid falloff')
-  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 320) - 0.12) < 1e-9, 'gravity min multiplier at 320')
-  assert.ok(weaponFalloff(WEAPONS[6], 200) < 0.6, 'gravity heavy falloff by 200px')
+  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 700) - 0.12) < 1e-9, 'gravity min multiplier at 700')
+  assert.ok(weaponFalloff(WEAPONS[6], 400) < 0.8 && weaponFalloff(WEAPONS[6], 400) > 0.4, 'gravity heavy mid falloff')
   assert.equal(weaponFalloff(WEAPONS[1], 900), 1, 'assault rifle no falloff')
 
   // 行为：单丸霰弹 100px vs 600px 的实际伤害差

@@ -103,12 +103,12 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 6, name: '引力枪', shortName: '引力枪', isSupplyOnly: true,
-    damage: 33, headshotMult: 1.6, pellets: 1, spread: 0.01,   // 伤害 = 突击步枪
+    damage: 24, headshotMult: 1.6, pellets: 1, spread: 0.01,   // 伤害降低（=手枪）
     speed: 1100, recoil: 240, magSize: 6, maxReserve: 18,
     reloadTime: 2.2, fireDelay: 0.9, terrainRadius: 130, lifeSeconds: 2.2,
-    explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: false, dragPerSecond: 0.7,
+    explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.7,
     pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.0, color: '#a855f7',   // 引力场弯曲其他子弹
-    falloffStart: 60, falloffEnd: 320, falloffMin: 0.12,   // 引力枪随距离大幅衰减
+    falloffStart: 200, falloffEnd: 700, falloffMin: 0.12,   // 射程与霰弹类似（200→700），远端衰减更狠
   },
   {
     id: 7, name: '手枪', shortName: '手枪', isSupplyOnly: false,
