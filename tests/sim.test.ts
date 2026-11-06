@@ -352,7 +352,7 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1250, 4000, 520, 3000, 1300, 900, 1500, 1400])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 100, 105, 50, 19, 52, 25, 14])   // M249=突击步枪(19)
+  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 100, 105, 50, 19, 30, 25, 14])   // M249=突击步枪(19)；引力枪已下调
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
@@ -363,6 +363,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.ok(WEAPONS[5].fireDelay <= 0.05, 'gatling high fire rate')
+  assert.ok(WEAPONS[6].fireDelay >= 1.0 && WEAPONS[6].damage <= 30, 'gravity gun slower & weaker')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')

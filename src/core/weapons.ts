@@ -93,9 +93,9 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 6, name: '引力枪', shortName: '引力枪', isSupplyOnly: true,
-    damage: 52, headshotMult: 1.6, pellets: 1, spread: 0.01,
+    damage: 30, headshotMult: 1.6, pellets: 1, spread: 0.01,
     speed: 900, recoil: 240, magSize: 6, maxReserve: 18,
-    reloadTime: 2.2, fireDelay: 0.68, terrainRadius: 95, lifeSeconds: 2.2,
+    reloadTime: 2.2, fireDelay: 1.10, terrainRadius: 95, lifeSeconds: 2.2,
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.45,
     pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.30, color: '#a855f7',
   },
