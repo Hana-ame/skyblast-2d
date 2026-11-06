@@ -10,7 +10,7 @@ import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
 import { defaultWorldInput } from '../types.ts'
-import type { WorldInput, WorldEvent, PlayerState, Projectile, Grenade, Landmine, Airstrike, Obstacle, CapturePoint, AmmoPack, SupplyCrate, Mortar, TeamId } from '../types.ts'
+import type { WorldInput, WorldEvent, PlayerState, Projectile, Grenade, Landmine, Airstrike, Obstacle, CapturePoint, AmmoPack, SupplyCrate, Mortar, Watchtower, WarpPortal, TeamId } from '../types.ts'
 import type { WorldSnapshot } from '../snap.ts'
 
 // ── 玩家碰撞体（v2 checkBodyCollision 的 6 采样点：宽 20 高 ~42）──
@@ -72,6 +72,22 @@ const MINE_PRESETS: { x: number; y: number }[] = [
   { x: 6850, y: 2760 }, { x: 6600, y: 3500 }, { x: 11420, y: 2760 },
 ]
 
+const WATCHTOWERS: Watchtower[] = [
+  { id: 'tower_1', name: '西部高空瞭望塔', x: 2580, y: 1620 },
+  { id: 'tower_2', name: '中央北塔瞭望台', x: 5840, y: 1600 },
+  { id: 'tower_3', name: '中央南塔瞭望台', x: 7360, y: 1600 },
+  { id: 'tower_4', name: '东部高空瞭望塔', x: 10580, y: 1620 },
+]
+
+const WARP_PORTALS: WarpPortal[] = [
+  { id: 'warp_1', name: 'W1 西翼地表传送门', x: 880, y: 2760, targetId: 'warp_2', color: '#06b6d4' },
+  { id: 'warp_2', name: 'W2 中央高空浮岛门', x: 6320, y: 1040, targetId: 'warp_1', color: '#06b6d4' },
+  { id: 'warp_3', name: 'W3 西区深层地道门', x: 2980, y: 3680, targetId: 'warp_4', color: '#a855f7' },
+  { id: 'warp_4', name: 'W4 东区通信楼顶门', x: 9580, y: 2040, targetId: 'warp_3', color: '#a855f7' },
+  { id: 'warp_5', name: 'W5 中央地下掩体门', x: 6880, y: 3500, targetId: 'warp_6', color: '#10b981' },
+  { id: 'warp_6', name: 'W6 极东边境高台门', x: 12280, y: 2140, targetId: 'warp_5', color: '#10b981' },
+]
+
 const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
   { x: 1220, y: 2800, vx: 210, vy: -810 },
   { x: 5300, y: 2800, vx: 180, vy: -870 },
@@ -99,6 +115,8 @@ export class World {
   ammoPacks: AmmoPack[] = []
   supplyCrates: SupplyCrate[] = []
   mortars: Mortar[] = []
+  watchtowers: Watchtower[] = WATCHTOWERS
+  warpPortals: WarpPortal[] = WARP_PORTALS
   scores: Record<string, number> = { red: 0, blue: 0, green: 0, ffa: 0 }
   events: WorldEvent[] = []        // 每 tick 收集，net/ui 层取走（drainEvents）
   config: GameConfig = { ...DEFAULT_CONFIG }
@@ -173,7 +191,7 @@ export class World {
       secondary: 'frag', secondaryCooldown: 0,
       pistolAmmo: 12, pistolReserve: 48,
       jetpack: false, fuel: getPhysicsParams().jetpackFuel,
-      shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0,
+      shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0, warpCooldown: 0,
       doll: null, dollCharges: 0, respawnTimer: 0,
       kills: 0, deaths: 0,
     }
@@ -200,6 +218,7 @@ export class World {
     p.shieldHp = 0
     p.shieldTimer = 0
     p.watchtowerTimer = 0
+    p.warpCooldown = 0
     p.doll = null
     p.dollCharges = 0
     p.reloading = false
@@ -207,6 +226,7 @@ export class World {
     p.secondaryCooldown = 0
     p.deployed = true
     p.alive = true
+    p.respawnTimer = 0
   }
 
   // ── 主 step ──────────────────────────────────────────────
@@ -278,6 +298,7 @@ export class World {
       if (p.shieldTimer <= 0) { p.shieldTimer = 0; p.shieldHp = 0 }
     }
     if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt)
+    if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
 
     // 换弹结算
     if (p.reloading) {
@@ -498,6 +519,26 @@ export class World {
         m.operatorId = p.id
         p.pos = { x: m.x, y: m.y - 16 }
         p.vel = { x: 0, y: 0 }
+        return
+      }
+    }
+    // 战术瞭望塔：+65% 视野 20s
+    for (const tw of this.watchtowers) {
+      if (wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 115) {
+        p.watchtowerTimer = this.config.watchtowerDuration
+        this.events.push({ kind: 'warp', x: tw.x, y: tw.y, playerId: p.id, weaponName: '瞭望塔视野' })
+        return
+      }
+    }
+    // 量子传送门：配对跃迁 + 2.5s 冷却
+    for (const wp of this.warpPortals) {
+      if (wrapDist(p.pos.x, p.pos.y, wp.x, wp.y) < 90 && p.warpCooldown <= 0) {
+        const dest = this.warpPortals.find(w => w.id === wp.targetId)
+        if (!dest) continue
+        p.pos = { x: dest.x, y: dest.y - 60 }
+        p.vel = { x: 0, y: 0 }
+        p.warpCooldown = 2.5
+        this.events.push({ kind: 'warp', x: dest.x, y: dest.y, playerId: p.id, weaponName: wp.name })
         return
       }
     }

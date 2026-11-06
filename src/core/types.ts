@@ -37,6 +37,7 @@ export interface PlayerState {
   shieldHp: number
   shieldTimer: number
   watchtowerTimer: number
+  warpCooldown: number
   doll: DollSnapshot | null   // 替身人偶锚（10s 生死回溯）
   dollCharges: number         // 替身人偶持有数（只从特殊补给箱获得）
   respawnTimer: number

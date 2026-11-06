@@ -8,7 +8,8 @@
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build:web": "esbuild src/web/main-web.ts --bundle --format=iife --outfile=docs/bundle.js",
-    "build:site": "node scripts/build-site.ts"
+    "build:site": "node scripts/build-site.ts",
+    "build:tune": "esbuild src/web/main-proto.ts --bundle --format=iife --outfile=docs/tune-bundle.js"
   },
   "engines": {
     "node": ">=22.18"
