@@ -602,3 +602,41 @@ test('引力弹：穿墙 + 射程有限 + 弹速逐渐衰减', () => {
   // 射程有限：总寿命 ≤ 2.2s
   assert.ok((orb!.life ?? 0) <= 2.2, 'limited lifetime/range')
 })
+
+
+test('引力弹：持续把玩家拉向弹体位置；力度可被移动抵抗', () => {
+  const makeOrb = (w: World, x: number, y: number) => {
+    w.projectiles.push({
+      id: 777001, owner: 1, pos: { x, y }, vel: { x: 0, y: 0 }, life: 5, r: 8.5,
+      damage: 52, headshotMult: 1.6, explosive: true, terrainRadius: 95,
+      gravityScale: 0.02, pierceOnHeadshot: false, pierceAll: false,
+      isGravityOrb: true, passWalls: true, beam: false, rocket: false,
+      bounces: 0, dragPerSecond: 0.45, weaponLabel: '引力枪', color: '#a855f7',
+      hitTargets: [], life2: undefined,
+    } as never)
+  }
+
+  // ① 静止玩家被持续拉近弹体
+  const w = new World(97)
+  const p = w.addPlayer('P', 'ffa')
+  p.pos = { x: 6600, y: 2760 }
+  makeOrb(w, 6850, 2760)   // 右边 250px（在 260 牵引范围内）
+  const d0 = Math.abs(6850 - p.pos.x)
+  for (let i = 0; i < 60; i++) { w.step(DT, new Map([[p.id, input()]])); w.drainEvents() }
+  const d1 = Math.abs(6850 - p.pos.x)
+  assert.ok(d1 < d0 - 100, `pulled toward orb: ${d0.toFixed(0)} -> ${d1.toFixed(0)}`)
+
+  // ② 按住远离方向移动可以抵抗（开阔地：弹体在左，玩家向右跑）
+  const w2 = new World(98)
+  const q = w2.addPlayer('Q', 'ffa')
+  q.pos = { x: 500, y: 2740 }
+  w2.projectiles.length = 0
+  makeOrb(w2, 250, 2740)
+  for (let i = 0; i < 100; i++) {
+    w2.step(DT, new Map([[q.id, input({ move: 1 })]]))   // 向右（远离左侧弹体）
+    w2.drainEvents()
+    if (q.pos.x > 1200) break
+  }
+  const dResist = Math.abs(250 - q.pos.x)
+  assert.ok(dResist > 420, `can resist pull by moving away: dist=${dResist.toFixed(0)}`)
+})
