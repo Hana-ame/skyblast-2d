@@ -24,8 +24,12 @@ export interface WeaponDef {
   bounces?: number         // 撞墙反弹次数（激光 2 次）
   passWalls?: boolean      // 穿透原始地形（引力弹）
   beam?: boolean           // 渲染为光束（激光）
+  rocket?: boolean         // 渲染为火箭弹（直线慢速爆炸弹）
   isGravityOrb?: boolean
   fovMult?: number
+  moveSpeedMult?: number // 持有时移动速度倍率（重武器更慢）
+  fuelMult?: number      // 持有时飞行续航倍率（重武器飞行距离更短）
+  lifeSeconds?: number  // 弹丸存活时间（射程）：默认按武器给，999 = 无限射程
   color: string
 }
 
@@ -46,62 +50,64 @@ export const WEAPONS: WeaponDef[] = [
     damage: 16, headshotMult: 1.8, pellets: 8, spread: 0.28,
     speed: 1000, recoil: 780, magSize: 6, maxReserve: 30,
     reloadTime: 1.5, fireDelay: 0.50, terrainRadius: 12,
-    explosive: false, pierceOnHeadshot: false, fovMult: 1.0, color: '#fbbf24',
+    explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
   },
   {
     id: 1, name: '脉冲突击步枪', shortName: '突击步枪', isSupplyOnly: false,
     damage: 19, headshotMult: 2.2, pellets: 1, spread: 0.045,
     speed: 1250, recoil: 84, magSize: 28, maxReserve: 140,
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
-    explosive: false, pierceOnHeadshot: false, fovMult: 1.0, color: '#38bdf8',
+    explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
   },
   {
     id: 2, name: '电磁狙击步枪', shortName: '电磁狙击', isSupplyOnly: false,
-    damage: 68, headshotMult: 2.5, pellets: 1, spread: 0.003,
-    speed: 2000, recoil: 390, magSize: 5, maxReserve: 25,
+    damage: 100, headshotMult: 2.5, pellets: 1, spread: 0.003,
+    speed: 4000, recoil: 390, magSize: 5, maxReserve: 25,
     reloadTime: 2.3, fireDelay: 0.92, terrainRadius: 16,
-    explosive: false, laser: true, pierceOnHeadshot: true, fovMult: 1.30, color: '#c084fc',
+    explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.92, fuelMult: 0.9, fovMult: 1.30, color: '#c084fc',
   },
   {
     id: 3, name: '重型榴弹炮', shortName: '榴弹炮', isSupplyOnly: false,
-    damage: 68, headshotMult: 1.5, pellets: 1, spread: 0.025,
-    speed: 950, recoil: 510, magSize: 4, maxReserve: 20,
-    reloadTime: 2.4, fireDelay: 0.75, terrainRadius: 72,
-    explosive: true, gravityScale: 0.45, pierceOnHeadshot: false, fovMult: 1.0, color: '#fb7185',
+    damage: 105, headshotMult: 1.5, pellets: 1, spread: 0.0,
+    speed: 520, recoil: 420, magSize: 4, maxReserve: 20,
+    reloadTime: 2.4, fireDelay: 0.9, terrainRadius: 92,
+    explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.82, fuelMult: 0.72, fovMult: 1.0, color: '#fb7185',
   },
   {
     id: 4, name: '⚡ 聚变激光炮', shortName: '激光炮', isSupplyOnly: true,
     damage: 50, headshotMult: 2.0, pellets: 1, spread: 0.001,
     speed: 3000, recoil: 150, magSize: 12, maxReserve: 24,
     reloadTime: 2.0, fireDelay: 0.26, terrainRadius: 18,
-    explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 2, beam: true, fovMult: 1.15, color: '#22d3ee',
+    explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 3, beam: true, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.15, color: '#22d3ee',
   },
   {
     id: 5, name: '🔥 重装加特林', shortName: '加特林', isSupplyOnly: true,
     damage: 14, headshotMult: 1.8, pellets: 1, spread: 0.11,
     speed: 1300, recoil: 66, magSize: 90, maxReserve: 180,
     reloadTime: 2.8, fireDelay: 0.055, terrainRadius: 8,
-    explosive: false, pierceOnHeadshot: false, fovMult: 1.0, color: '#f97316',
+    explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.0, color: '#f97316',
   },
   {
     id: 6, name: '🌀 奇点引力枪', shortName: '引力枪', isSupplyOnly: true,
     damage: 52, headshotMult: 1.6, pellets: 1, spread: 0.01,
     speed: 900, recoil: 240, magSize: 6, maxReserve: 18,
     reloadTime: 2.2, fireDelay: 0.68, terrainRadius: 95,
-    explosive: true, isGravityOrb: true, gravityScale: 0.08, passWalls: true, pierceOnHeadshot: false, fovMult: 1.1, color: '#a855f7',
+    explosive: true, isGravityOrb: true, gravityScale: 0.08, passWalls: true, pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.1, color: '#a855f7',
+  },
+  {
+    id: 7, name: '🔫 战术手枪', shortName: '战术手枪', isSupplyOnly: false,
+    damage: 25, headshotMult: 2.0, pellets: 1, spread: 0.012,
+    speed: 1500, recoil: 60, magSize: 12, maxReserve: 48,
+    reloadTime: 0.9, fireDelay: 0.22, terrainRadius: 6,
+    explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
+    moveSpeedMult: 1.30, fuelMult: 1.15, fovMult: 1.0, color: '#fde047',
   },
 ]
 
-// 8 种战术副武器（v2 全量）；pistol 有独立弹匣/备弹
+// 战术副武器：只保留手榴弹（2 充能、自然回复）；替身人偶为特殊补给专属（不占配装槽）
 export const SECONDARIES: Record<string, SecondaryDef> = {
-  frag:         { id: 'frag',         name: '手榴弹',     icon: '💣', cd: 10.0 },
-  mine:         { id: 'mine',         name: '感应地雷',   icon: '🚨', cd: 14.0 },
-  instant_mine: { id: 'instant_mine', name: '瞬发地雷',   icon: '⚡', cd: 15.0 },
-  airstrike:    { id: 'airstrike',    name: '定点空袭',   icon: '✈️', cd: 20.0 },
-  barricade:    { id: 'barricade',    name: '可破坏障碍物', icon: '🧱', cd: 12.0 },
-  shield:       { id: 'shield',       name: '一次性护盾', icon: '🛡️', cd: 16.0 },
-  doll:         { id: 'doll',         name: '替身人偶',   icon: '🎎', cd: 24.0, supplyOnly: true },
-  pistol:       { id: 'pistol',       name: '战术手枪',   icon: '🔫', cd: 0.24 },
+  frag: { id: 'frag', name: '手榴弹', icon: '💣', cd: 0.8 },
+  doll: { id: 'doll', name: '替身人偶', icon: '🎎', cd: 24.0, supplyOnly: true },
 }
 
 /** 全局玩法参数（服务器可调；随 hello/config_event 同步） */
@@ -134,6 +140,9 @@ export interface GameConfig {
   watchtowerFovMult: number
   respawnDelay: number
   loadoutLock: boolean
+  randomSpawn: boolean     // 死亡竞赛：每次出生在随机安全点
+  fragMaxCharges: number   // 手雷最大充能数（自然回复）
+  fragRechargeSeconds: number  // 每充能回复秒数
   dollMaxCharges: number    // 替身人偶最多可囤几个（只从补给箱获得）        // v2 规则：部署后锁定配装，仅重生前可换
 }
 
@@ -166,5 +175,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   watchtowerFovMult: 1.65,
   respawnDelay: 4.0,
   loadoutLock: true,
+  randomSpawn: false,
+  fragMaxCharges: 2,
+  fragRechargeSeconds: 6.0,
   dollMaxCharges: 2,
 }

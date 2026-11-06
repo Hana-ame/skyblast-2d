@@ -46,8 +46,14 @@ function syncBotsCount(target: number): void {
   }
   while (bots.length < target) {
     const idx = bots.length
-    let team = botTeams[idx % botTeams.length]
-    if (team === localPlayer.team && localPlayer.team !== 'ffa') team = localPlayer.team === 'red' ? 'blue' : 'red'
+    let team: TeamId
+    if (deathmatchMode === 'ffa') {
+      team = 'ffa'
+    } else {
+      // 2 队对抗：红蓝均衡（玩家所在队伍优先补对手）
+      team = idx % 2 === 0 ? 'red' : 'blue'
+      if (team === localPlayer.team) team = team === 'red' ? 'blue' : 'red'
+    }
     const b = world.addPlayer(botNames[idx % botNames.length], team)
     b.weaponIndex = idx % 4
     b.secondary = botSecs[idx % botSecs.length]
@@ -55,11 +61,23 @@ function syncBotsCount(target: number): void {
     b.pos = { x: wrapX(cp.x + (idx - 4) * 47), y: cp.y - 50 }
     bots.push(b)
   }
+  // 模式变更时同步既有 bot 队伍：FFA 全员混战；2 队按红蓝均衡（避开玩家队伍）
+  bots.forEach((b, idx) => {
+    if (deathmatchMode === 'ffa') {
+      b.team = 'ffa'
+    } else {
+      let team: TeamId = idx % 2 === 0 ? 'red' : 'blue'
+      if (team === localPlayer.team) team = team === 'red' ? 'blue' : 'red'
+      b.team = team
+    }
+  })
   updateTeamCountUI()
 }
 
 // ── 待部署配装 ──
 const pendingLoadout = { weaponIndex: 0, secondaryType: 'frag', spawnPointId: 'base' }
+let deathmatchMode: 'ffa' | '2teams' = 'ffa'
+world.config.randomSpawn = true   // 死斗模式：每次出生随机安全点
 
 function getSpawnCoords(): { x: number; y: number; label: string } {
   const t = SPAWN_POINTS.find(s => s.team === localPlayer.team) ?? SPAWN_POINTS[3]
@@ -73,29 +91,17 @@ function getSpawnCoords(): { x: number; y: number; label: string } {
 }
 
 function applyPendingLoadoutAndSpawn(): void {
-  const wIdx = clamp(Number(pendingLoadout.weaponIndex), 0, 3)
-  const sp = getSpawnCoords()
+  const want = Number(pendingLoadout.weaponIndex)
+  const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0
+  // 先设置配装，再由权威端统一出生（死斗模式下随机安全点）
   localPlayer.weaponIndex = wIdx
-  localPlayer.secondary = pendingLoadout.secondaryType
-  localPlayer.ammo = WEAPONS.map(w => w.magSize)
-  localPlayer.reserveAmmo = WEAPONS.map(w => w.maxReserve)
-  localPlayer.pistolAmmo = 12
-  localPlayer.pistolReserve = 48
-  localPlayer.hp = world.config.maxHp
-  localPlayer.maxHp = world.config.maxHp
-  localPlayer.shieldHp = 0
-  localPlayer.shieldTimer = 0
-  localPlayer.doll = null
-  localPlayer.dollCharges = 0
-  localPlayer.fuel = getPhysicsParams().jetpackFuel
-  localPlayer.reloading = false
-  localPlayer.respawnTimer = 0
+  localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : 'frag'
   localPlayer.deployed = true
   localPlayer.alive = true
-  localPlayer.pos = { x: wrapX(sp.x), y: sp.y }
-  localPlayer.vel = { x: 0, y: 0 }
+  world.deploy(localPlayer)
   updateHudWeaponButtons()
-  showToast(`⚡ 已在【${sp.label}】部署！配装已锁定：${WEAPONS[wIdx].name} + ${(SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag).name}`)
+  const spLabel = world.config.randomSpawn ? '随机安全点' : '队伍主基地'
+  showToast(`⚡ 已在【${spLabel}】部署！配装已锁定：${WEAPONS[wIdx].name} + ${(SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag).name}`)
 }
 
 // ── 输入状态 ──
@@ -139,6 +145,8 @@ function autoDetectDeviceInput(): void {
 
 // ── 客户端特效（纯表现层） ──
 const effects = new Effects()
+// 激光束：点击即一道光，按秒存在（渲染用；伤害已在权威端即时结算）
+const beams: { segments: { x1: number; y1: number; x2: number; y2: number }[]; color: string; life: number; maxLife: number }[] = []
 // 世界锚定背景：星星按世界坐标生成（随地形一起移动，不会与方块相对滑动）
 const starRng = (() => {
   let seed = 0x9e3779b9
@@ -225,6 +233,13 @@ function handleEvents(evs: WorldEvent[]): void {
         effects.explosion(e.x, e.y, 120)
         screenShake = Math.max(screenShake, 12)
       }
+    } else if (e.kind === 'laser') {
+      if (e.segments && e.segments.length > 0) {
+        const dur = e.duration ?? 0.14
+        beams.push({ segments: e.segments, color: e.color ?? '#22d3ee', life: dur, maxLife: dur })
+        if (beams.length > 24) beams.shift()
+      }
+      screenShake = Math.max(screenShake, 1.5)
     } else if (e.kind === 'warp') showToast(`🌀 ${e.weaponName ?? '传送'}！`)
   }
 }
@@ -282,17 +297,20 @@ function updateSpawnPointButtonsUI(): void {
 }
 
 function tryChangePrimaryWeapon(slotIdx: number): void {
+  const wep = WEAPONS[slotIdx]
+  if (!wep || wep.isSupplyOnly) return
   if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
     showToast('🔒 主武器在重生前已选定锁定！阵亡重生前或拾取空投特武时方可更换')
     return
   }
-  pendingLoadout.weaponIndex = clamp(slotIdx, 0, 3)
-  localPlayer.weaponIndex = pendingLoadout.weaponIndex
+  pendingLoadout.weaponIndex = slotIdx
+  localPlayer.weaponIndex = slotIdx
   updateHudWeaponButtons()
 }
 
 function tryChangeSecondaryWeapon(secType: string): void {
   const def = SECONDARIES[secType]
+  if (!def) return
   if (def?.supplyOnly) {
     // 补给专属例外：只有持有充能时才可临时切换使用
     if (localPlayer.dollCharges <= 0) {
@@ -346,7 +364,8 @@ function updateHudUI(): void {
   const hpText = document.getElementById('hudHpText')
   if (hpText) hpText.textContent = `${Math.max(0, Math.round(localPlayer.hp))} / ${localPlayer.maxHp}`
   const fuelBar = document.getElementById('hudFuelBar')
-  if (fuelBar) fuelBar.style.width = clamp((localPlayer.fuel / getPhysicsParams().jetpackFuel) * 100, 0, 100) + '%'
+  const fuelMaxNow = getPhysicsParams().jetpackFuel * (WEAPONS[localPlayer.weaponIndex]?.fuelMult ?? 1)
+  if (fuelBar) fuelBar.style.width = clamp((localPlayer.fuel / Math.max(0.001, fuelMaxNow)) * 100, 0, 100) + '%'
 
   const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
@@ -359,17 +378,24 @@ function updateHudUI(): void {
   const gOverlay = document.getElementById('grenadeCdOverlay')
   const gLabel = document.getElementById('hudGrenadeLabel')
   const gTitle = document.getElementById('hudSecondaryTitle')
-  const chargeNote = localPlayer.secondary === 'doll' ? ` [充能${localPlayer.dollCharges}]` : ''
-  if (gTitle) gTitle.textContent = localPlayer.secondary === 'pistol'
-    ? `[G/右键] 手枪 (${localPlayer.pistolAmmo}/${localPlayer.pistolReserve})`
-    : `[G/右键] ${secDef.name}${chargeNote}`
+  const isDoll = localPlayer.secondary === 'doll'
+  if (gTitle) gTitle.textContent = isDoll
+    ? `[G/右键] 替身人偶 [充能${localPlayer.dollCharges}]`
+    : `[G/右键] 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
   if (gOverlay && gLabel) {
-    if (localPlayer.secondaryCooldown > 0) {
-      gOverlay.style.height = Math.min(100, (localPlayer.secondaryCooldown / (secDef.cd || 1)) * 100) + '%'
-      gLabel.textContent = `${secDef.icon} ${localPlayer.secondaryCooldown.toFixed(1)}s`
+    if (isDoll) {
+      gOverlay.style.height = localPlayer.dollCharges > 0 ? '0%' : '100%'
+      gLabel.textContent = localPlayer.dollCharges > 0 ? '🎎 就绪' : '🎎 无充能'
     } else {
-      gOverlay.style.height = '0%'
-      gLabel.textContent = `${secDef.icon} 就绪`
+      const need = localPlayer.fragCharges >= world.config.fragMaxCharges
+      if (need) {
+        gOverlay.style.height = '0%'
+        gLabel.textContent = '💣 就绪'
+      } else {
+        const pct = Math.min(100, (localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds) * 100)
+        gOverlay.style.height = pct + '%'
+        gLabel.textContent = `💣 ${localPlayer.fragCharges}/${world.config.fragMaxCharges} 回复中`
+      }
     }
   }
 
@@ -781,6 +807,35 @@ function renderScene(): void {
     drawAirstrikeSprite(ctx, st, ax, ay, world.tick)
   }
 
+  // 12.5 激光束（分段折线，按秒淡出；反射 3 次由权威端算好）
+  for (const b of beams) {
+    const alpha = Math.max(0, b.life / b.maxLife)
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.lineCap = 'round'
+    // 外层辉光
+    ctx.strokeStyle = b.color
+    ctx.lineWidth = 9
+    ctx.globalAlpha = alpha * 0.35
+    for (const seg of b.segments) {
+      ctx.beginPath()
+      ctx.moveTo(sx(seg.x1), sy(seg.y1))
+      ctx.lineTo(sx(seg.x2), sy(seg.y2))
+      ctx.stroke()
+    }
+    // 内芯
+    ctx.globalAlpha = alpha
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2.4
+    for (const seg of b.segments) {
+      ctx.beginPath()
+      ctx.moveTo(sx(seg.x1), sy(seg.y1))
+      ctx.lineTo(sx(seg.x2), sy(seg.y2))
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
   // 13. 客户端粒子（爆炸/击杀/拾取/喷气/枪口）
   effects.render(ctx, (x, y) => ({ x: sx(x), y: sy(y) }), (x, y) => inView(x, y))
 
@@ -856,6 +911,7 @@ function bindAllEvents(): void {
     else if (e.code === 'Digit2') tryChangePrimaryWeapon(1)
     else if (e.code === 'Digit3') tryChangePrimaryWeapon(2)
     else if (e.code === 'Digit4') tryChangePrimaryWeapon(3)
+    else if (e.code === 'Digit5') tryChangePrimaryWeapon(7)
   })
   window.addEventListener('keyup', (e) => { keys[e.code] = false })
 
@@ -928,16 +984,49 @@ function bindAllEvents(): void {
     } else pendingInteract = true
   })
 
+  // ── 死斗模式按钮组：FFA / 2 队 ──
+  function applyTeamButtons(): void {
+    document.querySelectorAll('.team-select-btn').forEach((b) => {
+      const t = b.getAttribute('data-team')
+      const enabled = deathmatchMode === '2teams' ? (t === 'red' || t === 'blue') : (t === 'ffa')
+      const sel = t === localPlayer.team
+      ;(b as HTMLButtonElement).disabled = !enabled
+      b.className = 'team-select-btn px-3 py-2 rounded-xl text-left transition flex items-center justify-between ' +
+        (sel ? 'border-2 border-indigo-400 bg-indigo-500/20 ' : 'border border-slate-700 bg-slate-950/60 ') +
+        (enabled ? '' : 'opacity-40 cursor-not-allowed')
+    })
+  }
+  function applyMode(mode: 'ffa' | '2teams'): void {
+    if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
+      showToast('⚠️ 切换死斗模式需在待机/阵亡整备时进行')
+      return
+    }
+    deathmatchMode = mode
+    document.querySelectorAll('.mode-btn').forEach((b) => {
+      const sel = b.getAttribute('data-mode') === mode
+      b.className = 'mode-btn px-3 py-2 rounded-xl text-left transition border ' +
+        (sel ? 'border-2 border-emerald-400 bg-emerald-500/20' : 'border border-slate-700 bg-slate-950/60 hover:border-slate-500')
+    })
+    // FFA：全员混战；2 队：默认红队（可再点蓝）
+    if (mode === 'ffa') localPlayer.team = 'ffa'
+    else if (localPlayer.team === 'ffa' || localPlayer.team === 'green') localPlayer.team = 'red'
+    syncBotsCount(bots.length)
+    applyTeamButtons()
+    updateTeamCountUI()
+    showToast(mode === 'ffa'
+      ? '🟡 死亡竞赛 · FFA 混战：全员皆敌，随机出生点'
+      : '⚔️ 死亡竞赛 · 2 队对抗（红 vs 蓝）：随机出生点')
+  }
+  document.querySelectorAll('.mode-btn').forEach((b) => {
+    b.addEventListener('click', () => applyMode((b.getAttribute('data-mode') || 'ffa') as 'ffa' | '2teams'))
+  })
+
   document.querySelectorAll('.team-select-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if ((btn as HTMLButtonElement).disabled) return
       const chosen = (btn.getAttribute('data-team') || 'red') as TeamId
       localPlayer.team = chosen
-      document.querySelectorAll('.team-select-btn').forEach((b) => {
-        const sel = b.getAttribute('data-team') === chosen
-        b.className = sel
-          ? 'team-select-btn px-3 py-2 rounded-xl border-2 border-indigo-400 bg-indigo-500/20 text-left transition flex items-center justify-between'
-          : 'team-select-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition flex items-center justify-between'
-      })
+      applyTeamButtons()
       updateTeamCountUI()
       updateSpawnPointButtonsUI()
     })
@@ -1053,6 +1142,14 @@ function bindAllEvents(): void {
   bindJoystick(document.getElementById('touchMoveZone'), document.getElementById('touchMoveStick'), false)
   bindJoystick(document.getElementById('touchAimZone'), document.getElementById('touchAimStick'), true)
 
+  // 初始化死斗模式 UI（默认 FFA）
+  applyTeamButtons()
+  document.querySelectorAll('.mode-btn').forEach((b) => {
+    const sel = b.getAttribute('data-mode') === deathmatchMode
+    b.className = 'mode-btn px-3 py-2 rounded-xl text-left transition border ' +
+      (sel ? 'border-2 border-emerald-400 bg-emerald-500/20' : 'border border-slate-700 bg-slate-950/60 hover:border-slate-500')
+  })
+
   const boostBtn = document.getElementById('touchBoostBtn')
   boostBtn?.addEventListener('touchstart', (e) => { e.preventDefault(); touchState.boostButtonDown = true }, { passive: false })
   boostBtn?.addEventListener('touchend', () => { touchState.boostButtonDown = false })
@@ -1113,16 +1210,21 @@ function buildLocalInput(): WorldInput {
   if (touchState.moveActive && Math.abs(touchState.moveX) > 0.18) move = touchState.moveX > 0 ? 1 : -1
   w.move = move
   w.jetpack = !!(keys['KeyW'] || keys['Space'] || keys['ArrowUp']) || touchState.boostButtonDown || (touchState.moveActive && touchState.moveY < -0.32)
+  // 下降加速：S / ↓ / 左摇杆下推；水平仍为零惯性（松手即停）
+  w.dive = !!(keys['KeyS'] || keys['ArrowDown']) || (touchState.moveActive && touchState.moveY > 0.45)
 
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
+  // 屏幕空间瞄准：玩家在屏幕上的位置 = 画布中心 + 绕行最短位移×缩放；
+  // 角度直接用「鼠标像素 - 玩家像素」算，避免相机跟随 aim 造成的反馈回路（此前的"鼠标瞄不准"根因）。
+  const zoom = camera.fovFactor
+  const psx = canvas.width / 2 + wrapDeltaX(camera.x, localPlayer.pos.x) * zoom
+  const psy = canvas.height / 2 + wrapDeltaY(camera.y, localPlayer.pos.y) * zoom
   if (mounted) {
-    w.aim = Math.atan2(mouse.worldY - mounted.y, wrapDeltaX(mounted.x, mouse.worldX))
+    w.aim = Math.atan2(mouse.y - psy, mouse.x - psx)
   } else if (touchState.aimActive && Math.hypot(touchState.aimX, touchState.aimY) > 0.15) {
     w.aim = Math.atan2(touchState.aimY, touchState.aimX)
   } else {
-    const dx = wrapDeltaX(localPlayer.pos.x, mouse.worldX)
-    const dy = mouse.worldY - (localPlayer.pos.y - 12)
-    w.aim = Math.atan2(dy, dx)
+    w.aim = Math.atan2(mouse.y - (psy - 12 * zoom), mouse.x - psx)
   }
   w.fire = mouse.down || (touchState.aimActive && Math.hypot(touchState.aimX, touchState.aimY) > 0.45)
   w.interact = pendingInteract
@@ -1140,15 +1242,12 @@ function onLocalDeath(): void {
 }
 
 function onLocalRespawn(): void {
-  // 重生计时结束：按待定配装与重生点重新部署
-  localPlayer.weaponIndex = clamp(pendingLoadout.weaponIndex, 0, 3)
-  localPlayer.secondary = pendingLoadout.secondaryType
-  const sp = getSpawnCoords()
-  localPlayer.pos = { x: wrapX(sp.x), y: sp.y }
-  localPlayer.vel = { x: 0, y: 0 }
-  localPlayer.deployed = true
+  // 出生位置已由权威端决定（死斗=随机安全点）；这里只把待定配装套到已重生的玩家上
+  const wantW = Number(pendingLoadout.weaponIndex)
+  localPlayer.weaponIndex = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0
+  localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : 'frag'
   updateHudWeaponButtons()
-  showToast(`🔄 已在【${sp.label}】重生`)
+  showToast(world.config.randomSpawn ? '🔄 已在随机安全点重生' : '🔄 已在队伍基地重生')
 }
 
 function gameLoop(now: number): void {
@@ -1173,8 +1272,12 @@ function gameLoop(now: number): void {
     if (!dead && wasDead) onLocalRespawn()
     wasDead = dead
 
-    // 表现层：粒子更新 + 喷气尾焰 + 枪口火焰
+    // 表现层：粒子/光束寿命 + 喷气尾焰 + 枪口火焰
     effects.update(FIXED)
+    for (let i = beams.length - 1; i >= 0; i--) {
+      beams[i].life -= FIXED
+      if (beams[i].life <= 0) beams.splice(i, 1)
+    }
     if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
       if (localPlayer.jetpack) {
         const back = Math.cos(localPlayer.aim) >= 0 ? -1 : 1
@@ -1209,6 +1312,7 @@ function gameLoop(now: number): void {
 // ── 启动 ──
 bindAllEvents()
 autoDetectDeviceInput()
+localPlayer.team = 'ffa'   // 死斗 FFA 默认
 syncBotsCount(4)
 updateHudWeaponButtons()
 updateSpawnPointButtonsUI()
@@ -1227,6 +1331,8 @@ requestAnimationFrame(gameLoop)
   applyPendingLoadoutAndSpawn,
   get touch() { return touchState },
   botTargets: () => bots.map(b => ({ bot: b.name, team: b.team, target: pickBotTarget(b)?.name ?? null, targetTeam: pickBotTarget(b)?.team ?? null })),
+  get beams() { return beams },
+  get mode() { return deathmatchMode },
 }
 
 // 调参持久化（tuning 页共享）

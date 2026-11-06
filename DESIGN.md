@@ -336,6 +336,25 @@ SkyBlast v2 是"每帧像素 @60fps"（隐含 60Hz）。本骨架是秒制：
 - **背景世界锚定**：星空按世界坐标生成并随地形移动（消除相对滑动眩晕），环境光晕固定在掩体/浮岛世界坐标，
   天幕颜色随相机深度渐变。
 
-### 10.9 尚未完成（设计位）
+### 10.9 2026-11-07 第二轮玩法重构：死斗模式 / 光束武器 / 武器差异 / 防卡死
+
+- **死斗模式**：`GameConfig.randomSpawn` + 候选出生点表（地表/平台/基地/据点）；`World.deploy()` 统一出生入口；
+  UI 提供 FFA / 2 队按钮组（2 队红蓝均衡、队友免伤），bot 队伍随模式重排；**每次出生随机安全点**。
+- **激光（hitscan beam）**：`WeaponDef.beam` → `World.fireBeam()` 射线步进（10px/步）+ 反射（3 次）+
+  沿路径穿透伤害；产出 `WorldEvent{kind:'laser', segments, duration:0.14}`（按秒存在），浏览器渲染为分段光束；
+  不再生成飞行弹丸（非"棍子弹道"）。
+- **狙击/火箭无限射程**：`WeaponDef.lifeSeconds=999`；狙击 4000px/s / 100 伤害（命中即死）；
+  火箭 `gravityScale=0`、520px/s、`rocket` sprite、命中爆炸。
+- **手枪升主武器**：id 7、`moveSpeedMult=1.30`（移速最快）、`fuelMult=1.15`。
+- **副武器只留手雷**：`SECONDARIES` 仅 `frag`（2 充能、6s/枚自然回复）与 `doll`（补给专属）；
+  `PlayerState.fragCharges/fragRechargeTimer`；UI 同步（HUD 充能显示、大厅仅两枚副武器按钮）。
+- **武器差异**：每把武器 `moveSpeedMult`/`fuelMult`，`apply()` 用当前武器计算移动速度与燃料上限。
+- **飞行**（与原来机制一致，只提响应速度）：燃料槽加倍（1.0s）、仅落地回充；上升加速=喷气推力渐变（accel 3000→4200，约 0.12s 到极速，极速不变）；
+  下降加速=按住下键重力×1.55（原版数值）；水平零惯性（撞墙即停，不滑）。
+- **防卡死**：大楼碰撞重做（墙体与楼板搭接、窗口 90px/门洞 110px、无 20px 夹缝）；
+  `torsoBlockedAt()` + `ensureFreePosition()`（出生校验/每 tick 卡死计数 12 tick 自动推出/兜底主基地）。
+- **表现层补充**：火箭弹 sprite、激光分段光束渲染。
+
+### 10.10 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

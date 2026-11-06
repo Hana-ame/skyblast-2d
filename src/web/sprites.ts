@@ -569,6 +569,51 @@ export function drawAirstrikeSprite(ctx: CanvasRenderingContext2D, st: Airstrike
 
 /** 弹丸 sprite：光束 / 曳光弹 / 引力球 */
 export function drawProjectileSprite(ctx: CanvasRenderingContext2D, pr: Projectile, dx: number, dy: number, tick: number): void {
+  if (pr.rocket) {
+    // 火箭弹：缓慢直线飞行，弹头 + 尾焰 + 拖尾烟
+    const ang = Math.atan2(pr.vel.y, pr.vel.x)
+    ctx.save()
+    ctx.translate(dx, dy)
+    ctx.rotate(ang)
+    // 尾焰
+    const flame = 10 + Math.sin(tick * 1.4) * 5
+    const fg = ctx.createLinearGradient(-14, 0, -14 - flame, 0)
+    fg.addColorStop(0, 'rgba(251, 191, 36, 0.9)')
+    fg.addColorStop(0.6, 'rgba(249, 115, 22, 0.6)')
+    fg.addColorStop(1, 'rgba(249, 115, 22, 0)')
+    ctx.fillStyle = fg
+    ctx.beginPath()
+    ctx.moveTo(-12, -4.5)
+    ctx.lineTo(-12 - flame, 0)
+    ctx.lineTo(-12, 4.5)
+    ctx.closePath()
+    ctx.fill()
+    // 弹体
+    const bodyGrad = ctx.createLinearGradient(0, -6, 0, 6)
+    bodyGrad.addColorStop(0, '#fda4af')
+    bodyGrad.addColorStop(0.5, '#f43f5e')
+    bodyGrad.addColorStop(1, '#9f1239')
+    ctx.fillStyle = bodyGrad
+    ctx.strokeStyle = '#4c0519'
+    ctx.lineWidth = 1.5
+    roundRect(ctx, -14, -5, 24, 10, 4)
+    ctx.fill()
+    ctx.stroke()
+    // 弹头
+    ctx.fillStyle = '#fde68a'
+    ctx.beginPath()
+    ctx.moveTo(10, -5)
+    ctx.lineTo(18, 0)
+    ctx.lineTo(10, 5)
+    ctx.closePath()
+    ctx.fill()
+    // 尾翼
+    ctx.fillStyle = '#9f1239'
+    ctx.beginPath(); ctx.moveTo(-14, -5); ctx.lineTo(-18, -9); ctx.lineTo(-10, -5); ctx.closePath(); ctx.fill()
+    ctx.beginPath(); ctx.moveTo(-14, 5); ctx.lineTo(-18, 9); ctx.lineTo(-10, 5); ctx.closePath(); ctx.fill()
+    ctx.restore()
+    return
+  }
   if (pr.beam) {
     const spd = Math.hypot(pr.vel.x, pr.vel.y) || 1
     const len = 150

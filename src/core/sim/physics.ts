@@ -25,11 +25,11 @@ const defaults: PhysicsParams = {
   moveSpeed: 300,        // 水平极速（无惯性：按下即达，松开即停）
   jumpImpulse: 490,      // 用户调优值
   maxFall: 1200,
-  jetpackAccel: 3000,    // 用户调优值：净加速 (3000-1250)/1.3 ≈ 1346/s → 约 0.21s 预热到极速
+  jetpackAccel: 4200,    // 更快响应：净加速 (4200-1250)/1.3 ≈ 2269/s → 约 0.12s 到升空极速（原 3000≈0.21s）
   jetpackMaxUp: 280,     // 用户调优值：升空速度上限（短促小跳手感）
-  jetpackFuel: 0.5,      // 满能量只够喷 1s（drain 0.5）
-  jetpackDrain: 0.5,     // 满槽 1s 用尽
-  jetpackRecharge: 0.35, // 落地回充：约 1.43s 回满（空中不回充）
+  jetpackFuel: 1.0,      // 飞行槽加倍：满能量可喷 2s（drain 0.5）
+  jetpackDrain: 0.5,     // 每秒消耗半槽
+  jetpackRecharge: 0.7,  // 落地回充：约 1.43s 回满（空中不回充）
 }
 
 let P: PhysicsParams = { ...defaults }
@@ -54,9 +54,11 @@ export function integrate(p: Vec2, v: Vec2, dt: number): void {
   p.y += v.y * dt
 }
 
-export function applyGravity(v: Vec2, dt: number): void {
-  v.y += (P.gravity / P.mass) * dt
-  if (v.y > P.maxFall) v.y = P.maxFall
+/** 重力：mult>1 为主动俯冲（下降加速），速度上限相应放宽但仍有封顶（防穿透/防失控） */
+export function applyGravity(v: Vec2, dt: number, mult = 1): void {
+  v.y += (P.gravity / P.mass) * mult * dt
+  const cap = mult > 1 ? P.maxFall * 1.6 : P.maxFall
+  if (v.y > cap) v.y = cap
 }
 
 /** 水平移动：无惯性 —— dir 即极速，松开（dir=0）即停；空中/地面不区分 */

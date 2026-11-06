@@ -5,6 +5,7 @@ export type Intent =
   | { t: 'move'; dir: -1 | 0 | 1 }
   | { t: 'jump' }
   | { t: 'jetpack'; on: boolean }
+  | { t: 'dive'; on: boolean }
   | { t: 'aim'; angle: number }
   | { t: 'fire'; on: boolean }
   | { t: 'reload' }

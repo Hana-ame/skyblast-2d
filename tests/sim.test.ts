@@ -9,6 +9,7 @@ import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
 import { WEAPONS, SECONDARIES } from '../src/core/weapons.ts'
+import { getPhysicsParams } from '../src/core/sim/physics.ts'
 import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
 
 const DT = 1 / 60
@@ -114,22 +115,6 @@ test('手榴弹：引爆产生爆炸事件', () => {
   assert.ok(sawExplosion, 'grenade should explode')
 })
 
-test('护盾：吸收伤害并按超时消散', () => {
-  const w = new World(9)
-  const p = w.addPlayer('P', 'red')
-  const enemy = w.addPlayer('E', 'blue')
-  w.step(DT, new Map([[p.id, input({ secondary: sec('shield') })]]))
-  assert.ok(p.shieldTimer > 0 && p.shieldHp > 0, 'shield should be active')
-  const shieldHp0 = p.shieldHp
-  enemy.weaponIndex = 1
-  enemy.pos = { x: p.pos.x - 80, y: p.pos.y }
-  for (let i = 0; i < 90; i++) {
-    w.step(DT, new Map([[enemy.id, input({ fire: true, aim: 0 })]]))
-    w.drainEvents()
-  }
-  assert.ok(p.shieldHp < shieldHp0 || p.shieldTimer === 0 || p.hp < 100, 'shield should absorb/timeout')
-})
-
 test('替身人偶：只从特殊补给获得（无充能不可用）', () => {
   const w = new World(11)
   const p = w.addPlayer('P', 'red')
@@ -159,40 +144,6 @@ test('替身人偶：只从特殊补给获得（无充能不可用）', () => {
   }
   assert.ok(recalled || p.deaths === 0, `doll should recall instead of death (recalled=${recalled}, deaths=${p.deaths})`)
   if (recalled) assert.deepEqual(Math.round(p.pos.x), Math.round(wrapX(anchorPos.x) === anchorPos.x ? anchorPos.x : anchorPos.x), 'back at anchor')
-})
-
-test('可破坏障碍物：barricade 生成、被打掉后移除', () => {
-  const w = new World(13)
-  const p = w.addPlayer('P', 'ffa')
-  const obs0 = w.obstacles.length
-  w.step(DT, new Map([[p.id, input({ secondary: sec('barricade') })]]))
-  assert.ok(w.obstacles.length === obs0 + 1, 'barricade spawned')
-  const target = w.obstacles[w.obstacles.length - 1]
-  // 用榴弹炮轰它（68×多次）
-  const shooter = w.addPlayer('S', 'blue')
-  shooter.weaponIndex = 3
-  shooter.pos = { x: target.x - 200, y: target.y + 40 }
-  let destroyed = false
-  for (let i = 0; i < 200; i++) {
-    w.step(DT, new Map([[shooter.id, input({ fire: true, aim: Math.atan2(target.y - shooter.pos.y, 200) })]]))
-    if (w.drainEvents().some(e => e.kind === 'obstacle_destroy' && e.obstacleId === target.id)) { destroyed = true; break }
-  }
-  assert.ok(destroyed, 'barricade should be destructible')
-  assert.ok(!w.obstacles.some(o => o.id === target.id), 'destroyed obstacle removed')
-})
-
-test('地雷：直击触发 + 瞬发雷 0 延迟爆炸', () => {
-  const w = new World(17)
-  const p = w.addPlayer('P', 'red')
-  const t = w.addPlayer('T', 'blue')
-  t.pos = { x: p.pos.x + 40, y: p.pos.y }
-  w.step(DT, new Map([[p.id, input({ secondary: sec('instant_mine', t.pos.x, t.pos.y) })]]))
-  let exploded = w.drainEvents().some(e => e.kind === 'explosion')   // 直击可同帧引爆
-  for (let i = 0; i < 180 && !exploded; i++) {
-    w.step(DT, new Map([[p.id, input()]]))
-    if (w.drainEvents().some(e => e.kind === 'explosion')) { exploded = true; break }
-  }
-  assert.ok(exploded, 'instant mine direct-hit should explode')
 })
 
 test('占点：进入范围读条，满 100 归属变更', () => {
@@ -308,26 +259,20 @@ test('PeerJS 传输：假 DataConnection 上跑通 服务器权威 + 欢迎包 +
 })
 
 
-test('激光枪：撞墙反弹（2 次配额，首弹后 1 次剩余，bounces=2 起）', () => {
+test('激光：点击即一道即时光束（事件分段，反射≤3，不生成飞行弹丸）', () => {
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
-  p.weaponIndex = 4   // 激光炮
+  p.weaponIndex = 4   // 激光炮（hitscan beam）
   p.pos = { x: 6600, y: 2660 }
-  w.step(DT, new Map([[p.id, input({ fire: true, aim: Math.PI / 2 })]]))
-  const laser = w.projectiles.find(pr => pr.weaponLabel === '激光炮')
-  assert.ok(laser, 'laser fired')
-  assert.equal(laser!.bounces, 2, 'laser starts with 2 bounces')
-  let bounced = false
-  for (let i = 0; i < 30; i++) {
-    w.step(DT, new Map([[p.id, input()]]))
-    if (w.projectiles.some(pr => pr.weaponLabel === '激光炮' && pr.vel.y < 0)) { bounced = true; break }
-    w.drainEvents()
-  }
-  assert.ok(bounced, 'laser should bounce off ground (vy flips negative)')
-  const after = w.projectiles.find(pr => pr.weaponLabel === '激光炮')
-  assert.ok(after && after.bounces === 1, 'one of two bounces consumed')
-  assert.ok(after!.life > 0, 'laser survives the bounce')
-  assert.equal(after!.beam, true, 'laser renders as beam')
+  w.step(DT, new Map([[p.id, input({ fire: true, aim: Math.PI / 2 })]]))   // 朝下打地面
+  const evs = w.drainEvents()
+  const laser = evs.find(e => e.kind === 'laser')
+  assert.ok(laser, 'laser beam event emitted')
+  assert.ok((laser!.segments?.length ?? 0) >= 1, 'beam has at least one segment')
+  assert.ok((laser!.segments?.length ?? 1) <= 4, 'bounce count <= 3 (at most 4 segments)')
+  assert.ok((laser!.duration ?? 0) > 0, 'beam lasts in seconds')
+  // 不应生成 beam 飞行弹丸（旧实现）
+  assert.equal(w.projectiles.filter(pr => pr.beam).length, 0, 'no traveling beam projectile')
 })
 
 test('引力弹：穿墙飞行（passWalls），不被原始地形挡下', () => {
@@ -350,26 +295,30 @@ test('引力弹：穿墙飞行（passWalls），不被原始地形挡下', () =>
   if (still) assert.ok(still.pos.x > 1400, `orb should pass wall, x=${still.pos.x}`)
 })
 
-test('喷射燃料：断续点按 W 不能无限飞（空中不回充，落地才回）', () => {
+test('喷射燃料：槽已加倍（默认 1.0s 续航），断续点按仍不能无限飞', () => {
+  assert.equal(getPhysicsParams().jetpackFuel, 1.0, 'fuel gauge doubled')
   const w = new World(47)
   const p = w.addPlayer('P', 'ffa')
-  // 回到地面附近
   p.pos = { x: 6600, y: 2790 }
   p.onGround = true
   const y0 = p.pos.y
   let maxRise = 0
   for (let i = 0; i < 900; i++) {
-    const tap = (i % 14) < 7   // 断续 7 帧按 / 7 帧松
+    const tap = (i % 14) < 7
     w.step(DT, new Map([[p.id, input({ jetpack: tap })]]))
     w.drainEvents()
     maxRise = Math.max(maxRise, y0 - p.pos.y)
   }
-  // 1) 燃料应耗尽（空中不回充）
-  assert.ok(p.fuel <= 0.01, `fuel should be exhausted, fuel=${p.fuel.toFixed(3)}`)
-  // 2) 高度不应无限累积
-  assert.ok(maxRise < 1200, `should not fly unbounded, maxRise=${maxRise.toFixed(0)}`)
-  // 3) 最终应回到地面附近
-  assert.ok(p.pos.y > y0 - 300, `should fall back near ground, y=${p.pos.y.toFixed(0)}`)
+  assert.ok(p.fuel <= 0.05, `fuel should be exhausted, fuel=${p.fuel.toFixed(3)}`)
+  assert.ok(maxRise < 1600, `should not fly unbounded, maxRise=${maxRise.toFixed(0)}`)
+  assert.ok(p.pos.y > y0 - 400, `should fall back near ground, y=${p.pos.y.toFixed(0)}`)
+
+  // 连续按住 1.5s 仍有余量（加倍前 1.0s 就用尽）
+  const w2 = new World(49)
+  const q = w2.addPlayer('Q', 'ffa')
+  q.pos = { x: 6600, y: 2000 }
+  for (let i = 0; i < 90; i++) w2.step(DT, new Map([[q.id, input({ jetpack: true })]]))
+  assert.ok(q.fuel > 0.2, `doubled gauge keeps flying at 1.5s, fuel=${q.fuel.toFixed(2)}`)
 })
 
 test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换枪被拒', () => {
@@ -387,19 +336,54 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
   assert.equal(p.weaponIndex, crate.weaponId, 'supply crate grants its weapon')
 })
 
-test('配装表：7 主武器数值（弹速 px/s / 伤害）与 supply-only 标记', () => {
-  assert.equal(WEAPONS.length, 7)
-  const speed = WEAPONS.map(w => w.speed)
-  assert.deepEqual(speed, [1000, 1250, 2000, 950, 3000, 1300, 900])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 68, 68, 50, 14, 52])
+test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
+  assert.equal(WEAPONS.length, 8)
+  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1250, 4000, 520, 3000, 1300, 900, 1500])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 100, 105, 50, 14, 52, 25])
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
-  assert.equal(WEAPONS[4].bounces, 2, 'laser bounces twice')
-  assert.equal(WEAPONS[6].passWalls, true, 'gravity orb passes walls')
-  // 人偶不在常规副武器可选列表（supplyOnly）
+  assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
+  assert.equal(WEAPONS[3].lifeSeconds, 999, 'bazooka infinite range')
+  assert.equal(WEAPONS[3].gravityScale, 0, 'bazooka flies straight')
+  assert.equal(WEAPONS[3].speed, 520, 'bazooka slow')
+  assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
+  assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
+  assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
+  assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
+  assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
+  assert.deepEqual(Object.keys(SECONDARIES).sort(), ['doll', 'frag'], 'only frag + doll secondaries')
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
-  assert.ok(!SECONDARIES.frag.supplyOnly && !SECONDARIES.shield.supplyOnly, 'normal secondaries selectable')
+  assert.ok(!SECONDARIES.frag.supplyOnly, 'frag selectable')
+
+  // 手雷充能制：初始 2、投出消耗、6s 回复 1
+  const w = new World(53)
+  const p = w.addPlayer('P', 'red')
+  assert.equal(p.fragCharges, 2, 'starts with 2 frag charges')
+  w.step(DT, new Map([[p.id, input({ secondary: sec('frag', p.pos.x + 100, p.pos.y) })]]))
+  assert.equal(p.fragCharges, 1, 'throw consumes one charge')
+  assert.equal(w.grenades.length, 1, 'grenade spawned')
+  for (let i = 0; i < 60 * 7; i++) w.step(DT, new Map([[p.id, input()]]))   // 7 秒
+  assert.equal(p.fragCharges, 2, 'charge regenerates after 6s')
+  w.drainEvents()
 })
 
+test('手枪：主武器可切换；移速最快（比火箭筒快 50%+）', () => {
+  const w = new World(55)
+  const a = w.addPlayer('A', 'ffa')
+  a.weaponIndex = 7   // 手枪
+  a.pos = { x: 400, y: 2784 }
+  const w2 = new World(56)
+  const b = w2.addPlayer('B', 'ffa')
+  b.weaponIndex = 3   // 火箭筒（最慢）
+  b.pos = { x: 400, y: 2784 }
+  const x0 = a.pos.x, x1 = b.pos.x
+  for (let i = 0; i < 30; i++) {
+    w.step(DT, new Map([[a.id, input({ move: 1 })]]))
+    w2.step(DT, new Map([[b.id, input({ move: 1 })]]))
+  }
+  const pistolDist = a.pos.x - x0
+  const rocketDist = b.pos.x - x1
+  assert.ok(pistolDist > rocketDist * 1.3, `pistol ${pistolDist.toFixed(1)} vs rocket ${rocketDist.toFixed(1)}`)
+})
 
 test('迫击炮：操控后炮管角度跟随准星（aim 同步，限上半圆）', () => {
   const w = new World(51)
@@ -420,4 +404,111 @@ test('迫击炮：操控后炮管角度跟随准星（aim 同步，限上半圆�
   const shell = w.projectiles.find(pr => pr.weaponLabel === '公共迫击炮')
   assert.ok(shell, 'mortar shell fired')
   assert.ok(shell!.vel.y < 0, 'shell flies upward per aim')
+})
+
+
+test('死斗随机出生：randomSpawn 开启后每次出生点不同且安全', () => {
+  const w = new World(61)
+  w.config.randomSpawn = true
+  const p = w.addPlayer('P', 'red')
+  const places = new Set<string>()
+  for (let k = 0; k < 12; k++) {
+    // 触发重生：设置死亡计时
+    p.respawnTimer = 0.02
+    p.alive = false
+    w.step(DT, new Map([[p.id, input()]]))
+    w.step(DT, new Map([[p.id, input()]]))
+    w.drainEvents()
+    places.add(`${Math.round(p.pos.x >> 6)},${Math.round(p.pos.y >> 6)}`)
+    // 出生安全（躯干不在实体里）
+    const wx = wrapX(p.pos.x)
+    const pts: [number, number][] = [[wx - 10, p.pos.y - 4], [wx + 10, p.pos.y - 4], [wx, p.pos.y - 6], [wx, p.pos.y - 26]]
+    for (const [x, y] of pts) assert.ok(!w.terrain.isSolidAt(x, y), `spawn torso free at ${Math.round(x)},${Math.round(y)}`)
+  }
+  assert.ok(places.size >= 5, `random spawn varies: ${places.size} distinct cells`)
+})
+
+test('防卡死：出生/传送进实体内部后会自动推出', () => {
+  const w = new World(63)
+  const p = w.addPlayer('P', 'ffa')
+  p.pos = { x: 6600, y: 3900 }   // 实心岩层内部
+  p.vel = { x: 0, y: 0 }
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input()]]))
+  const wx = wrapX(p.pos.x)
+  assert.ok(!w.terrain.isSolidAt(wx, p.pos.y - 6), `pushed out of solid, pos=(${Math.round(p.pos.x)},${Math.round(p.pos.y)})`)
+})
+
+test('狙击：无限射程 + 一击必杀（身体命中 100 伤害）', () => {
+  const w = new World(65)
+  const shooter = w.addPlayer('S', 'red')
+  shooter.weaponIndex = 2
+  const victim = w.addPlayer('V', 'blue')
+  victim.pos = { x: shooter.pos.x + 900, y: shooter.pos.y }
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[shooter.id, input({ fire: i === 0, aim: 0 })]]))
+  assert.ok(victim.deaths > 0 || victim.hp <= 0, `sniper should one-shot at 900px, hp=${victim.hp}`)
+})
+
+test('火箭筒：直线飞行（不落）+ 慢速 + 无限射程 + 命中爆炸', () => {
+  const w = new World(67)
+  const p = w.addPlayer('P', 'red')
+  p.weaponIndex = 3
+  p.pos = { x: 3000, y: 2600 }
+  w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+  const rocket = w.projectiles.find(pr => pr.rocket)
+  assert.ok(rocket, 'rocket fired')
+  const y0 = rocket!.pos.y
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input()]]))
+  const cur = w.projectiles.find(pr => pr.id === rocket!.id)
+  if (cur) {
+    assert.ok(Math.abs(cur.pos.y - y0) < 2, `rocket flies straight, dy=${(cur.pos.y - y0).toFixed(2)}`)
+  }
+  assert.ok(rocket!.life > 5 && rocket!.gravityScale === 0, 'infinite range + no gravity')
+})
+
+test('不要滑：松开方向键立即停止，撞墙直接停住（无反向滑步）', () => {
+  const w = new World(69)
+  const p = w.addPlayer('P', 'ffa')
+  p.pos = { x: 500, y: 2784 }
+  for (let i = 0; i < 10; i++) w.step(DT, new Map([[p.id, input({ move: 1 })]]))
+  const x1 = p.pos.x
+  w.step(DT, new Map([[p.id, input({ move: 0 })]]))
+  assert.ok(Math.abs(p.vel.x) < 1e-6, `no inertia when released, vx=${p.vel.x}`)
+  assert.ok(p.pos.x - x1 < 1, 'does not slide after release')
+})
+
+
+test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且水平零滑步', () => {
+  // 上升加速：连续喷射的前 0.2s 是加速梯度（speed 逐帧增加）
+  const w = new World(71)
+  const a = w.addPlayer('A', 'ffa')
+  a.pos = { x: 6600, y: 2500 }
+  const speeds: number[] = []
+  for (let i = 0; i < 24; i++) {
+    w.step(DT, new Map([[a.id, input({ jetpack: true })]]))
+    speeds.push(a.vel.y)
+  }
+  // 屏幕坐标 y 向下为正：上升是负速度，数值越来越负 = 加速
+  assert.ok(speeds[3] < speeds[0] && speeds[6] < speeds[3], `ascent accelerates: ${speeds[0].toFixed(1)}→${speeds[3].toFixed(1)}→${speeds[6].toFixed(1)}`)
+
+  // 下降加速：同高度自由落体 vs 按住下键，俯冲 0.5s 后更快
+  const w2 = new World(72)
+  const b = w2.addPlayer('B', 'ffa')
+  b.pos = { x: 6600, y: 2200 }
+  for (let i = 0; i < 30; i++) w2.step(DT, new Map([[b.id, input({ dive: true })]]))
+  const diveSpeed = b.vel.y
+  const w3 = new World(73)
+  const c = w3.addPlayer('C', 'ffa')
+  c.pos = { x: 6600, y: 2200 }
+  for (let i = 0; i < 30; i++) w3.step(DT, new Map([[c.id, input()]]))
+  const fallSpeed = c.vel.y
+  assert.ok(diveSpeed > fallSpeed * 1.35, `dive accelerates downward: dive=${diveSpeed.toFixed(0)} fall=${fallSpeed.toFixed(0)}`)
+
+  // 水平零滑步：俯冲中松开方向键 → 水平速度立即为 0
+  const w4 = new World(74)
+  const d2 = w4.addPlayer('D', 'ffa')
+  d2.pos = { x: 6600, y: 2400 }
+  w4.step(DT, new Map([[d2.id, input({ move: 1, dive: true })]]))
+  const vxFly = d2.vel.x
+  w4.step(DT, new Map([[d2.id, input({ move: 0, dive: true })]]))
+  assert.ok(Math.abs(d2.vel.x) < 1e-6, `no horizontal slide while diving (was ${vxFly})`)
 })

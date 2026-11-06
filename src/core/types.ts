@@ -25,10 +25,10 @@ export interface PlayerState {
   reloadTimer: number
   fireCooldown: number
   // 副武器
-  secondary: string      // SECONDARIES key
+  secondary: string      // SECONDARIES key（frag / doll）
   secondaryCooldown: number
-  pistolAmmo: number
-  pistolReserve: number
+  fragCharges: number    // 手雷充能数（上限 fragMaxCharges）
+  fragRechargeTimer: number
   // 喷射器
   jetpack: boolean
   fuel: number
@@ -79,6 +79,7 @@ export interface Projectile {
   bounces: number          // 剩余撞墙反弹次数（激光枪 2 次）
   passWalls: boolean       // 穿透原始地形（引力弹）
   beam: boolean            // 光束渲染（激光）
+  rocket: boolean          // 火箭弹渲染（直线爆炸弹）
 }
 
 export interface Grenade {
@@ -179,6 +180,7 @@ export interface WorldInput {
   move: -1 | 0 | 1
   jump: boolean
   jetpack: boolean
+  dive: boolean        // 下降加速（按住下键）
   aim: number
   fire: boolean
   reload: boolean
@@ -196,12 +198,16 @@ export interface SecondaryIntent {
 }
 
 export function defaultWorldInput(): WorldInput {
-  return { move: 0, jump: false, jetpack: false, aim: 0, fire: false, reload: false, secondary: null, interact: false, switchWeapon: null }
+  return { move: 0, jump: false, jetpack: false, dive: false, aim: 0, fire: false, reload: false, secondary: null, interact: false, switchWeapon: null }
 }
 
 // 触发事件（瞬态、不进快照；由 World 产出、net/ui 层订阅 → killfeed/音效/粒子）
 export interface WorldEvent {
-  kind: 'kill' | 'headshot' | 'pierce' | 'explosion' | 'obstacle_destroy' | 'capture' | 'supply_pickup' | 'ammo_pickup' | 'warp' | 'shield_break' | 'doll_recall' | 'mortar_fire' | 'airstrike_drop'
+  /** 激光束分段（kind='laser' 时） */
+  segments?: { x1: number; y1: number; x2: number; y2: number }[]
+  duration?: number
+  color?: string
+  kind: 'kill' | 'headshot' | 'pierce' | 'explosion' | 'obstacle_destroy' | 'capture' | 'supply_pickup' | 'ammo_pickup' | 'warp' | 'shield_break' | 'doll_recall' | 'mortar_fire' | 'airstrike_drop' | 'laser'
   x?: number
   y?: number
   radius?: number

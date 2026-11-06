@@ -8,7 +8,7 @@ import { Terrain, OBSTACLE_PRESETS } from '../terrain.ts'
 import { Rng } from '../rng.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
-import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
+import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
 import { defaultWorldInput } from '../types.ts'
 import type { WorldInput, WorldEvent, PlayerState, Projectile, Grenade, Landmine, Airstrike, Obstacle, CapturePoint, AmmoPack, SupplyCrate, Mortar, Watchtower, WarpPortal, TeamId } from '../types.ts'
 import type { WorldSnapshot } from '../snap.ts'
@@ -87,6 +87,28 @@ const WARP_PORTALS: WarpPortal[] = [
   { id: 'warp_5', name: 'W5 中央地下掩体门', x: 6880, y: 3500, targetId: 'warp_6', color: '#10b981' },
   { id: 'warp_6', name: 'W6 极东边境高台门', x: 12280, y: 2140, targetId: 'warp_5', color: '#10b981' },
 ]
+
+/** 死斗模式随机出生候选点（按地表/高空平台/掩体分层，落点再经 ensureFreePosition 校验） */
+const RANDOM_SPAWN_CANDIDATES: { x: number; y: number }[] = (() => {
+  const out: { x: number; y: number }[] = []
+  // 地表沿线
+  for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 })
+  // 高空平台
+  for (const p of [{ x: 2700, y: 1120 }, { x: 3700, y: 1840 }, { x: 5250, y: 2000 }, { x: 5400, y: 940 },
+                   { x: 8800, y: 1800 }, { x: 9600, y: 1180 }, { x: 11500, y: 1840 }, { x: 12900, y: 1440 }]) {
+    out.push(p)
+  }
+  // 队伍基地与据点
+  for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 })
+  for (const cp of ['cp_a', 'cp_b', 'cp_c', 'cp_d', 'cp_e']) {
+    const map: Record<string, { x: number; y: number }> = {
+      cp_a: { x: 1720, y: 1780 }, cp_b: { x: 4150, y: 3500 }, cp_c: { x: 6600, y: 2740 },
+      cp_d: { x: 6600, y: 3480 }, cp_e: { x: 11420, y: 1780 },
+    }
+    out.push(map[cp])
+  }
+  return out
+})()
 
 const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
   { x: 1220, y: 2800, vx: 210, vy: -810 },
@@ -189,7 +211,7 @@ export class World {
       reserveAmmo: WEAPONS.map(w => w.maxReserve),
       reloading: false, reloadTimer: 0, fireCooldown: 0,
       secondary: 'frag', secondaryCooldown: 0,
-      pistolAmmo: 12, pistolReserve: 48,
+      fragCharges: DEFAULT_CONFIG.fragMaxCharges, fragRechargeTimer: 0,
       jetpack: false, fuel: getPhysicsParams().jetpackFuel,
       shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0, warpCooldown: 0,
       doll: null, dollCharges: 0, respawnTimer: 0,
@@ -200,21 +222,34 @@ export class World {
     return p
   }
 
+  /** 部署/重生入口（供组合根/UI 调用；随机出生或占点出生统一走 respawnAt） */
+  deploy(p: PlayerState): void {
+    this.respawnAt(p, p.team)
+  }
+
   /** 出生点：按队伍；优先已占领点（占点重生机制） */
   private respawnAt(p: PlayerState, team: TeamId): void {
-    const owned = this.capturePoints.filter(c => c.ownerTeam === team && c.progress >= 100)
-    const cp = owned.length > 0 ? owned[this.rng.int(owned.length)] : null
-    const base = SPAWN_POINTS.find(s => s.team === team) ?? SPAWN_POINTS[3]
-    const sx = cp ? cp.x : base.x
-    const sy = cp ? cp.y - 60 : base.y
+    let sx: number, sy: number
+    if (this.config.randomSpawn) {
+      // 死亡竞赛：全图随机安全点出生
+      const spot = RANDOM_SPAWN_CANDIDATES[this.rng.int(RANDOM_SPAWN_CANDIDATES.length)]
+      sx = spot.x + this.rng.range(-60, 60)
+      sy = spot.y
+    } else {
+      const owned = this.capturePoints.filter(c => c.ownerTeam === team && c.progress >= 100)
+      const cp = owned.length > 0 ? owned[this.rng.int(owned.length)] : null
+      const base = SPAWN_POINTS.find(s => s.team === team) ?? SPAWN_POINTS[3]
+      sx = cp ? cp.x : base.x
+      sy = cp ? cp.y - 60 : base.y
+    }
     p.pos = { x: wrapX(sx + this.rng.range(-45, 45)), y: sy }
     p.vel = { x: 0, y: 0 }
     p.hp = this.config.maxHp
     p.ammo = WEAPONS.map(w => w.magSize)
     p.reserveAmmo = WEAPONS.map(w => w.maxReserve)
-    p.pistolAmmo = 12
-    p.pistolReserve = 48
-    p.fuel = getPhysicsParams().jetpackFuel
+    p.fragCharges = this.config.fragMaxCharges
+    p.fragRechargeTimer = 0
+    p.fuel = getPhysicsParams().jetpackFuel * (WEAPONS[p.weaponIndex]?.fuelMult ?? 1)
     p.shieldHp = 0
     p.shieldTimer = 0
     p.watchtowerTimer = 0
@@ -227,6 +262,8 @@ export class World {
     p.deployed = true
     p.alive = true
     p.respawnTimer = 0
+    // 出生点安全校验：若落在墙体/方块内，推到最近安全位置（防出生即卡死）
+    this.ensureFreePosition(p)
   }
 
   // ── 主 step ──────────────────────────────────────────────
@@ -237,7 +274,20 @@ export class World {
     for (const p of this.players) {
       const w = inputs.get(p.id) ?? defaultWorldInput()
       this.apply(p, w, dt)
-      if (p.deployed) this.physics(p, dt)
+      if (p.deployed) this.physics(p, w, dt)
+      // 防卡死：躯干嵌进实体累计 12 tick → 推到最近安全位置
+      if (p.deployed && p.alive) {
+        if (this.torsoBlockedAt(p.pos.x, p.pos.y)) {
+          const n = (this.stuckTicks.get(p.id) ?? 0) + 1
+          this.stuckTicks.set(p.id, n)
+          if (n >= 12) {
+            this.ensureFreePosition(p)
+            this.stuckTicks.set(p.id, 0)
+          }
+        } else {
+          this.stuckTicks.set(p.id, 0)
+        }
+      }
     }
 
     this.stepProjectiles(dt)
@@ -276,23 +326,35 @@ export class World {
       const canSwitch = !this.config.loadoutLock || p.respawnTimer > 0 || !p.deployed
       if (wep && !wep.isSupplyOnly && canSwitch) {
         p.weaponIndex = wep.id
+        p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
         p.reloading = false
         p.fireCooldown = Math.max(p.fireCooldown, 0.3)
       }
     }
 
     p.aim = w.aim
-    move(p.vel, w.move)
+    // 武器差异：重武器移动更慢（无惯性，直接给目标速度）
+    const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
+    p.vel.x = w.move * getPhysicsParams().moveSpeed * (wepCur.moveSpeedMult ?? 1)
     if (w.jump && this.onGround(p)) jump(p.vel)
-    const fuel = p.fuel
+    const fuelMax = getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1)
+    const fuel = Math.min(p.fuel, fuelMax)
     const canJet = w.jetpack && fuel > 0
     if (canJet) jetpack(p.vel, dt)
     p.jetpack = canJet
-    p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt)
+    p.fuel = Math.min(fuelMax, updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt))
 
     // 冷却推进
     if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt)
     if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt)
+    // 手雷自然回复：每 fragRechargeSeconds 回复 1 充能
+    if (p.fragCharges < this.config.fragMaxCharges) {
+      p.fragRechargeTimer += dt
+      if (p.fragRechargeTimer >= this.config.fragRechargeSeconds) {
+        p.fragRechargeTimer -= this.config.fragRechargeSeconds
+        p.fragCharges = Math.min(this.config.fragMaxCharges, p.fragCharges + 1)
+      }
+    } else p.fragRechargeTimer = 0
     if (p.shieldTimer > 0) {
       p.shieldTimer -= dt
       if (p.shieldTimer <= 0) { p.shieldTimer = 0; p.shieldHp = 0 }
@@ -364,6 +426,12 @@ export class World {
     p.fireCooldown = wep.fireDelay
     if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
+    // 激光类：即时命中光束（hitscan），不生成飞行弹丸
+    if (wep.beam) {
+      this.fireBeam(p, wep)
+      return
+    }
+
     // 后坐力（v2 recoil×0.56/0.65）
     if (wep.recoil > 0) {
       p.vel.x -= Math.cos(p.aim) * wep.recoil * 0.56
@@ -379,24 +447,101 @@ export class World {
         damage: wep.damage, headshotMult: wep.headshotMult, terrainRadius: wep.terrainRadius,
         explosive: wep.explosive, gravityScale: wep.gravityScale ?? (wep.id === 4 ? 0.0 : 0.04),
         pierceOnHeadshot: !!wep.pierceOnHeadshot, pierceAll: !!wep.pierceAll,
-        isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, passWalls: !!wep.passWalls, beam: !!wep.beam,
+        isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, passWalls: !!wep.passWalls, beam: !!wep.beam, rocket: !!wep.rocket,
         weaponLabel: wep.shortName, color: wep.color,
-        r: wep.isGravityOrb ? 8.5 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
-        life: (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
+        r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
+        life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       }))
     }
   }
 
+  /** 即时命中光束：点击即一道光，沿瞄准方向射线前进，遇墙反射（默认 3 次），命中穿透；存在时长按秒 */
+  private fireBeam(p: PlayerState, wep: typeof WEAPONS[number]): void {
+    const segments: { x1: number; y1: number; x2: number; y2: number }[] = []
+    const hitPlayer = new Set<number>([p.id])
+    const hitObstacle = new Set<string>()
+    let x = wrapX(p.pos.x + Math.cos(p.aim) * 24)
+    let y = (p.pos.y - 12) + Math.sin(p.aim) * 24
+    let dx = Math.cos(p.aim)
+    let dy = Math.sin(p.aim)
+    const maxSegLen = 1800     // 单段射程（足够覆盖屏幕至远距）
+    const step = 10
+    const bounces = wep.bounces ?? 0
+
+    for (let b = 0; b <= bounces; b++) {
+      let travelled = 0
+      let hitWall = false
+      while (travelled < maxSegLen) {
+        const nx = wrapX(x + dx * step)
+        const ny = wrapY(y + dy * step)
+        // 命中玩家（穿透：记录已命中者）
+        for (const t of this.players) {
+          if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
+          if (t.id !== p.id && t.team === p.team && p.team !== 'ffa') continue
+          const hx = wrapDeltaX(t.pos.x, nx)
+          const hy = wrapDeltaY(t.pos.y - 24, ny)
+          const isHead = Math.hypot(hx, hy) <= this.config.headRadius + 3
+          const bx = Math.abs(wrapDeltaX(t.pos.x, nx))
+          const by = wrapDeltaY(t.pos.y, ny)
+          if (isHead || (bx <= 14 && by >= -12 && by <= 18)) {
+            hitPlayer.add(t.id)
+            const dmg = Math.round(wep.damage * (isHead ? wep.headshotMult : 1))
+            this.damage(t, dmg, undefined, isHead, false, p.id, p.team, wep.shortName)
+          }
+        }
+        // 命中可破坏障碍物（穿透）
+        const ob = this.obstacleAt(nx, ny)
+        if (ob && !hitObstacle.has(ob.id)) {
+          hitObstacle.add(ob.id)
+          this.damageObstacle(ob, wep.damage, undefined)
+        }
+        // 撞原始地形：记录当前段终点并反射
+        if (this.terrain.isSolidAt(nx, ny)) {
+          hitWall = true
+          const hitX = this.terrain.isSolidAt(nx, y)     // 横向撞墙
+          const hitY = this.terrain.isSolidAt(x, ny)     // 纵向撞面
+          if (hitX) dx = -dx
+          if (hitY) dy = -dy
+          if (!hitX && !hitY) { dx = -dx; dy = -dy }
+          break
+        }
+        x = nx
+        y = ny
+        travelled += step
+      }
+      segments.push({ x1: wrapX(x - dx * 24), y1: y - dy * 24, x2: x, y2: y })
+      // 记录完整一段：起点用上一段终点
+      if (segments.length >= 2) {
+        const prev = segments[segments.length - 2]
+        segments[segments.length - 1].x1 = prev.x2
+        segments[segments.length - 1].y1 = prev.y2
+      }
+      if (!hitWall) break
+    }
+
+    this.events.push({
+      kind: 'laser',
+      x: p.pos.x, y: p.pos.y,
+      segments,
+      duration: 0.14,
+      color: wep.color,
+      playerId: p.id,
+      weaponLabel: wep.shortName,
+    } as WorldEvent)
+  }
+
   private makeProjectile(p: PlayerState, x: number, y: number, vx: number, vy: number, o: {
     damage: number; headshotMult: number; terrainRadius: number; explosive: boolean; gravityScale?: number;
-    pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number; passWalls?: boolean; beam?: boolean; weaponLabel: string; color: string; r: number; life: number
+    pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number
+    passWalls?: boolean; beam?: boolean; rocket?: boolean
+    weaponLabel: string; color: string; r: number; life: number
   }): Projectile {
     return {
       id: this.prj++, owner: p.id, pos: { x: wrapX(x), y: wrapY(y) }, vel: { x: vx, y: vy },
       life: o.life, r: o.r, damage: o.damage, headshotMult: o.headshotMult,
       explosive: o.explosive, terrainRadius: o.terrainRadius, gravityScale: o.gravityScale ?? 0.04,
       pierceOnHeadshot: !!o.pierceOnHeadshot, pierceAll: !!o.pierceAll,
-      isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, passWalls: !!o.passWalls, beam: !!o.beam,
+      isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, passWalls: !!o.passWalls, beam: !!o.beam, rocket: !!o.rocket,
       weaponLabel: o.weaponLabel, color: o.color,
       hitTargets: [p.id],   // 发射者自身永远跳过
     }
@@ -418,34 +563,27 @@ export class World {
     const tx = wrapX(s.targetX)
     const ty = s.targetY
 
-    if (s.type === 'pistol') {
-      if (p.pistolAmmo <= 0) {
-        if (p.pistolReserve > 0) {
-          const load = Math.min(12, p.pistolReserve)
-          p.pistolAmmo = load
-          p.pistolReserve -= load
-          p.secondaryCooldown = 1.0
-        }
-        return
-      }
-      p.pistolAmmo--
-      p.secondaryCooldown = def.cd
-      const mx = wrapX(p.pos.x + Math.cos(p.aim) * 22)
-      const my = (p.pos.y - 12) + Math.sin(p.aim) * 22
-      this.projectiles.push(this.makeProjectile(p, mx, my, Math.cos(p.aim) * 1380, Math.sin(p.aim) * 1380, {
-        damage: this.config.pistolDamage, headshotMult: this.config.pistolHeadshotMult, terrainRadius: 6,
-        explosive: false, gravityScale: 0.03, weaponLabel: '战术手枪', color: '#fde047', r: 3.2, life: 105 / 60,
-      }))
+    // 手榴弹：消耗 1 充能（上限 fragMaxCharges，自然回复）
+    if (s.type === 'frag') {
+      if (p.fragCharges <= 0) return
+      p.fragCharges--
+      p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8)
+      const throwSpeed = 760
+      this.grenades.push({
+        id: this.gren++,
+        owner: p.id,
+        pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
+        vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
+        fuse: this.config.grenadeFuse, bounces: 0,
+      })
       return
     }
 
-    // 替身人偶只从特殊补给获得：无充能时整次使用无效（不消耗 CD）
-    if (s.type === 'doll' && p.dollCharges <= 0) return
-
-    p.secondaryCooldown = def.cd
-
+    // 替身人偶：只从特殊补给获得（消耗充能）
     if (s.type === 'doll') {
+      if (p.dollCharges <= 0) return
       p.dollCharges--
+      p.secondaryCooldown = def.cd
       p.doll = {
         pos: { x: p.pos.x, y: p.pos.y }, hp: p.hp, shieldHp: p.shieldHp, fuel: p.fuel,
         weaponIndex: p.weaponIndex, ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
@@ -454,49 +592,11 @@ export class World {
       this.events.push({ kind: 'doll_recall', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: 'anchor' })
       return
     }
-    if (s.type === 'shield') {
-      p.shieldHp = this.config.shieldHp
-      p.shieldTimer = this.config.shieldDuration
-      return
-    }
-    if (s.type === 'barricade') {
-      const bx = wrapX(Math.round(p.pos.x + Math.cos(p.aim) * 66 - 22))
-      const by = wrapY(Math.round(p.pos.y - 44))
-      this.obstacles.push({
-        id: `obs_p_${p.id}_${this.tick}`, x: bx, y: by, w: 44, h: 88,
-        hp: this.config.obstacleDefaultHp, maxHp: this.config.obstacleDefaultHp,
-        label: `${p.name}的掩体`, color: '#0f766e', borderColor: '#2dd4bf',
-      })
-      return
-    }
-    if (s.type === 'airstrike') {
-      this.airstrikes.push({ id: this.air++, owner: p.id, pos: { x: tx, y: ty }, timer: 1.05, dropped: false })
-      return
-    }
-    if (s.type === 'mine' || s.type === 'instant_mine') {
-      const isInstant = s.type === 'instant_mine'
-      const throwSpd = isInstant ? 570 : 480
-      this.landmines.push({
-        id: this.mine++, owner: p.id,
-        pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 26), y: p.pos.y - 10 + Math.sin(p.aim) * 18 },
-        vel: { x: Math.cos(p.aim) * throwSpd, y: Math.sin(p.aim) * throwSpd - 132 },
-        armed: false, armTimer: isInstant ? 0.25 : 0.75, triggered: false, fuse: 0,
-        instant: isInstant, directHit: true, preset: false, respawnTimer: 0,
-      })
-      return
-    }
-    // frag 手榴弹
-    const throwSpeed = 810
-    this.grenades.push({
-      id: this.gren++, owner: p.id,
-      pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
-      vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
-      fuse: this.config.grenadeFuse, bounces: 0,
-    })
   }
 
+  // ── 交互（E 键） ──────────────────────────────────────────
   /** 替身人偶回溯（死亡触发 或 10s 到期触发） */
-  private recallDoll(p: PlayerState, ev: 'doll_recall'): void {
+  private recallDoll(p: PlayerState, _ev: 'doll_recall'): void {
     if (!p.doll) return
     const d = p.doll
     p.doll = null
@@ -513,7 +613,6 @@ export class World {
     this.events.push({ kind: 'doll_recall', x: p.pos.x, y: p.pos.y, playerId: p.id })
   }
 
-  // ── 交互（E 键） ──────────────────────────────────────────
   private interact(p: PlayerState): void {
     if (p.respawnTimer > 0 || !p.alive) return
     // 退出迫击炮
@@ -555,7 +654,7 @@ export class World {
   }
 
   // ── 物理 ──────────────────────────────────────────────
-  private physics(p: PlayerState, dt: number): void {
+  private physics(p: PlayerState, w: WorldInput, dt: number): void {
     if (!p.alive || p.respawnTimer > 0) return
     // 迫击炮操控中：吸附在炮位
     const m = this.mortars.find(mm => mm.operatorId === p.id)
@@ -564,7 +663,8 @@ export class World {
       p.vel = { x: 0, y: 0 }
       return
     }
-    applyGravity(p.vel, dt)
+    // 与原来一致：上升加速由喷气推力渐变实现；下降加速按住下键 → 重力×1.55（原版数值）
+    applyGravity(p.vel, dt, w.dive ? 1.55 : 1)
     // 不用 integrate()：移动由下面的试探-回退碰撞统一控制（v2 模式），避免双重积分
 
     // 弹射跳台
@@ -589,7 +689,7 @@ export class World {
     const nx = wrapX(p.pos.x + p.vel.x * dt)
     if (!pts(nx, p.pos.y)) p.pos.x = nx
     else if (!pts(nx, p.pos.y - 10)) { p.pos.x = nx; p.pos.y -= 10 }   // 自动上台阶
-    else p.vel.x *= -0.2
+    else p.vel.x = 0   // 不要滑：撞墙直接停住，不做反弹滑步
 
     const nyRaw = p.pos.y + p.vel.y * dt
     const ny = wrapY(nyRaw)
@@ -607,6 +707,45 @@ export class World {
   private onGround(p: PlayerState): boolean {
     return !!p.onGround
   }
+
+  /** 躯干/头是否嵌在实体里（站立在地面上不算——只查躯干以上） */
+  private torsoBlockedAt(x: number, y: number): boolean {
+    const wx = wrapX(x)
+    const pts: [number, number][] = [
+      [wx - 10, y - 4], [wx + 10, y - 4], [wx, y - 6],
+      [wx - 10, y - 26], [wx + 10, y - 26], [wx, y - 30],
+    ]
+    for (const [px, py] of pts) {
+      if (this.terrain.isSolidAt(px, py)) return true
+      if (this.obstacleAt(px, py)) return true
+    }
+    return false
+  }
+
+  /** 把玩家挪到最近的安全位置（出生/被结构挤压/死角兜底） */
+  private ensureFreePosition(p: PlayerState): boolean {
+    if (!this.torsoBlockedAt(p.pos.x, p.pos.y)) return false
+    for (let r = 24; r <= 320; r += 24) {
+      for (let a = 0; a < 16; a++) {
+        const ang = (a * Math.PI) / 8
+        const x = wrapX(p.pos.x + Math.cos(ang) * r)
+        const y = wrapY(p.pos.y + Math.sin(ang) * r)
+        if (!this.torsoBlockedAt(x, y)) {
+          p.pos = { x, y }
+          p.vel = { x: 0, y: 0 }
+          return true
+        }
+      }
+    }
+    // 兜底：队伍主基地
+    const base = SPAWN_POINTS.find(s => s.team === p.team) ?? SPAWN_POINTS[3]
+    p.pos = { x: wrapX(base.x), y: base.y }
+    p.vel = { x: 0, y: 0 }
+    return true
+  }
+
+  // 卡死计数器：躯干嵌实体超过 12 tick 自动推出（防窄缝/结构挤压永久卡住）
+  private stuckTicks = new Map<number, number>()
 
   // ── 弹道 ──────────────────────────────────────────────
   // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
@@ -1004,6 +1143,7 @@ export class World {
             p.dollCharges = Math.min(this.config.dollMaxCharges, p.dollCharges + 1)
           } else {
             p.weaponIndex = crate.weaponId
+            p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (WEAPONS[crate.weaponId].fuelMult ?? 1))
             p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize
             p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve
           }
@@ -1040,7 +1180,6 @@ export class World {
         if (wrapDist(p.pos.x, p.pos.y, pack.x, pack.y) < 44) {
           const wep = WEAPONS[p.weaponIndex]
           p.reserveAmmo[p.weaponIndex] = Math.min(wep.maxReserve * 2, (p.reserveAmmo[p.weaponIndex] || 0) + wep.maxReserve)
-          p.pistolReserve = Math.min(96, p.pistolReserve + 24)
           this.ammoPacks.splice(i, 1)
           this.events.push({ kind: 'ammo_pickup', playerId: p.id, x: pack.x, y: pack.y })
           break

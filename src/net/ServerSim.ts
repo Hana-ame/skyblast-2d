@@ -62,6 +62,7 @@ export function applyIntents(cur: WorldInput, intents: Intent[]): WorldInput {
       case 'move': n.move = it.dir; break
       case 'jump': n.jump = true; break
       case 'jetpack': n.jetpack = it.on; break
+      case 'dive': n.dive = it.on; break
       case 'aim': n.aim = it.angle; break
       case 'fire': n.fire = it.on; break
       case 'reload': n.reload = true; break

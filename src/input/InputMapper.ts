@@ -10,6 +10,7 @@ export interface TouchState {
   fire: boolean
   jump: boolean
   jetpack: boolean
+  dive?: boolean
   reload: boolean
   // v2 扩展（瞬时动作：调用方每帧消费后清零）
   interact?: boolean                       // E 键按下沿
@@ -23,6 +24,7 @@ export class InputMapper {
     if (t.moveX !== 0) out.push({ t: 'move', dir: Math.sign(t.moveX) as -1 | 1 })
     if (t.jump) out.push({ t: 'jump' })
     out.push({ t: 'jetpack', on: t.jetpack })
+    if (t.dive) out.push({ t: 'dive', on: true })
     out.push({ t: 'aim', angle: t.aimAngle })
     out.push({ t: 'fire', on: t.fire })
     if (t.reload) out.push({ t: 'reload' })
