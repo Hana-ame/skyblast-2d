@@ -359,8 +359,8 @@
   var WEAPONS = [
     {
       id: 0,
-      name: "\u63A8\u8FDB\u9730\u5F39\u67AA",
-      shortName: "\u9730\u5F39\u67AA",
+      name: "\u9730\u5F39\u67AA",
+      shortName: "\u9730\u5F39",
       isSupplyOnly: false,
       damage: 16,
       headshotMult: 1.8,
@@ -382,7 +382,7 @@
     },
     {
       id: 1,
-      name: "\u8109\u51B2\u7A81\u51FB\u6B65\u67AA",
+      name: "\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
       damage: 19,
@@ -405,8 +405,8 @@
     },
     {
       id: 2,
-      name: "\u7535\u78C1\u72D9\u51FB\u6B65\u67AA",
-      shortName: "\u7535\u78C1\u72D9\u51FB",
+      name: "\u72D9\u51FB\u6B65\u67AA",
+      shortName: "\u72D9",
       isSupplyOnly: false,
       damage: 100,
       headshotMult: 2.5,
@@ -430,8 +430,8 @@
     },
     {
       id: 3,
-      name: "\u91CD\u578B\u69B4\u5F39\u70AE",
-      shortName: "\u69B4\u5F39\u70AE",
+      name: "\u706B\u7BAD\u7B52",
+      shortName: "\u706B\u7BAD\u7B52",
       isSupplyOnly: false,
       damage: 105,
       headshotMult: 1.5,
@@ -456,19 +456,20 @@
     },
     {
       id: 4,
-      name: "\u26A1 \u805A\u53D8\u6FC0\u5149\u70AE",
-      shortName: "\u6FC0\u5149\u70AE",
+      name: "\u6FC0\u5149",
+      shortName: "\u6FC0\u5149",
       isSupplyOnly: true,
       damage: 50,
       headshotMult: 2,
       pellets: 1,
-      spread: 1e-3,
+      spread: 0,
       speed: 3e3,
-      recoil: 150,
-      magSize: 12,
-      maxReserve: 24,
+      recoil: 0,
+      magSize: 48,
+      maxReserve: 96,
+      // 48 / 6每秒 = 连续 8 秒
       reloadTime: 2,
-      fireDelay: 0.26,
+      fireDelay: 0,
       terrainRadius: 18,
       explosive: false,
       laser: true,
@@ -476,6 +477,8 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
+      damagePerSecond: 150,
+      ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1.3,
@@ -483,19 +486,19 @@
     },
     {
       id: 5,
-      name: "\u{1F525} \u91CD\u88C5\u52A0\u7279\u6797",
-      shortName: "\u52A0\u7279\u6797",
+      name: "M249",
+      shortName: "M249",
       isSupplyOnly: true,
-      damage: 14,
+      damage: 19,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
       speed: 1300,
       recoil: 66,
-      magSize: 90,
-      maxReserve: 180,
-      reloadTime: 2.8,
-      fireDelay: 0.055,
+      magSize: 120,
+      maxReserve: 240,
+      reloadTime: 3,
+      fireDelay: 0.045,
       terrainRadius: 8,
       explosive: false,
       pierceOnHeadshot: false,
@@ -506,7 +509,7 @@
     },
     {
       id: 6,
-      name: "\u{1F300} \u5947\u70B9\u5F15\u529B\u67AA",
+      name: "\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
       damage: 52,
@@ -520,10 +523,12 @@
       reloadTime: 2.2,
       fireDelay: 0.68,
       terrainRadius: 95,
+      lifeSeconds: 2.2,
       explosive: true,
       isGravityOrb: true,
-      gravityScale: 0.08,
+      gravityScale: 0.02,
       passWalls: true,
+      dragPerSecond: 0.45,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
       fuelMult: 0.8,
@@ -532,8 +537,8 @@
     },
     {
       id: 7,
-      name: "\u{1F52B} \u6218\u672F\u624B\u67AA",
-      shortName: "\u6218\u672F\u624B\u67AA",
+      name: "\u624B\u67AA",
+      shortName: "\u624B\u67AA",
       isSupplyOnly: false,
       damage: 25,
       headshotMult: 2,
@@ -553,6 +558,30 @@
       fuelMult: 1.15,
       fovMult: 1,
       color: "#fde047"
+    },
+    {
+      id: 8,
+      name: "\u51B2\u950B\u67AA",
+      shortName: "\u51B2\u950B\u67AA",
+      isSupplyOnly: false,
+      damage: 14,
+      headshotMult: 1.8,
+      pellets: 1,
+      spread: 0.07,
+      speed: 1400,
+      recoil: 48,
+      magSize: 40,
+      maxReserve: 160,
+      reloadTime: 1.6,
+      fireDelay: 0.08,
+      terrainRadius: 8,
+      explosive: false,
+      gravityScale: 0.04,
+      pierceOnHeadshot: false,
+      moveSpeedMult: 1.05,
+      fuelMult: 1.05,
+      fovMult: 1,
+      color: "#4ade80"
     }
   ];
   var SECONDARIES = {
@@ -628,7 +657,7 @@
     { x: 12600, y: 2760, area: "\u6781\u4E1C\u8FB9\u5883\u8865\u7ED9\u70B9" }
   ];
   var SUPPLY_SPOTS = [
-    { x: 6600, y: 1040, area: "\u4E2D\u592E\u6700\u9AD8\u6D6E\u5C9B" },
+    { x: 6800, y: 1020, area: "\u4E2D\u592E\u6700\u9AD8\u6D6E\u5C9B" },
     { x: 4150, y: 3520, area: "\u897F\u533A\u5730\u4E0B\u6218\u7565\u63A9\u4F53" },
     { x: 6600, y: 3500, area: "\u4E2D\u592E\u5730\u4E0B\u6838\u5FC3\u63A9\u4F53" },
     { x: 10150, y: 3520, area: "\u4E1C\u533A\u5730\u4E0B\u88C5\u7532\u63A9\u4F53" },
@@ -637,7 +666,7 @@
   ];
   var DOLL_SUPPLY_SPOTS = [
     { x: 4820, y: 2100, area: "\u4E2D\u897F\u90E8\u9AD8\u7A7A\u8FDE\u5ECA\u65C1" },
-    { x: 8560, y: 2740, area: "\u4E1C\u533A\u5730\u8868\u7279\u6B8A\u8865\u7ED9\u70B9" }
+    { x: 8560, y: 2760, area: "\u4E1C\u533A\u5730\u8868\u7279\u6B8A\u8865\u7ED9\u70B9" }
   ];
   var MORTARS_INIT = [
     { id: "mortar_left", name: "\u897F\u7FFC\u9AD8\u53F0\u8FEB\u51FB\u70AE", x: 920, y: 2180, angle: -Math.PI * 0.28, power: 24 },
@@ -885,6 +914,7 @@
       p.deployed = true;
       p.alive = true;
       p.respawnTimer = 0;
+      this.resolvePenetration(p);
       this.ensureFreePosition(p);
     }
     // ── 主 step ──────────────────────────────────────────────
@@ -896,10 +926,15 @@
         this.apply(p, w, dt);
         if (p.deployed) this.physics(p, w, dt);
         if (p.deployed && p.alive) {
-          if (this.torsoBlockedAt(p.pos.x, p.pos.y)) {
+          if (this.bodyOverlapsAt(p.pos.x, p.pos.y)) {
+            const fixed = this.resolvePenetration(p);
+            if (fixed) {
+              p.vel.x = 0;
+              p.vel.y = 0;
+            }
             const n = (this.stuckTicks.get(p.id) ?? 0) + 1;
             this.stuckTicks.set(p.id, n);
-            if (n >= 12) {
+            if (n >= 20) {
               this.ensureFreePosition(p);
               this.stuckTicks.set(p.id, 0);
             }
@@ -1002,7 +1037,12 @@
       }
       if (w.interact) this.interact(p);
       if (w.secondary) this.useSecondary(p, w.secondary, dt);
-      if (w.fire) this.fire(p);
+      if (w.fire) {
+        const wepNow = WEAPONS[p.weaponIndex];
+        if (wepNow?.beam) this.updateContinuousBeam(p, wepNow, dt);
+        else this.fire(p);
+      } else if (WEAPONS[p.weaponIndex]?.beam && !p.reloading && p.ammo[p.weaponIndex] > 0) {
+      }
     }
     // ── 开火 ──────────────────────────────────────────────
     fire(p) {
@@ -1032,10 +1072,6 @@
       p.ammo[p.weaponIndex]--;
       p.fireCooldown = wep.fireDelay;
       if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
-      if (wep.beam) {
-        this.fireBeam(p, wep);
-        return;
-      }
       if (wep.recoil > 0) {
         p.vel.x -= Math.cos(p.aim) * wep.recoil * 0.56;
         p.vel.y -= Math.sin(p.aim) * wep.recoil * 0.65;
@@ -1058,6 +1094,7 @@
           passWalls: !!wep.passWalls,
           beam: !!wep.beam,
           rocket: !!wep.rocket,
+          dragPerSecond: wep.dragPerSecond ?? 1,
           weaponLabel: wep.shortName,
           color: wep.color,
           r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
@@ -1065,8 +1102,19 @@
         }));
       }
     }
-    /** 即时命中光束：点击即一道光，沿瞄准方向射线前进，遇墙反射（默认 3 次），命中穿透；存在时长按秒 */
-    fireBeam(p, wep) {
+    /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
+    updateContinuousBeam(p, wep, dt) {
+      if (p.respawnTimer > 0 || !p.alive) return;
+      const wi = p.weaponIndex;
+      if (p.reloading) return;
+      if (p.ammo[wi] <= 0) {
+        this.startReload(p);
+        return;
+      }
+      const dps = wep.damagePerSecond ?? wep.damage * 3;
+      const aps = wep.ammoPerSecond ?? 4;
+      p.ammo[wi] = Math.max(0, p.ammo[wi] - aps * dt);
+      if (p.ammo[wi] <= 0 && (p.reserveAmmo[wi] || 0) > 0) this.startReload(p);
       const segments = [];
       const hitPlayer = /* @__PURE__ */ new Set([p.id]);
       const hitObstacle = /* @__PURE__ */ new Set();
@@ -1093,14 +1141,14 @@
             const by = wrapDeltaY(t.pos.y, ny);
             if (isHead || bx <= 14 && by >= -12 && by <= 18) {
               hitPlayer.add(t.id);
-              const dmg = Math.round(wep.damage * (isHead ? wep.headshotMult : 1));
-              this.damage(t, dmg, void 0, isHead, false, p.id, p.team, wep.shortName);
+              const mult = isHead ? wep.headshotMult : 1;
+              this.damage(t, dps * mult * dt, void 0, isHead, false, p.id, p.team, wep.shortName);
             }
           }
           const ob = this.obstacleAt(nx, ny);
           if (ob && !hitObstacle.has(ob.id)) {
             hitObstacle.add(ob.id);
-            this.damageObstacle(ob, wep.damage, void 0);
+            this.damageObstacle(ob, dps * dt, void 0);
           }
           if (this.terrain.isSolidAt(nx, ny)) {
             hitWall = true;
@@ -1118,12 +1166,16 @@
           y = ny;
           travelled += step;
         }
-        segments.push({ x1: wrapX(x - dx * 24), y1: y - dy * 24, x2: x, y2: y });
-        if (segments.length >= 2) {
-          const prev = segments[segments.length - 2];
-          segments[segments.length - 1].x1 = prev.x2;
-          segments[segments.length - 1].y1 = prev.y2;
+        const seg = { x1: 0, y1: 0, x2: x, y2: y };
+        if (segments.length > 0) {
+          const prev = segments[segments.length - 1];
+          seg.x1 = prev.x2;
+          seg.y1 = prev.y2;
+        } else {
+          seg.x1 = wrapX(p.pos.x + Math.cos(p.aim) * 24);
+          seg.y1 = p.pos.y - 12 + Math.sin(p.aim) * 24;
         }
+        segments.push(seg);
         if (!hitWall) break;
       }
       this.events.push({
@@ -1131,7 +1183,8 @@
         x: p.pos.x,
         y: p.pos.y,
         segments,
-        duration: 0.14,
+        duration: 0.06,
+        // 每 tick 刷新一次 → 视觉上是连续光束
         color: wep.color,
         playerId: p.id,
         weaponLabel: wep.shortName
@@ -1157,6 +1210,7 @@
         passWalls: !!o.passWalls,
         beam: !!o.beam,
         rocket: !!o.rocket,
+        dragPerSecond: o.dragPerSecond ?? 1,
         weaponLabel: o.weaponLabel,
         color: o.color,
         hitTargets: [p.id]
@@ -1365,8 +1419,107 @@
       p.vel = { x: 0, y: 0 };
       return true;
     }
-    // 卡死计数器：躯干嵌实体超过 12 tick 自动推出（防窄缝/结构挤压永久卡住）
+    // 卡死计数器：身体嵌实体超时自动推出（防窄缝/结构挤压永久卡住）
     stuckTicks = /* @__PURE__ */ new Map();
+    /** 身体 AABB（脚底锚点）：宽±10，高 -30..+16 */
+    bodyOverlapsAt(x, y) {
+      const wx = wrapX(x);
+      const halfW = 10;
+      const gx0 = Math.floor((wx - halfW) / TILE_SIZE);
+      const gx1 = Math.floor((wx + halfW) / TILE_SIZE);
+      const gy0 = Math.floor(wrapY(y - 30) / TILE_SIZE);
+      const gy1 = Math.floor(wrapY(y + 16) / TILE_SIZE);
+      for (let gx = gx0; gx <= gx1; gx++) {
+        for (let gy = gy0; gy <= gy1; gy++) {
+          const cellX = wrapX(gx * TILE_SIZE) + TILE_SIZE / 2;
+          const cellY = wrapY(gy * TILE_SIZE) + TILE_SIZE / 2;
+          const lx = wrapDeltaX(wx, cellX);
+          const ly = wrapDeltaY(y, cellY);
+          if (Math.abs(lx) <= halfW + TILE_SIZE / 2 && ly <= 16 + TILE_SIZE / 2 && ly >= -30 - TILE_SIZE / 2) {
+            const cell = this.terrain.isSolidAt(cellX, cellY);
+            if (cell) {
+              const tileL = lx - TILE_SIZE / 2;
+              const tileR = lx + TILE_SIZE / 2;
+              const tileT = ly - TILE_SIZE / 2;
+              const tileB = ly + TILE_SIZE / 2;
+              if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true;
+            }
+          }
+        }
+      }
+      for (const ob of this.obstacles) {
+        if (ob.hp <= 0) continue;
+        const dx = wrapDeltaX(wx, ob.x + ob.w / 2);
+        const dy = wrapDeltaY(y, ob.y + ob.h / 2);
+        const tileL = dx - ob.w / 2;
+        const tileR = dx + ob.w / 2;
+        const tileT = dy - ob.h / 2;
+        const tileB = dy + ob.h / 2;
+        if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true;
+      }
+      return false;
+    }
+    /** 最小轴推出（穿模解算）：把玩家从任何嵌入的实体里沿最小穿透方向推出；返回是否推过 */
+    resolvePenetration(p) {
+      const halfW = 10;
+      let moved = false;
+      for (let iter = 0; iter < 6; iter++) {
+        if (!this.bodyOverlapsAt(p.pos.x, p.pos.y)) break;
+        const wx = wrapX(p.pos.x);
+        const pick = { v: null };
+        let bestLen = Infinity;
+        const consider = (tileL, tileR, tileT, tileB) => {
+          if (!(tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16)) return;
+          const cand = [
+            { dx: tileL - halfW, dy: 0 },
+            // 向左
+            { dx: tileR + halfW, dy: 0 },
+            // 向右
+            { dx: 0, dy: tileB + 30 },
+            // 向下（放到 tile 底部之下）
+            { dx: 0, dy: tileT - 16 }
+            // 向上（放到 tile 顶部之上）
+          ];
+          for (const c of cand) {
+            const len = Math.abs(c.dx) + Math.abs(c.dy);
+            if (len < bestLen) {
+              bestLen = len;
+              pick.v = c;
+            }
+          }
+        };
+        const gx0 = Math.floor((wx - halfW) / TILE_SIZE);
+        const gx1 = Math.floor((wx + halfW) / TILE_SIZE);
+        const gy0 = Math.floor(wrapY(p.pos.y - 30) / TILE_SIZE);
+        const gy1 = Math.floor(wrapY(p.pos.y + 16) / TILE_SIZE);
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (let gy = gy0; gy <= gy1; gy++) {
+            const cellX = wrapX(gx * TILE_SIZE) + TILE_SIZE / 2;
+            const cellY = wrapY(gy * TILE_SIZE) + TILE_SIZE / 2;
+            if (!this.terrain.isSolidAt(cellX, cellY)) continue;
+            const lx = wrapDeltaX(wx, cellX);
+            const ly = wrapDeltaY(p.pos.y, cellY);
+            consider(lx - TILE_SIZE / 2, lx + TILE_SIZE / 2, ly - TILE_SIZE / 2, ly + TILE_SIZE / 2);
+          }
+        }
+        for (const ob of this.obstacles) {
+          if (ob.hp <= 0) continue;
+          const lx = wrapDeltaX(wx, ob.x + ob.w / 2);
+          const ly = wrapDeltaY(p.pos.y, ob.y + ob.h / 2);
+          consider(lx - ob.w / 2, lx + ob.w / 2, ly - ob.h / 2, ly + ob.h / 2);
+        }
+        if (pick.v) {
+          p.pos.x = wrapX(p.pos.x + pick.v.dx);
+          p.pos.y = wrapY(p.pos.y + pick.v.dy);
+          moved = true;
+        } else {
+          this.ensureFreePosition(p);
+          moved = true;
+          break;
+        }
+      }
+      return moved;
+    }
     // ── 弹道 ──────────────────────────────────────────────
     // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
     // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
@@ -1387,6 +1540,11 @@
               t.vel.y -= dy2 / d * pull;
             }
           }
+        }
+        if (pr.dragPerSecond < 1) {
+          const k = Math.pow(pr.dragPerSecond, dt);
+          pr.vel.x *= k;
+          pr.vel.y *= k;
         }
         pr.vel.y += g * pr.gravityScale * dt;
         pr.life -= dt;
@@ -1763,7 +1921,7 @@
         if (!crate.active) continue;
         for (const p of this.players) {
           if (p.respawnTimer > 0 || !p.deployed || !p.alive) continue;
-          if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 44) {
+          if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 56) {
             crate.active = false;
             crate.respawnTimer = this.config.supplyRespawnTime;
             if (crate.kind === "doll") {
@@ -1801,7 +1959,7 @@
         const pack = this.ammoPacks[i];
         for (const p of this.players) {
           if (p.respawnTimer > 0 || !p.deployed || !p.alive) continue;
-          if (wrapDist(p.pos.x, p.pos.y, pack.x, pack.y) < 44) {
+          if (wrapDist(p.pos.x, p.pos.y, pack.x, pack.y) < 52) {
             const wep = WEAPONS[p.weaponIndex];
             p.reserveAmmo[p.weaponIndex] = Math.min(wep.maxReserve * 2, (p.reserveAmmo[p.weaponIndex] || 0) + wep.maxReserve);
             this.ammoPacks.splice(i, 1);
@@ -4037,7 +4195,7 @@
     }
     function applyMode(mode) {
       if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-        showToast("\u26A0\uFE0F \u5207\u6362\u6B7B\u6597\u6A21\u5F0F\u9700\u5728\u5F85\u673A/\u9635\u4EA1\u6574\u5907\u65F6\u8FDB\u884C");
+        showToast("\u26A0\uFE0F \u5207\u6362\u5BF9\u6218\u6A21\u5F0F\u9700\u5728\u5F85\u673A/\u9635\u4EA1\u6574\u5907\u65F6\u8FDB\u884C");
         return;
       }
       deathmatchMode = mode;
@@ -4050,7 +4208,7 @@
       syncBotsCount(bots.length);
       applyTeamButtons();
       updateTeamCountUI();
-      showToast(mode === "ffa" ? "\u{1F7E1} \u6B7B\u4EA1\u7ADE\u8D5B \xB7 FFA \u6DF7\u6218\uFF1A\u5168\u5458\u7686\u654C\uFF0C\u968F\u673A\u51FA\u751F\u70B9" : "\u2694\uFE0F \u6B7B\u4EA1\u7ADE\u8D5B \xB7 2 \u961F\u5BF9\u6297\uFF08\u7EA2 vs \u84DD\uFF09\uFF1A\u968F\u673A\u51FA\u751F\u70B9");
+      showToast(mode === "ffa" ? "\u{1F7E1} \u81EA\u7531\u6DF7\u6218\uFF1A\u5168\u5458\u7686\u654C\uFF0C\u968F\u673A\u51FA\u751F\u70B9" : "\u2694\uFE0F \u53CC\u961F\u5BF9\u6297\uFF08\u7EA2\u961F vs \u84DD\u961F\uFF09\uFF1A\u968F\u673A\u51FA\u751F\u70B9");
     }
     document.querySelectorAll(".mode-btn").forEach((b) => {
       b.addEventListener("click", () => applyMode(b.getAttribute("data-mode") || "ffa"));

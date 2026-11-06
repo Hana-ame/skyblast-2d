@@ -112,28 +112,31 @@
 
     <!-- 主武器槽位按钮组 (重生前可选，重生后锁定) + 副武器释放键 -->
     <div class="flex items-center gap-1.5 pointer-events-auto flex-wrap justify-center">
-      <button id="weaponSlot0" type="button" data-slot="0" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border-2 border-amber-400 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
-        <span class="text-[10px] text-slate-400 font-bold">1 · 飞跃后坐力</span>
-        <span class="text-xs font-extrabold text-white truncate">推进霰弹</span>
+      <button id="weaponSlot0" type="button" data-slot="0" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
+        <span class="text-[10px] text-slate-400 font-bold">1 · 近距</span>
+        <span class="text-xs font-extrabold text-white truncate">霰弹</span>
       </button>
-      <button id="weaponSlot1" type="button" data-slot="1" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
-        <span class="text-[10px] text-slate-400 font-bold">2 · 均衡连发</span>
+      <button id="weaponSlot1" type="button" data-slot="8" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
+        <span class="text-[10px] text-emerald-300 font-bold">2 · 高射速</span>
+        <span class="text-xs font-extrabold text-white truncate">冲锋枪</span>
+      </button>
+      <button id="weaponSlot2" type="button" data-slot="1" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
+        <span class="text-[10px] text-slate-400 font-bold">3 · 均衡</span>
         <span class="text-xs font-extrabold text-white truncate">突击步枪</span>
       </button>
-      <button id="weaponSlot2" type="button" data-slot="2" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
-        <span class="text-[10px] text-purple-300 font-bold">3 · 视野+30%</span>
-        <span class="text-xs font-extrabold text-white truncate">电磁狙击</span>
-      </button>
-      <button id="weaponSlot3" type="button" data-slot="3" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
-        <span class="text-[10px] text-slate-400 font-bold">4 · 直线火箭</span>
-        <span class="text-xs font-extrabold text-white truncate">重型榴弹</span>
+      <button id="weaponSlot3" type="button" data-slot="2" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
+        <span class="text-[10px] text-purple-300 font-bold">4 · 视野+30%</span>
+        <span class="text-xs font-extrabold text-white truncate">狙</span>
       </button>
       <button id="weaponSlot4" type="button" data-slot="7" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
         <span class="text-[10px] text-amber-300 font-bold">5 · 移速最快</span>
-        <span class="text-xs font-extrabold text-white truncate">战术手枪</span>
+        <span class="text-xs font-extrabold text-white truncate">手枪</span>
+      </button>
+      <button id="weaponSlot5" type="button" data-slot="3" class="weapon-slot-btn glass-panel px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-left transition flex flex-col min-w-[72px] sm:min-w-[92px]">
+        <span class="text-[10px] text-rose-300 font-bold">6 · 直线火箭</span>
+        <span class="text-xs font-extrabold text-white truncate">火箭筒</span>
       </button>
 
-      <!-- 副武器释放按钮 -->
       <button id="hudGrenadeBtn" type="button" class="glass-panel px-3 py-1.5 rounded-lg border border-rose-500/50 bg-rose-500/15 hover:bg-rose-500/25 text-left transition flex flex-col min-w-[104px] relative overflow-hidden">
         <div id="grenadeCdOverlay" class="absolute inset-0 bg-slate-950/80 pointer-events-none transition-all" style="height: 0%;"></div>
         <span id="hudSecondaryTitle" class="text-[10px] text-rose-300 font-bold relative z-10">[G/右键] 副武器</span>
@@ -190,7 +193,7 @@
                 💻 已自动识别：PC 键鼠模式 (点击可切触屏)
               </button>
             </h1>
-            <p class="text-xs text-slate-400">13200×4400 双轴环形地图 · 死斗模式(FFA/2队·随机出生) · 激光即时光束(反射3次) · 狙击/火箭无限射程 · 手枪移速最快 · 替身人偶(特殊补给)</p>
+            <p class="text-xs text-slate-400">13200×4400 双轴环形地图 · 对战模式(自由混战/双队对抗·随机出生) · 激光即时光束(反射3次) · 狙击/火箭无限射程 · 手枪移速最快 · 替身人偶(特殊补给)</p>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -209,15 +212,15 @@
         <div class="lg:col-span-6 flex flex-col gap-3">
           <!-- 0. 死斗模式按钮组（FFA / 2 队对抗，随机出生点） -->
           <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300">0. 死斗模式（随机出生点 · 击杀计分）</h2>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300">0. 对战模式（随机出生点 · 击杀计分）</h2>
             <div class="grid grid-cols-2 gap-2">
               <button type="button" data-mode="ffa" class="mode-btn px-3 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition">
-                <div class="text-xs font-extrabold text-amber-300">🟡 FFA 混战</div>
+                <div class="text-xs font-extrabold text-amber-300">🟡 自由混战</div>
                 <div class="text-[10px] text-slate-300">全员皆敌 · 各自为战 · 随机出生</div>
               </button>
               <button type="button" data-mode="2teams" class="mode-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition hover:border-slate-500">
-                <div class="text-xs font-extrabold text-rose-300">⚔️ 2 队对抗</div>
-                <div class="text-[10px] text-slate-400">红 vs 蓝 · 队友免伤 · 随机出生</div>
+                <div class="text-xs font-extrabold text-rose-300">⚔️ 双队对抗</div>
+                <div class="text-[10px] text-slate-400">红队对蓝队 · 队友免伤 · 随机出生</div>
               </button>
             </div>
             <div class="text-[10px] text-slate-500">击杀 +1 分；阵亡后随机安全点重生；模式切换需在待机/阵亡整备时进行</div>
@@ -281,30 +284,33 @@
             </div>
 
             <!-- 主武器按钮组 -->
-            <div id="lobbyWeaponSelect" class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div id="lobbyWeaponSelect" class="grid grid-cols-2 sm:grid-cols-6 gap-2">
               <button type="button" data-wep="0" class="lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition">
-                <div class="text-xs font-extrabold text-white">1. 推进霰弹枪</div>
-                <div class="text-[10px] text-amber-200">大后坐飞跃 | 备弹30</div>
+                <div class="text-xs font-extrabold text-white">1. 霰弹</div>
+                <div class="text-[10px] text-amber-200">近距高伤 | 8 弹丸</div>
+              </button>
+              <button type="button" data-wep="8" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+                <div class="text-xs font-extrabold text-emerald-300">2. 冲锋枪</div>
+                <div class="text-[10px] text-emerald-200">40 发弹匣 | 高射速</div>
               </button>
               <button type="button" data-wep="1" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-white">2. 脉冲突击步枪</div>
-                <div class="text-[10px] text-slate-400">稳定连发 | 备弹140</div>
+                <div class="text-xs font-extrabold text-white">3. 突击步枪</div>
+                <div class="text-[10px] text-slate-400">28 发 | 稳定连发</div>
               </button>
               <button type="button" data-wep="2" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-purple-300">3. 电磁狙击步枪</div>
-                <div class="text-[10px] text-purple-200">视野+30% | 爆头穿透</div>
-              </button>
-              <button type="button" data-wep="3" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-white">4. 重型榴弹炮</div>
-                <div class="text-[10px] text-slate-400">直线慢速火箭 | 碰到爆炸</div>
+                <div class="text-xs font-extrabold text-purple-300">4. 狙</div>
+                <div class="text-[10px] text-purple-200">无限射程 | 命中即死</div>
               </button>
               <button type="button" data-wep="7" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-amber-300">5. 🔫 战术手枪</div>
-                <div class="text-[10px] text-amber-200">移速 +30% 最快 | 备弹48</div>
+                <div class="text-xs font-extrabold text-amber-300">5. 手枪</div>
+                <div class="text-[10px] text-amber-200">移速最快 | 12 发</div>
+              </button>
+              <button type="button" data-wep="3" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+                <div class="text-xs font-extrabold text-rose-300">6. 火箭筒</div>
+                <div class="text-[10px] text-rose-200">直线慢速 | 无限射程 | 碰到爆炸</div>
               </button>
             </div>
 
-            <!-- 8种副武器按钮组（替身人偶标记为特殊补给专属） -->
             <div id="lobbyGrenadeSelect" class="grid grid-cols-2 gap-1.5">
               <button type="button" data-sec="frag" class="lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition">
                 <div class="text-xs font-extrabold text-white">💣 手榴弹 ×2</div>

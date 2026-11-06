@@ -77,7 +77,7 @@ function syncBotsCount(target: number): void {
 // ── 待部署配装 ──
 const pendingLoadout = { weaponIndex: 0, secondaryType: 'frag', spawnPointId: 'base' }
 let deathmatchMode: 'ffa' | '2teams' = 'ffa'
-world.config.randomSpawn = true   // 死斗模式：每次出生随机安全点
+world.config.randomSpawn = true   // 对战模式：每次出生随机安全点
 
 function getSpawnCoords(): { x: number; y: number; label: string } {
   const t = SPAWN_POINTS.find(s => s.team === localPlayer.team) ?? SPAWN_POINTS[3]
@@ -988,7 +988,7 @@ function bindAllEvents(): void {
     } else pendingInteract = true
   })
 
-  // ── 死斗模式按钮组：FFA / 2 队 ──
+  // ── 对战模式按钮组：自由混战 / 双队对抗 ──
   function applyTeamButtons(): void {
     document.querySelectorAll('.team-select-btn').forEach((b) => {
       const t = b.getAttribute('data-team')
@@ -1002,7 +1002,7 @@ function bindAllEvents(): void {
   }
   function applyMode(mode: 'ffa' | '2teams'): void {
     if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-      showToast('⚠️ 切换死斗模式需在待机/阵亡整备时进行')
+      showToast('⚠️ 切换对战模式需在待机/阵亡整备时进行')
       return
     }
     deathmatchMode = mode
@@ -1018,8 +1018,8 @@ function bindAllEvents(): void {
     applyTeamButtons()
     updateTeamCountUI()
     showToast(mode === 'ffa'
-      ? '🟡 死亡竞赛 · FFA 混战：全员皆敌，随机出生点'
-      : '⚔️ 死亡竞赛 · 2 队对抗（红 vs 蓝）：随机出生点')
+      ? '🟡 自由混战：全员皆敌，随机出生点'
+      : '⚔️ 双队对抗（红队 vs 蓝队）：随机出生点')
   }
   document.querySelectorAll('.mode-btn').forEach((b) => {
     b.addEventListener('click', () => applyMode((b.getAttribute('data-mode') || 'ffa') as 'ffa' | '2teams'))

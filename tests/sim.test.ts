@@ -259,20 +259,33 @@ test('PeerJS 传输：假 DataConnection 上跑通 服务器权威 + 欢迎包 +
 })
 
 
-test('激光：点击即一道即时光束（事件分段，反射≤3，不生成飞行弹丸）', () => {
+test('激光：按住持续输出（射速无限），一梭子可打 8 秒；松手即停', () => {
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
-  p.weaponIndex = 4   // 激光炮（hitscan beam）
+  p.weaponIndex = 4   // 激光炮
   p.pos = { x: 6600, y: 2660 }
-  w.step(DT, new Map([[p.id, input({ fire: true, aim: Math.PI / 2 })]]))   // 朝下打地面
-  const evs = w.drainEvents()
-  const laser = evs.find(e => e.kind === 'laser')
-  assert.ok(laser, 'laser beam event emitted')
-  assert.ok((laser!.segments?.length ?? 0) >= 1, 'beam has at least one segment')
-  assert.ok((laser!.segments?.length ?? 1) <= 4, 'bounce count <= 3 (at most 4 segments)')
-  assert.ok((laser!.duration ?? 0) > 0, 'beam lasts in seconds')
-  // 不应生成 beam 飞行弹丸（旧实现）
-  assert.equal(w.projectiles.filter(pr => pr.beam).length, 0, 'no traveling beam projectile')
+  const ammo0 = p.ammo[4]
+  // 按住 1 秒：应连续产生激光事件（不是单发）
+  let beamEvents = 0
+  for (let i = 0; i < 60; i++) {
+    w.step(DT, new Map([[p.id, input({ fire: true, aim: Math.PI / 2 })]]))
+    const evs = w.drainEvents()
+    const laser = evs.find(e => e.kind === 'laser')
+    if (laser) {
+      beamEvents++
+      assert.ok((laser.segments?.length ?? 0) >= 1 && (laser.segments?.length ?? 1) <= 4, 'reflections <= 3')
+    }
+  }
+  assert.ok(beamEvents >= 55, `continuous output each tick, got ${beamEvents} beam events`)
+  const drainedPerSec = ammo0 - p.ammo[4]
+  assert.ok(drainedPerSec > 5 && drainedPerSec < 7, `ammo drains ~6/s, got ${drainedPerSec.toFixed(2)}`)
+  // 8 秒总弹量：48 / 6
+  assert.equal(WEAPONS[4].magSize / (WEAPONS[4].ammoPerSecond ?? 1), 8, 'one magazine = 8s')
+  // 松手即停
+  w.drainEvents()
+  w.step(DT, new Map([[p.id, input({ fire: false, aim: Math.PI / 2 })]]))
+  const afterRelease = w.drainEvents().filter(e => e.kind === 'laser').length
+  assert.equal(afterRelease, 0, 'no beam after release')
 })
 
 test('引力弹：穿墙飞行（passWalls），不被原始地形挡下', () => {
@@ -337,16 +350,19 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 })
 
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
-  assert.equal(WEAPONS.length, 8)
-  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1250, 4000, 520, 3000, 1300, 900, 1500])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 100, 105, 50, 14, 52, 25])
+  assert.equal(WEAPONS.length, 9)
+  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1250, 4000, 520, 3000, 1300, 900, 1500, 1400])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [16, 19, 100, 105, 50, 19, 52, 25, 14])   // M249=突击步枪(19)
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
+  for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
   assert.equal(WEAPONS[3].lifeSeconds, 999, 'bazooka infinite range')
   assert.equal(WEAPONS[3].gravityScale, 0, 'bazooka flies straight')
   assert.equal(WEAPONS[3].speed, 520, 'bazooka slow')
   assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
   assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
+  assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
+  assert.ok(WEAPONS[5].fireDelay <= 0.05, 'gatling high fire rate')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
@@ -535,4 +551,54 @@ test('瞭望塔：按 E 上塔锁定（不能移动）+ 下塔后视野加成消
   w.step(DT, new Map([[p.id, input({ interact: true })]]))
   assert.equal(p.mountedTowerId, null, 'dismounted')
   assert.equal(tw.operatorId, null, 'tower freed')
+})
+
+
+test('穿模解算：卡进大楼墙体 / 障碍物内部都会被最小轴推出，不会永久卡住', () => {
+  const w = new World(91)
+  const p = w.addPlayer('P', 'ffa')
+
+  // ① 塞进西翼大楼外墙（1400..1424 的墙段，y 2100 附近）
+  p.pos = { x: 1412, y: 2100 }
+  p.vel = { x: 0, y: 0 }
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input()]]))
+  assert.ok(!w.bodyOverlapsAt(p.pos.x, p.pos.y), `pushed out of building wall, pos=(${Math.round(p.pos.x)},${Math.round(p.pos.y)})`)
+
+  // ② 塞进预设障碍物（obs_box_1 6420,2730,68,70）
+  const w2 = new World(92)
+  const q = w2.addPlayer('Q', 'ffa')
+  q.pos = { x: 6454, y: 2770 }
+  q.vel = { x: 0, y: 0 }
+  for (let i = 0; i < 30; i++) w2.step(DT, new Map([[q.id, input()]]))
+  assert.ok(!w2.bodyOverlapsAt(q.pos.x, q.pos.y), `pushed out of obstacle, pos=(${Math.round(q.pos.x)},${Math.round(q.pos.y)})`)
+
+  // ③ 高速冲墙（连续 3 秒向右撞大楼墙）不被卡进墙里
+  const w3 = new World(93)
+  const r = w3.addPlayer('R', 'ffa')
+  r.pos = { x: 1200, y: 2760 }
+  for (let i = 0; i < 180; i++) w3.step(DT, new Map([[r.id, input({ move: 1, jetpack: i % 20 < 6 })]]))
+  assert.ok(!w3.bodyOverlapsAt(r.pos.x, r.pos.y), `no wall penetration after ram, pos=(${Math.round(r.pos.x)},${Math.round(r.pos.y)})`)
+})
+
+
+test('引力弹：穿墙 + 射程有限 + 弹速逐渐衰减', () => {
+  const w = new World(95)
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 6   // 引力枪
+  p.pos = { x: 1300, y: 2100 }
+  w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+  const orb = w.projectiles.find(pr => pr.isGravityOrb)
+  assert.ok(orb, 'orb fired')
+  assert.equal(orb!.passWalls, true, 'passes walls')
+  assert.ok(orb!.dragPerSecond < 1, 'has gradual slowdown')
+  const speed0 = Math.hypot(orb!.vel.x, orb!.vel.y)
+  // 跑 1 秒：速度应明显衰减
+  for (let i = 0; i < 60; i++) w.step(DT, new Map([[p.id, input()]]))
+  const cur = w.projectiles.find(pr => pr.id === orb!.id)
+  if (cur) {
+    const speed1 = Math.hypot(cur.vel.x, cur.vel.y)
+    assert.ok(speed1 < speed0 * 0.7, `speed decays: ${speed0.toFixed(0)} -> ${speed1.toFixed(0)}`)
+  }
+  // 射程有限：总寿命 ≤ 2.2s
+  assert.ok((orb!.life ?? 0) <= 2.2, 'limited lifetime/range')
 })

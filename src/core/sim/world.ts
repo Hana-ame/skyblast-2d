@@ -4,7 +4,7 @@
 //   受重力地雷(直击+瞬发) / 空袭 / 可破坏障碍物 / 占领点 / 弹药经济 / 补给箱 / 迫击炮
 // 单位制：秒制（v2 px/frame@60 → px/s：速度×60）。随机量全部走注入的 Rng。
 import { applyGravity, jetpack, jump, move, updateJetpackFuel, getPhysicsParams } from './physics.ts'
-import { Terrain, OBSTACLE_PRESETS } from '../terrain.ts'
+import { Terrain, OBSTACLE_PRESETS, TILE_SIZE } from '../terrain.ts'
 import { Rng } from '../rng.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
@@ -45,7 +45,7 @@ export const AMMO_SPOTS: { x: number; y: number; area: string }[] = [
 ]
 
 const SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 6600, y: 1040, area: '中央最高浮岛' },
+  { x: 6800, y: 1020, area: '中央最高浮岛' },
   { x: 4150, y: 3520, area: '西区地下战略掩体' },
   { x: 6600, y: 3500, area: '中央地下核心掩体' },
   { x: 10150, y: 3520, area: '东区地下装甲掩体' },
@@ -56,7 +56,7 @@ const SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
 /** 特殊补给位：只出「替身人偶」（不在常规配装里） */
 const DOLL_SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
   { x: 4820, y: 2100, area: '中西部高空连廊旁' },
-  { x: 8560, y: 2740, area: '东区地表特殊补给点' },
+  { x: 8560, y: 2760, area: '东区地表特殊补给点' },
 ]
 
 const MORTARS_INIT: Omit<Mortar, 'cooldown' | 'operatorId'>[] = [
@@ -264,7 +264,8 @@ export class World {
     p.deployed = true
     p.alive = true
     p.respawnTimer = 0
-    // 出生点安全校验：若落在墙体/方块内，推到最近安全位置（防出生即卡死）
+    // 出生点安全校验：先穿模解算，再兜底安全位置（防出生即卡死）
+    this.resolvePenetration(p)
     this.ensureFreePosition(p)
   }
 
@@ -279,10 +280,13 @@ export class World {
       if (p.deployed) this.physics(p, w, dt)
       // 防卡死：躯干嵌进实体累计 12 tick → 推到最近安全位置
       if (p.deployed && p.alive) {
-        if (this.torsoBlockedAt(p.pos.x, p.pos.y)) {
+        // 每 tick 穿模解算：任何原因（出生/传送/挤压/帧漏检）嵌进实体都会被最小轴推出
+        if (this.bodyOverlapsAt(p.pos.x, p.pos.y)) {
+          const fixed = this.resolvePenetration(p)
+          if (fixed) { p.vel.x = 0; p.vel.y = 0 }
           const n = (this.stuckTicks.get(p.id) ?? 0) + 1
           this.stuckTicks.set(p.id, n)
-          if (n >= 12) {
+          if (n >= 20) {
             this.ensureFreePosition(p)
             this.stuckTicks.set(p.id, 0)
           }
@@ -405,8 +409,14 @@ export class World {
     // 副武器（瞬时意图）
     if (w.secondary) this.useSecondary(p, w.secondary, dt)
 
-    // 开火
-    if (w.fire) this.fire(p)
+    // 开火：激光类为持续光束（按住输出，每 tick 结算），其余为弹丸
+    if (w.fire) {
+      const wepNow = WEAPONS[p.weaponIndex]
+      if (wepNow?.beam) this.updateContinuousBeam(p, wepNow, dt)
+      else this.fire(p)
+    } else if (WEAPONS[p.weaponIndex]?.beam && !p.reloading && (p.ammo[p.weaponIndex] > 0)) {
+      // 松开即停（无需处理，事件停止 → 客户端光束消失）
+    }
   }
 
   // ── 开火 ──────────────────────────────────────────────
@@ -434,12 +444,6 @@ export class World {
     p.fireCooldown = wep.fireDelay
     if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
-    // 激光类：即时命中光束（hitscan），不生成飞行弹丸
-    if (wep.beam) {
-      this.fireBeam(p, wep)
-      return
-    }
-
     // 后坐力（v2 recoil×0.56/0.65）
     if (wep.recoil > 0) {
       p.vel.x -= Math.cos(p.aim) * wep.recoil * 0.56
@@ -456,6 +460,7 @@ export class World {
         explosive: wep.explosive, gravityScale: wep.gravityScale ?? (wep.id === 4 ? 0.0 : 0.04),
         pierceOnHeadshot: !!wep.pierceOnHeadshot, pierceAll: !!wep.pierceAll,
         isGravityOrb: !!wep.isGravityOrb, bounces: wep.bounces ?? 0, passWalls: !!wep.passWalls, beam: !!wep.beam, rocket: !!wep.rocket,
+        dragPerSecond: wep.dragPerSecond ?? 1,
         weaponLabel: wep.shortName, color: wep.color,
         r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
         life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
@@ -463,8 +468,20 @@ export class World {
     }
   }
 
-  /** 即时命中光束：点击即一道光，沿瞄准方向射线前进，遇墙反射（默认 3 次），命中穿透；存在时长按秒 */
-  private fireBeam(p: PlayerState, wep: typeof WEAPONS[number]): void {
+  /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
+  private updateContinuousBeam(p: PlayerState, wep: typeof WEAPONS[number], dt: number): void {
+    if (p.respawnTimer > 0 || !p.alive) return
+    const wi = p.weaponIndex
+    if (p.reloading) return
+    if (p.ammo[wi] <= 0) {
+      this.startReload(p)
+      return
+    }
+    const dps = wep.damagePerSecond ?? wep.damage * 3
+    const aps = wep.ammoPerSecond ?? 4
+    p.ammo[wi] = Math.max(0, p.ammo[wi] - aps * dt)
+    if (p.ammo[wi] <= 0 && (p.reserveAmmo[wi] || 0) > 0) this.startReload(p)
+
     const segments: { x1: number; y1: number; x2: number; y2: number }[] = []
     const hitPlayer = new Set<number>([p.id])
     const hitObstacle = new Set<string>()
@@ -472,7 +489,7 @@ export class World {
     let y = (p.pos.y - 12) + Math.sin(p.aim) * 24
     let dx = Math.cos(p.aim)
     let dy = Math.sin(p.aim)
-    const maxSegLen = 1800     // 单段射程（足够覆盖屏幕至远距）
+    const maxSegLen = 1800
     const step = 10
     const bounces = wep.bounces ?? 0
 
@@ -482,7 +499,6 @@ export class World {
       while (travelled < maxSegLen) {
         const nx = wrapX(x + dx * step)
         const ny = wrapY(y + dy * step)
-        // 命中玩家（穿透：记录已命中者）
         for (const t of this.players) {
           if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
           if (t.id !== p.id && t.team === p.team && p.team !== 'ffa') continue
@@ -493,21 +509,19 @@ export class World {
           const by = wrapDeltaY(t.pos.y, ny)
           if (isHead || (bx <= 14 && by >= -12 && by <= 18)) {
             hitPlayer.add(t.id)
-            const dmg = Math.round(wep.damage * (isHead ? wep.headshotMult : 1))
-            this.damage(t, dmg, undefined, isHead, false, p.id, p.team, wep.shortName)
+            const mult = isHead ? wep.headshotMult : 1
+            this.damage(t, dps * mult * dt, undefined, isHead, false, p.id, p.team, wep.shortName)
           }
         }
-        // 命中可破坏障碍物（穿透）
         const ob = this.obstacleAt(nx, ny)
         if (ob && !hitObstacle.has(ob.id)) {
           hitObstacle.add(ob.id)
-          this.damageObstacle(ob, wep.damage, undefined)
+          this.damageObstacle(ob, dps * dt, undefined)
         }
-        // 撞原始地形：记录当前段终点并反射
         if (this.terrain.isSolidAt(nx, ny)) {
           hitWall = true
-          const hitX = this.terrain.isSolidAt(nx, y)     // 横向撞墙
-          const hitY = this.terrain.isSolidAt(x, ny)     // 纵向撞面
+          const hitX = this.terrain.isSolidAt(nx, y)
+          const hitY = this.terrain.isSolidAt(x, ny)
           if (hitX) dx = -dx
           if (hitY) dy = -dy
           if (!hitX && !hitY) { dx = -dx; dy = -dy }
@@ -517,13 +531,15 @@ export class World {
         y = ny
         travelled += step
       }
-      segments.push({ x1: wrapX(x - dx * 24), y1: y - dy * 24, x2: x, y2: y })
-      // 记录完整一段：起点用上一段终点
-      if (segments.length >= 2) {
-        const prev = segments[segments.length - 2]
-        segments[segments.length - 1].x1 = prev.x2
-        segments[segments.length - 1].y1 = prev.y2
+      const seg = { x1: 0, y1: 0, x2: x, y2: y }
+      if (segments.length > 0) {
+        const prev = segments[segments.length - 1]
+        seg.x1 = prev.x2; seg.y1 = prev.y2
+      } else {
+        seg.x1 = wrapX(p.pos.x + Math.cos(p.aim) * 24)
+        seg.y1 = (p.pos.y - 12) + Math.sin(p.aim) * 24
       }
+      segments.push(seg)
       if (!hitWall) break
     }
 
@@ -531,7 +547,7 @@ export class World {
       kind: 'laser',
       x: p.pos.x, y: p.pos.y,
       segments,
-      duration: 0.14,
+      duration: 0.06,      // 每 tick 刷新一次 → 视觉上是连续光束
       color: wep.color,
       playerId: p.id,
       weaponLabel: wep.shortName,
@@ -541,7 +557,7 @@ export class World {
   private makeProjectile(p: PlayerState, x: number, y: number, vx: number, vy: number, o: {
     damage: number; headshotMult: number; terrainRadius: number; explosive: boolean; gravityScale?: number;
     pierceOnHeadshot?: boolean; pierceAll?: boolean; isGravityOrb?: boolean; bounces?: number
-    passWalls?: boolean; beam?: boolean; rocket?: boolean
+    passWalls?: boolean; beam?: boolean; rocket?: boolean; dragPerSecond?: number
     weaponLabel: string; color: string; r: number; life: number
   }): Projectile {
     return {
@@ -550,6 +566,7 @@ export class World {
       explosive: o.explosive, terrainRadius: o.terrainRadius, gravityScale: o.gravityScale ?? 0.04,
       pierceOnHeadshot: !!o.pierceOnHeadshot, pierceAll: !!o.pierceAll,
       isGravityOrb: !!o.isGravityOrb, bounces: o.bounces ?? 0, passWalls: !!o.passWalls, beam: !!o.beam, rocket: !!o.rocket,
+      dragPerSecond: o.dragPerSecond ?? 1,
       weaponLabel: o.weaponLabel, color: o.color,
       hitTargets: [p.id],   // 发射者自身永远跳过
     }
@@ -776,8 +793,110 @@ export class World {
     return true
   }
 
-  // 卡死计数器：躯干嵌实体超过 12 tick 自动推出（防窄缝/结构挤压永久卡住）
+  // 卡死计数器：身体嵌实体超时自动推出（防窄缝/结构挤压永久卡住）
   private stuckTicks = new Map<number, number>()
+
+  /** 身体 AABB（脚底锚点）：宽±10，高 -30..+16 */
+  bodyOverlapsAt(x: number, y: number): boolean {
+    const wx = wrapX(x)
+    const halfW = 10
+    // 扫描覆盖身体 AABB 的地形格
+    const gx0 = Math.floor((wx - halfW) / TILE_SIZE)
+    const gx1 = Math.floor((wx + halfW) / TILE_SIZE)
+    const gy0 = Math.floor(wrapY(y - 30) / TILE_SIZE)
+    const gy1 = Math.floor(wrapY(y + 16) / TILE_SIZE)
+    for (let gx = gx0; gx <= gx1; gx++) {
+      for (let gy = gy0; gy <= gy1; gy++) {
+        // 格子中心 → 玩家局部坐标（跨缝走最短）
+        const cellX = wrapX(gx * TILE_SIZE) + TILE_SIZE / 2
+        const cellY = wrapY(gy * TILE_SIZE) + TILE_SIZE / 2
+        const lx = wrapDeltaX(wx, cellX)
+        const ly = wrapDeltaY(y, cellY)
+        if (Math.abs(lx) <= halfW + TILE_SIZE / 2 && ly <= 16 + TILE_SIZE / 2 && ly >= -30 - TILE_SIZE / 2) {
+          // 该格与身体 AABB 是否真实相交
+          const cell = this.terrain.isSolidAt(cellX, cellY)
+          if (cell) {
+            const tileL = lx - TILE_SIZE / 2
+            const tileR = lx + TILE_SIZE / 2
+            const tileT = ly - TILE_SIZE / 2
+            const tileB = ly + TILE_SIZE / 2
+            if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true
+          }
+        }
+      }
+    }
+    // 障碍物 AABB
+    for (const ob of this.obstacles) {
+      if (ob.hp <= 0) continue
+      const dx = wrapDeltaX(wx, ob.x + ob.w / 2)
+      const dy = wrapDeltaY(y, ob.y + ob.h / 2)
+      const tileL = dx - ob.w / 2
+      const tileR = dx + ob.w / 2
+      const tileT = dy - ob.h / 2
+      const tileB = dy + ob.h / 2
+      if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true
+    }
+    return false
+  }
+
+  /** 最小轴推出（穿模解算）：把玩家从任何嵌入的实体里沿最小穿透方向推出；返回是否推过 */
+  private resolvePenetration(p: PlayerState): boolean {
+    const halfW = 10
+    let moved = false
+    for (let iter = 0; iter < 6; iter++) {
+      if (!this.bodyOverlapsAt(p.pos.x, p.pos.y)) break
+      const wx = wrapX(p.pos.x)
+      // 收集所有相交实体（地形格 + 障碍物），取最小推出量
+      const pick: { v: { dx: number; dy: number } | null } = { v: null }
+      let bestLen = Infinity
+      const consider = (tileL: number, tileR: number, tileT: number, tileB: number): void => {
+        if (!(tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16)) return
+        const cand = [
+          { dx: tileL - halfW, dy: 0 },   // 向左
+          { dx: tileR + halfW, dy: 0 },   // 向右
+          { dx: 0, dy: tileB + 30 },      // 向下（放到 tile 底部之下）
+          { dx: 0, dy: tileT - 16 },      // 向上（放到 tile 顶部之上）
+        ]
+        for (const c of cand) {
+          const len = Math.abs(c.dx) + Math.abs(c.dy)
+          if (len < bestLen) { bestLen = len; pick.v = c }
+        }
+      }
+      // 地形格
+      const gx0 = Math.floor((wx - halfW) / TILE_SIZE)
+      const gx1 = Math.floor((wx + halfW) / TILE_SIZE)
+      const gy0 = Math.floor(wrapY(p.pos.y - 30) / TILE_SIZE)
+      const gy1 = Math.floor(wrapY(p.pos.y + 16) / TILE_SIZE)
+      for (let gx = gx0; gx <= gx1; gx++) {
+        for (let gy = gy0; gy <= gy1; gy++) {
+          const cellX = wrapX(gx * TILE_SIZE) + TILE_SIZE / 2
+          const cellY = wrapY(gy * TILE_SIZE) + TILE_SIZE / 2
+          if (!this.terrain.isSolidAt(cellX, cellY)) continue
+          const lx = wrapDeltaX(wx, cellX)
+          const ly = wrapDeltaY(p.pos.y, cellY)
+          consider(lx - TILE_SIZE / 2, lx + TILE_SIZE / 2, ly - TILE_SIZE / 2, ly + TILE_SIZE / 2)
+        }
+      }
+      // 障碍物
+      for (const ob of this.obstacles) {
+        if (ob.hp <= 0) continue
+        const lx = wrapDeltaX(wx, ob.x + ob.w / 2)
+        const ly = wrapDeltaY(p.pos.y, ob.y + ob.h / 2)
+        consider(lx - ob.w / 2, lx + ob.w / 2, ly - ob.h / 2, ly + ob.h / 2)
+      }
+      if (pick.v) {
+        p.pos.x = wrapX(p.pos.x + pick.v.dx)
+        p.pos.y = wrapY(p.pos.y + pick.v.dy)
+        moved = true
+      } else {
+        // 理论不会发生：兜底用安全位置搜索
+        this.ensureFreePosition(p)
+        moved = true
+        break
+      }
+    }
+    return moved
+  }
 
   // ── 弹道 ──────────────────────────────────────────────
   // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
@@ -804,6 +923,11 @@ export class World {
         }
       }
 
+      if (pr.dragPerSecond < 1) {
+        const k = Math.pow(pr.dragPerSecond, dt)   // 每秒保留比例 → 平滑减速
+        pr.vel.x *= k
+        pr.vel.y *= k
+      }
       pr.vel.y += g * pr.gravityScale * dt
       pr.life -= dt
       if (pr.life <= 0) continue
@@ -1168,7 +1292,7 @@ export class World {
       if (!crate.active) continue
       for (const p of this.players) {
         if (p.respawnTimer > 0 || !p.deployed || !p.alive) continue
-        if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 44) {
+        if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 56) {
           crate.active = false
           crate.respawnTimer = this.config.supplyRespawnTime
           if (crate.kind === 'doll') {
@@ -1209,7 +1333,7 @@ export class World {
       const pack = this.ammoPacks[i]
       for (const p of this.players) {
         if (p.respawnTimer > 0 || !p.deployed || !p.alive) continue
-        if (wrapDist(p.pos.x, p.pos.y, pack.x, pack.y) < 44) {
+        if (wrapDist(p.pos.x, p.pos.y, pack.x, pack.y) < 52) {
           const wep = WEAPONS[p.weaponIndex]
           p.reserveAmmo[p.weaponIndex] = Math.min(wep.maxReserve * 2, (p.reserveAmmo[p.weaponIndex] || 0) + wep.maxReserve)
           this.ammoPacks.splice(i, 1)

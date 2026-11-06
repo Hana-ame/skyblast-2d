@@ -81,6 +81,7 @@ export interface Projectile {
   passWalls: boolean       // 穿透原始地形（引力弹）
   beam: boolean            // 光束渲染（激光）
   rocket: boolean          // 火箭弹渲染（直线爆炸弹）
+  dragPerSecond: number    // 每秒速度保留比例（1=不减速；引力弹 <1）
 }
 
 export interface Grenade {
