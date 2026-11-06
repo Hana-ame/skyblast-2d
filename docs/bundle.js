@@ -3762,10 +3762,10 @@
     const targetFov = localPlayer.mountedTowerId ? 2 : mounted ? 1 : wep.fovMult || 1;
     camera.fovFactor += (targetFov - camera.fovFactor) * 0.12;
     if (localPlayer.deployed) {
-      const tx = localPlayer.pos.x + Math.cos(localPlayer.aim) * 80;
-      const ty = localPlayer.pos.y - 12 + Math.sin(localPlayer.aim) * 55;
-      camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.16);
-      camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.16);
+      const tx = localPlayer.pos.x;
+      const ty = localPlayer.pos.y - 12;
+      camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2);
+      camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2);
     }
     let shakeX = 0, shakeY = 0;
     if (screenShake > 0.2) {

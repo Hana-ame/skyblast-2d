@@ -494,12 +494,13 @@ function renderScene(): void {
     : (mounted ? 1.0 : (wep.fovMult || 1.0))
   camera.fovFactor += (targetFov - camera.fovFactor) * 0.12
 
-  // 相机跟随（双轴环形最短位移）
+  // 相机跟随（双轴环形最短位移）：**始终以玩家为屏幕中心**，不随瞄准方向偏移
+  // （旧实现 +cos(aim)*80 / +sin(aim)*55 会让视角中心永久偏离玩家，尤其瞭望塔 200% 视野下更明显）
   if (localPlayer.deployed) {
-    const tx = localPlayer.pos.x + Math.cos(localPlayer.aim) * 80
-    const ty = localPlayer.pos.y - 12 + Math.sin(localPlayer.aim) * 55
-    camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.16)
-    camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.16)
+    const tx = localPlayer.pos.x
+    const ty = localPlayer.pos.y - 12
+    camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2)
+    camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2)
   }
 
   let shakeX = 0, shakeY = 0
