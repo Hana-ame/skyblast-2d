@@ -9,6 +9,7 @@ import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../src/core/weapons.ts'
+import { JUMP_PADS } from '../src/core/sim/world.ts'
 import { getPhysicsParams } from '../src/core/sim/physics.ts'
 import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
 
@@ -714,4 +715,30 @@ test('霰弹：贴脸全中 8 丸一发致死；中距离不全中不死', () =>
   v2.pos = { x: 2600, y: 800 }
   for (let i = 0; i < 60; i++) w2.step(DT, new Map([[s2.id, input({ fire: i === 0, aim: 0 })]]))
   assert.ok(v2.hp > 0, `mid-range partial hit survives, hp=${v2.hp}`)
+})
+
+
+test('弹射跳台：全部位于可站立地表、站立触发、空中经过不误触', () => {
+  const w = new World(131)
+  for (const pad of JUMP_PADS) {
+    assert.ok(w.terrain.isSolidAt(pad.x, pad.y + 12), `pad at ${pad.x} stands on ground`)
+    assert.ok(!w.terrain.isSolidAt(pad.x, pad.y - 8), `pad at ${pad.x} has free space above`)
+  }
+  // 站立触发
+  const p = w.addPlayer('P', 'ffa')
+  const pad = JUMP_PADS[0]
+  p.pos = { x: pad.x, y: pad.y - 16 }
+  p.vel = { x: 0, y: 0 }
+  p.onGround = true
+  w.step(DT, new Map([[p.id, input()]]))
+  assert.ok(p.vel.y < -500, `pad launches standing player, vy=${p.vel.y.toFixed(0)}`)
+
+  // 空中经过（不落地）不触发
+  const w2 = new World(132)
+  const q = w2.addPlayer('Q', 'ffa')
+  q.pos = { x: pad.x, y: pad.y - 18 }
+  q.vel = { x: 0, y: 40 }
+  q.onGround = false
+  w2.step(DT, new Map([[q.id, input()]]))
+  assert.ok(q.vel.y > -500, `no launch while airborne, vy=${q.vel.y.toFixed(0)}`)
 })

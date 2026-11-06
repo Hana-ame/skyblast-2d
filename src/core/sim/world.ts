@@ -110,11 +110,12 @@ const RANDOM_SPAWN_CANDIDATES: { x: number; y: number }[] = (() => {
   return out
 })()
 
-const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
-  { x: 1220, y: 2800, vx: 210, vy: -810 },
-  { x: 5300, y: 2800, vx: 180, vy: -870 },
-  { x: 7880, y: 2800, vx: -180, vy: -870 },
-  { x: 11960, y: 2800, vx: -210, vy: -810 },
+export const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
+  // 全部位于可站立地表：远离竖井洞、台地内部与出生点（此前 2 个在竖井里、1 个埋在台地内，且完全没渲染 → "莫名弹起"）
+  { x: 1000, y: 2800, vx: 210, vy: -810 },
+  { x: 4300, y: 2800, vx: 180, vy: -870 },
+  { x: 8450, y: 2800, vx: -180, vy: -870 },
+  { x: 13050, y: 2800, vx: -210, vy: -810 },
 ]
 
 const CP_INITS: { id: string; code: string; name: string; x: number; y: number; ownerTeam: TeamId | null }[] = [
@@ -718,11 +719,13 @@ export class World {
     applyGravity(p.vel, dt, w.dive ? 1.55 : 1)
     // 不用 integrate()：移动由下面的试探-回退碰撞统一控制（v2 模式），避免双重积分
 
-    // 弹射跳台
+    // 弹射跳台：仅「站在地面」时触发（半径 34），空中经过或坠落竖井不再误触
     for (const pad of JUMP_PADS) {
-      if (wrapDist(p.pos.x, p.pos.y, pad.x, pad.y) < 42 && p.vel.y >= -120) {
+      const d = wrapDist(p.pos.x, p.pos.y, pad.x, pad.y)
+      if (d < 34 && p.onGround && p.vel.y >= -20) {
         p.vel.x += pad.vx
         p.vel.y = pad.vy
+        p.onGround = false
       }
     }
 

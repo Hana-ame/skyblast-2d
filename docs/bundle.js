@@ -912,10 +912,11 @@
     return out;
   })();
   var JUMP_PADS = [
-    { x: 1220, y: 2800, vx: 210, vy: -810 },
-    { x: 5300, y: 2800, vx: 180, vy: -870 },
-    { x: 7880, y: 2800, vx: -180, vy: -870 },
-    { x: 11960, y: 2800, vx: -210, vy: -810 }
+    // 全部位于可站立地表：远离竖井洞、台地内部与出生点（此前 2 个在竖井里、1 个埋在台地内，且完全没渲染 → "莫名弹起"）
+    { x: 1e3, y: 2800, vx: 210, vy: -810 },
+    { x: 4300, y: 2800, vx: 180, vy: -870 },
+    { x: 8450, y: 2800, vx: -180, vy: -870 },
+    { x: 13050, y: 2800, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
     { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u7FFC\u5927\u697C\u5929\u53F0", x: 1720, y: 1840, ownerTeam: "red" },
@@ -1537,9 +1538,11 @@
       }
       applyGravity(p.vel, dt, w.dive ? 1.55 : 1);
       for (const pad of JUMP_PADS) {
-        if (wrapDist(p.pos.x, p.pos.y, pad.x, pad.y) < 42 && p.vel.y >= -120) {
+        const d = wrapDist(p.pos.x, p.pos.y, pad.x, pad.y);
+        if (d < 34 && p.onGround && p.vel.y >= -20) {
           p.vel.x += pad.vx;
           p.vel.y = pad.vy;
+          p.onGround = false;
         }
       }
       const hitBody = (x, y) => {
@@ -3507,6 +3510,40 @@
         ctx2.fillRect(left, top, r.w, r.h);
     }
   }
+  function drawJumpPad(ctx2, x, y, tick) {
+    const pulse = 0.65 + 0.35 * Math.sin(tick * 0.12 + x * 0.01);
+    ctx2.save();
+    const g = ctx2.createRadialGradient(x, y - 8, 3, x, y - 8, 46);
+    g.addColorStop(0, `rgba(56, 189, 248, ${0.3 * pulse})`);
+    g.addColorStop(1, "rgba(56, 189, 248, 0)");
+    ctx2.fillStyle = g;
+    ctx2.beginPath();
+    ctx2.arc(x, y - 8, 46, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.fillStyle = "#0e7490";
+    ctx2.strokeStyle = "#22d3ee";
+    ctx2.lineWidth = 2;
+    ctx2.beginPath();
+    ctx2.roundRect(x - 26, y - 12, 52, 12, 4);
+    ctx2.fill();
+    ctx2.stroke();
+    const lift = Math.sin(tick * 0.12 + x * 0.01) * 3;
+    ctx2.strokeStyle = `rgba(165, 243, 252, ${0.6 + 0.4 * pulse})`;
+    ctx2.lineWidth = 3.5;
+    ctx2.lineCap = "round";
+    for (const dy of [0, 8]) {
+      ctx2.beginPath();
+      ctx2.moveTo(x - 12, y - 20 - dy + lift);
+      ctx2.lineTo(x, y - 30 - dy + lift);
+      ctx2.lineTo(x + 12, y - 20 - dy + lift);
+      ctx2.stroke();
+    }
+    ctx2.font = "bold 10px Inter, system-ui, sans-serif";
+    ctx2.textAlign = "center";
+    ctx2.fillStyle = "rgba(165, 243, 252, 0.9)";
+    ctx2.fillText("\u5F39\u5C04", x, y + 12);
+    ctx2.restore();
+  }
 
   // src/web/effects.ts
   var Effects = class {
@@ -4182,6 +4219,12 @@
           }
         }
       }
+    }
+    for (const pad of JUMP_PADS) {
+      const px = sx(pad.x);
+      const py = sy(pad.y);
+      if (!inView(px, py, 60)) continue;
+      drawJumpPad(ctx, px, py, world.tick);
     }
     for (const ob of world.obstacles) {
       const ox = sx(ob.x + ob.w / 2);

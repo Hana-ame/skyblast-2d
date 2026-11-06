@@ -1,7 +1,7 @@
 // web/main-web.ts —— 浏览器入口：SkyBlast 2D 完整版 UI（v2 界面全量移植）
 // 大厅（队伍/重生点/主副武器按钮组/AI 数量）· 双摇杆触屏 · killfeed · 参数调校台 · v2 世界渲染
 // 全部跑在新 core 的服务器权威上：本页内嵌权威世界（本地单机 = 自己当主机），输入经意图流。
-import { World } from '../core/sim/world.ts'
+import { World, JUMP_PADS } from '../core/sim/world.ts'
 import { defaultWorldInput } from '../core/types.ts'
 import type { WorldInput, WorldEvent, TeamId, PlayerState } from '../core/types.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
@@ -12,7 +12,7 @@ import { getTerrainPattern, makeStarField, syncTerrainPatterns } from './texture
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
   drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, drawMineSprite,
-  drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, TEAM_PALETTE,
+  drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, drawJumpPad, TEAM_PALETTE,
 } from './sprites.ts'
 import { Effects } from './effects.ts'
 
@@ -610,6 +610,14 @@ function renderScene(): void {
         }
       }
     }
+  }
+
+  // 1.5 弹射跳台（可见底座/箭头/光晕；世界锚定）
+  for (const pad of JUMP_PADS) {
+    const px = sx(pad.x)
+    const py = sy(pad.y)
+    if (!inView(px, py, 60)) continue
+    drawJumpPad(ctx, px, py, world.tick)
   }
 
   // 2. 可破坏障碍物（受损裂纹 sprite）

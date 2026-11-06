@@ -924,3 +924,40 @@ export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: numbe
       ctx.fillRect(left, top, r.w, r.h)
   }
 }
+
+/** 弹射跳台 sprite：贴地底座 + 向上箭标 + 呼吸光（可见，避免"看不见的自动弹起"） */
+export function drawJumpPad(ctx: CanvasRenderingContext2D, x: number, y: number, tick: number): void {
+  const pulse = 0.65 + 0.35 * Math.sin(tick * 0.12 + x * 0.01)
+  ctx.save()
+  // 光晕
+  const g = ctx.createRadialGradient(x, y - 8, 3, x, y - 8, 46)
+  g.addColorStop(0, `rgba(56, 189, 248, ${0.30 * pulse})`)
+  g.addColorStop(1, 'rgba(56, 189, 248, 0)')
+  ctx.fillStyle = g
+  ctx.beginPath(); ctx.arc(x, y - 8, 46, 0, Math.PI * 2); ctx.fill()
+  // 底座
+  ctx.fillStyle = '#0e7490'
+  ctx.strokeStyle = '#22d3ee'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.roundRect(x - 26, y - 12, 52, 12, 4)
+  ctx.fill(); ctx.stroke()
+  // 上箭头（脉冲上下浮动）
+  const lift = Math.sin(tick * 0.12 + x * 0.01) * 3
+  ctx.strokeStyle = `rgba(165, 243, 252, ${0.6 + 0.4 * pulse})`
+  ctx.lineWidth = 3.5
+  ctx.lineCap = 'round'
+  for (const dy of [0, 8]) {
+    ctx.beginPath()
+    ctx.moveTo(x - 12, y - 20 - dy + lift)
+    ctx.lineTo(x, y - 30 - dy + lift)
+    ctx.lineTo(x + 12, y - 20 - dy + lift)
+    ctx.stroke()
+  }
+  // 标签
+  ctx.font = 'bold 10px Inter, system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillStyle = 'rgba(165, 243, 252, 0.9)'
+  ctx.fillText('弹射', x, y + 12)
+  ctx.restore()
+}
