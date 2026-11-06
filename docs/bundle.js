@@ -1180,21 +1180,21 @@
       }
       if (w.interact) this.interact(p);
       if (w.secondary) this.useSecondary(p, w.secondary, dt);
-      if (w.fire) {
-        const wepNow = WEAPONS[p.weaponIndex];
-        if (wepNow?.beam) {
-          this.updateContinuousBeam(p, wepNow, dt);
-        } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
+      const wepNow = WEAPONS[p.weaponIndex];
+      if (wepNow?.beam) {
+        if (w.fire) this.updateContinuousBeam(p, wepNow, dt);
+        p.chargeTimer = 0;
+      } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
+        if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        if (p.chargeTimer > 0) {
           p.chargeTimer += dt;
           if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
             this.fire(p);
             p.chargeTimer = 0;
           }
-        } else {
-          this.fire(p);
         }
-      } else {
-        p.chargeTimer = 0;
+      } else if (w.fire) {
+        this.fire(p);
       }
     }
     // ── 开火 ──────────────────────────────────────────────
@@ -4723,6 +4723,22 @@
         ctx.beginPath();
         ctx.arc(mx, my, 2, 0, Math.PI * 2);
         ctx.stroke();
+        const wepNow = WEAPONS[localPlayer.weaponIndex];
+        const chargeNeed = wepNow?.chargeSeconds ?? 0;
+        if (chargeNeed > 0 && localPlayer.chargeTimer > 0) {
+          const t = Math.min(1, localPlayer.chargeTimer / chargeNeed);
+          ctx.strokeStyle = `rgba(253, 224, 71, ${0.5 + 0.5 * t})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(mx, my, 16, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t);
+          ctx.stroke();
+          if (t >= 1) {
+            ctx.fillStyle = "rgba(253,224,71,0.9)";
+            ctx.beginPath();
+            ctx.arc(mx, my, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
         ctx.restore();
       }
     }

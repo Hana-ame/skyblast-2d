@@ -301,6 +301,18 @@ export function renderScene(): void {
       ctx.moveTo(mx, my + 3); ctx.lineTo(mx, my + 9)
       ctx.stroke()
       ctx.beginPath(); ctx.arc(mx, my, 2, 0, Math.PI * 2); ctx.stroke()
+      // 蓄力环：按下后即使松开也会继续蓄满自动击发（避免"点了没反应"）
+      const wepNow = WEAPONS[localPlayer.weaponIndex]
+      const chargeNeed = wepNow?.chargeSeconds ?? 0
+      if (chargeNeed > 0 && localPlayer.chargeTimer > 0) {
+        const t = Math.min(1, localPlayer.chargeTimer / chargeNeed)
+        ctx.strokeStyle = `rgba(253, 224, 71, ${0.5 + 0.5 * t})`
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.arc(mx, my, 16, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * t)
+        ctx.stroke()
+        if (t >= 1) { ctx.fillStyle = 'rgba(253,224,71,0.9)'; ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI * 2); ctx.fill() }
+      }
       ctx.restore()
     }
   }

@@ -414,21 +414,22 @@ export class World {
     if (w.secondary) this.useSecondary(p, w.secondary, dt)
 
     // 开火：激光类持续光束；蓄力武器先蓄力再出膛；其余直接弹丸
-    if (w.fire) {
-      const wepNow = WEAPONS[p.weaponIndex]
-      if (wepNow?.beam) {
-        this.updateContinuousBeam(p, wepNow, dt)
-      } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
+    const wepNow = WEAPONS[p.weaponIndex]
+    if (wepNow?.beam) {
+      if (w.fire) this.updateContinuousBeam(p, wepNow, dt)
+      p.chargeTimer = 0
+    } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
+      // 蓄力：**按下即开始，一旦开始就自动蓄满击发**（单击也能打出子弹，不需一直按住）
+      if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4)
+      if (p.chargeTimer > 0) {
         p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
           this.fire(p)
           p.chargeTimer = 0
         }
-      } else {
-        this.fire(p)
       }
-    } else {
-      p.chargeTimer = 0   // 松手取消蓄力
+    } else if (w.fire) {
+      this.fire(p)
     }
   }
 
