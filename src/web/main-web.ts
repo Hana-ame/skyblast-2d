@@ -249,16 +249,8 @@ function handleEvents(evs: WorldEvent[]): void {
 let deathInfo: { killer: string; weapon: string } | null = null
 
 function updateHudWeaponButtons(): void {
-  // 游戏中下方 HUD：只读显示当前主武器/副武器（不可点选换枪；换枪只在死亡界面）
-  const curWep = WEAPONS[localPlayer.weaponIndex]
-  const nameEl = document.getElementById('hudCurrentWeaponName')
-  if (nameEl) nameEl.textContent = curWep?.shortName ?? '—'
-  const secChip = document.getElementById('hudSecondaryChipText')
-  if (secChip) {
-    if (localPlayer.secondary === 'doll') secChip.textContent = `🎎 替身人偶 [${localPlayer.dollCharges}]`
-    else secChip.textContent = `💣 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
-  }
-  // 死亡界面：主/副武器选中态（重生时套用 pendingLoadout）
+  // 死亡界面：主/副武器选中态（重生时套用 pendingLoadout）；只读牌由 updateHUD 每帧刷新
+
   document.querySelectorAll('.death-wep-btn').forEach((btn) => {
     const slot = Number(btn.getAttribute('data-wep') || 0)
     btn.className = slot === pendingLoadout.weaponIndex
@@ -388,6 +380,15 @@ function updateHudUI(): void {
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
   const wNameEl = document.getElementById('currentWeaponName')
   if (wNameEl) wNameEl.textContent = mounted ? '🎯 公共迫击炮操控中' : `${wep.name} ${localPlayer.deployed ? '🔒' : ''}`
+  // 底部只读"当前主武器"牌：每帧按权威 weaponIndex 刷新（拾取补给/换枪后不再显示旧武器）
+  const plateEl = document.getElementById('hudCurrentWeaponName')
+  if (plateEl) plateEl.textContent = wep.shortName
+  const secChipEl = document.getElementById('hudSecondaryChipText')
+  if (secChipEl) {
+    secChipEl.textContent = localPlayer.secondary === 'doll'
+      ? `🎎 替身人偶 [${localPlayer.dollCharges}]`
+      : `💣 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
+  }
   const ammoEl = document.getElementById('currentAmmoText')
   if (ammoEl) ammoEl.textContent = mounted ? '∞' : `${localPlayer.ammo[localPlayer.weaponIndex] ?? 0} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`
 
@@ -543,8 +544,10 @@ function renderScene(): void {
   ctx.fillStyle = skyGrad
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  ctx.scale(zoom, zoom)
+  // 顺序必须是先平移后缩放：屏幕 = 中心 + zoom × 世界相对量。
+  // 反了的话（先 scale 后 translate）zoom≠1 时整个世界会缩到偏左上，+30% 武器视角就不居中。
   ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY)
+  ctx.scale(zoom, zoom)
 
   const sx = (wx: number): number => wrapDeltaX(camera.x, wx)
   const sy = (wy: number): number => wrapDeltaY(camera.y, wy)
@@ -1254,7 +1257,7 @@ function buildLocalInput(): WorldInput {
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
   // 屏幕空间瞄准：玩家在屏幕上的位置 = 画布中心 + 绕行最短位移×缩放；
   // 角度直接用「鼠标像素 - 玩家像素」算，避免相机跟随 aim 造成的反馈回路（此前的"鼠标瞄不准"根因）。
-  const zoom = camera.fovFactor
+  const zoom = 1 / camera.fovFactor
   const psx = canvas.width / 2 + wrapDeltaX(camera.x, localPlayer.pos.x) * zoom
   const psy = canvas.height / 2 + wrapDeltaY(camera.y, localPlayer.pos.y) * zoom
   if (mounted) {

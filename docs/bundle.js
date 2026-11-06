@@ -3905,14 +3905,6 @@
   }
   var deathInfo = null;
   function updateHudWeaponButtons() {
-    const curWep = WEAPONS[localPlayer.weaponIndex];
-    const nameEl = document.getElementById("hudCurrentWeaponName");
-    if (nameEl) nameEl.textContent = curWep?.shortName ?? "\u2014";
-    const secChip = document.getElementById("hudSecondaryChipText");
-    if (secChip) {
-      if (localPlayer.secondary === "doll") secChip.textContent = `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]`;
-      else secChip.textContent = `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
-    }
     document.querySelectorAll(".death-wep-btn").forEach((btn) => {
       const slot = Number(btn.getAttribute("data-wep") || 0);
       btn.className = slot === pendingLoadout.weaponIndex ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
@@ -4025,6 +4017,12 @@
     const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
     const wNameEl = document.getElementById("currentWeaponName");
     if (wNameEl) wNameEl.textContent = mounted ? "\u{1F3AF} \u516C\u5171\u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D" : `${wep.name} ${localPlayer.deployed ? "\u{1F512}" : ""}`;
+    const plateEl = document.getElementById("hudCurrentWeaponName");
+    if (plateEl) plateEl.textContent = wep.shortName;
+    const secChipEl = document.getElementById("hudSecondaryChipText");
+    if (secChipEl) {
+      secChipEl.textContent = localPlayer.secondary === "doll" ? `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]` : `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+    }
     const ammoEl = document.getElementById("currentAmmoText");
     if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : `${localPlayer.ammo[localPlayer.weaponIndex] ?? 0} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`;
     const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag;
@@ -4157,8 +4155,8 @@
     skyGrad.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`);
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(zoom, zoom);
     ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
+    ctx.scale(zoom, zoom);
     const sx = (wx) => wrapDeltaX(camera.x, wx);
     const sy = (wy) => wrapDeltaY(camera.y, wy);
     const inView = (dx, dy, pad = 0) => dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad;
@@ -4844,7 +4842,7 @@
     w.jetpack = !!(keys["KeyW"] || keys["Space"] || keys["ArrowUp"]) || touchState.boostButtonDown || touchState.moveActive && touchState.moveY < -0.32;
     w.dive = !!(keys["KeyS"] || keys["ArrowDown"]) || touchState.moveActive && touchState.moveY > 0.45;
     const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
-    const zoom = camera.fovFactor;
+    const zoom = 1 / camera.fovFactor;
     const psx = canvas.width / 2 + wrapDeltaX(camera.x, localPlayer.pos.x) * zoom;
     const psy = canvas.height / 2 + wrapDeltaY(camera.y, localPlayer.pos.y) * zoom;
     if (mounted) {
