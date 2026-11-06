@@ -66,7 +66,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
-    damage: 46, headshotMult: 2.2, pellets: 1, spread: 0.045,
+    damage: 33, headshotMult: 2.2, pellets: 1, spread: 0.045,
     speed: 1500, recoil: 84, magSize: 28, maxReserve: 140,
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,   // 伤害 46（用户要求 ×2），射速保持原值
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
@@ -92,21 +92,21 @@ export const WEAPONS: WeaponDef[] = [
     speed: 3000, recoil: 0, magSize: 48, maxReserve: 96,   // 48 / 6每秒 = 连续 8 秒
     reloadTime: 2.0, fireDelay: 0, terrainRadius: 18,
     explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 3, beam: true,
-    damagePerSecond: 150, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.30, color: '#22d3ee',
+    damagePerSecond: 120, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.30, color: '#22d3ee',
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,
-    damage: 46, headshotMult: 1.8, pellets: 1, spread: 0.11,
+    damage: 33, headshotMult: 1.8, pellets: 1, spread: 0.11,
     speed: 1300, recoil: 66, magSize: 120, maxReserve: 240,
-    reloadTime: 3.0, fireDelay: 0.045, terrainRadius: 8,   // M249 伤害=突击(46)
+    reloadTime: 3.0, fireDelay: 0.06, terrainRadius: 8,   // M249 伤害=突击(33)，高射速补给枪
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.30, color: '#f97316',
   },
   {
     id: 6, name: '引力枪', shortName: '引力枪', isSupplyOnly: true,
     damage: 24, headshotMult: 1.6, pellets: 1, spread: 0.01,   // 伤害 = 手枪
-    speed: 900, recoil: 240, magSize: 6, maxReserve: 18,
-    reloadTime: 2.2, fireDelay: 1.10, terrainRadius: 95, lifeSeconds: 2.2,
-    explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.45,
+    speed: 1100, recoil: 240, magSize: 6, maxReserve: 18,
+    reloadTime: 2.2, fireDelay: 0.9, terrainRadius: 130, lifeSeconds: 2.2,
+    explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: false, dragPerSecond: 0.7,
     pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.0, color: '#a855f7',   // 引力场弯曲其他子弹
     falloffStart: 60, falloffEnd: 320, falloffMin: 0.12,   // 引力枪随距离大幅衰减
   },

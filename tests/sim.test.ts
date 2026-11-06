@@ -291,24 +291,22 @@ test('激光：按住持续输出（射速无限），一梭子可打 8 秒；�
   assert.equal(afterRelease, 0, 'no beam after release')
 })
 
-test('引力弹：穿墙飞行（passWalls），不被原始地形挡下', () => {
+test('引力弹：不再穿墙（passWalls=false），撞到原始地形即爆炸消失', () => {
   const w = new World(45)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 6   // 引力枪
-  // 朝西翼大楼墙体方向平射：从 x=1300 射向 1400 的大楼外墙
   p.pos = { x: 1300, y: 2100 }
   w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
   const orb = w.projectiles.find(pr => pr.weaponLabel === '引力枪')
   assert.ok(orb, 'gravity orb fired')
-  assert.equal(orb!.passWalls, true, 'gravity orb passes walls')
-  for (let i = 0; i < 20; i++) {
+  assert.equal(orb!.passWalls, false, 'gravity orb no longer passes walls')
+  let exploded = false
+  for (let i = 0; i < 40; i++) {
     w.step(DT, new Map([[p.id, input()]]))
-    w.drainEvents()
-    if (!w.projectiles.some(pr => pr.id === orb!.id)) break
+    for (const e of w.drainEvents()) if (e.kind === 'explosion') exploded = true
+    if (!w.projectiles.some(pr => pr.id === orb!.id) && exploded) break
   }
-  // 若已消失，也只应因寿命/命中玩家而非地形；飞行途中应越过 x=1424 的墙内侧
-  const still = w.projectiles.find(pr => pr.id === orb!.id)
-  if (still) assert.ok(still.pos.x > 1400, `orb should pass wall, x=${still.pos.x}`)
+  assert.ok(exploded, 'orb explodes on hitting the building wall (does not fly through)')
 })
 
 test('喷射燃料：槽已加倍（默认 1.0s 续航），断续点按仍不能无限飞', () => {
@@ -354,8 +352,8 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
-  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 900, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 46, 100, 115, 50, 46, 24, 24, 24])   // M249=突击(46)；手枪/冲锋枪/引力枪 24
+  assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 1100, 1000, 1000])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [13, 33, 100, 115, 50, 33, 24, 24, 24])   // M249=突击(33)；手枪/冲锋枪/引力枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：只有 8 丸全中才致死（8×13=104 ≥100，7×13=91 <100）；无爆头加成；射速降低
@@ -372,8 +370,8 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
-  assert.ok(WEAPONS[5].fireDelay <= 0.05, 'M249 high fire rate (damage-synced with rifle)')
-  assert.ok(WEAPONS[6].fireDelay >= 1.0 && WEAPONS[6].damage === WEAPONS[7].damage, 'gravity gun slower, damage equals pistol')
+  assert.ok(WEAPONS[5].fireDelay <= 0.1, 'M249 high fire rate (damage-synced with rifle, DPS preserved)')
+  assert.ok(WEAPONS[6].fireDelay >= 0.8 && WEAPONS[6].damage === WEAPONS[7].damage, 'gravity gun slower, damage equals pistol')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
@@ -629,7 +627,7 @@ test('穿模解算：卡进大楼墙体 / 障碍物内部都会被最小轴推�
 })
 
 
-test('引力弹：穿墙 + 射程有限 + 弹速逐渐衰减', () => {
+test('引力弹：限射程 + 弹速逐渐衰减（不再穿墙）', () => {
   const w = new World(95)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 6   // 引力枪
@@ -637,7 +635,7 @@ test('引力弹：穿墙 + 射程有限 + 弹速逐渐衰减', () => {
   w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
   const orb = w.projectiles.find(pr => pr.isGravityOrb)
   assert.ok(orb, 'orb fired')
-  assert.equal(orb!.passWalls, true, 'passes walls')
+  assert.equal(orb!.passWalls, false, 'no wall pass')
   assert.ok(orb!.dragPerSecond < 1, 'has gradual slowdown')
   const speed0 = Math.hypot(orb!.vel.x, orb!.vel.y)
   // 跑 1 秒：速度应明显衰减
@@ -645,7 +643,7 @@ test('引力弹：穿墙 + 射程有限 + 弹速逐渐衰减', () => {
   const cur = w.projectiles.find(pr => pr.id === orb!.id)
   if (cur) {
     const speed1 = Math.hypot(cur.vel.x, cur.vel.y)
-    assert.ok(speed1 < speed0 * 0.7, `speed decays: ${speed0.toFixed(0)} -> ${speed1.toFixed(0)}`)
+    assert.ok(speed1 < speed0 * 0.85, `speed decays: ${speed0.toFixed(0)} -> ${speed1.toFixed(0)}`)
   }
   // 射程有限：总寿命 ≤ 2.2s
   assert.ok((orb!.life ?? 0) <= 2.2, 'limited lifetime/range')
@@ -977,4 +975,28 @@ test('手榴弹不黏：落地后仍有明显反弹与滚动', () => {
   }
   assert.ok(bouncedVy < -60, `grenade bounces off floor, vy=${bouncedVy.toFixed(0)}`)
   assert.ok(w.grenades.length === 0 || Math.abs(w.grenades[0].vel.x) > 20, 'grenade keeps sliding (not sticky)')
+})
+
+
+test('引力枪防御：引力场近距吸收其他枪的子弹', () => {
+  const w = new World(211)
+  w.terrain.addSolidBlock(2000, 1000, 2400, 20, '#334155', '#334155', 'platform', 'field')
+  const shooter = w.addPlayer('S', 'red')
+  const victim = w.addPlayer('V', 'blue')
+  shooter.weaponIndex = 1   // 突击步枪
+  shooter.pos = { x: 2300, y: 984 }
+  victim.pos = { x: 3300, y: 984 }
+  // 引力弹放在弹道正前方（源与目标之间，距飞来的子弹路径 <46px）
+  w.projectiles.push({
+    id: 900010, owner: victim.id, pos: { x: 2750, y: 972 }, vel: { x: 0, y: 0 }, life: 8, r: 8.5,
+    damage: 1, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
+    pierceOnHeadshot: false, pierceAll: false, isGravityOrb: true, passWalls: false,
+    beam: false, rocket: false, bounces: 0, dragPerSecond: 0.7, weaponId: 6, curveRate: 0,
+    weaponLabel: '引力枪', color: '#a855f7', hitTargets: [],
+  } as never)
+  w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
+  assert.ok(w.projectiles.some(p => p.weaponId === 1), 'bullet spawned')
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[shooter.id, input()]]))
+  assert.ok(!w.projectiles.some(p => p.weaponId === 1), 'bullet absorbed by gravity field')
+  assert.ok(victim.hp >= 100, `victim protected by gravity field, hp=${victim.hp}`)
 })

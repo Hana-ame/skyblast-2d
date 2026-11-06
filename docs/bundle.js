@@ -519,7 +519,7 @@
       name: "\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 46,
+      damage: 33,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
@@ -619,7 +619,7 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
-      damagePerSecond: 150,
+      damagePerSecond: 120,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
@@ -631,7 +631,7 @@
       name: "M249",
       shortName: "M249",
       isSupplyOnly: true,
-      damage: 46,
+      damage: 33,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
@@ -640,9 +640,9 @@
       magSize: 120,
       maxReserve: 240,
       reloadTime: 3,
-      fireDelay: 0.045,
+      fireDelay: 0.06,
       terrainRadius: 8,
-      // M249 伤害=突击(46)
+      // M249 伤害=突击(33)，高射速补给枪
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.78,
@@ -660,19 +660,19 @@
       pellets: 1,
       spread: 0.01,
       // 伤害 = 手枪
-      speed: 900,
+      speed: 1100,
       recoil: 240,
       magSize: 6,
       maxReserve: 18,
       reloadTime: 2.2,
-      fireDelay: 1.1,
-      terrainRadius: 95,
+      fireDelay: 0.9,
+      terrainRadius: 130,
       lifeSeconds: 2.2,
       explosive: true,
       isGravityOrb: true,
       gravityScale: 0.02,
-      passWalls: true,
-      dragPerSecond: 0.45,
+      passWalls: false,
+      dragPerSecond: 0.7,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
       fuelMult: 0.8,
@@ -1776,24 +1776,35 @@
           pr.vel.y *= k;
         }
         if (!pr.isGravityOrb && !pr.beam) {
+          let absorbed = false;
           for (const orb of this.projectiles) {
             if (!orb.isGravityOrb || orb.life <= 0) continue;
             const dx2 = wrapDeltaX(pr.pos.x, orb.pos.x);
             const dy2 = wrapDeltaY(pr.pos.y, orb.pos.y);
             const d = Math.hypot(dx2, dy2);
-            if (d <= 8 || d > 320) continue;
-            const falloff = 1 - d / 320;
+            const FIELD = 360;
+            const ABSORB = 46;
+            if (d <= ABSORB) {
+              absorbed = true;
+              break;
+            }
+            if (d > FIELD) continue;
+            const falloff = 1 - d / FIELD;
             const cur = Math.atan2(pr.vel.y, pr.vel.x);
             const want = Math.atan2(dy2, dx2);
             let delta = want - cur;
             while (delta > Math.PI) delta -= Math.PI * 2;
             while (delta < -Math.PI) delta += Math.PI * 2;
-            const bend = Math.sign(delta) * Math.min(Math.abs(delta), 4 * falloff * dt);
+            const bend = Math.sign(delta) * Math.min(Math.abs(delta), 7 * falloff * dt);
             const cosB = Math.cos(bend);
             const sinB = Math.sin(bend);
             const vx = pr.vel.x;
             pr.vel.x = vx * cosB - pr.vel.y * sinB;
             pr.vel.y = vx * sinB + pr.vel.y * cosB;
+          }
+          if (absorbed) {
+            pr.life = 0;
+            continue;
           }
         }
         pr.vel.y += g * pr.gravityScale * dt;
