@@ -26,6 +26,9 @@ export interface WeaponDef {
   dragPerSecond?: number   // 每秒速度保留比例（<1 表示逐渐减速；引力弹）
   beam?: boolean           // 渲染为光束（激光）
   ascendMult?: number      // 升空速度倍率（喷气上升速度）
+  falloffStart?: number     // 距离衰减起点（px，之前满伤）
+  falloffEnd?: number       // 距离衰减终点（px，之后为 falloffMin）
+  falloffMin?: number       // 距离衰减最小倍率
   curveRate?: number       // 弹道弯曲速率 rad/s（引力枪的弯曲弹道）
   farRange?: number        // 远距阈值：超过该距离命中按 farDamage 结算（狙击）
   farDamage?: number       // 超过 farRange 时的伤害（狙击 99，非爆头留 1 血）
@@ -59,6 +62,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1000, recoil: 780, magSize: 6, maxReserve: 30,
     reloadTime: 1.5, fireDelay: 0.90, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
+    falloffStart: 200, falloffEnd: 700, falloffMin: 0.45,   // 霰弹随距离衰减（中距仍可用）
   },
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
@@ -104,6 +108,7 @@ export const WEAPONS: WeaponDef[] = [
     reloadTime: 2.2, fireDelay: 1.10, terrainRadius: 95, lifeSeconds: 2.2,
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.45,
     pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.0, color: '#a855f7',   // 引力场弯曲其他子弹
+    falloffStart: 60, falloffEnd: 320, falloffMin: 0.12,   // 引力枪随距离大幅衰减
   },
   {
     id: 7, name: '手枪', shortName: '手枪', isSupplyOnly: false,
@@ -124,6 +129,18 @@ export const WEAPONS: WeaponDef[] = [
 ]
 
 // 战术副武器：只保留手榴弹（2 充能、自然回复）；替身人偶为特殊补给专属（不占配装槽）
+/** 距离衰减倍率：dist ≤ start 满伤；start~end 线性降到 min；≥end 维持 min */
+export function weaponFalloff(wep: WeaponDef, dist: number): number {
+  const start = wep.falloffStart ?? 0
+  const end = wep.falloffEnd ?? 0
+  const min = wep.falloffMin ?? 1
+  if (end <= start) return 1
+  if (dist <= start) return 1
+  if (dist >= end) return min
+  const t = (dist - start) / (end - start)
+  return 1 - (1 - min) * t
+}
+
 export const SECONDARIES: Record<string, SecondaryDef> = {
   frag: { id: 'frag', name: '手榴弹', icon: '💣', cd: 0.8 },
   doll: { id: 'doll', name: '替身人偶', icon: '🎎', cd: 24.0, supplyOnly: true },

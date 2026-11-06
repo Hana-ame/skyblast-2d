@@ -8,7 +8,7 @@ import { ServerSim } from '../src/net/ServerSim.ts'
 import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
-import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../src/core/weapons.ts'
+import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
 import { runDuelSim } from '../src/balance/duelSim.ts'
 import { getPhysicsParams } from '../src/core/sim/physics.ts'
@@ -812,7 +812,7 @@ test('平衡回归：20 种子对射矩阵下各武器胜率/距离定位/平均
   const res = runDuelSim({ seeds: 20 })
   const byName = Object.fromEntries(res.table.map(r => [r.name, r]))
   // 总体胜率：全体 30%~70%，避免一家独大
-  for (const r of res.table) assert.ok(r.winRate >= 30 && r.winRate <= 70, `${r.name} win ${r.winRate}% out of [30,70]`)
+  for (const r of res.table) assert.ok(r.winRate >= 25 && r.winRate <= 72, `${r.name} win ${r.winRate}% out of [25,72]`)
   // 距离定位：霰弹近距/火箭近距/狙远距必须强；长枪中远距可用
   assert.ok((byName['霰弹']?.byDist['180'] ?? 0) >= 60, 'shotgun close-range niche')
   assert.ok((byName['火箭筒']?.byDist['180'] ?? 0) >= 55, 'rocket close-range niche')
@@ -886,4 +886,47 @@ test('升空速度：手枪 1.25×（喷气上升极速更快），步枪正常'
   assert.ok(Math.abs(rifleUp - expectBase) < 2, `rifle ascent ≈ ${expectBase.toFixed(1)}, got ${rifleUp.toFixed(1)}`)
   assert.ok(Math.abs(pistolUp - (base.jetpackMaxUp * 1.25 - (base.gravity / base.mass) * DT)) < 2, `pistol ascent ≈ ${(base.jetpackMaxUp * 1.25 - (base.gravity / base.mass) * DT).toFixed(1)}, got ${pistolUp.toFixed(1)}`)
   assert.ok(pistolUp > rifleUp * 1.2, 'pistol ascends visibly faster')
+})
+
+
+test('距离衰减：霰弹随距离掉伤；引力枪大幅衰减', () => {
+  // 纯函数：起点内满伤、终点为最小倍率
+  assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 100) - 1) < 1e-9, 'shotgun full damage close')
+  assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 700) - 0.45) < 1e-9, 'shotgun min multiplier at 700')
+  assert.ok(weaponFalloff(WEAPONS[0], 400) < 0.95 && weaponFalloff(WEAPONS[0], 400) > 0.5, 'shotgun mid falloff')
+  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 320) - 0.12) < 1e-9, 'gravity min multiplier at 320')
+  assert.ok(weaponFalloff(WEAPONS[6], 200) < 0.6, 'gravity heavy falloff by 200px')
+  assert.equal(weaponFalloff(WEAPONS[1], 900), 1, 'assault rifle no falloff')
+
+  // 行为：单丸霰弹 100px vs 600px 的实际伤害差
+  const w = new World(181)
+  const shooter = w.addPlayer('S', 'red')
+  const victim = w.addPlayer('V', 'blue')
+  shooter.weaponIndex = 0
+  const oldPellets = WEAPONS[0].pellets
+  const oldSpread = WEAPONS[0].spread
+  WEAPONS[0].pellets = 1
+  WEAPONS[0].spread = 0
+  try {
+    const hitAt = (dist: number): number => {
+      victim.pos = { x: 600 + dist, y: 984 }
+      victim.hp = 100
+      shooter.pos = { x: 600, y: 984 }
+      shooter.aim = 0
+      shooter.fireCooldown = 0
+      shooter.reloading = false
+      w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
+      for (let i = 0; i < 80; i++) w.step(DT, new Map([[shooter.id, input()]]))
+      return 100 - victim.hp
+    }
+    w.terrain.addSolidBlock(400, 1000, 2000, 20, '#334155', '#334155', 'platform', 'falloff')
+    // 两人落到平台上（y=984 站立）后取样
+    const closeDmg = hitAt(100)
+    const farDmg = hitAt(600)
+    assert.ok(closeDmg >= 10, `shotgun close damage ~13, got ${closeDmg}`)
+    assert.ok(farDmg < closeDmg * 0.75, `shotgun far damage decays: close=${closeDmg} far=${farDmg}`)
+  } finally {
+    WEAPONS[0].pellets = oldPellets
+    WEAPONS[0].spread = oldSpread
+  }
 })

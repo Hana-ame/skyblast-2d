@@ -6,7 +6,7 @@
 import { applyGravity, jetpack, jump, move, updateJetpackFuel, getPhysicsParams } from './physics.ts'
 import { Terrain, OBSTACLE_PRESETS, TILE_SIZE } from '../terrain.ts'
 import { Rng } from '../rng.ts'
-import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../weapons.ts'
+import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, weaponFalloff } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
 import { defaultWorldInput } from '../types.ts'
@@ -480,6 +480,17 @@ export class World {
         life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       }))
     }
+  }
+
+  /** 距离衰减：按「发射者→命中点」最短环形距离计算武器 falloff 倍率 */
+  private projectileFalloff(pr: Projectile, hx: number, hy: number): number {
+    if (pr.weaponId < 0) return 1
+    const wep = WEAPONS[pr.weaponId]
+    if (!wep || wep.falloffStart === undefined) return 1
+    const owner = this.players.find(x => x.id === pr.owner)
+    if (!owner) return 1
+    const dist = wrapDist(owner.pos.x, owner.pos.y - 12, hx, hy)
+    return weaponFalloff(wep, dist)
   }
 
   /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
@@ -1033,10 +1044,10 @@ export class World {
             pr.hitTargets.push(t.id)
             const piercing = pr.pierceOnHeadshot || pr.pierceAll
             if (pr.explosive) {
-              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult, 960, pr)
+              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult * this.projectileFalloff(pr, pr.pos.x, pr.pos.y), 960, pr)
               hit = true
             } else {
-              this.damage(t, Math.round(pr.damage * pr.headshotMult), pr, true, piercing)
+              this.damage(t, Math.round(pr.damage * pr.headshotMult * this.projectileFalloff(pr, t.pos.x, t.pos.y - 24)), pr, true, piercing)
               t.vel.x += pr.vel.x * 0.12
               t.vel.y += pr.vel.y * 0.12 - 72
               if (!piercing) hit = true
@@ -1049,7 +1060,7 @@ export class World {
           if (dxBody <= 13 + pr.r && dyBody >= -12 && dyBody <= 18) {
             pr.hitTargets.push(t.id)
             if (pr.explosive) {
-              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr)
+              this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * this.projectileFalloff(pr, pr.pos.x, pr.pos.y), 900, pr)
               hit = true
             } else {
               // 狙击远距规则：超过视距(farRange)的非爆头命中只造成 farDamage（99 → 留 1 血）
@@ -1062,6 +1073,7 @@ export class World {
                   if (dist > wep.farRange) dmg = Math.min(dmg, wep.farDamage ?? dmg)
                 }
               }
+              dmg = Math.round(dmg * this.projectileFalloff(pr, t.pos.x, t.pos.y - 12))
               this.damage(t, dmg, pr, false, false)
               t.vel.x += pr.vel.x * 0.09
               t.vel.y += pr.vel.y * 0.09
