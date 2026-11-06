@@ -166,8 +166,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   shieldDuration: 5.0,
   dollDuration: 10.0,
   obstacleDefaultHp: 240,
-  grenadeDamage: 105,
-  grenadeRadius: 90,
+  grenadeDamage: 520,   // 一发致死：最远衰减(0.2)也有 104 伤害
+  grenadeRadius: 100,
   grenadeFuse: 1.65,
   mineDamage: 110,
   mineTriggerRadius: 48,

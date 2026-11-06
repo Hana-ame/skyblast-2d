@@ -8,7 +8,7 @@ import { ServerSim } from '../src/net/ServerSim.ts'
 import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
-import { WEAPONS, SECONDARIES } from '../src/core/weapons.ts'
+import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../src/core/weapons.ts'
 import { getPhysicsParams } from '../src/core/sim/physics.ts'
 import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
 
@@ -639,4 +639,22 @@ test('引力弹：持续把玩家拉向弹体位置；力度可被移动抵抗',
   }
   const dResist = Math.abs(250 - q.pos.x)
   assert.ok(dResist > 420, `can resist pull by moving away: dist=${dResist.toFixed(0)}`)
+})
+
+
+test('手雷：命中范围一发致死（衰减到最远仍 ≥100 伤害）', () => {
+  const w = new World(101)
+  const p = w.addPlayer('P', 'red')
+  const t = w.addPlayer('T', 'blue')
+  t.pos = { x: 3000, y: 2760 }
+  p.pos = { x: 2800, y: 2760 }
+  // 在目标脚下引爆一枚手雷（直接注入，缩短引信）
+  w.grenades.push({ id: 991, owner: p.id, pos: { x: 3060, y: 2760 }, vel: { x: 0, y: 0 }, fuse: 0.05, bounces: 0 })
+  let killed = false
+  for (let i = 0; i < 120; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    if (w.drainEvents().some(e => e.kind === 'kill' && e.victimId === t.id)) { killed = true; break }
+  }
+  assert.ok(killed || t.deaths > 0 || t.hp <= 0, `grenade should one-shot, hp=${t.hp} deaths=${t.deaths}`)
+  assert.ok(DEFAULT_CONFIG.grenadeDamage * 0.2 >= 100, 'min falloff still lethal')
 })

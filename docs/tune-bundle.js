@@ -595,8 +595,9 @@
     shieldDuration: 5,
     dollDuration: 10,
     obstacleDefaultHp: 240,
-    grenadeDamage: 105,
-    grenadeRadius: 90,
+    grenadeDamage: 520,
+    // 一发致死：最远衰减(0.2)也有 104 伤害
+    grenadeRadius: 100,
     grenadeFuse: 1.65,
     mineDamage: 110,
     mineTriggerRadius: 48,
@@ -1378,6 +1379,7 @@
       }
       p.pos.x = wrapX(p.pos.x);
       p.pos.y = wrapY(p.pos.y);
+      this.applyGravityOrbPull(p, dt);
     }
     onGround(p) {
       return !!p.onGround;
@@ -1528,19 +1530,6 @@
       const SUBSTEP_PX = 8;
       for (const pr of this.projectiles) {
         if (pr.life <= 0) continue;
-        if (pr.isGravityOrb) {
-          for (const t of this.players) {
-            if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue;
-            const dx2 = wrapDeltaX(t.pos.x, pr.pos.x);
-            const dy2 = wrapDeltaY(t.pos.y - 12, pr.pos.y);
-            const d = Math.hypot(dx2, dy2);
-            if (d < 190 && d > 8) {
-              const pull = (1 - d / 190) * 620 * dt;
-              t.vel.x += dx2 / d * pull;
-              t.vel.y -= dy2 / d * pull;
-            }
-          }
-        }
         if (pr.dragPerSecond < 1) {
           const k = Math.pow(pr.dragPerSecond, dt);
           pr.vel.x *= k;
@@ -1640,6 +1629,29 @@
         }
         if (dead) pr.life = 0;
       }
+    }
+    /** 引力弹持续牵引（位移式）：把附近玩家朝弹体位置拉，碰撞安全；最大 240px/s < 常规移动 300 → 可抵抗 */
+    applyGravityOrbPull(p, dt) {
+      const RANGE = 260;
+      const MAX_PULL = 240;
+      const MIN_RATIO = 0.35;
+      let vx = 0;
+      let vy = 0;
+      for (const pr of this.projectiles) {
+        if (!pr.isGravityOrb || pr.life <= 0) continue;
+        const dx = wrapDeltaX(p.pos.x, pr.pos.x);
+        const dy = wrapDeltaY(p.pos.y - 12, pr.pos.y);
+        const d = Math.hypot(dx, dy);
+        if (d > RANGE || d < 8) continue;
+        const strength = MAX_PULL * (MIN_RATIO + (1 - MIN_RATIO) * (1 - d / RANGE));
+        vx += dx / d * strength;
+        vy += dy / d * strength;
+      }
+      if (vx === 0 && vy === 0) return;
+      const tryX = wrapX(p.pos.x + vx * dt);
+      if (!this.bodyOverlapsAt(tryX, p.pos.y)) p.pos.x = tryX;
+      const tryY = wrapY(p.pos.y + vy * dt);
+      if (!this.bodyOverlapsAt(p.pos.x, tryY)) p.pos.y = tryY;
     }
     ownerTeamOf(id) {
       return this.players.find((p) => p.id === id)?.team ?? "ffa";
