@@ -655,11 +655,11 @@
       name: "\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 24,
+      damage: 33,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
-      // 伤害 = 手枪
+      // 伤害 = 突击步枪
       speed: 1100,
       recoil: 240,
       magSize: 6,
