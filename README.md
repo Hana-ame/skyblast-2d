@@ -111,6 +111,23 @@ main.ts  组合根：唯一接线点；web/main-web.ts 浏览器可玩入口（�
 - **世界锚定背景**：星空/环境光随地形同速移动（不会背景固定、方块移动的眩晕感）。
 - **激光光束**渲染为分段折线（按秒淡出），**火箭弹**有弹头/尾翼/尾焰 sprite。
 
+## 代码结构（工程化）
+
+```
+src/core/       权威模拟：types / weapons / wrap / terrain / sim(world, physics) / noita
+src/input/      Intent 流：InputMapper → IntentBus
+src/net/        Transport（Loopback/PeerJS）+ ServerSim + StateSync
+src/web/        浏览器表现层：
+  main-web.ts     组合根（事件绑定/AI/主循环/启动）
+  app/context.ts  单一状态源（画布/相机/世界/输入/特效）
+  app/toast.ts    Toast / Killfeed
+  app/hud.ts      HUD / 配装按钮状态 / 记分板
+  app/events.ts   世界事件 → 表现层
+  render.ts       场景渲染
+  sprites.ts / textures.ts / effects.ts / controls.ts / fullscreen.ts
+tests/           node --test（确定性/权威逻辑/网络/地图安全）
+```
+
 ## 与上游的关系与署名
 
 - 玩法内容（武器数值/地图布局/实体配置）来自 **SkyBlast 2D v2**（`peerjs_battle_arena (1).zip`，作者 Hana-ame）。

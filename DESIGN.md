@@ -377,6 +377,26 @@ SkyBlast v2 是"每帧像素 @60fps"（隐含 60Hz）。本骨架是秒制：
 - **引力弹牵引（2026-11-07）**：位移式牵引（物理移动之后逐轴施加、碰撞安全），半径 260px、最大 240px/s（< 玩家 300px/s 移动 → **可被反向移动抵抗**）；
   同时 `passWalls` 穿墙、`dragPerSecond=0.45` 逐渐减速、`lifeSeconds=2.2` 限射程。旧实现把牵引加速度加在速度上、且每帧被输入覆盖 → 实际拉不动，已废弃。
 
-### 10.10 尚未完成（设计位）
+### 10.10 工程化拆分：web 端模块化（2026-11-07，commit TBD）
+
+把 1407 行的 `src/web/main-web.ts` 拆成「共享上下文 + 表现层模块 + 组合根」：
+
+```
+src/web/
+├── main-web.ts       组合根：事件绑定 / 大厅 / 参数台 / AI 输入 / 主循环 / 启动（~640 行）
+├── context.ts→app/context.ts  单一状态源：canvas/ctx/camera/screenFx/world/localPlayer/
+│                              bots/pendingLoadout/mode/keys/mouse/touchState/inputQueue/
+│                              effects/beams/worldStars/worldGlows/FIXED
+├── app/toast.ts      showToast / addKillFeed / escapeHtml（纯 DOM）
+├── app/hud.ts        updateHUD / 武器牌 / 大厅与死亡界面配装按钮状态 / 记分板
+├── app/events.ts     WorldEvent → 表现层（killfeed/特效/震颤/激光束/死亡信息）
+└── render.ts         renderScene：地形/精灵/背景/光束/粒子（只读上下文）
+```
+
+依赖方向单一：`main-web → app/* → context`，`render → context + sprites/textures`，`app/events → toast + context`；
+不再有全局可变 `screenShake/pendingInteract/pendingSecondary` 散落——统一收敛到 `screenFx.shake` 与 `inputQueue`。
+验证：`tsc` 0 错、41/41 测试、`build:web` 195KB、浏览器冒烟（渲染采样/拾取激光→HUD 牌「激光」/死亡界面选狙→重生 weaponIndex=2/鼠标瞄准 0 与 -1.57/跳台 vy=-586）。
+
+### 10.11 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

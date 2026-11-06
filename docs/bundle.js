@@ -2257,6 +2257,482 @@
     }
   };
 
+  // src/web/effects.ts
+  var Effects = class {
+    particles = [];
+    rnd() {
+      return Math.random();
+    }
+    push(p) {
+      if (this.particles.length > 400) this.particles.shift();
+      this.particles.push(p);
+    }
+    /** 爆炸：火球 + 火花 + 烟 */
+    explosion(x, y, radius) {
+      const n = Math.min(26, Math.round(radius / 6) + 8);
+      for (let i = 0; i < n; i++) {
+        const a = this.rnd() * Math.PI * 2;
+        const spd = (0.6 + this.rnd() * 2.2) * (radius / 60);
+        this.push({
+          x,
+          y,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd - 0.6,
+          life: 24 + this.rnd() * 22,
+          maxLife: 46,
+          size: 2 + this.rnd() * 4,
+          color: this.rnd() > 0.4 ? "#fb923c" : this.rnd() > 0.5 ? "#fbbf24" : "#ef4444",
+          gravity: 0.05,
+          fade: true
+        });
+      }
+      for (let i = 0; i < 8; i++) {
+        this.push({
+          x,
+          y,
+          vx: (this.rnd() - 0.5) * 0.6,
+          vy: -0.4 - this.rnd() * 0.8,
+          life: 30 + this.rnd() * 26,
+          maxLife: 56,
+          size: 5 + this.rnd() * 8,
+          color: "rgba(120,130,150,0.55)",
+          gravity: -0.01,
+          fade: true
+        });
+      }
+    }
+    /** 障碍物破坏：碎块 */
+    debris(x, y, w, h, color, border) {
+      for (let i = 0; i < 14; i++) {
+        this.push({
+          x: x + (this.rnd() - 0.5) * w,
+          y: y + (this.rnd() - 0.5) * h,
+          vx: (this.rnd() - 0.5) * 4,
+          vy: -1 - this.rnd() * 3,
+          life: 26 + this.rnd() * 20,
+          maxLife: 46,
+          size: 2 + this.rnd() * 4,
+          color: this.rnd() > 0.5 ? color : border,
+          gravity: 0.22,
+          fade: true
+        });
+      }
+    }
+    /** 拾取/补给：上升的星光 */
+    sparkle(x, y, color = "#4ade80") {
+      for (let i = 0; i < 10; i++) {
+        this.push({
+          x: x + (this.rnd() - 0.5) * 24,
+          y,
+          vx: (this.rnd() - 0.5) * 0.6,
+          vy: -1 - this.rnd() * 1.4,
+          life: 22 + this.rnd() * 18,
+          maxLife: 40,
+          size: 1.5 + this.rnd() * 2.5,
+          color,
+          gravity: -0.02,
+          fade: true
+        });
+      }
+    }
+    /** 枪口火焰 */
+    muzzle(x, y, color) {
+      for (let i = 0; i < 4; i++) {
+        this.push({
+          x,
+          y,
+          vx: (this.rnd() - 0.5) * 1.2,
+          vy: (this.rnd() - 0.5) * 1.2,
+          life: 6 + this.rnd() * 6,
+          maxLife: 12,
+          size: 2 + this.rnd() * 3,
+          color,
+          gravity: 0,
+          fade: true
+        });
+      }
+    }
+    /** 喷气尾焰 */
+    jet(x, y) {
+      this.push({
+        x: x + (this.rnd() - 0.5) * 6,
+        y: y + 8,
+        vx: (this.rnd() - 0.5) * 0.5,
+        vy: 1.4 + this.rnd() * 1.6,
+        life: 8 + this.rnd() * 8,
+        maxLife: 16,
+        size: 2 + this.rnd() * 2.5,
+        color: this.rnd() > 0.5 ? "#7dd3fc" : "#38bdf8",
+        gravity: 0.02,
+        fade: true
+      });
+    }
+    /** 击杀：能量爆散 */
+    killBurst(x, y, color) {
+      for (let i = 0; i < 14; i++) {
+        const a = this.rnd() * Math.PI * 2;
+        const spd = 1 + this.rnd() * 3;
+        this.push({
+          x,
+          y: y - 12,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd - 1,
+          life: 18 + this.rnd() * 16,
+          maxLife: 34,
+          size: 2 + this.rnd() * 3,
+          color,
+          gravity: 0.08,
+          fade: true
+        });
+      }
+    }
+    update(dt) {
+      const k = dt * 60;
+      for (let i = this.particles.length - 1; i >= 0; i--) {
+        const p = this.particles[i];
+        p.life -= k;
+        if (p.life <= 0) {
+          this.particles.splice(i, 1);
+          continue;
+        }
+        p.x += p.vx * k;
+        p.y += p.vy * k;
+        p.vy += p.gravity * k;
+        p.vx *= 0.99;
+      }
+    }
+    /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
+    render(ctx3, screenOf, inView) {
+      for (const p of this.particles) {
+        const s = screenOf(p.x, p.y);
+        if (!inView(s.x, s.y)) continue;
+        const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1;
+        ctx3.globalAlpha = alpha;
+        ctx3.fillStyle = p.color;
+        ctx3.beginPath();
+        ctx3.arc(s.x, s.y, p.size, 0, Math.PI * 2);
+        ctx3.fill();
+      }
+      ctx3.globalAlpha = 1;
+    }
+    clear() {
+      this.particles.length = 0;
+    }
+  };
+
+  // src/web/app/context.ts
+  var canvas = document.getElementById("gameCanvas");
+  var ctx = canvas ? canvas.getContext("2d") : null;
+  var camera = { x: 6600, y: 2380, fovFactor: 1 };
+  var screenFx = { shake: 0 };
+  function resizeCanvas() {
+    if (!canvas) return;
+    canvas.width = window.innerWidth || 1024;
+    canvas.height = window.innerHeight || 640;
+  }
+  var world = new World(20261106);
+  var localPlayer = world.addPlayer("SkyHunter", "red");
+  localPlayer.deployed = false;
+  world.config.randomSpawn = true;
+  var botNames = ["AlphaBot-7", "Valkyrie-AI", "Titan-09", "NovaStriker", "ZeroGrav-X", "OmegaHound", "Phantom-AI", "IronClad-8"];
+  var botSecs = ["frag", "doll", "frag", "frag", "doll", "frag", "frag", "frag"];
+  var bots = [];
+  var pendingLoadout = { weaponIndex: 0, secondaryType: "frag", spawnPointId: "base" };
+  var mode = { current: "ffa" };
+  var keys = {};
+  var mouse = { x: 0, y: 0, worldX: 6600, worldY: 2380, down: false };
+  var touchState = {
+    enabled: false,
+    moveActive: false,
+    moveId: -1,
+    moveX: 0,
+    moveY: 0,
+    boostButtonDown: false,
+    aimActive: false,
+    aimId: -1,
+    aimX: 0,
+    aimY: 0
+  };
+  var inputQueue = { interact: false, secondary: null, reload: false };
+  var effects = new Effects();
+  var beams = [];
+  var starRng = /* @__PURE__ */ (() => {
+    let seed = 2654435769;
+    return () => {
+      seed = seed + 1831565813 | 0;
+      let t = seed;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  })();
+  var worldStars = (() => {
+    const out = [];
+    for (let i = 0; i < 640; i++) {
+      out.push({ x: starRng() * WORLD_W, y: starRng() * WORLD_H, r: 0.6 + starRng() * 1.4, a: 0.2 + starRng() * 0.6 });
+    }
+    return out;
+  })();
+  var worldGlows = [
+    { x: 6600, y: 1080, r: 620, c: "56,189,248", a: 0.09 },
+    { x: 4150, y: 3560, r: 520, c: "16,185,129", a: 0.07 },
+    { x: 10150, y: 3520, r: 520, c: "244,63,94", a: 0.07 }
+  ];
+  var FIXED = 1 / 60;
+
+  // src/web/app/toast.ts
+  function escapeHtml(str) {
+    return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  var toastTimer = 0;
+  function showToast(msg) {
+    const el = document.getElementById("toastBanner");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove("hidden");
+    clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => el.classList.add("hidden"), 3400);
+  }
+  var TEAM_LIGHT = { red: "#fda4af", blue: "#7dd3fc", green: "#6ee7b7", ffa: "#fde047" };
+  function addKillFeed(killerName, killerTeam, victimName, victimTeam, weaponLabel, isHeadshot, isPierced) {
+    const feed = document.getElementById("killFeedContainer");
+    if (!feed) return;
+    const item = document.createElement("div");
+    item.className = "kill-item glass-panel px-3 py-1.5 rounded-xl border border-slate-700/90 shadow-lg flex items-center gap-2 text-xs";
+    item.innerHTML = `
+    <span class="font-extrabold" style="color:${TEAM_LIGHT[killerTeam] ?? "#fda4af"}">${escapeHtml(killerName)}</span>
+    <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-bold text-slate-200 border border-slate-700">${escapeHtml(weaponLabel)}</span>
+    ${isHeadshot ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400 text-amber-300 text-[10px] font-extrabold">\u{1F3AF} \u7206\u5934</span>' : ""}
+    ${isPierced ? '<span class="px-1.5 py-0.5 rounded bg-purple-500/25 border border-purple-400 text-purple-200 text-[10px] font-extrabold">\u26A1 \u7A7F\u900F</span>' : ""}
+    <span class="font-extrabold" style="color:${TEAM_LIGHT[victimTeam] ?? "#7dd3fc"}">${escapeHtml(victimName)}</span>
+  `;
+    feed.prepend(item);
+    while (feed.children.length > 6) feed.removeChild(feed.lastChild);
+    window.setTimeout(() => item.remove(), 6500);
+  }
+
+  // src/web/app/hud.ts
+  function updateHudWeaponButtons() {
+    document.querySelectorAll(".death-wep-btn").forEach((btn) => {
+      const slot = Number(btn.getAttribute("data-wep") || 0);
+      btn.className = slot === pendingLoadout.weaponIndex ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+    });
+    document.querySelectorAll(".death-sec-btn").forEach((btn) => {
+      const sec = btn.getAttribute("data-sec");
+      const def = sec ? SECONDARIES[sec] : void 0;
+      const noCharge = sec === "doll" && localPlayer.dollCharges <= 0;
+      btn.className = "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs " + (sec === pendingLoadout.secondaryType ? "border-rose-400 bg-rose-500/20 font-extrabold text-white" : "border-slate-700 bg-slate-950/60 font-semibold text-slate-400") + (noCharge || def?.supplyOnly && sec === "doll" ? " opacity-60 cursor-not-allowed" : "");
+      btn.disabled = sec === "doll" && localPlayer.dollCharges <= 0;
+    });
+    document.querySelectorAll(".lobby-wep-btn").forEach((btn) => {
+      const slot = Number(btn.getAttribute("data-wep") || 0);
+      btn.className = slot === pendingLoadout.weaponIndex ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+    });
+    document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
+      const sec = btn.getAttribute("data-sec");
+      const def = sec ? SECONDARIES[sec] : void 0;
+      if (def?.supplyOnly) {
+        btn.className = "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60";
+      } else {
+        btn.className = sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+      }
+    });
+  }
+  function updateSpawnPointButtonsUI() {
+    const container = document.getElementById("spawnPointBtnGroup");
+    if (!container) return;
+    container.querySelectorAll(".spawn-select-btn").forEach((btn) => {
+      const spId = btn.getAttribute("data-spawn") || "base";
+      let unlocked = spId === "base";
+      if (spId !== "base") {
+        const cp = world.capturePoints.find((c) => c.id === spId);
+        unlocked = Boolean(cp && (cp.ownerTeam === localPlayer.team || localPlayer.team === "ffa"));
+      }
+      const isSelected = pendingLoadout.spawnPointId === spId;
+      if (!unlocked) btn.className = "spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed";
+      else if (isSelected) btn.className = "spawn-select-btn px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold";
+      else btn.className = "spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 text-[11px] font-semibold hover:border-emerald-400/50";
+    });
+  }
+  function tryChangePrimaryWeapon(slotIdx) {
+    const wep = WEAPONS[slotIdx];
+    if (!wep || wep.isSupplyOnly) return;
+    if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
+      showToast("\u{1F512} \u4E3B\u6B66\u5668\u5728\u91CD\u751F\u524D\u5DF2\u9009\u5B9A\u9501\u5B9A\uFF01\u9635\u4EA1\u91CD\u751F\u524D\u6216\u62FE\u53D6\u7A7A\u6295\u7279\u6B66\u65F6\u65B9\u53EF\u66F4\u6362");
+      return;
+    }
+    pendingLoadout.weaponIndex = slotIdx;
+    localPlayer.weaponIndex = slotIdx;
+    updateHudWeaponButtons();
+  }
+  function tryChangeSecondaryWeapon(secType) {
+    const def = SECONDARIES[secType];
+    if (!def) return;
+    if (def?.supplyOnly) {
+      if (localPlayer.dollCharges <= 0) {
+        showToast("\u{1F38E} \u66FF\u8EAB\u4EBA\u5076\u53EA\u80FD\u4ECE\u6218\u573A\u7279\u6B8A\u8865\u7ED9\u7BB1\u83B7\u5F97\u5145\u80FD\uFF01");
+        return;
+      }
+      localPlayer.secondary = secType;
+      updateHudWeaponButtons();
+      showToast(`\u{1F38E} \u5DF2\u5207\u6362\u66FF\u8EAB\u4EBA\u5076\uFF08\u5145\u80FD ${localPlayer.dollCharges}\uFF09`);
+      return;
+    }
+    if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
+      showToast("\u{1F512} \u526F\u6B66\u5668\u5728\u91CD\u751F\u524D\u5DF2\u9009\u5B9A\u9501\u5B9A\uFF01\u9635\u4EA1\u91CD\u751F\u524D\u53EF\u91CD\u65B0\u9009\u62E9");
+      return;
+    }
+    pendingLoadout.secondaryType = secType;
+    localPlayer.secondary = secType;
+    updateHudWeaponButtons();
+  }
+  var TEAM_BADGE = {
+    red: ["\u7EA2\u961F ALPHA", "bg-rose-500/20 text-rose-300 border border-rose-500/40"],
+    blue: ["\u84DD\u961F BRAVO", "bg-sky-500/20 text-sky-300 border border-sky-500/40"],
+    green: ["\u7EFF\u961F CHARLIE", "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"],
+    ffa: ["\u6DF7\u6218 SOLO", "bg-amber-500/20 text-amber-300 border border-amber-500/40"]
+  };
+  function updateHudUI() {
+    const nameEl = document.getElementById("hudPlayerName");
+    if (nameEl) nameEl.textContent = localPlayer.name;
+    const teamEl = document.getElementById("hudTeamBadge");
+    if (teamEl) {
+      const [label, cls] = TEAM_BADGE[localPlayer.team] ?? TEAM_BADGE.red;
+      teamEl.textContent = label;
+      teamEl.className = `px-1.5 py-0.5 rounded text-[10px] font-bold ${cls}`;
+    }
+    const fovBadge = document.getElementById("hudSniperFovBadge");
+    if (fovBadge) {
+      const wepForFov = WEAPONS[localPlayer.weaponIndex];
+      if (localPlayer.mountedTowerId) {
+        fovBadge.textContent = "\u{1F5FC} \u77AD\u671B\u89C6\u91CE 200%\uFF08\u6309 E \u4E0B\u5854\uFF09";
+        fovBadge.classList.remove("hidden");
+      } else if ((wepForFov?.fovMult ?? 1) > 1.01) {
+        fovBadge.textContent = `\u{1F52D} ${wepForFov.shortName} \u89C6\u91CE+30%`;
+        fovBadge.classList.remove("hidden");
+      } else fovBadge.classList.add("hidden");
+    }
+    const hpBar = document.getElementById("hudHpBar");
+    if (hpBar) hpBar.style.width = clamp(localPlayer.hp / localPlayer.maxHp * 100, 0, 100) + "%";
+    const shieldBar = document.getElementById("hudShieldBar");
+    if (shieldBar) shieldBar.style.width = localPlayer.shieldTimer > 0 ? clamp(localPlayer.shieldHp / world.config.shieldHp * 100, 0, 100) + "%" : "0%";
+    const hpText = document.getElementById("hudHpText");
+    if (hpText) hpText.textContent = `${Math.max(0, Math.round(localPlayer.hp))} / ${localPlayer.maxHp}`;
+    const fuelBar = document.getElementById("hudFuelBar");
+    const fuelMaxNow = getPhysicsParams().jetpackFuel * (WEAPONS[localPlayer.weaponIndex]?.fuelMult ?? 1);
+    if (fuelBar) fuelBar.style.width = clamp(localPlayer.fuel / Math.max(1e-3, fuelMaxNow) * 100, 0, 100) + "%";
+    const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
+    const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
+    const wNameEl = document.getElementById("currentWeaponName");
+    if (wNameEl) wNameEl.textContent = mounted ? "\u{1F3AF} \u516C\u5171\u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D" : `${wep.name} ${localPlayer.deployed ? "\u{1F512}" : ""}`;
+    const plateEl = document.getElementById("hudCurrentWeaponName");
+    if (plateEl) plateEl.textContent = wep.shortName;
+    const secChipEl = document.getElementById("hudSecondaryChipText");
+    if (secChipEl) {
+      secChipEl.textContent = localPlayer.secondary === "doll" ? `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]` : `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+    }
+    const ammoEl = document.getElementById("currentAmmoText");
+    if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : `${localPlayer.ammo[localPlayer.weaponIndex] ?? 0} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`;
+    const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag;
+    const gOverlay = document.getElementById("grenadeCdOverlay");
+    const gLabel = document.getElementById("hudGrenadeLabel");
+    const gTitle = document.getElementById("hudSecondaryTitle");
+    const isDoll = localPlayer.secondary === "doll";
+    if (gTitle) gTitle.textContent = isDoll ? `[G/\u53F3\u952E] \u66FF\u8EAB\u4EBA\u5076 [\u5145\u80FD${localPlayer.dollCharges}]` : `[G/\u53F3\u952E] \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+    if (gOverlay && gLabel) {
+      if (isDoll) {
+        gOverlay.style.height = localPlayer.dollCharges > 0 ? "0%" : "100%";
+        gLabel.textContent = localPlayer.dollCharges > 0 ? "\u{1F38E} \u5C31\u7EEA" : "\u{1F38E} \u65E0\u5145\u80FD";
+      } else {
+        const need = localPlayer.fragCharges >= world.config.fragMaxCharges;
+        if (need) {
+          gOverlay.style.height = "0%";
+          gLabel.textContent = "\u{1F4A3} \u5C31\u7EEA";
+        } else {
+          const pct = Math.min(100, localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds * 100);
+          gOverlay.style.height = pct + "%";
+          gLabel.textContent = `\u{1F4A3} ${localPlayer.fragCharges}/${world.config.fragMaxCharges} \u56DE\u590D\u4E2D`;
+        }
+      }
+    }
+    const reloadWrap = document.getElementById("reloadProgressWrap");
+    const reloadBar = document.getElementById("reloadProgressBar");
+    if (reloadWrap && reloadBar) {
+      if (localPlayer.reloading) {
+        reloadWrap.classList.remove("hidden");
+        reloadWrap.classList.add("flex");
+        const wep2 = WEAPONS[localPlayer.weaponIndex];
+        reloadBar.style.width = clamp(100 * (1 - localPlayer.reloadTimer / wep2.reloadTime), 0, 100) + "%";
+      } else {
+        reloadWrap.classList.add("hidden");
+        reloadWrap.classList.remove("flex");
+      }
+    }
+    const banner = document.getElementById("interactBanner");
+    const bannerText = document.getElementById("interactBannerText");
+    if (!banner || !bannerText) return;
+    let promptMsg = null;
+    if (!localPlayer.deployed) {
+      promptMsg = "\u{1F3E0} \u5F85\u673A\u6574\u5907\u4E2D\uFF1A\u70B9\u51FB\u6B64\u5904\u6216\u300C\u7ACB\u5373\u8FDB\u5165\u6218\u573A\u300D\u90E8\u7F72\uFF1B\u53EF\u81EA\u7531\u66F4\u6362\u4E3B/\u526F\u6B66\u5668\u4E0E\u961F\u4F0D";
+    } else if (localPlayer.respawnTimer > 0) {
+      promptMsg = "";
+    } else if (mounted) {
+      promptMsg = "\u{1F3AF} \u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D\uFF1A\u79FB\u52A8\u9F20\u6807\u8C03\u8282\u843D\u70B9\uFF0C\u6309\u4F4F\u5F00\u706B\u53D1\u5C04 | \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u79BB\u5F00";
+    } else {
+      for (const m of world.mortars) {
+        if (m.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, m.x, m.y) < 115) {
+          promptMsg = `\u{1F525} \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u64CD\u63A7\u3010${m.name}\u3011`;
+          break;
+        }
+      }
+      if (localPlayer.mountedTowerId) {
+        promptMsg = "\u{1F5FC} \u77AD\u671B\u5854\u4E0A\uFF08\u89C6\u91CE 200%\uFF09\uFF1A\u6309 [E] \u4E0B\u5854\uFF0C\u89C6\u91CE\u52A0\u6210\u7ACB\u5373\u6D88\u5931";
+      }
+      if (!promptMsg) {
+        for (const tw of world.watchtowers) {
+          if (tw.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, tw.x, tw.y) < 130) {
+            promptMsg = `\u{1F5FC} \u6309 [E] \u767B\u4E0A\u3010${tw.name}\u3011\uFF08\u9501\u5B9A 200% \u89C6\u91CE\uFF0C\u4E0D\u80FD\u79FB\u52A8\uFF1B\u4E0B\u5854\u5373\u5931\u6548\uFF09`;
+            break;
+          }
+        }
+      }
+      if (!promptMsg) {
+        for (const wp of world.warpPortals) {
+          if (wrapDist(localPlayer.pos.x, localPlayer.pos.y, wp.x, wp.y) < 90) {
+            promptMsg = `\u{1F300} \u6309 [E] \u542F\u52A8\u3010${wp.name}\u3011\u91CF\u5B50\u4F20\u9001`;
+            break;
+          }
+        }
+      }
+      if (!promptMsg) {
+        const dollCrate = world.supplyCrates.find((c) => c.active && c.kind === "doll" && wrapDist(localPlayer.pos.x, localPlayer.pos.y, c.x, c.y) < 60);
+        if (dollCrate) promptMsg = "\u{1F38E} \u9760\u8FD1\u7279\u6B8A\u8865\u7ED9\u7BB1\u81EA\u52A8\u62FE\u53D6\u66FF\u8EAB\u4EBA\u5076\u5145\u80FD";
+      }
+    }
+    if (promptMsg) {
+      banner.classList.remove("hidden");
+      bannerText.textContent = promptMsg;
+    } else banner.classList.add("hidden");
+  }
+  function updateScoreboardUI() {
+    const r = document.getElementById("scoreRed");
+    const b = document.getElementById("scoreBlue");
+    const g = document.getElementById("scoreGreen");
+    if (r) r.textContent = String(world.scores.red ?? 0);
+    if (b) b.textContent = String(world.scores.blue ?? 0);
+    if (g) g.textContent = String(world.scores.green ?? 0);
+  }
+  function updateTeamCountUI() {
+    const counts = { red: 0, blue: 0, green: 0, ffa: 0 };
+    for (const p of world.players) {
+      if (counts[p.team] !== void 0) counts[p.team]++;
+    }
+    for (const key of ["Red", "Blue", "Green", "Ffa"]) {
+      const el = document.getElementById("teamCount" + key);
+      if (el) el.textContent = counts[key.toLowerCase()] + "\u4EBA";
+    }
+  }
+
   // src/web/textures.ts
   function mulberry32(seed) {
     let s = seed >>> 0;
@@ -2540,7 +3016,7 @@
         return "earth";
     }
   }
-  function getTerrainPattern(ctx2, kind) {
+  function getTerrainPattern(ctx3, kind) {
     const key = texKindOf(kind);
     const hit = cache.get(key);
     if (hit) return hit;
@@ -2579,7 +3055,7 @@
       default:
         cv = makeTex(96, 107, paintEarth);
     }
-    const pat = ctx2.createPattern(cv, "repeat");
+    const pat = ctx3.createPattern(cv, "repeat");
     if (pat) cache.set(key, pat);
     return pat;
   }
@@ -2595,258 +3071,258 @@
     green: { color: "#10b981", light: "#6ee7b7", dark: "#065f46" },
     ffa: { color: "#eab308", light: "#fde047", dark: "#854d0e" }
   };
-  function roundRect(ctx2, x, y, w, h, r) {
+  function roundRect(ctx3, x, y, w, h, r) {
     const rr = Math.min(r, w / 2, h / 2);
-    ctx2.beginPath();
-    ctx2.moveTo(x + rr, y);
-    ctx2.arcTo(x + w, y, x + w, y + h, rr);
-    ctx2.arcTo(x + w, y + h, x, y + h, rr);
-    ctx2.arcTo(x, y + h, x, y, rr);
-    ctx2.arcTo(x, y, x + w, y, rr);
-    ctx2.closePath();
+    ctx3.beginPath();
+    ctx3.moveTo(x + rr, y);
+    ctx3.arcTo(x + w, y, x + w, y + h, rr);
+    ctx3.arcTo(x + w, y + h, x, y + h, rr);
+    ctx3.arcTo(x, y + h, x, y, rr);
+    ctx3.arcTo(x, y, x + w, y, rr);
+    ctx3.closePath();
   }
-  function drawPlayerSprite(ctx2, p, dx, dy, opts) {
+  function drawPlayerSprite(ctx3, p, dx, dy, opts) {
     const pal = TEAM_PALETTE[p.team] ?? TEAM_PALETTE.red;
     const wep = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
     const t = opts.tick;
     const facing = Math.cos(p.aim) >= 0 ? 1 : -1;
     const walkPhase = Math.sin(t * 0.35) * (opts.movingX !== 0 ? 1 : 0);
     const alive = p.alive && p.respawnTimer <= 0;
-    ctx2.save();
-    ctx2.translate(dx, dy);
-    if (!alive) ctx2.globalAlpha = 0.45;
-    ctx2.fillStyle = "rgba(0,0,0,0.35)";
-    ctx2.beginPath();
-    ctx2.ellipse(0, 18, 14, 4, 0, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.fillStyle = "#1e293b";
-    ctx2.fillRect(-9 + walkPhase * 3, 8, 6, 10);
-    ctx2.fillRect(3 - walkPhase * 3, 8, 6, 10);
-    ctx2.fillStyle = "#0f172a";
-    ctx2.fillRect(-9 + walkPhase * 3, 16, 7, 3);
-    ctx2.fillRect(2 - walkPhase * 3, 16, 7, 3);
-    const bodyGrad = ctx2.createLinearGradient(0, -14, 0, 10);
+    ctx3.save();
+    ctx3.translate(dx, dy);
+    if (!alive) ctx3.globalAlpha = 0.45;
+    ctx3.fillStyle = "rgba(0,0,0,0.35)";
+    ctx3.beginPath();
+    ctx3.ellipse(0, 18, 14, 4, 0, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.fillStyle = "#1e293b";
+    ctx3.fillRect(-9 + walkPhase * 3, 8, 6, 10);
+    ctx3.fillRect(3 - walkPhase * 3, 8, 6, 10);
+    ctx3.fillStyle = "#0f172a";
+    ctx3.fillRect(-9 + walkPhase * 3, 16, 7, 3);
+    ctx3.fillRect(2 - walkPhase * 3, 16, 7, 3);
+    const bodyGrad = ctx3.createLinearGradient(0, -14, 0, 10);
     bodyGrad.addColorStop(0, pal.light);
     bodyGrad.addColorStop(0.45, pal.color);
     bodyGrad.addColorStop(1, pal.dark);
-    ctx2.fillStyle = bodyGrad;
-    ctx2.strokeStyle = "#0b1220";
-    ctx2.lineWidth = 2;
-    roundRect(ctx2, -11, -14, 22, 24, 6);
-    ctx2.fill();
-    ctx2.stroke();
-    ctx2.fillStyle = "rgba(255,255,255,0.28)";
-    roundRect(ctx2, -7, -11, 6, 8, 2);
-    ctx2.fill();
-    ctx2.fillStyle = "rgba(255,255,255,0.85)";
-    ctx2.fillRect(4, -6, 4, 4);
-    ctx2.fillStyle = "#334155";
-    roundRect(ctx2, facing > 0 ? -15 : 8, -10, 7, 14, 2);
-    ctx2.fill();
-    ctx2.fillStyle = "#64748b";
-    ctx2.fillRect(facing > 0 ? -14 : 9, -8, 5, 3);
+    ctx3.fillStyle = bodyGrad;
+    ctx3.strokeStyle = "#0b1220";
+    ctx3.lineWidth = 2;
+    roundRect(ctx3, -11, -14, 22, 24, 6);
+    ctx3.fill();
+    ctx3.stroke();
+    ctx3.fillStyle = "rgba(255,255,255,0.28)";
+    roundRect(ctx3, -7, -11, 6, 8, 2);
+    ctx3.fill();
+    ctx3.fillStyle = "rgba(255,255,255,0.85)";
+    ctx3.fillRect(4, -6, 4, 4);
+    ctx3.fillStyle = "#334155";
+    roundRect(ctx3, facing > 0 ? -15 : 8, -10, 7, 14, 2);
+    ctx3.fill();
+    ctx3.fillStyle = "#64748b";
+    ctx3.fillRect(facing > 0 ? -14 : 9, -8, 5, 3);
     if (opts.floating) {
       const flick = 0.7 + Math.sin(t * 0.9) * 0.3 + Math.random() * 0.15;
       const fx = facing > 0 ? -15 : 15;
-      const grad = ctx2.createLinearGradient(fx, 6, fx, 6 + 16 * flick);
+      const grad = ctx3.createLinearGradient(fx, 6, fx, 6 + 16 * flick);
       grad.addColorStop(0, "rgba(125, 211, 252, 0.95)");
       grad.addColorStop(0.5, "rgba(56, 189, 248, 0.7)");
       grad.addColorStop(1, "rgba(56, 189, 248, 0)");
-      ctx2.fillStyle = grad;
-      ctx2.beginPath();
-      ctx2.moveTo(fx - 3, 4);
-      ctx2.lineTo(fx + 3, 4);
-      ctx2.lineTo(fx + (Math.random() - 0.5) * 2, 4 + 18 * flick);
-      ctx2.closePath();
-      ctx2.fill();
+      ctx3.fillStyle = grad;
+      ctx3.beginPath();
+      ctx3.moveTo(fx - 3, 4);
+      ctx3.lineTo(fx + 3, 4);
+      ctx3.lineTo(fx + (Math.random() - 0.5) * 2, 4 + 18 * flick);
+      ctx3.closePath();
+      ctx3.fill();
     }
-    ctx2.fillStyle = "#cbd5e1";
-    ctx2.strokeStyle = "#0b1220";
-    ctx2.lineWidth = 2;
-    ctx2.beginPath();
-    ctx2.arc(0, -24, 10, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.stroke();
-    ctx2.fillStyle = pal.dark;
-    ctx2.beginPath();
-    ctx2.arc(0, -24, 8, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.fillStyle = "#0ea5e9";
-    ctx2.fillRect(facing > 0 ? 2 : -8, -26, 6, 3);
-    ctx2.fillStyle = "rgba(255,255,255,0.8)";
-    ctx2.fillRect(facing > 0 ? 3 : -7, -26, 2, 1);
+    ctx3.fillStyle = "#cbd5e1";
+    ctx3.strokeStyle = "#0b1220";
+    ctx3.lineWidth = 2;
+    ctx3.beginPath();
+    ctx3.arc(0, -24, 10, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.stroke();
+    ctx3.fillStyle = pal.dark;
+    ctx3.beginPath();
+    ctx3.arc(0, -24, 8, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.fillStyle = "#0ea5e9";
+    ctx3.fillRect(facing > 0 ? 2 : -8, -26, 6, 3);
+    ctx3.fillStyle = "rgba(255,255,255,0.8)";
+    ctx3.fillRect(facing > 0 ? 3 : -7, -26, 2, 1);
     if (!opts.mounted) {
-      ctx2.save();
-      ctx2.rotate(p.aim - (facing < 0 ? Math.PI : 0));
+      ctx3.save();
+      ctx3.rotate(p.aim - (facing < 0 ? Math.PI : 0));
       const flip = facing < 0 ? -1 : 1;
-      ctx2.scale(1, flip);
+      ctx3.scale(1, flip);
       const metal = "#1e293b";
       const accent = wep.color;
       switch (wep.id) {
         case 0:
-          ctx2.fillStyle = metal;
-          roundRect(ctx2, 6, -9, 26, 7, 2);
-          ctx2.fill();
-          ctx2.fillStyle = "#7c2d12";
-          roundRect(ctx2, 20, -4, 12, 4, 1);
-          ctx2.fill();
-          ctx2.fillStyle = accent;
-          ctx2.fillRect(10, -8, 8, 2);
+          ctx3.fillStyle = metal;
+          roundRect(ctx3, 6, -9, 26, 7, 2);
+          ctx3.fill();
+          ctx3.fillStyle = "#7c2d12";
+          roundRect(ctx3, 20, -4, 12, 4, 1);
+          ctx3.fill();
+          ctx3.fillStyle = accent;
+          ctx3.fillRect(10, -8, 8, 2);
           break;
         case 1:
-          ctx2.fillStyle = metal;
-          roundRect(ctx2, 6, -9, 30, 6, 2);
-          ctx2.fill();
-          ctx2.fillStyle = "#334155";
-          roundRect(ctx2, 12, -4, 7, 8, 2);
-          ctx2.fill();
-          ctx2.fillStyle = accent;
-          ctx2.fillRect(8, -8, 14, 2);
+          ctx3.fillStyle = metal;
+          roundRect(ctx3, 6, -9, 30, 6, 2);
+          ctx3.fill();
+          ctx3.fillStyle = "#334155";
+          roundRect(ctx3, 12, -4, 7, 8, 2);
+          ctx3.fill();
+          ctx3.fillStyle = accent;
+          ctx3.fillRect(8, -8, 14, 2);
           break;
         case 2:
-          ctx2.fillStyle = metal;
-          roundRect(ctx2, 6, -9, 42, 5, 2);
-          ctx2.fill();
-          ctx2.fillStyle = "#0f172a";
-          roundRect(ctx2, 14, -15, 14, 5, 2);
-          ctx2.fill();
-          ctx2.strokeStyle = accent;
-          ctx2.lineWidth = 1.5;
-          ctx2.strokeRect(14, -15, 14, 5);
+          ctx3.fillStyle = metal;
+          roundRect(ctx3, 6, -9, 42, 5, 2);
+          ctx3.fill();
+          ctx3.fillStyle = "#0f172a";
+          roundRect(ctx3, 14, -15, 14, 5, 2);
+          ctx3.fill();
+          ctx3.strokeStyle = accent;
+          ctx3.lineWidth = 1.5;
+          ctx3.strokeRect(14, -15, 14, 5);
           break;
         case 3:
-          ctx2.fillStyle = metal;
-          roundRect(ctx2, 6, -12, 24, 11, 5);
-          ctx2.fill();
-          ctx2.fillStyle = accent;
-          ctx2.fillRect(30, -11, 6, 9);
+          ctx3.fillStyle = metal;
+          roundRect(ctx3, 6, -12, 24, 11, 5);
+          ctx3.fill();
+          ctx3.fillStyle = accent;
+          ctx3.fillRect(30, -11, 6, 9);
           break;
         case 4:
-          ctx2.fillStyle = metal;
-          roundRect(ctx2, 6, -9, 28, 8, 3);
-          ctx2.fill();
-          ctx2.strokeStyle = accent;
-          ctx2.lineWidth = 2;
+          ctx3.fillStyle = metal;
+          roundRect(ctx3, 6, -9, 28, 8, 3);
+          ctx3.fill();
+          ctx3.strokeStyle = accent;
+          ctx3.lineWidth = 2;
           for (let i = 0; i < 3; i++) {
-            ctx2.beginPath();
-            ctx2.arc(12 + i * 8, -5, 3.4, 0, Math.PI * 2);
-            ctx2.stroke();
+            ctx3.beginPath();
+            ctx3.arc(12 + i * 8, -5, 3.4, 0, Math.PI * 2);
+            ctx3.stroke();
           }
-          ctx2.fillStyle = "rgba(34,211,238,0.35)";
-          ctx2.beginPath();
-          ctx2.moveTo(36, -5);
-          ctx2.lineTo(52, -5);
-          ctx2.strokeStyle = "rgba(34,211,238,0.55)";
-          ctx2.stroke();
+          ctx3.fillStyle = "rgba(34,211,238,0.35)";
+          ctx3.beginPath();
+          ctx3.moveTo(36, -5);
+          ctx3.lineTo(52, -5);
+          ctx3.strokeStyle = "rgba(34,211,238,0.55)";
+          ctx3.stroke();
           break;
         case 5:
-          ctx2.fillStyle = metal;
-          roundRect(ctx2, 6, -12, 22, 13, 4);
-          ctx2.fill();
-          ctx2.fillStyle = "#64748b";
-          for (let i = 0; i < 3; i++) ctx2.fillRect(26, -11 + i * 4, 10, 2.4);
+          ctx3.fillStyle = metal;
+          roundRect(ctx3, 6, -12, 22, 13, 4);
+          ctx3.fill();
+          ctx3.fillStyle = "#64748b";
+          for (let i = 0; i < 3; i++) ctx3.fillRect(26, -11 + i * 4, 10, 2.4);
           break;
         case 6:
-          ctx2.fillStyle = metal;
-          roundRect(ctx2, 6, -10, 20, 9, 4);
-          ctx2.fill();
-          ctx2.strokeStyle = accent;
-          ctx2.lineWidth = 2;
-          ctx2.beginPath();
-          ctx2.arc(30, -5.5, 6, 0, Math.PI * 2);
-          ctx2.stroke();
-          ctx2.fillStyle = "rgba(168,85,247,0.35)";
-          ctx2.beginPath();
-          ctx2.arc(30, -5.5, 4, 0, Math.PI * 2);
-          ctx2.fill();
+          ctx3.fillStyle = metal;
+          roundRect(ctx3, 6, -10, 20, 9, 4);
+          ctx3.fill();
+          ctx3.strokeStyle = accent;
+          ctx3.lineWidth = 2;
+          ctx3.beginPath();
+          ctx3.arc(30, -5.5, 6, 0, Math.PI * 2);
+          ctx3.stroke();
+          ctx3.fillStyle = "rgba(168,85,247,0.35)";
+          ctx3.beginPath();
+          ctx3.arc(30, -5.5, 4, 0, Math.PI * 2);
+          ctx3.fill();
           break;
       }
-      ctx2.restore();
+      ctx3.restore();
     }
     if (p.shieldTimer > 0 && p.shieldHp > 0) {
-      ctx2.strokeStyle = "rgba(56,189,248,0.9)";
-      ctx2.fillStyle = "rgba(56,189,248,0.14)";
-      ctx2.lineWidth = 2.5;
-      ctx2.beginPath();
-      ctx2.arc(0, -8, 30 + Math.sin(t * 0.15) * 1.5, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.stroke();
+      ctx3.strokeStyle = "rgba(56,189,248,0.9)";
+      ctx3.fillStyle = "rgba(56,189,248,0.14)";
+      ctx3.lineWidth = 2.5;
+      ctx3.beginPath();
+      ctx3.arc(0, -8, 30 + Math.sin(t * 0.15) * 1.5, 0, Math.PI * 2);
+      ctx3.fill();
+      ctx3.stroke();
     }
-    ctx2.restore();
+    ctx3.restore();
   }
-  function drawPlayerTag(ctx2, p, dx, dy, isLocal) {
+  function drawPlayerTag(ctx3, p, dx, dy, isLocal) {
     if (!p.alive || p.respawnTimer > 0) return;
     const pal = TEAM_PALETTE[p.team] ?? TEAM_PALETTE.red;
     const wep = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
-    ctx2.save();
-    ctx2.translate(dx, dy);
-    ctx2.font = "bold 11px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillStyle = isLocal ? "#f8fafc" : pal.light;
-    ctx2.fillText((isLocal ? "\u25B6 " : "") + p.name, 0, -46);
+    ctx3.save();
+    ctx3.translate(dx, dy);
+    ctx3.font = "bold 11px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillStyle = isLocal ? "#f8fafc" : pal.light;
+    ctx3.fillText((isLocal ? "\u25B6 " : "") + p.name, 0, -46);
     const barW = 44;
-    ctx2.fillStyle = "rgba(15,23,42,0.85)";
-    ctx2.fillRect(-barW / 2, -42, barW, 5);
+    ctx3.fillStyle = "rgba(15,23,42,0.85)";
+    ctx3.fillRect(-barW / 2, -42, barW, 5);
     const ratio = Math.max(0, p.hp) / p.maxHp;
-    ctx2.fillStyle = ratio > 0.4 ? p.team === "red" ? "#f43f5e" : p.team === "blue" ? "#0ea5e9" : p.team === "green" ? "#10b981" : "#eab308" : "#ef4444";
-    ctx2.fillRect(-barW / 2, -42, barW * ratio, 5);
+    ctx3.fillStyle = ratio > 0.4 ? p.team === "red" ? "#f43f5e" : p.team === "blue" ? "#0ea5e9" : p.team === "green" ? "#10b981" : "#eab308" : "#ef4444";
+    ctx3.fillRect(-barW / 2, -42, barW * ratio, 5);
     if (p.shieldTimer > 0 && p.shieldHp > 0) {
-      ctx2.fillStyle = "rgba(15,23,42,0.85)";
-      ctx2.fillRect(-barW / 2, -36, barW, 3);
-      ctx2.fillStyle = "#38bdf8";
-      ctx2.fillRect(-barW / 2, -36, barW * Math.min(1, p.shieldHp / 130), 3);
+      ctx3.fillStyle = "rgba(15,23,42,0.85)";
+      ctx3.fillRect(-barW / 2, -36, barW, 3);
+      ctx3.fillStyle = "#38bdf8";
+      ctx3.fillRect(-barW / 2, -36, barW * Math.min(1, p.shieldHp / 130), 3);
     }
-    ctx2.font = "9px Inter, system-ui, sans-serif";
-    ctx2.fillStyle = "rgba(226,232,240,0.75)";
-    ctx2.fillText(`${wep.shortName} ${p.ammo[p.weaponIndex] ?? 0}`, 0, -50);
-    ctx2.restore();
+    ctx3.font = "9px Inter, system-ui, sans-serif";
+    ctx3.fillStyle = "rgba(226,232,240,0.75)";
+    ctx3.fillText(`${wep.shortName} ${p.ammo[p.weaponIndex] ?? 0}`, 0, -50);
+    ctx3.restore();
   }
-  function drawObstacleSprite(ctx2, ob, dx, dy) {
+  function drawObstacleSprite(ctx3, ob, dx, dy) {
     const left = dx - ob.w / 2;
     const top = dy - ob.h / 2;
-    ctx2.save();
-    ctx2.fillStyle = ob.color;
-    ctx2.fillRect(left, top, ob.w, ob.h);
+    ctx3.save();
+    ctx3.fillStyle = ob.color;
+    ctx3.fillRect(left, top, ob.w, ob.h);
     const ratio = ob.hp / ob.maxHp;
-    ctx2.strokeStyle = ob.borderColor;
-    ctx2.lineWidth = 2;
-    ctx2.strokeRect(left + 1, top + 1, ob.w - 2, ob.h - 2);
-    ctx2.fillStyle = "rgba(255,255,255,0.08)";
-    ctx2.fillRect(left + 2, top + 2, ob.w - 4, 3);
+    ctx3.strokeStyle = ob.borderColor;
+    ctx3.lineWidth = 2;
+    ctx3.strokeRect(left + 1, top + 1, ob.w - 2, ob.h - 2);
+    ctx3.fillStyle = "rgba(255,255,255,0.08)";
+    ctx3.fillRect(left + 2, top + 2, ob.w - 4, 3);
     for (let y = top + 10; y < top + ob.h - 4; y += 12) {
-      ctx2.fillStyle = "rgba(0,0,0,0.18)";
-      ctx2.fillRect(left + 2, y, ob.w - 4, 1);
+      ctx3.fillStyle = "rgba(0,0,0,0.18)";
+      ctx3.fillRect(left + 2, y, ob.w - 4, 1);
     }
     if (ratio < 0.66) {
-      ctx2.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx2.lineWidth = 1;
+      ctx3.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx3.lineWidth = 1;
       const cracks = ratio < 0.33 ? 4 : 2;
       for (let i = 0; i < cracks; i++) {
-        ctx2.beginPath();
+        ctx3.beginPath();
         let x = left + ob.w * (0.2 + 0.6 * (i * 37 % 10) / 10);
         let y = top + ob.h * 0.15;
-        ctx2.moveTo(x, y);
+        ctx3.moveTo(x, y);
         for (let k = 0; k < 4; k++) {
           x += (i % 2 === 0 ? 1 : -1) * 4;
           y += ob.h / 5;
-          ctx2.lineTo(x, y);
+          ctx3.lineTo(x, y);
         }
-        ctx2.stroke();
+        ctx3.stroke();
       }
     }
     const barW = Math.max(40, ob.w);
-    ctx2.fillStyle = "rgba(15,23,42,0.85)";
-    ctx2.fillRect(dx - barW / 2, top - 10, barW, 5);
-    ctx2.fillStyle = ratio > 0.5 ? "#22c55e" : ratio > 0.25 ? "#f59e0b" : "#ef4444";
-    ctx2.fillRect(dx - barW / 2, top - 10, barW * ratio, 5);
-    ctx2.restore();
+    ctx3.fillStyle = "rgba(15,23,42,0.85)";
+    ctx3.fillRect(dx - barW / 2, top - 10, barW, 5);
+    ctx3.fillStyle = ratio > 0.5 ? "#22c55e" : ratio > 0.25 ? "#f59e0b" : "#ef4444";
+    ctx3.fillRect(dx - barW / 2, top - 10, barW * ratio, 5);
+    ctx3.restore();
   }
-  function drawCrateSprite(ctx2, crate, dx, dy, tick) {
-    ctx2.save();
-    ctx2.translate(dx, dy - 18);
+  function drawCrateSprite(ctx3, crate, dx, dy, tick) {
+    ctx3.save();
+    ctx3.translate(dx, dy - 18);
     const bob = Math.sin(tick * 0.08 + crate.x * 0.01) * 1.5;
-    ctx2.translate(0, bob);
-    const grad = ctx2.createLinearGradient(0, -16, 0, 16);
+    ctx3.translate(0, bob);
+    const grad = ctx3.createLinearGradient(0, -16, 0, 16);
     if (crate.kind === "doll") {
       grad.addColorStop(0, "#831843");
       grad.addColorStop(1, "#4a1d3a");
@@ -2854,315 +3330,315 @@
       grad.addColorStop(0, "#312e81");
       grad.addColorStop(1, "#1e1b4b");
     }
-    ctx2.fillStyle = grad;
-    ctx2.strokeStyle = crate.color;
-    ctx2.lineWidth = 2.5;
-    roundRect(ctx2, -18, -16, 36, 32, 5);
-    ctx2.fill();
-    ctx2.stroke();
-    ctx2.fillStyle = "rgba(255,255,255,0.12)";
-    roundRect(ctx2, -16, -14, 32, 10, 3);
-    ctx2.fill();
-    ctx2.fillStyle = crate.color;
-    ctx2.fillRect(-3, -3, 6, 8);
-    ctx2.font = "bold 12px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillStyle = crate.color;
-    ctx2.fillText(crate.kind === "doll" ? "\u{1F38E}" : "\u{1F381}", 0, 3);
-    ctx2.font = "bold 10px Inter, system-ui, sans-serif";
-    ctx2.fillStyle = crate.color;
-    ctx2.fillText(crate.kind === "doll" ? "\u66FF\u8EAB\u4EBA\u5076" : crate.weaponName, 0, -22);
+    ctx3.fillStyle = grad;
+    ctx3.strokeStyle = crate.color;
+    ctx3.lineWidth = 2.5;
+    roundRect(ctx3, -18, -16, 36, 32, 5);
+    ctx3.fill();
+    ctx3.stroke();
+    ctx3.fillStyle = "rgba(255,255,255,0.12)";
+    roundRect(ctx3, -16, -14, 32, 10, 3);
+    ctx3.fill();
+    ctx3.fillStyle = crate.color;
+    ctx3.fillRect(-3, -3, 6, 8);
+    ctx3.font = "bold 12px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillStyle = crate.color;
+    ctx3.fillText(crate.kind === "doll" ? "\u{1F38E}" : "\u{1F381}", 0, 3);
+    ctx3.font = "bold 10px Inter, system-ui, sans-serif";
+    ctx3.fillStyle = crate.color;
+    ctx3.fillText(crate.kind === "doll" ? "\u66FF\u8EAB\u4EBA\u5076" : crate.weaponName, 0, -22);
     if (!crate.active && crate.respawnTimer > 0) {
-      ctx2.fillStyle = "rgba(148,163,184,0.7)";
-      ctx2.font = "9px Inter, system-ui, sans-serif";
-      ctx2.fillText(`${Math.ceil(crate.respawnTimer)}s`, 0, 24);
+      ctx3.fillStyle = "rgba(148,163,184,0.7)";
+      ctx3.font = "9px Inter, system-ui, sans-serif";
+      ctx3.fillText(`${Math.ceil(crate.respawnTimer)}s`, 0, 24);
     }
-    ctx2.restore();
+    ctx3.restore();
   }
-  function drawAmmoSprite(ctx2, pack, dx, dy, tick) {
-    ctx2.save();
-    ctx2.translate(dx, dy - 16 + Math.sin(tick * 0.09 + pack.x * 0.01) * 1.2);
-    ctx2.fillStyle = "#14532d";
-    ctx2.strokeStyle = "#4ade80";
-    ctx2.lineWidth = 2;
-    roundRect(ctx2, -14, -12, 28, 24, 3);
-    ctx2.fill();
-    ctx2.stroke();
-    ctx2.fillStyle = "#86efac";
-    for (let i = 0; i < 3; i++) ctx2.fillRect(-10 + i * 7, -8, 4, 6);
-    ctx2.font = "bold 9px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillStyle = "#bbf7d0";
-    ctx2.fillText("\u{1F4E6} \u5F39\u836F", 0, 20);
-    ctx2.restore();
+  function drawAmmoSprite(ctx3, pack, dx, dy, tick) {
+    ctx3.save();
+    ctx3.translate(dx, dy - 16 + Math.sin(tick * 0.09 + pack.x * 0.01) * 1.2);
+    ctx3.fillStyle = "#14532d";
+    ctx3.strokeStyle = "#4ade80";
+    ctx3.lineWidth = 2;
+    roundRect(ctx3, -14, -12, 28, 24, 3);
+    ctx3.fill();
+    ctx3.stroke();
+    ctx3.fillStyle = "#86efac";
+    for (let i = 0; i < 3; i++) ctx3.fillRect(-10 + i * 7, -8, 4, 6);
+    ctx3.font = "bold 9px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillStyle = "#bbf7d0";
+    ctx3.fillText("\u{1F4E6} \u5F39\u836F", 0, 20);
+    ctx3.restore();
   }
-  function drawMortarSprite(ctx2, m, dx, dy, tick) {
-    ctx2.save();
-    ctx2.translate(dx, dy);
-    ctx2.fillStyle = "#334155";
-    ctx2.strokeStyle = "#0f172a";
-    ctx2.lineWidth = 2;
-    ctx2.beginPath();
-    ctx2.ellipse(0, 2, 22, 9, 0, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.stroke();
-    ctx2.fillStyle = "#1e293b";
-    ctx2.beginPath();
-    ctx2.arc(-14, 2, 7, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.beginPath();
-    ctx2.arc(14, 2, 7, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.save();
-    ctx2.translate(0, -10);
-    ctx2.rotate(m.angle);
-    const g = ctx2.createLinearGradient(0, -7, 0, 7);
+  function drawMortarSprite(ctx3, m, dx, dy, tick) {
+    ctx3.save();
+    ctx3.translate(dx, dy);
+    ctx3.fillStyle = "#334155";
+    ctx3.strokeStyle = "#0f172a";
+    ctx3.lineWidth = 2;
+    ctx3.beginPath();
+    ctx3.ellipse(0, 2, 22, 9, 0, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.stroke();
+    ctx3.fillStyle = "#1e293b";
+    ctx3.beginPath();
+    ctx3.arc(-14, 2, 7, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.beginPath();
+    ctx3.arc(14, 2, 7, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.save();
+    ctx3.translate(0, -10);
+    ctx3.rotate(m.angle);
+    const g = ctx3.createLinearGradient(0, -7, 0, 7);
     g.addColorStop(0, "#64748b");
     g.addColorStop(0.5, "#475569");
     g.addColorStop(1, "#1e293b");
-    ctx2.fillStyle = g;
-    ctx2.strokeStyle = m.operatorId ? "#fde047" : "#f97316";
-    ctx2.lineWidth = 2;
-    roundRect(ctx2, 0, -7, 40, 14, 5);
-    ctx2.fill();
-    ctx2.stroke();
-    ctx2.fillStyle = "#0f172a";
-    ctx2.fillRect(36, -8, 6, 16);
-    ctx2.restore();
-    ctx2.font = "bold 11px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillStyle = m.operatorId ? "#fde047" : "#fb923c";
-    ctx2.fillText(m.operatorId ? "\u{1F3AF} \u64CD\u63A7\u4E2D [E \u79BB\u5F00]" : "\u{1F525} \u8FEB\u51FB\u70AE [E]", 0, -36);
+    ctx3.fillStyle = g;
+    ctx3.strokeStyle = m.operatorId ? "#fde047" : "#f97316";
+    ctx3.lineWidth = 2;
+    roundRect(ctx3, 0, -7, 40, 14, 5);
+    ctx3.fill();
+    ctx3.stroke();
+    ctx3.fillStyle = "#0f172a";
+    ctx3.fillRect(36, -8, 6, 16);
+    ctx3.restore();
+    ctx3.font = "bold 11px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillStyle = m.operatorId ? "#fde047" : "#fb923c";
+    ctx3.fillText(m.operatorId ? "\u{1F3AF} \u64CD\u63A7\u4E2D [E \u79BB\u5F00]" : "\u{1F525} \u8FEB\u51FB\u70AE [E]", 0, -36);
     if (m.cooldown > 0) {
-      ctx2.fillStyle = "rgba(148,163,184,0.6)";
-      ctx2.font = "9px Inter, system-ui, sans-serif";
-      ctx2.fillText(`\u88C5\u586B ${m.cooldown.toFixed(1)}s`, 0, -26);
+      ctx3.fillStyle = "rgba(148,163,184,0.6)";
+      ctx3.font = "9px Inter, system-ui, sans-serif";
+      ctx3.fillText(`\u88C5\u586B ${m.cooldown.toFixed(1)}s`, 0, -26);
     }
-    ctx2.restore();
+    ctx3.restore();
   }
-  function drawTowerSprite(ctx2, tw, dx, dy, tick) {
+  function drawTowerSprite(ctx3, tw, dx, dy, tick) {
     const h = 150;
-    ctx2.save();
-    ctx2.translate(dx, dy);
-    ctx2.strokeStyle = "#a16207";
-    ctx2.lineWidth = 3;
-    ctx2.beginPath();
-    ctx2.moveTo(-24, 0);
-    ctx2.lineTo(-12, -h);
-    ctx2.moveTo(24, 0);
-    ctx2.lineTo(12, -h);
-    ctx2.stroke();
-    ctx2.lineWidth = 1.5;
-    ctx2.strokeStyle = "rgba(202, 138, 4, 0.6)";
+    ctx3.save();
+    ctx3.translate(dx, dy);
+    ctx3.strokeStyle = "#a16207";
+    ctx3.lineWidth = 3;
+    ctx3.beginPath();
+    ctx3.moveTo(-24, 0);
+    ctx3.lineTo(-12, -h);
+    ctx3.moveTo(24, 0);
+    ctx3.lineTo(12, -h);
+    ctx3.stroke();
+    ctx3.lineWidth = 1.5;
+    ctx3.strokeStyle = "rgba(202, 138, 4, 0.6)";
     for (let i = 0; i < 5; i++) {
       const y1 = -i * (h / 5);
       const y2 = -(i + 1) * (h / 5);
       const w1 = 24 - 12 * i / 5;
       const w2 = 24 - 12 * (i + 1) / 5;
-      ctx2.beginPath();
-      ctx2.moveTo(-w1, y1);
-      ctx2.lineTo(w2, y2);
-      ctx2.moveTo(w1, y1);
-      ctx2.lineTo(-w2, y2);
-      ctx2.stroke();
+      ctx3.beginPath();
+      ctx3.moveTo(-w1, y1);
+      ctx3.lineTo(w2, y2);
+      ctx3.moveTo(w1, y1);
+      ctx3.lineTo(-w2, y2);
+      ctx3.stroke();
     }
-    ctx2.fillStyle = "#422006";
-    ctx2.fillRect(-16, -h - 12, 32, 8);
-    ctx2.fillStyle = "#eab308";
-    ctx2.fillRect(-6, -h - 26, 12, 14);
+    ctx3.fillStyle = "#422006";
+    ctx3.fillRect(-16, -h - 12, 32, 8);
+    ctx3.fillStyle = "#eab308";
+    ctx3.fillRect(-6, -h - 26, 12, 14);
     const glow = 0.5 + Math.sin(tick * 0.08) * 0.3;
-    ctx2.fillStyle = `rgba(250, 204, 21, ${glow})`;
-    ctx2.beginPath();
-    ctx2.arc(0, -h - 20, 10 + Math.sin(tick * 0.08) * 2, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.font = "bold 11px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
+    ctx3.fillStyle = `rgba(250, 204, 21, ${glow})`;
+    ctx3.beginPath();
+    ctx3.arc(0, -h - 20, 10 + Math.sin(tick * 0.08) * 2, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.font = "bold 11px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
     if (tw.operatorId !== null) {
-      ctx2.fillStyle = "#67e8f9";
-      ctx2.fillText(`\u{1F5FC} ${tw.name} \xB7 \u89C2\u6D4B\u4E2D 200%`, 0, -h - 34);
+      ctx3.fillStyle = "#67e8f9";
+      ctx3.fillText(`\u{1F5FC} ${tw.name} \xB7 \u89C2\u6D4B\u4E2D 200%`, 0, -h - 34);
     } else {
-      ctx2.fillStyle = "#fef08a";
-      ctx2.fillText(`\u{1F5FC} ${tw.name} [E]`, 0, -h - 34);
+      ctx3.fillStyle = "#fef08a";
+      ctx3.fillText(`\u{1F5FC} ${tw.name} [E]`, 0, -h - 34);
     }
-    ctx2.restore();
+    ctx3.restore();
   }
-  function drawWarpSprite(ctx2, wp, dx, dy, tick) {
-    ctx2.save();
-    ctx2.translate(dx, dy - 28);
+  function drawWarpSprite(ctx3, wp, dx, dy, tick) {
+    ctx3.save();
+    ctx3.translate(dx, dy - 28);
     const pulse = 0.5 + Math.sin(tick * 0.1 + wp.x * 0.01) * 0.2;
-    ctx2.strokeStyle = "rgba(6, 182, 212, 0.9)";
-    ctx2.lineWidth = 3.5;
-    ctx2.beginPath();
-    ctx2.ellipse(0, 0, 22 + pulse * 3, 34 + pulse * 4, 0, 0, Math.PI * 2);
-    ctx2.stroke();
-    ctx2.fillStyle = `rgba(6, 182, 212, ${0.12 + pulse * 0.12})`;
-    ctx2.fill();
-    ctx2.save();
-    ctx2.rotate(tick * 0.05);
-    ctx2.strokeStyle = "rgba(103, 232, 249, 0.55)";
-    ctx2.lineWidth = 2;
+    ctx3.strokeStyle = "rgba(6, 182, 212, 0.9)";
+    ctx3.lineWidth = 3.5;
+    ctx3.beginPath();
+    ctx3.ellipse(0, 0, 22 + pulse * 3, 34 + pulse * 4, 0, 0, Math.PI * 2);
+    ctx3.stroke();
+    ctx3.fillStyle = `rgba(6, 182, 212, ${0.12 + pulse * 0.12})`;
+    ctx3.fill();
+    ctx3.save();
+    ctx3.rotate(tick * 0.05);
+    ctx3.strokeStyle = "rgba(103, 232, 249, 0.55)";
+    ctx3.lineWidth = 2;
     for (let i = 0; i < 3; i++) {
-      ctx2.beginPath();
-      ctx2.ellipse(0, 0, 8 + i * 4, 14 + i * 5, Math.PI / 3, 0, Math.PI * 1.4);
-      ctx2.stroke();
+      ctx3.beginPath();
+      ctx3.ellipse(0, 0, 8 + i * 4, 14 + i * 5, Math.PI / 3, 0, Math.PI * 1.4);
+      ctx3.stroke();
     }
-    ctx2.restore();
-    ctx2.fillStyle = "#67e8f9";
-    ctx2.font = "bold 11px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillText(`\u{1F300} ${wp.name} [E]`, 0, -48);
-    ctx2.restore();
+    ctx3.restore();
+    ctx3.fillStyle = "#67e8f9";
+    ctx3.font = "bold 11px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillText(`\u{1F300} ${wp.name} [E]`, 0, -48);
+    ctx3.restore();
   }
-  function drawFlagSprite(ctx2, cp, dx, dy, tick) {
+  function drawFlagSprite(ctx3, cp, dx, dy, tick) {
     const pal = cp.ownerTeam ? TEAM_PALETTE[cp.ownerTeam] ?? TEAM_PALETTE.red : { color: "#94a3b8", light: "#cbd5e1", dark: "#475569" };
-    ctx2.save();
-    ctx2.translate(dx, dy);
-    ctx2.strokeStyle = "#94a3b8";
-    ctx2.lineWidth = 4;
-    ctx2.beginPath();
-    ctx2.moveTo(0, 0);
-    ctx2.lineTo(0, -100);
-    ctx2.stroke();
+    ctx3.save();
+    ctx3.translate(dx, dy);
+    ctx3.strokeStyle = "#94a3b8";
+    ctx3.lineWidth = 4;
+    ctx3.beginPath();
+    ctx3.moveTo(0, 0);
+    ctx3.lineTo(0, -100);
+    ctx3.stroke();
     const wave = Math.sin(tick * 0.07) * 8;
     const wave2 = Math.sin(tick * 0.07 + 1.2) * 4;
-    ctx2.fillStyle = pal.color;
-    ctx2.beginPath();
-    ctx2.moveTo(0, -100);
-    ctx2.bezierCurveTo(30, -96 + wave, 46, -88 + wave2, 58, -78 + wave * 0.6);
-    ctx2.lineTo(58, -46 + wave * 0.6);
-    ctx2.bezierCurveTo(40, -52 + wave2, 22, -54 + wave, 0, -58);
-    ctx2.closePath();
-    ctx2.fill();
-    ctx2.strokeStyle = "rgba(255,255,255,0.5)";
-    ctx2.lineWidth = 1.5;
-    ctx2.stroke();
-    ctx2.fillStyle = "#ffffff";
-    ctx2.font = "bold 12px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillText(`\u{1F6A9} [${cp.code}] ${Math.round(cp.progress)}%`, 0, -112);
-    ctx2.restore();
+    ctx3.fillStyle = pal.color;
+    ctx3.beginPath();
+    ctx3.moveTo(0, -100);
+    ctx3.bezierCurveTo(30, -96 + wave, 46, -88 + wave2, 58, -78 + wave * 0.6);
+    ctx3.lineTo(58, -46 + wave * 0.6);
+    ctx3.bezierCurveTo(40, -52 + wave2, 22, -54 + wave, 0, -58);
+    ctx3.closePath();
+    ctx3.fill();
+    ctx3.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx3.lineWidth = 1.5;
+    ctx3.stroke();
+    ctx3.fillStyle = "#ffffff";
+    ctx3.font = "bold 12px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillText(`\u{1F6A9} [${cp.code}] ${Math.round(cp.progress)}%`, 0, -112);
+    ctx3.restore();
   }
-  function drawMineSprite(ctx2, m, dx, dy, tick, triggerRadius) {
-    ctx2.save();
-    ctx2.translate(dx, dy);
+  function drawMineSprite(ctx3, m, dx, dy, tick, triggerRadius) {
+    ctx3.save();
+    ctx3.translate(dx, dy);
     const blink = Math.floor(tick / 8) % 2 === 0;
-    ctx2.strokeStyle = m.triggered ? "rgba(244,63,94,0.8)" : m.instant ? "rgba(56,189,248,0.35)" : "rgba(244,63,94,0.2)";
-    ctx2.lineWidth = 1.5;
-    ctx2.beginPath();
-    ctx2.arc(0, 0, triggerRadius, 0, Math.PI * 2);
-    ctx2.stroke();
-    const g = ctx2.createRadialGradient(-3, -6, 2, 0, 0, 12);
+    ctx3.strokeStyle = m.triggered ? "rgba(244,63,94,0.8)" : m.instant ? "rgba(56,189,248,0.35)" : "rgba(244,63,94,0.2)";
+    ctx3.lineWidth = 1.5;
+    ctx3.beginPath();
+    ctx3.arc(0, 0, triggerRadius, 0, Math.PI * 2);
+    ctx3.stroke();
+    const g = ctx3.createRadialGradient(-3, -6, 2, 0, 0, 12);
     g.addColorStop(0, m.instant ? "#38bdf8" : "#64748b");
     g.addColorStop(1, m.instant ? "#075985" : "#1e293b");
-    ctx2.fillStyle = g;
-    ctx2.beginPath();
-    ctx2.arc(0, 0, 12, Math.PI, 0);
-    ctx2.fill();
-    ctx2.fillRect(-12, 0, 24, 4);
-    ctx2.strokeStyle = "#0f172a";
-    ctx2.lineWidth = 2;
-    ctx2.beginPath();
-    ctx2.moveTo(-10, 4);
-    ctx2.lineTo(-16, 10);
-    ctx2.moveTo(10, 4);
-    ctx2.lineTo(16, 10);
-    ctx2.stroke();
-    ctx2.fillStyle = blink ? m.triggered ? "#ef4444" : m.instant ? "#38bdf8" : "#fbbf24" : "#1e293b";
-    ctx2.beginPath();
-    ctx2.arc(0, -5, 3.2, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.restore();
+    ctx3.fillStyle = g;
+    ctx3.beginPath();
+    ctx3.arc(0, 0, 12, Math.PI, 0);
+    ctx3.fill();
+    ctx3.fillRect(-12, 0, 24, 4);
+    ctx3.strokeStyle = "#0f172a";
+    ctx3.lineWidth = 2;
+    ctx3.beginPath();
+    ctx3.moveTo(-10, 4);
+    ctx3.lineTo(-16, 10);
+    ctx3.moveTo(10, 4);
+    ctx3.lineTo(16, 10);
+    ctx3.stroke();
+    ctx3.fillStyle = blink ? m.triggered ? "#ef4444" : m.instant ? "#38bdf8" : "#fbbf24" : "#1e293b";
+    ctx3.beginPath();
+    ctx3.arc(0, -5, 3.2, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.restore();
   }
-  function drawGrenadeSprite(ctx2, g, dx, dy, tick) {
-    ctx2.save();
-    ctx2.translate(dx, dy);
-    ctx2.rotate(tick * 0.2);
-    const grad = ctx2.createRadialGradient(-2, -2, 1, 0, 0, 8);
+  function drawGrenadeSprite(ctx3, g, dx, dy, tick) {
+    ctx3.save();
+    ctx3.translate(dx, dy);
+    ctx3.rotate(tick * 0.2);
+    const grad = ctx3.createRadialGradient(-2, -2, 1, 0, 0, 8);
     grad.addColorStop(0, "#86efac");
     grad.addColorStop(1, "#166534");
-    ctx2.fillStyle = grad;
-    ctx2.beginPath();
-    ctx2.arc(0, 0, 7, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.strokeStyle = "#0f172a";
-    ctx2.lineWidth = 1.5;
-    ctx2.stroke();
-    ctx2.fillStyle = "#fbbf24";
-    ctx2.fillRect(-2, -10, 4, 4);
-    ctx2.restore();
+    ctx3.fillStyle = grad;
+    ctx3.beginPath();
+    ctx3.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.strokeStyle = "#0f172a";
+    ctx3.lineWidth = 1.5;
+    ctx3.stroke();
+    ctx3.fillStyle = "#fbbf24";
+    ctx3.fillRect(-2, -10, 4, 4);
+    ctx3.restore();
   }
-  function drawAirstrikeSprite(ctx2, st, dx, dy, tick) {
-    ctx2.save();
-    ctx2.translate(dx, dy);
+  function drawAirstrikeSprite(ctx3, st, dx, dy, tick) {
+    ctx3.save();
+    ctx3.translate(dx, dy);
     const pulse = 0.5 + Math.sin(tick * 0.4) * 0.5;
-    ctx2.strokeStyle = `rgba(239,68,68,${0.5 + pulse * 0.4})`;
-    ctx2.lineWidth = 2.5;
-    ctx2.beginPath();
-    ctx2.arc(0, 0, 40, 0, Math.PI * 2);
-    ctx2.stroke();
-    ctx2.beginPath();
-    ctx2.arc(0, 0, 18 + pulse * 6, 0, Math.PI * 2);
-    ctx2.stroke();
-    const beamGrad = ctx2.createLinearGradient(0, -400, 0, 0);
+    ctx3.strokeStyle = `rgba(239,68,68,${0.5 + pulse * 0.4})`;
+    ctx3.lineWidth = 2.5;
+    ctx3.beginPath();
+    ctx3.arc(0, 0, 40, 0, Math.PI * 2);
+    ctx3.stroke();
+    ctx3.beginPath();
+    ctx3.arc(0, 0, 18 + pulse * 6, 0, Math.PI * 2);
+    ctx3.stroke();
+    const beamGrad = ctx3.createLinearGradient(0, -400, 0, 0);
     beamGrad.addColorStop(0, "rgba(239,68,68,0)");
     beamGrad.addColorStop(1, `rgba(239,68,68,${0.35 + pulse * 0.2})`);
-    ctx2.fillStyle = beamGrad;
-    ctx2.fillRect(-8, -400, 16, 400);
-    ctx2.fillStyle = "#fecaca";
-    ctx2.font = "bold 11px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillText(`\u2708\uFE0F \u7A7A\u88AD ${st.timer.toFixed(1)}s`, 0, -52);
-    ctx2.restore();
+    ctx3.fillStyle = beamGrad;
+    ctx3.fillRect(-8, -400, 16, 400);
+    ctx3.fillStyle = "#fecaca";
+    ctx3.font = "bold 11px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillText(`\u2708\uFE0F \u7A7A\u88AD ${st.timer.toFixed(1)}s`, 0, -52);
+    ctx3.restore();
   }
-  function drawProjectileSprite(ctx2, pr, dx, dy, tick) {
+  function drawProjectileSprite(ctx3, pr, dx, dy, tick) {
     if (pr.rocket) {
       const ang = Math.atan2(pr.vel.y, pr.vel.x);
-      ctx2.save();
-      ctx2.translate(dx, dy);
-      ctx2.rotate(ang);
+      ctx3.save();
+      ctx3.translate(dx, dy);
+      ctx3.rotate(ang);
       const flame = 10 + Math.sin(tick * 1.4) * 5;
-      const fg = ctx2.createLinearGradient(-14, 0, -14 - flame, 0);
+      const fg = ctx3.createLinearGradient(-14, 0, -14 - flame, 0);
       fg.addColorStop(0, "rgba(251, 191, 36, 0.9)");
       fg.addColorStop(0.6, "rgba(249, 115, 22, 0.6)");
       fg.addColorStop(1, "rgba(249, 115, 22, 0)");
-      ctx2.fillStyle = fg;
-      ctx2.beginPath();
-      ctx2.moveTo(-12, -4.5);
-      ctx2.lineTo(-12 - flame, 0);
-      ctx2.lineTo(-12, 4.5);
-      ctx2.closePath();
-      ctx2.fill();
-      const bodyGrad = ctx2.createLinearGradient(0, -6, 0, 6);
+      ctx3.fillStyle = fg;
+      ctx3.beginPath();
+      ctx3.moveTo(-12, -4.5);
+      ctx3.lineTo(-12 - flame, 0);
+      ctx3.lineTo(-12, 4.5);
+      ctx3.closePath();
+      ctx3.fill();
+      const bodyGrad = ctx3.createLinearGradient(0, -6, 0, 6);
       bodyGrad.addColorStop(0, "#fda4af");
       bodyGrad.addColorStop(0.5, "#f43f5e");
       bodyGrad.addColorStop(1, "#9f1239");
-      ctx2.fillStyle = bodyGrad;
-      ctx2.strokeStyle = "#4c0519";
-      ctx2.lineWidth = 1.5;
-      roundRect(ctx2, -14, -5, 24, 10, 4);
-      ctx2.fill();
-      ctx2.stroke();
-      ctx2.fillStyle = "#fde68a";
-      ctx2.beginPath();
-      ctx2.moveTo(10, -5);
-      ctx2.lineTo(18, 0);
-      ctx2.lineTo(10, 5);
-      ctx2.closePath();
-      ctx2.fill();
-      ctx2.fillStyle = "#9f1239";
-      ctx2.beginPath();
-      ctx2.moveTo(-14, -5);
-      ctx2.lineTo(-18, -9);
-      ctx2.lineTo(-10, -5);
-      ctx2.closePath();
-      ctx2.fill();
-      ctx2.beginPath();
-      ctx2.moveTo(-14, 5);
-      ctx2.lineTo(-18, 9);
-      ctx2.lineTo(-10, 5);
-      ctx2.closePath();
-      ctx2.fill();
-      ctx2.restore();
+      ctx3.fillStyle = bodyGrad;
+      ctx3.strokeStyle = "#4c0519";
+      ctx3.lineWidth = 1.5;
+      roundRect(ctx3, -14, -5, 24, 10, 4);
+      ctx3.fill();
+      ctx3.stroke();
+      ctx3.fillStyle = "#fde68a";
+      ctx3.beginPath();
+      ctx3.moveTo(10, -5);
+      ctx3.lineTo(18, 0);
+      ctx3.lineTo(10, 5);
+      ctx3.closePath();
+      ctx3.fill();
+      ctx3.fillStyle = "#9f1239";
+      ctx3.beginPath();
+      ctx3.moveTo(-14, -5);
+      ctx3.lineTo(-18, -9);
+      ctx3.lineTo(-10, -5);
+      ctx3.closePath();
+      ctx3.fill();
+      ctx3.beginPath();
+      ctx3.moveTo(-14, 5);
+      ctx3.lineTo(-18, 9);
+      ctx3.lineTo(-10, 5);
+      ctx3.closePath();
+      ctx3.fill();
+      ctx3.restore();
       return;
     }
     if (pr.beam) {
@@ -3170,960 +3646,382 @@
       const len = 150;
       const ex = dx - pr.vel.x / spd * len;
       const ey = dy - pr.vel.y / spd * len;
-      ctx2.save();
-      ctx2.globalAlpha = 0.9;
-      ctx2.strokeStyle = pr.color || "#22d3ee";
-      ctx2.lineWidth = 6;
-      ctx2.lineCap = "round";
-      ctx2.beginPath();
-      ctx2.moveTo(ex, ey);
-      ctx2.lineTo(dx, dy);
-      ctx2.stroke();
-      ctx2.globalAlpha = 1;
-      ctx2.strokeStyle = "#ffffff";
-      ctx2.lineWidth = 2;
-      ctx2.beginPath();
-      ctx2.moveTo(ex, ey);
-      ctx2.lineTo(dx, dy);
-      ctx2.stroke();
-      ctx2.globalAlpha = 0.5;
-      ctx2.fillStyle = pr.color || "#22d3ee";
-      ctx2.beginPath();
-      ctx2.arc(dx, dy, 7, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.restore();
+      ctx3.save();
+      ctx3.globalAlpha = 0.9;
+      ctx3.strokeStyle = pr.color || "#22d3ee";
+      ctx3.lineWidth = 6;
+      ctx3.lineCap = "round";
+      ctx3.beginPath();
+      ctx3.moveTo(ex, ey);
+      ctx3.lineTo(dx, dy);
+      ctx3.stroke();
+      ctx3.globalAlpha = 1;
+      ctx3.strokeStyle = "#ffffff";
+      ctx3.lineWidth = 2;
+      ctx3.beginPath();
+      ctx3.moveTo(ex, ey);
+      ctx3.lineTo(dx, dy);
+      ctx3.stroke();
+      ctx3.globalAlpha = 0.5;
+      ctx3.fillStyle = pr.color || "#22d3ee";
+      ctx3.beginPath();
+      ctx3.arc(dx, dy, 7, 0, Math.PI * 2);
+      ctx3.fill();
+      ctx3.restore();
     } else if (pr.isGravityOrb) {
-      ctx2.save();
-      const grd = ctx2.createRadialGradient(dx, dy, 2, dx, dy, 24);
+      ctx3.save();
+      const grd = ctx3.createRadialGradient(dx, dy, 2, dx, dy, 24);
       grd.addColorStop(0, "rgba(216,180,254,0.95)");
       grd.addColorStop(0.4, "rgba(168,85,247,0.6)");
       grd.addColorStop(1, "rgba(168,85,247,0)");
-      ctx2.fillStyle = grd;
-      ctx2.beginPath();
-      ctx2.arc(dx, dy, 24, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.fillStyle = "#e9d5ff";
-      ctx2.beginPath();
-      ctx2.arc(dx, dy, pr.r, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.restore();
+      ctx3.fillStyle = grd;
+      ctx3.beginPath();
+      ctx3.arc(dx, dy, 24, 0, Math.PI * 2);
+      ctx3.fill();
+      ctx3.fillStyle = "#e9d5ff";
+      ctx3.beginPath();
+      ctx3.arc(dx, dy, pr.r, 0, Math.PI * 2);
+      ctx3.fill();
+      ctx3.restore();
     } else {
       const spd = Math.hypot(pr.vel.x, pr.vel.y) || 1;
       const len = 14;
       const ex = dx - pr.vel.x / spd * len;
       const ey = dy - pr.vel.y / spd * len;
-      ctx2.save();
-      ctx2.strokeStyle = pr.color || "#fbbf24";
-      ctx2.lineWidth = 2;
-      ctx2.lineCap = "round";
-      ctx2.beginPath();
-      ctx2.moveTo(ex, ey);
-      ctx2.lineTo(dx, dy);
-      ctx2.stroke();
-      ctx2.fillStyle = "#fff7d6";
-      ctx2.beginPath();
-      ctx2.arc(dx, dy, Math.max(1.5, pr.r - 1), 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.restore();
+      ctx3.save();
+      ctx3.strokeStyle = pr.color || "#fbbf24";
+      ctx3.lineWidth = 2;
+      ctx3.lineCap = "round";
+      ctx3.beginPath();
+      ctx3.moveTo(ex, ey);
+      ctx3.lineTo(dx, dy);
+      ctx3.stroke();
+      ctx3.fillStyle = "#fff7d6";
+      ctx3.beginPath();
+      ctx3.arc(dx, dy, Math.max(1.5, pr.r - 1), 0, Math.PI * 2);
+      ctx3.fill();
+      ctx3.restore();
     }
   }
-  function drawDeco(ctx2, r, dx, dy, tick) {
+  function drawDeco(ctx3, r, dx, dy, tick) {
     const left = dx - r.w / 2;
     const top = dy - r.h / 2;
     switch (r.kind) {
       case "deco_window_lit": {
         const flick = 0.75 + Math.sin(tick * 0.05 + r.x * 0.013) * 0.12;
-        ctx2.save();
-        ctx2.globalAlpha = 0.9;
-        ctx2.fillStyle = r.color;
-        ctx2.fillRect(left, top, r.w, r.h);
-        ctx2.strokeStyle = "rgba(15,23,42,0.75)";
-        ctx2.lineWidth = 2;
-        ctx2.strokeRect(left, top, r.w, r.h);
-        ctx2.beginPath();
-        ctx2.moveTo(left + r.w / 2, top);
-        ctx2.lineTo(left + r.w / 2, top + r.h);
-        ctx2.moveTo(left, top + r.h / 2);
-        ctx2.lineTo(left + r.w, top + r.h / 2);
-        ctx2.stroke();
-        const g = ctx2.createRadialGradient(left + r.w / 2, top + r.h / 2, 2, left + r.w / 2, top + r.h / 2, r.w * 1.8);
+        ctx3.save();
+        ctx3.globalAlpha = 0.9;
+        ctx3.fillStyle = r.color;
+        ctx3.fillRect(left, top, r.w, r.h);
+        ctx3.strokeStyle = "rgba(15,23,42,0.75)";
+        ctx3.lineWidth = 2;
+        ctx3.strokeRect(left, top, r.w, r.h);
+        ctx3.beginPath();
+        ctx3.moveTo(left + r.w / 2, top);
+        ctx3.lineTo(left + r.w / 2, top + r.h);
+        ctx3.moveTo(left, top + r.h / 2);
+        ctx3.lineTo(left + r.w, top + r.h / 2);
+        ctx3.stroke();
+        const g = ctx3.createRadialGradient(left + r.w / 2, top + r.h / 2, 2, left + r.w / 2, top + r.h / 2, r.w * 1.8);
         g.addColorStop(0, `rgba(251, 191, 36, ${0.2 * flick})`);
         g.addColorStop(1, "rgba(251, 191, 36, 0)");
-        ctx2.fillStyle = g;
-        ctx2.fillRect(left - r.w, top - r.h, r.w * 3, r.h * 3);
-        ctx2.restore();
+        ctx3.fillStyle = g;
+        ctx3.fillRect(left - r.w, top - r.h, r.w * 3, r.h * 3);
+        ctx3.restore();
         break;
       }
       case "deco_window_dark":
-        ctx2.fillStyle = "#0b1220";
-        ctx2.fillRect(left, top, r.w, r.h);
-        ctx2.strokeStyle = "rgba(30,41,59,0.9)";
-        ctx2.lineWidth = 2;
-        ctx2.strokeRect(left, top, r.w, r.h);
+        ctx3.fillStyle = "#0b1220";
+        ctx3.fillRect(left, top, r.w, r.h);
+        ctx3.strokeStyle = "rgba(30,41,59,0.9)";
+        ctx3.lineWidth = 2;
+        ctx3.strokeRect(left, top, r.w, r.h);
         break;
       case "deco_lamp": {
-        ctx2.save();
-        ctx2.strokeStyle = "#475569";
-        ctx2.lineWidth = 3;
-        ctx2.beginPath();
-        ctx2.moveTo(dx, top + r.h);
-        ctx2.lineTo(dx, top + 10);
-        ctx2.stroke();
-        ctx2.fillStyle = "#1e293b";
-        ctx2.fillRect(dx - 7, top, 14, 10);
-        const g = ctx2.createRadialGradient(dx, top + 6, 2, dx, top + 6, 70);
+        ctx3.save();
+        ctx3.strokeStyle = "#475569";
+        ctx3.lineWidth = 3;
+        ctx3.beginPath();
+        ctx3.moveTo(dx, top + r.h);
+        ctx3.lineTo(dx, top + 10);
+        ctx3.stroke();
+        ctx3.fillStyle = "#1e293b";
+        ctx3.fillRect(dx - 7, top, 14, 10);
+        const g = ctx3.createRadialGradient(dx, top + 6, 2, dx, top + 6, 70);
         g.addColorStop(0, "rgba(251,191,36,0.22)");
         g.addColorStop(1, "rgba(251,191,36,0)");
-        ctx2.fillStyle = g;
-        ctx2.beginPath();
-        ctx2.arc(dx, top + 6, 70, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#fde68a";
-        ctx2.beginPath();
-        ctx2.arc(dx, top + 6, 3.5, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.restore();
+        ctx3.fillStyle = g;
+        ctx3.beginPath();
+        ctx3.arc(dx, top + 6, 70, 0, Math.PI * 2);
+        ctx3.fill();
+        ctx3.fillStyle = "#fde68a";
+        ctx3.beginPath();
+        ctx3.arc(dx, top + 6, 3.5, 0, Math.PI * 2);
+        ctx3.fill();
+        ctx3.restore();
         break;
       }
       case "deco_cable": {
-        ctx2.save();
-        ctx2.strokeStyle = "rgba(100,116,139,0.85)";
-        ctx2.lineWidth = 2;
-        ctx2.beginPath();
-        ctx2.moveTo(left, top);
-        ctx2.quadraticCurveTo(left + r.w / 2, top + r.h * 1.6, left + r.w, top);
-        ctx2.stroke();
-        ctx2.fillStyle = "#94a3b8";
-        ctx2.beginPath();
-        ctx2.arc(left, top, 3, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.beginPath();
-        ctx2.arc(left + r.w, top, 3, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.restore();
+        ctx3.save();
+        ctx3.strokeStyle = "rgba(100,116,139,0.85)";
+        ctx3.lineWidth = 2;
+        ctx3.beginPath();
+        ctx3.moveTo(left, top);
+        ctx3.quadraticCurveTo(left + r.w / 2, top + r.h * 1.6, left + r.w, top);
+        ctx3.stroke();
+        ctx3.fillStyle = "#94a3b8";
+        ctx3.beginPath();
+        ctx3.arc(left, top, 3, 0, Math.PI * 2);
+        ctx3.fill();
+        ctx3.beginPath();
+        ctx3.arc(left + r.w, top, 3, 0, Math.PI * 2);
+        ctx3.fill();
+        ctx3.restore();
         break;
       }
       case "deco_antenna": {
-        ctx2.save();
-        ctx2.strokeStyle = r.color;
-        ctx2.lineWidth = 2;
-        ctx2.beginPath();
-        ctx2.moveTo(dx, top + r.h);
-        ctx2.lineTo(dx, top + 6);
-        ctx2.moveTo(dx - 10, top + 16);
-        ctx2.lineTo(dx + 10, top + 16);
-        ctx2.moveTo(dx - 7, top + 26);
-        ctx2.lineTo(dx + 7, top + 26);
-        ctx2.stroke();
+        ctx3.save();
+        ctx3.strokeStyle = r.color;
+        ctx3.lineWidth = 2;
+        ctx3.beginPath();
+        ctx3.moveTo(dx, top + r.h);
+        ctx3.lineTo(dx, top + 6);
+        ctx3.moveTo(dx - 10, top + 16);
+        ctx3.lineTo(dx + 10, top + 16);
+        ctx3.moveTo(dx - 7, top + 26);
+        ctx3.lineTo(dx + 7, top + 26);
+        ctx3.stroke();
         const on = Math.floor(tick / 40) % 2 === 0;
-        ctx2.fillStyle = on ? "#ef4444" : "#7f1d1d";
-        ctx2.beginPath();
-        ctx2.arc(dx, top + 4, 3.5, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.restore();
+        ctx3.fillStyle = on ? "#ef4444" : "#7f1d1d";
+        ctx3.beginPath();
+        ctx3.arc(dx, top + 4, 3.5, 0, Math.PI * 2);
+        ctx3.fill();
+        ctx3.restore();
         break;
       }
       case "deco_vent": {
-        ctx2.save();
-        ctx2.strokeStyle = "#64748b";
-        ctx2.lineWidth = 2;
-        ctx2.strokeRect(left, top, r.w, r.h);
-        ctx2.fillStyle = "rgba(148,163,184,0.35)";
+        ctx3.save();
+        ctx3.strokeStyle = "#64748b";
+        ctx3.lineWidth = 2;
+        ctx3.strokeRect(left, top, r.w, r.h);
+        ctx3.fillStyle = "rgba(148,163,184,0.35)";
         for (let i = 0; i < 3; i++) {
           const ph = (tick * 0.4 + i * 12) % 36 / 36;
-          ctx2.globalAlpha = (1 - ph) * 0.5;
-          ctx2.beginPath();
-          ctx2.arc(dx, top - 6 - ph * 26, 5 + ph * 8, 0, Math.PI * 2);
-          ctx2.fill();
+          ctx3.globalAlpha = (1 - ph) * 0.5;
+          ctx3.beginPath();
+          ctx3.arc(dx, top - 6 - ph * 26, 5 + ph * 8, 0, Math.PI * 2);
+          ctx3.fill();
         }
-        ctx2.globalAlpha = 1;
-        ctx2.restore();
+        ctx3.globalAlpha = 1;
+        ctx3.restore();
         break;
       }
       case "deco_stripe": {
-        ctx2.save();
-        ctx2.beginPath();
-        ctx2.rect(left, top, r.w, r.h);
-        ctx2.clip();
+        ctx3.save();
+        ctx3.beginPath();
+        ctx3.rect(left, top, r.w, r.h);
+        ctx3.clip();
         for (let x = left - r.h; x < left + r.w; x += 14) {
-          ctx2.fillStyle = "rgba(245,158,11,0.55)";
-          ctx2.beginPath();
-          ctx2.moveTo(x, top + r.h);
-          ctx2.lineTo(x + 7, top);
-          ctx2.lineTo(x + 14, top);
-          ctx2.lineTo(x + 7, top + r.h);
-          ctx2.closePath();
-          ctx2.fill();
+          ctx3.fillStyle = "rgba(245,158,11,0.55)";
+          ctx3.beginPath();
+          ctx3.moveTo(x, top + r.h);
+          ctx3.lineTo(x + 7, top);
+          ctx3.lineTo(x + 14, top);
+          ctx3.lineTo(x + 7, top + r.h);
+          ctx3.closePath();
+          ctx3.fill();
         }
-        ctx2.restore();
+        ctx3.restore();
         break;
       }
       case "deco_barrel": {
-        ctx2.save();
-        const g = ctx2.createLinearGradient(left, 0, left + r.w, 0);
+        ctx3.save();
+        const g = ctx3.createLinearGradient(left, 0, left + r.w, 0);
         g.addColorStop(0, "#92400e");
         g.addColorStop(0.5, "#f59e0b");
         g.addColorStop(1, "#78350f");
-        ctx2.fillStyle = g;
-        roundRect(ctx2, left, top, r.w, r.h, 3);
-        ctx2.fill();
-        ctx2.strokeStyle = "#451a03";
-        ctx2.lineWidth = 1.5;
-        ctx2.stroke();
-        ctx2.fillStyle = "rgba(0,0,0,0.35)";
-        ctx2.fillRect(left, top + 6, r.w, 2);
-        ctx2.fillRect(left, top + r.h - 8, r.w, 2);
-        ctx2.restore();
+        ctx3.fillStyle = g;
+        roundRect(ctx3, left, top, r.w, r.h, 3);
+        ctx3.fill();
+        ctx3.strokeStyle = "#451a03";
+        ctx3.lineWidth = 1.5;
+        ctx3.stroke();
+        ctx3.fillStyle = "rgba(0,0,0,0.35)";
+        ctx3.fillRect(left, top + 6, r.w, 2);
+        ctx3.fillRect(left, top + r.h - 8, r.w, 2);
+        ctx3.restore();
         break;
       }
       case "deco_pipe_run": {
-        ctx2.save();
-        const g = ctx2.createLinearGradient(0, top, 0, top + r.h);
+        ctx3.save();
+        const g = ctx3.createLinearGradient(0, top, 0, top + r.h);
         g.addColorStop(0, "#0891b2");
         g.addColorStop(0.5, "#22d3ee");
         g.addColorStop(1, "#0e7490");
-        ctx2.fillStyle = g;
-        roundRect(ctx2, left, top, r.w, r.h, 4);
-        ctx2.fill();
-        ctx2.fillStyle = "rgba(0,0,0,0.4)";
-        for (let x = left + 40; x < left + r.w; x += 120) ctx2.fillRect(x, top - 2, 6, r.h + 4);
-        ctx2.restore();
+        ctx3.fillStyle = g;
+        roundRect(ctx3, left, top, r.w, r.h, 4);
+        ctx3.fill();
+        ctx3.fillStyle = "rgba(0,0,0,0.4)";
+        for (let x = left + 40; x < left + r.w; x += 120) ctx3.fillRect(x, top - 2, 6, r.h + 4);
+        ctx3.restore();
         break;
       }
       case "deco_ladder": {
-        ctx2.save();
-        ctx2.strokeStyle = "rgba(148,163,184,0.75)";
-        ctx2.lineWidth = 2;
+        ctx3.save();
+        ctx3.strokeStyle = "rgba(148,163,184,0.75)";
+        ctx3.lineWidth = 2;
         const x1 = left + 2;
         const x2 = left + r.w - 2;
-        ctx2.beginPath();
-        ctx2.moveTo(x1, top);
-        ctx2.lineTo(x1, top + r.h);
-        ctx2.moveTo(x2, top);
-        ctx2.lineTo(x2, top + r.h);
-        ctx2.stroke();
+        ctx3.beginPath();
+        ctx3.moveTo(x1, top);
+        ctx3.lineTo(x1, top + r.h);
+        ctx3.moveTo(x2, top);
+        ctx3.lineTo(x2, top + r.h);
+        ctx3.stroke();
         for (let y = top + 12; y < top + r.h; y += 22) {
-          ctx2.beginPath();
-          ctx2.moveTo(x1, y);
-          ctx2.lineTo(x2, y);
-          ctx2.stroke();
+          ctx3.beginPath();
+          ctx3.moveTo(x1, y);
+          ctx3.lineTo(x2, y);
+          ctx3.stroke();
         }
-        ctx2.restore();
+        ctx3.restore();
         break;
       }
       case "deco_sign": {
-        ctx2.save();
-        ctx2.fillStyle = "rgba(15,23,42,0.9)";
-        roundRect(ctx2, left, top, r.w, r.h, 4);
-        ctx2.fill();
-        ctx2.strokeStyle = r.color;
-        ctx2.lineWidth = 2;
-        ctx2.stroke();
-        ctx2.fillStyle = r.color;
-        ctx2.font = "bold 13px Inter, system-ui, sans-serif";
-        ctx2.textAlign = "center";
-        ctx2.textBaseline = "middle";
-        ctx2.fillText(`\u{1F6A9} ${r.borderColor ?? ""}`, dx, top + r.h / 2 + 1);
-        ctx2.restore();
+        ctx3.save();
+        ctx3.fillStyle = "rgba(15,23,42,0.9)";
+        roundRect(ctx3, left, top, r.w, r.h, 4);
+        ctx3.fill();
+        ctx3.strokeStyle = r.color;
+        ctx3.lineWidth = 2;
+        ctx3.stroke();
+        ctx3.fillStyle = r.color;
+        ctx3.font = "bold 13px Inter, system-ui, sans-serif";
+        ctx3.textAlign = "center";
+        ctx3.textBaseline = "middle";
+        ctx3.fillText(`\u{1F6A9} ${r.borderColor ?? ""}`, dx, top + r.h / 2 + 1);
+        ctx3.restore();
         break;
       }
       case "deco_bracket": {
-        ctx2.save();
-        ctx2.strokeStyle = "rgba(34,211,238,0.6)";
-        ctx2.lineWidth = 3;
-        ctx2.beginPath();
-        ctx2.moveTo(dx - 8, top + r.h);
-        ctx2.lineTo(dx - 8, top);
-        ctx2.lineTo(dx + 8, top);
-        ctx2.lineTo(dx + 8, top + r.h);
-        ctx2.stroke();
-        ctx2.restore();
+        ctx3.save();
+        ctx3.strokeStyle = "rgba(34,211,238,0.6)";
+        ctx3.lineWidth = 3;
+        ctx3.beginPath();
+        ctx3.moveTo(dx - 8, top + r.h);
+        ctx3.lineTo(dx - 8, top);
+        ctx3.lineTo(dx + 8, top);
+        ctx3.lineTo(dx + 8, top + r.h);
+        ctx3.stroke();
+        ctx3.restore();
         break;
       }
       case "deco_vine": {
-        ctx2.save();
-        ctx2.strokeStyle = r.color;
-        ctx2.lineWidth = 2.5;
-        ctx2.beginPath();
-        ctx2.moveTo(dx, top);
+        ctx3.save();
+        ctx3.strokeStyle = r.color;
+        ctx3.lineWidth = 2.5;
+        ctx3.beginPath();
+        ctx3.moveTo(dx, top);
         const sway = Math.sin(tick * 0.04 + r.x * 0.02) * 4;
-        ctx2.quadraticCurveTo(dx + sway, top + r.h * 0.6, dx + sway * 1.6, top + r.h);
-        ctx2.stroke();
-        ctx2.fillStyle = "rgba(74, 222, 128, 0.65)";
+        ctx3.quadraticCurveTo(dx + sway, top + r.h * 0.6, dx + sway * 1.6, top + r.h);
+        ctx3.stroke();
+        ctx3.fillStyle = "rgba(74, 222, 128, 0.65)";
         for (let i = 1; i <= 3; i++) {
           const ly = top + r.h / 4 * i;
           const off = Math.sin(tick * 0.04 + r.x * 0.02 + i) * 3;
-          ctx2.beginPath();
-          ctx2.ellipse(dx + off, ly, 3.4, 5.2, off > 0 ? 0.6 : -0.6, 0, Math.PI * 2);
-          ctx2.fill();
+          ctx3.beginPath();
+          ctx3.ellipse(dx + off, ly, 3.4, 5.2, off > 0 ? 0.6 : -0.6, 0, Math.PI * 2);
+          ctx3.fill();
         }
-        ctx2.restore();
+        ctx3.restore();
         break;
       }
       case "deco_stalactite": {
-        ctx2.save();
-        ctx2.fillStyle = r.color;
-        ctx2.beginPath();
-        ctx2.moveTo(dx - r.w / 2, top);
-        ctx2.lineTo(dx + r.w / 2, top);
-        ctx2.lineTo(dx, top + r.h);
-        ctx2.closePath();
-        ctx2.fill();
-        ctx2.fillStyle = "rgba(255,255,255,0.18)";
-        ctx2.beginPath();
-        ctx2.moveTo(dx - r.w / 4, top);
-        ctx2.lineTo(dx, top);
-        ctx2.lineTo(dx, top + r.h * 0.7);
-        ctx2.closePath();
-        ctx2.fill();
-        ctx2.restore();
+        ctx3.save();
+        ctx3.fillStyle = r.color;
+        ctx3.beginPath();
+        ctx3.moveTo(dx - r.w / 2, top);
+        ctx3.lineTo(dx + r.w / 2, top);
+        ctx3.lineTo(dx, top + r.h);
+        ctx3.closePath();
+        ctx3.fill();
+        ctx3.fillStyle = "rgba(255,255,255,0.18)";
+        ctx3.beginPath();
+        ctx3.moveTo(dx - r.w / 4, top);
+        ctx3.lineTo(dx, top);
+        ctx3.lineTo(dx, top + r.h * 0.7);
+        ctx3.closePath();
+        ctx3.fill();
+        ctx3.restore();
         break;
       }
       case "deco_moss": {
-        ctx2.save();
-        ctx2.fillStyle = r.color;
-        ctx2.globalAlpha = 0.8;
+        ctx3.save();
+        ctx3.fillStyle = r.color;
+        ctx3.globalAlpha = 0.8;
         for (let i = 0; i < 4; i++) {
-          ctx2.beginPath();
-          ctx2.arc(left + r.w / 4 * (i + 0.5), top + r.h * 0.6 + Math.sin(i * 2.1) * 3, r.h * 0.35, 0, Math.PI * 2);
-          ctx2.fill();
+          ctx3.beginPath();
+          ctx3.arc(left + r.w / 4 * (i + 0.5), top + r.h * 0.6 + Math.sin(i * 2.1) * 3, r.h * 0.35, 0, Math.PI * 2);
+          ctx3.fill();
         }
-        ctx2.restore();
+        ctx3.restore();
         break;
       }
       case "deco_ruin_arch": {
-        ctx2.save();
-        ctx2.strokeStyle = r.color;
-        ctx2.lineWidth = 8;
-        ctx2.beginPath();
-        ctx2.arc(dx, top + r.h, r.w / 2, Math.PI, 0);
-        ctx2.stroke();
-        ctx2.fillStyle = "rgba(15,23,42,0.55)";
-        ctx2.beginPath();
-        ctx2.arc(dx, top + r.h, r.w / 2 - 6, Math.PI, 0);
-        ctx2.fill();
-        ctx2.restore();
+        ctx3.save();
+        ctx3.strokeStyle = r.color;
+        ctx3.lineWidth = 8;
+        ctx3.beginPath();
+        ctx3.arc(dx, top + r.h, r.w / 2, Math.PI, 0);
+        ctx3.stroke();
+        ctx3.fillStyle = "rgba(15,23,42,0.55)";
+        ctx3.beginPath();
+        ctx3.arc(dx, top + r.h, r.w / 2 - 6, Math.PI, 0);
+        ctx3.fill();
+        ctx3.restore();
         break;
       }
       default:
-        ctx2.fillStyle = r.color;
-        ctx2.fillRect(left, top, r.w, r.h);
+        ctx3.fillStyle = r.color;
+        ctx3.fillRect(left, top, r.w, r.h);
     }
   }
-  function drawJumpPad(ctx2, x, y, tick) {
+  function drawJumpPad(ctx3, x, y, tick) {
     const pulse = 0.65 + 0.35 * Math.sin(tick * 0.12 + x * 0.01);
-    ctx2.save();
-    const g = ctx2.createRadialGradient(x, y - 8, 3, x, y - 8, 46);
+    ctx3.save();
+    const g = ctx3.createRadialGradient(x, y - 8, 3, x, y - 8, 46);
     g.addColorStop(0, `rgba(56, 189, 248, ${0.3 * pulse})`);
     g.addColorStop(1, "rgba(56, 189, 248, 0)");
-    ctx2.fillStyle = g;
-    ctx2.beginPath();
-    ctx2.arc(x, y - 8, 46, 0, Math.PI * 2);
-    ctx2.fill();
-    ctx2.fillStyle = "#0e7490";
-    ctx2.strokeStyle = "#22d3ee";
-    ctx2.lineWidth = 2;
-    ctx2.beginPath();
-    ctx2.roundRect(x - 26, y - 12, 52, 12, 4);
-    ctx2.fill();
-    ctx2.stroke();
+    ctx3.fillStyle = g;
+    ctx3.beginPath();
+    ctx3.arc(x, y - 8, 46, 0, Math.PI * 2);
+    ctx3.fill();
+    ctx3.fillStyle = "#0e7490";
+    ctx3.strokeStyle = "#22d3ee";
+    ctx3.lineWidth = 2;
+    ctx3.beginPath();
+    ctx3.roundRect(x - 26, y - 12, 52, 12, 4);
+    ctx3.fill();
+    ctx3.stroke();
     const lift = Math.sin(tick * 0.12 + x * 0.01) * 3;
-    ctx2.strokeStyle = `rgba(165, 243, 252, ${0.6 + 0.4 * pulse})`;
-    ctx2.lineWidth = 3.5;
-    ctx2.lineCap = "round";
+    ctx3.strokeStyle = `rgba(165, 243, 252, ${0.6 + 0.4 * pulse})`;
+    ctx3.lineWidth = 3.5;
+    ctx3.lineCap = "round";
     for (const dy of [0, 8]) {
-      ctx2.beginPath();
-      ctx2.moveTo(x - 12, y - 20 - dy + lift);
-      ctx2.lineTo(x, y - 30 - dy + lift);
-      ctx2.lineTo(x + 12, y - 20 - dy + lift);
-      ctx2.stroke();
+      ctx3.beginPath();
+      ctx3.moveTo(x - 12, y - 20 - dy + lift);
+      ctx3.lineTo(x, y - 30 - dy + lift);
+      ctx3.lineTo(x + 12, y - 20 - dy + lift);
+      ctx3.stroke();
     }
-    ctx2.font = "bold 10px Inter, system-ui, sans-serif";
-    ctx2.textAlign = "center";
-    ctx2.fillStyle = "rgba(165, 243, 252, 0.9)";
-    ctx2.fillText("\u5F39\u5C04", x, y + 12);
-    ctx2.restore();
+    ctx3.font = "bold 10px Inter, system-ui, sans-serif";
+    ctx3.textAlign = "center";
+    ctx3.fillStyle = "rgba(165, 243, 252, 0.9)";
+    ctx3.fillText("\u5F39\u5C04", x, y + 12);
+    ctx3.restore();
   }
 
-  // src/web/effects.ts
-  var Effects = class {
-    particles = [];
-    rnd() {
-      return Math.random();
-    }
-    push(p) {
-      if (this.particles.length > 400) this.particles.shift();
-      this.particles.push(p);
-    }
-    /** 爆炸：火球 + 火花 + 烟 */
-    explosion(x, y, radius) {
-      const n = Math.min(26, Math.round(radius / 6) + 8);
-      for (let i = 0; i < n; i++) {
-        const a = this.rnd() * Math.PI * 2;
-        const spd = (0.6 + this.rnd() * 2.2) * (radius / 60);
-        this.push({
-          x,
-          y,
-          vx: Math.cos(a) * spd,
-          vy: Math.sin(a) * spd - 0.6,
-          life: 24 + this.rnd() * 22,
-          maxLife: 46,
-          size: 2 + this.rnd() * 4,
-          color: this.rnd() > 0.4 ? "#fb923c" : this.rnd() > 0.5 ? "#fbbf24" : "#ef4444",
-          gravity: 0.05,
-          fade: true
-        });
-      }
-      for (let i = 0; i < 8; i++) {
-        this.push({
-          x,
-          y,
-          vx: (this.rnd() - 0.5) * 0.6,
-          vy: -0.4 - this.rnd() * 0.8,
-          life: 30 + this.rnd() * 26,
-          maxLife: 56,
-          size: 5 + this.rnd() * 8,
-          color: "rgba(120,130,150,0.55)",
-          gravity: -0.01,
-          fade: true
-        });
-      }
-    }
-    /** 障碍物破坏：碎块 */
-    debris(x, y, w, h, color, border) {
-      for (let i = 0; i < 14; i++) {
-        this.push({
-          x: x + (this.rnd() - 0.5) * w,
-          y: y + (this.rnd() - 0.5) * h,
-          vx: (this.rnd() - 0.5) * 4,
-          vy: -1 - this.rnd() * 3,
-          life: 26 + this.rnd() * 20,
-          maxLife: 46,
-          size: 2 + this.rnd() * 4,
-          color: this.rnd() > 0.5 ? color : border,
-          gravity: 0.22,
-          fade: true
-        });
-      }
-    }
-    /** 拾取/补给：上升的星光 */
-    sparkle(x, y, color = "#4ade80") {
-      for (let i = 0; i < 10; i++) {
-        this.push({
-          x: x + (this.rnd() - 0.5) * 24,
-          y,
-          vx: (this.rnd() - 0.5) * 0.6,
-          vy: -1 - this.rnd() * 1.4,
-          life: 22 + this.rnd() * 18,
-          maxLife: 40,
-          size: 1.5 + this.rnd() * 2.5,
-          color,
-          gravity: -0.02,
-          fade: true
-        });
-      }
-    }
-    /** 枪口火焰 */
-    muzzle(x, y, color) {
-      for (let i = 0; i < 4; i++) {
-        this.push({
-          x,
-          y,
-          vx: (this.rnd() - 0.5) * 1.2,
-          vy: (this.rnd() - 0.5) * 1.2,
-          life: 6 + this.rnd() * 6,
-          maxLife: 12,
-          size: 2 + this.rnd() * 3,
-          color,
-          gravity: 0,
-          fade: true
-        });
-      }
-    }
-    /** 喷气尾焰 */
-    jet(x, y) {
-      this.push({
-        x: x + (this.rnd() - 0.5) * 6,
-        y: y + 8,
-        vx: (this.rnd() - 0.5) * 0.5,
-        vy: 1.4 + this.rnd() * 1.6,
-        life: 8 + this.rnd() * 8,
-        maxLife: 16,
-        size: 2 + this.rnd() * 2.5,
-        color: this.rnd() > 0.5 ? "#7dd3fc" : "#38bdf8",
-        gravity: 0.02,
-        fade: true
-      });
-    }
-    /** 击杀：能量爆散 */
-    killBurst(x, y, color) {
-      for (let i = 0; i < 14; i++) {
-        const a = this.rnd() * Math.PI * 2;
-        const spd = 1 + this.rnd() * 3;
-        this.push({
-          x,
-          y: y - 12,
-          vx: Math.cos(a) * spd,
-          vy: Math.sin(a) * spd - 1,
-          life: 18 + this.rnd() * 16,
-          maxLife: 34,
-          size: 2 + this.rnd() * 3,
-          color,
-          gravity: 0.08,
-          fade: true
-        });
-      }
-    }
-    update(dt) {
-      const k = dt * 60;
-      for (let i = this.particles.length - 1; i >= 0; i--) {
-        const p = this.particles[i];
-        p.life -= k;
-        if (p.life <= 0) {
-          this.particles.splice(i, 1);
-          continue;
-        }
-        p.x += p.vx * k;
-        p.y += p.vy * k;
-        p.vy += p.gravity * k;
-        p.vx *= 0.99;
-      }
-    }
-    /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
-    render(ctx2, screenOf, inView) {
-      for (const p of this.particles) {
-        const s = screenOf(p.x, p.y);
-        if (!inView(s.x, s.y)) continue;
-        const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1;
-        ctx2.globalAlpha = alpha;
-        ctx2.fillStyle = p.color;
-        ctx2.beginPath();
-        ctx2.arc(s.x, s.y, p.size, 0, Math.PI * 2);
-        ctx2.fill();
-      }
-      ctx2.globalAlpha = 1;
-    }
-    clear() {
-      this.particles.length = 0;
-    }
-  };
-
-  // src/web/main-web.ts
-  var canvas = document.getElementById("gameCanvas");
-  var ctx = canvas ? canvas.getContext("2d") : null;
-  var camera = { x: 6600, y: 2380, fovFactor: 1 };
-  var screenShake = 0;
-  function resizeCanvas() {
-    if (!canvas) return;
-    canvas.width = window.innerWidth || 1024;
-    canvas.height = window.innerHeight || 640;
-  }
-  var world = new World(20261106);
-  var localPlayer = world.addPlayer("SkyHunter", "red");
-  localPlayer.deployed = false;
-  var botNames = ["AlphaBot-7", "Valkyrie-AI", "Titan-09", "NovaStriker", "ZeroGrav-X", "OmegaHound", "Phantom-AI", "IronClad-8"];
-  var botSecs = ["frag", "mine", "instant_mine", "airstrike", "barricade", "shield", "doll", "pistol"];
-  var bots = [];
-  function syncBotsCount(target) {
-    while (bots.length > target) {
-      const b = bots.pop();
-      world.players = world.players.filter((p) => p.id !== b.id);
-    }
-    while (bots.length < target) {
-      const idx = bots.length;
-      let team;
-      if (deathmatchMode === "ffa") {
-        team = "ffa";
-      } else {
-        team = idx % 2 === 0 ? "red" : "blue";
-        if (team === localPlayer.team) team = team === "red" ? "blue" : "red";
-      }
-      const b = world.addPlayer(botNames[idx % botNames.length], team);
-      b.weaponIndex = idx % 4;
-      b.secondary = botSecs[idx % botSecs.length];
-      const cp = world.capturePoints[idx % world.capturePoints.length];
-      b.pos = { x: wrapX(cp.x + (idx - 4) * 47), y: cp.y - 50 };
-      bots.push(b);
-    }
-    bots.forEach((b, idx) => {
-      if (deathmatchMode === "ffa") {
-        b.team = "ffa";
-      } else {
-        let team = idx % 2 === 0 ? "red" : "blue";
-        if (team === localPlayer.team) team = team === "red" ? "blue" : "red";
-        b.team = team;
-      }
-    });
-    updateTeamCountUI();
-  }
-  var pendingLoadout = { weaponIndex: 0, secondaryType: "frag", spawnPointId: "base" };
-  var deathmatchMode = "ffa";
-  world.config.randomSpawn = true;
-  function applyPendingLoadoutAndSpawn() {
-    const want = Number(pendingLoadout.weaponIndex);
-    const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0;
-    localPlayer.weaponIndex = wIdx;
-    localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : "frag";
-    localPlayer.deployed = true;
-    localPlayer.alive = true;
-    world.deploy(localPlayer);
-    updateHudWeaponButtons();
-    const spLabel = world.config.randomSpawn ? "\u968F\u673A\u5B89\u5168\u70B9" : "\u961F\u4F0D\u4E3B\u57FA\u5730";
-    showToast(`\u26A1 \u5DF2\u5728\u3010${spLabel}\u3011\u90E8\u7F72\uFF01\u914D\u88C5\u5DF2\u9501\u5B9A\uFF1A${WEAPONS[wIdx].name} + ${(SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag).name}`);
-  }
-  var keys = {};
-  var mouse = { x: 0, y: 0, worldX: 6600, worldY: 2380, down: false };
-  var touchState = {
-    enabled: false,
-    moveActive: false,
-    moveId: -1,
-    moveX: 0,
-    moveY: 0,
-    boostButtonDown: false,
-    aimActive: false,
-    aimId: -1,
-    aimX: 0,
-    aimY: 0
-  };
-  var pendingInteract = false;
-  var pendingSecondary = null;
-  var pendingReload = false;
-  function updateInputModeBadge(isTouchMode, isAuto) {
-    const badge = document.getElementById("inputDeviceDetectBadge");
-    if (!badge) return;
-    const prefix = isAuto ? "\u5DF2\u81EA\u52A8\u8BC6\u522B" : "\u5DF2\u624B\u52A8\u5207\u6362";
-    if (isTouchMode) {
-      badge.textContent = `\u{1F4F1} ${prefix}\uFF1A\u624B\u673A/\u5E73\u677F\u89E6\u5C4F\u6A21\u5F0F (\u70B9\u51FB\u53EF\u5207\u952E\u9F20)`;
-      badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50 hover:bg-sky-500/35 transition";
-    } else {
-      badge.textContent = `\u{1F4BB} ${prefix}\uFF1APC \u952E\u9F20\u64CD\u63A7\u6A21\u5F0F (\u70B9\u51FB\u53EF\u5207\u89E6\u5C4F)`;
-      badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition";
-    }
-  }
-  function setTouchLayerVisible(visible, isAuto = false) {
-    touchState.enabled = visible;
-    const layer = document.getElementById("touchControlsLayer");
-    if (layer) layer.classList.toggle("hidden", !visible);
-    updateInputModeBadge(visible, isAuto);
-  }
-  function autoDetectDeviceInput() {
-    const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-    const touchPoints = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    setTouchLayerVisible(Boolean(coarse || touchPoints && window.innerWidth <= 1024), true);
-  }
-  var effects = new Effects();
-  var beams = [];
-  var starRng = /* @__PURE__ */ (() => {
-    let seed = 2654435769;
-    return () => {
-      seed = seed + 1831565813 | 0;
-      let t = seed;
-      t = Math.imul(t ^ t >>> 15, t | 1);
-      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  })();
-  var worldStars = (() => {
-    const out = [];
-    for (let i = 0; i < 640; i++) {
-      out.push({ x: starRng() * WORLD_W, y: starRng() * WORLD_H, r: 0.6 + starRng() * 1.4, a: 0.2 + starRng() * 0.6 });
-    }
-    return out;
-  })();
-  var worldGlows = [
-    { x: 6600, y: 1080, r: 620, c: "56,189,248", a: 0.09 },
-    { x: 4150, y: 3560, r: 520, c: "16,185,129", a: 0.07 },
-    { x: 10150, y: 3520, r: 520, c: "244,63,94", a: 0.07 }
-  ];
-  function escapeHtml(str) {
-    return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-  var toastTimer = 0;
-  function showToast(msg) {
-    const el = document.getElementById("toastBanner");
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.remove("hidden");
-    clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => el.classList.add("hidden"), 3400);
-  }
-  var TEAM_LIGHT = { red: "#fda4af", blue: "#7dd3fc", green: "#6ee7b7", ffa: "#fde047" };
-  function addKillFeed(killerName, killerTeam, victimName, victimTeam, weaponLabel, isHeadshot, isPierced) {
-    const feed = document.getElementById("killFeedContainer");
-    if (!feed) return;
-    const item = document.createElement("div");
-    item.className = "kill-item glass-panel px-3 py-1.5 rounded-xl border border-slate-700/90 shadow-lg flex items-center gap-2 text-xs";
-    item.innerHTML = `
-    <span class="font-extrabold" style="color:${TEAM_LIGHT[killerTeam] ?? "#fda4af"}">${escapeHtml(killerName)}</span>
-    <span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-bold text-slate-200 border border-slate-700">${escapeHtml(weaponLabel)}</span>
-    ${isHeadshot ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400 text-amber-300 text-[10px] font-extrabold">\u{1F3AF} \u7206\u5934</span>' : ""}
-    ${isPierced ? '<span class="px-1.5 py-0.5 rounded bg-purple-500/25 border border-purple-400 text-purple-200 text-[10px] font-extrabold">\u26A1 \u7A7F\u900F</span>' : ""}
-    <span class="font-extrabold" style="color:${TEAM_LIGHT[victimTeam] ?? "#7dd3fc"}">${escapeHtml(victimName)}</span>
-  `;
-    feed.prepend(item);
-    while (feed.children.length > 6) feed.removeChild(feed.lastChild);
-    window.setTimeout(() => item.remove(), 6500);
-  }
-  function handleEvents(evs) {
-    for (const e of evs) {
-      if (e.kind === "kill") {
-        addKillFeed(e.killerName ?? "?", e.killerTeam ?? "ffa", e.victimName ?? "?", e.victimTeam ?? "ffa", e.weaponLabel ?? "", e.isHeadshot, e.isPierced);
-        if (e.victimId === localPlayer.id) deathInfo = { killer: e.killerName ?? "\u6218\u573A\u73AF\u5883", weapon: e.weaponLabel ?? "" };
-        if (e.x !== void 0 && e.y !== void 0) effects.killBurst(e.x, e.y, TEAM_PALETTE[e.victimTeam ?? "red"]?.light ?? "#fda4af");
-      } else if (e.kind === "explosion") {
-        screenShake = Math.max(screenShake, Math.min(14, (e.radius ?? 60) * 0.15));
-        if (e.x !== void 0 && e.y !== void 0) effects.explosion(e.x, e.y, e.radius ?? 60);
-      } else if (e.kind === "obstacle_destroy") {
-        if (e.x !== void 0 && e.y !== void 0) effects.debris(e.x, e.y, 50, 60, "#9a3412", "#f97316");
-      } else if (e.kind === "capture") showToast(`\u{1F6A9} \u636E\u70B9 ${e.pointCode} \u88AB ${e.team} \u5360\u9886\uFF01`);
-      else if (e.kind === "supply_pickup") {
-        showToast(`\u{1F4E6} \u62FE\u53D6\u3010${e.weaponName}\u3011`);
-        if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#a5f3fc");
-      } else if (e.kind === "ammo_pickup") {
-        if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#4ade80");
-      } else if (e.kind === "doll_recall") {
-        showToast("\u{1F38E} \u66FF\u8EAB\u4EBA\u5076\u751F\u6548\uFF1A\u56DE\u5230\u951A\u70B9\u4F4D\u7F6E\u4E0E\u72B6\u6001\uFF01");
-        if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#f472b6");
-      } else if (e.kind === "shield_break") showToast("\u{1F4A5} \u62A4\u76FE\u7834\u788E\uFF01");
-      else if (e.kind === "mortar_fire") {
-        screenShake = Math.max(screenShake, 9);
-        if (e.x !== void 0 && e.y !== void 0) effects.muzzle(e.x, e.y - 20, "#fde047");
-      } else if (e.kind === "airstrike_drop") {
-        if (e.x !== void 0 && e.y !== void 0) {
-          effects.explosion(e.x, e.y, 120);
-          screenShake = Math.max(screenShake, 12);
-        }
-      } else if (e.kind === "laser") {
-        if (e.segments && e.segments.length > 0) {
-          const dur = e.duration ?? 0.14;
-          beams.push({ segments: e.segments, color: e.color ?? "#22d3ee", life: dur, maxLife: dur });
-          if (beams.length > 24) beams.shift();
-        }
-        screenShake = Math.max(screenShake, 1.5);
-      } else if (e.kind === "warp") showToast(`\u{1F300} ${e.weaponName ?? "\u4F20\u9001"}\uFF01`);
-    }
-  }
-  var deathInfo = null;
-  function updateHudWeaponButtons() {
-    document.querySelectorAll(".death-wep-btn").forEach((btn) => {
-      const slot = Number(btn.getAttribute("data-wep") || 0);
-      btn.className = slot === pendingLoadout.weaponIndex ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
-    });
-    document.querySelectorAll(".death-sec-btn").forEach((btn) => {
-      const sec = btn.getAttribute("data-sec");
-      const def = sec ? SECONDARIES[sec] : void 0;
-      const noCharge = sec === "doll" && localPlayer.dollCharges <= 0;
-      btn.className = "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs " + (sec === pendingLoadout.secondaryType ? "border-rose-400 bg-rose-500/20 font-extrabold text-white" : "border-slate-700 bg-slate-950/60 font-semibold text-slate-400") + (noCharge || def?.supplyOnly && sec === "doll" ? " opacity-60 cursor-not-allowed" : "");
-      btn.disabled = sec === "doll" && localPlayer.dollCharges <= 0;
-    });
-    document.querySelectorAll(".lobby-wep-btn").forEach((btn) => {
-      const slot = Number(btn.getAttribute("data-wep") || 0);
-      btn.className = slot === pendingLoadout.weaponIndex ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
-    });
-    document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
-      const sec = btn.getAttribute("data-sec");
-      const def = sec ? SECONDARIES[sec] : void 0;
-      if (def?.supplyOnly) {
-        btn.className = "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60";
-      } else {
-        btn.className = sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
-      }
-    });
-  }
-  function updateSpawnPointButtonsUI() {
-    const container = document.getElementById("spawnPointBtnGroup");
-    if (!container) return;
-    container.querySelectorAll(".spawn-select-btn").forEach((btn) => {
-      const spId = btn.getAttribute("data-spawn") || "base";
-      let unlocked = spId === "base";
-      if (spId !== "base") {
-        const cp = world.capturePoints.find((c) => c.id === spId);
-        unlocked = Boolean(cp && (cp.ownerTeam === localPlayer.team || localPlayer.team === "ffa"));
-      }
-      const isSelected = pendingLoadout.spawnPointId === spId;
-      if (!unlocked) btn.className = "spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed";
-      else if (isSelected) btn.className = "spawn-select-btn px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold";
-      else btn.className = "spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 text-[11px] font-semibold hover:border-emerald-400/50";
-    });
-  }
-  function tryChangePrimaryWeapon(slotIdx) {
-    const wep = WEAPONS[slotIdx];
-    if (!wep || wep.isSupplyOnly) return;
-    if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-      showToast("\u{1F512} \u4E3B\u6B66\u5668\u5728\u91CD\u751F\u524D\u5DF2\u9009\u5B9A\u9501\u5B9A\uFF01\u9635\u4EA1\u91CD\u751F\u524D\u6216\u62FE\u53D6\u7A7A\u6295\u7279\u6B66\u65F6\u65B9\u53EF\u66F4\u6362");
-      return;
-    }
-    pendingLoadout.weaponIndex = slotIdx;
-    localPlayer.weaponIndex = slotIdx;
-    updateHudWeaponButtons();
-  }
-  function tryChangeSecondaryWeapon(secType) {
-    const def = SECONDARIES[secType];
-    if (!def) return;
-    if (def?.supplyOnly) {
-      if (localPlayer.dollCharges <= 0) {
-        showToast("\u{1F38E} \u66FF\u8EAB\u4EBA\u5076\u53EA\u80FD\u4ECE\u6218\u573A\u7279\u6B8A\u8865\u7ED9\u7BB1\u83B7\u5F97\u5145\u80FD\uFF01");
-        return;
-      }
-      localPlayer.secondary = secType;
-      updateHudWeaponButtons();
-      showToast(`\u{1F38E} \u5DF2\u5207\u6362\u66FF\u8EAB\u4EBA\u5076\uFF08\u5145\u80FD ${localPlayer.dollCharges}\uFF09`);
-      return;
-    }
-    if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-      showToast("\u{1F512} \u526F\u6B66\u5668\u5728\u91CD\u751F\u524D\u5DF2\u9009\u5B9A\u9501\u5B9A\uFF01\u9635\u4EA1\u91CD\u751F\u524D\u53EF\u91CD\u65B0\u9009\u62E9");
-      return;
-    }
-    pendingLoadout.secondaryType = secType;
-    localPlayer.secondary = secType;
-    updateHudWeaponButtons();
-  }
-  var TEAM_BADGE = {
-    red: ["\u7EA2\u961F ALPHA", "bg-rose-500/20 text-rose-300 border border-rose-500/40"],
-    blue: ["\u84DD\u961F BRAVO", "bg-sky-500/20 text-sky-300 border border-sky-500/40"],
-    green: ["\u7EFF\u961F CHARLIE", "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"],
-    ffa: ["\u6DF7\u6218 SOLO", "bg-amber-500/20 text-amber-300 border border-amber-500/40"]
-  };
-  function updateHudUI() {
-    const nameEl = document.getElementById("hudPlayerName");
-    if (nameEl) nameEl.textContent = localPlayer.name;
-    const teamEl = document.getElementById("hudTeamBadge");
-    if (teamEl) {
-      const [label, cls] = TEAM_BADGE[localPlayer.team] ?? TEAM_BADGE.red;
-      teamEl.textContent = label;
-      teamEl.className = `px-1.5 py-0.5 rounded text-[10px] font-bold ${cls}`;
-    }
-    const fovBadge = document.getElementById("hudSniperFovBadge");
-    if (fovBadge) {
-      const wepForFov = WEAPONS[localPlayer.weaponIndex];
-      if (localPlayer.mountedTowerId) {
-        fovBadge.textContent = "\u{1F5FC} \u77AD\u671B\u89C6\u91CE 200%\uFF08\u6309 E \u4E0B\u5854\uFF09";
-        fovBadge.classList.remove("hidden");
-      } else if ((wepForFov?.fovMult ?? 1) > 1.01) {
-        fovBadge.textContent = `\u{1F52D} ${wepForFov.shortName} \u89C6\u91CE+30%`;
-        fovBadge.classList.remove("hidden");
-      } else fovBadge.classList.add("hidden");
-    }
-    const hpBar = document.getElementById("hudHpBar");
-    if (hpBar) hpBar.style.width = clamp(localPlayer.hp / localPlayer.maxHp * 100, 0, 100) + "%";
-    const shieldBar = document.getElementById("hudShieldBar");
-    if (shieldBar) shieldBar.style.width = localPlayer.shieldTimer > 0 ? clamp(localPlayer.shieldHp / world.config.shieldHp * 100, 0, 100) + "%" : "0%";
-    const hpText = document.getElementById("hudHpText");
-    if (hpText) hpText.textContent = `${Math.max(0, Math.round(localPlayer.hp))} / ${localPlayer.maxHp}`;
-    const fuelBar = document.getElementById("hudFuelBar");
-    const fuelMaxNow = getPhysicsParams().jetpackFuel * (WEAPONS[localPlayer.weaponIndex]?.fuelMult ?? 1);
-    if (fuelBar) fuelBar.style.width = clamp(localPlayer.fuel / Math.max(1e-3, fuelMaxNow) * 100, 0, 100) + "%";
-    const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
-    const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
-    const wNameEl = document.getElementById("currentWeaponName");
-    if (wNameEl) wNameEl.textContent = mounted ? "\u{1F3AF} \u516C\u5171\u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D" : `${wep.name} ${localPlayer.deployed ? "\u{1F512}" : ""}`;
-    const plateEl = document.getElementById("hudCurrentWeaponName");
-    if (plateEl) plateEl.textContent = wep.shortName;
-    const secChipEl = document.getElementById("hudSecondaryChipText");
-    if (secChipEl) {
-      secChipEl.textContent = localPlayer.secondary === "doll" ? `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]` : `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
-    }
-    const ammoEl = document.getElementById("currentAmmoText");
-    if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : `${localPlayer.ammo[localPlayer.weaponIndex] ?? 0} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`;
-    const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag;
-    const gOverlay = document.getElementById("grenadeCdOverlay");
-    const gLabel = document.getElementById("hudGrenadeLabel");
-    const gTitle = document.getElementById("hudSecondaryTitle");
-    const isDoll = localPlayer.secondary === "doll";
-    if (gTitle) gTitle.textContent = isDoll ? `[G/\u53F3\u952E] \u66FF\u8EAB\u4EBA\u5076 [\u5145\u80FD${localPlayer.dollCharges}]` : `[G/\u53F3\u952E] \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
-    if (gOverlay && gLabel) {
-      if (isDoll) {
-        gOverlay.style.height = localPlayer.dollCharges > 0 ? "0%" : "100%";
-        gLabel.textContent = localPlayer.dollCharges > 0 ? "\u{1F38E} \u5C31\u7EEA" : "\u{1F38E} \u65E0\u5145\u80FD";
-      } else {
-        const need = localPlayer.fragCharges >= world.config.fragMaxCharges;
-        if (need) {
-          gOverlay.style.height = "0%";
-          gLabel.textContent = "\u{1F4A3} \u5C31\u7EEA";
-        } else {
-          const pct = Math.min(100, localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds * 100);
-          gOverlay.style.height = pct + "%";
-          gLabel.textContent = `\u{1F4A3} ${localPlayer.fragCharges}/${world.config.fragMaxCharges} \u56DE\u590D\u4E2D`;
-        }
-      }
-    }
-    const reloadWrap = document.getElementById("reloadProgressWrap");
-    const reloadBar = document.getElementById("reloadProgressBar");
-    if (reloadWrap && reloadBar) {
-      if (localPlayer.reloading) {
-        reloadWrap.classList.remove("hidden");
-        reloadWrap.classList.add("flex");
-        const wep2 = WEAPONS[localPlayer.weaponIndex];
-        reloadBar.style.width = clamp(100 * (1 - localPlayer.reloadTimer / wep2.reloadTime), 0, 100) + "%";
-      } else {
-        reloadWrap.classList.add("hidden");
-        reloadWrap.classList.remove("flex");
-      }
-    }
-    const banner = document.getElementById("interactBanner");
-    const bannerText = document.getElementById("interactBannerText");
-    if (!banner || !bannerText) return;
-    let promptMsg = null;
-    if (!localPlayer.deployed) {
-      promptMsg = "\u{1F3E0} \u5F85\u673A\u6574\u5907\u4E2D\uFF1A\u70B9\u51FB\u6B64\u5904\u6216\u300C\u7ACB\u5373\u8FDB\u5165\u6218\u573A\u300D\u90E8\u7F72\uFF1B\u53EF\u81EA\u7531\u66F4\u6362\u4E3B/\u526F\u6B66\u5668\u4E0E\u961F\u4F0D";
-    } else if (localPlayer.respawnTimer > 0) {
-      promptMsg = "";
-    } else if (mounted) {
-      promptMsg = "\u{1F3AF} \u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D\uFF1A\u79FB\u52A8\u9F20\u6807\u8C03\u8282\u843D\u70B9\uFF0C\u6309\u4F4F\u5F00\u706B\u53D1\u5C04 | \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u79BB\u5F00";
-    } else {
-      for (const m of world.mortars) {
-        if (m.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, m.x, m.y) < 115) {
-          promptMsg = `\u{1F525} \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u64CD\u63A7\u3010${m.name}\u3011`;
-          break;
-        }
-      }
-      if (localPlayer.mountedTowerId) {
-        promptMsg = "\u{1F5FC} \u77AD\u671B\u5854\u4E0A\uFF08\u89C6\u91CE 200%\uFF09\uFF1A\u6309 [E] \u4E0B\u5854\uFF0C\u89C6\u91CE\u52A0\u6210\u7ACB\u5373\u6D88\u5931";
-      }
-      if (!promptMsg) {
-        for (const tw of world.watchtowers) {
-          if (tw.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, tw.x, tw.y) < 130) {
-            promptMsg = `\u{1F5FC} \u6309 [E] \u767B\u4E0A\u3010${tw.name}\u3011\uFF08\u9501\u5B9A 200% \u89C6\u91CE\uFF0C\u4E0D\u80FD\u79FB\u52A8\uFF1B\u4E0B\u5854\u5373\u5931\u6548\uFF09`;
-            break;
-          }
-        }
-      }
-      if (!promptMsg) {
-        for (const wp of world.warpPortals) {
-          if (wrapDist(localPlayer.pos.x, localPlayer.pos.y, wp.x, wp.y) < 90) {
-            promptMsg = `\u{1F300} \u6309 [E] \u542F\u52A8\u3010${wp.name}\u3011\u91CF\u5B50\u4F20\u9001`;
-            break;
-          }
-        }
-      }
-      if (!promptMsg) {
-        const dollCrate = world.supplyCrates.find((c) => c.active && c.kind === "doll" && wrapDist(localPlayer.pos.x, localPlayer.pos.y, c.x, c.y) < 60);
-        if (dollCrate) promptMsg = "\u{1F38E} \u9760\u8FD1\u7279\u6B8A\u8865\u7ED9\u7BB1\u81EA\u52A8\u62FE\u53D6\u66FF\u8EAB\u4EBA\u5076\u5145\u80FD";
-      }
-    }
-    if (promptMsg) {
-      banner.classList.remove("hidden");
-      bannerText.textContent = promptMsg;
-    } else banner.classList.add("hidden");
-  }
-  function updateScoreboardUI() {
-    const r = document.getElementById("scoreRed");
-    const b = document.getElementById("scoreBlue");
-    const g = document.getElementById("scoreGreen");
-    if (r) r.textContent = String(world.scores.red ?? 0);
-    if (b) b.textContent = String(world.scores.blue ?? 0);
-    if (g) g.textContent = String(world.scores.green ?? 0);
-  }
-  function updateTeamCountUI() {
-    const counts = { red: 0, blue: 0, green: 0, ffa: 0 };
-    for (const p of world.players) {
-      if (counts[p.team] !== void 0) counts[p.team]++;
-    }
-    for (const key of ["Red", "Blue", "Green", "Ffa"]) {
-      const el = document.getElementById("teamCount" + key);
-      if (el) el.textContent = counts[key.toLowerCase()] + "\u4EBA";
-    }
-  }
+  // src/web/render.ts
   function renderScene() {
     if (!ctx || !canvas) return;
     const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
@@ -4137,11 +4035,11 @@
       camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2);
     }
     let shakeX = 0, shakeY = 0;
-    if (screenShake > 0.2) {
-      shakeX = (Math.random() - 0.5) * screenShake * 2;
-      shakeY = (Math.random() - 0.5) * screenShake * 2;
-      screenShake *= 0.86;
-    } else screenShake = 0;
+    if (screenFx.shake > 0.2) {
+      shakeX = (Math.random() - 0.5) * screenFx.shake * 2;
+      shakeY = (Math.random() - 0.5) * screenFx.shake * 2;
+      screenFx.shake *= 0.86;
+    } else screenFx.shake = 0;
     const zoom = 1 / camera.fovFactor;
     const halfW = canvas.width * camera.fovFactor / 2 + 160;
     const halfH = canvas.height * camera.fovFactor / 2 + 160;
@@ -4446,6 +4344,105 @@
     effects.render(ctx, (x, y) => ({ x: sx(x), y: sy(y) }), (x, y) => inView(x, y));
     ctx.restore();
   }
+
+  // src/web/app/events.ts
+  var death = { info: null };
+  function handleEvents(evs) {
+    for (const e of evs) {
+      if (e.kind === "kill") {
+        addKillFeed(e.killerName ?? "?", e.killerTeam ?? "ffa", e.victimName ?? "?", e.victimTeam ?? "ffa", e.weaponLabel ?? "", e.isHeadshot, e.isPierced);
+        if (e.victimId === localPlayer.id) death.info = { killer: e.killerName ?? "\u6218\u573A\u73AF\u5883", weapon: e.weaponLabel ?? "" };
+        if (e.x !== void 0 && e.y !== void 0) effects.killBurst(e.x, e.y, TEAM_PALETTE[e.victimTeam ?? "red"]?.light ?? "#fda4af");
+      } else if (e.kind === "explosion") {
+        screenFx.shake = Math.max(screenFx.shake, Math.min(14, (e.radius ?? 60) * 0.15));
+        if (e.x !== void 0 && e.y !== void 0) effects.explosion(e.x, e.y, e.radius ?? 60);
+      } else if (e.kind === "obstacle_destroy") {
+        if (e.x !== void 0 && e.y !== void 0) effects.debris(e.x, e.y, 50, 60, "#9a3412", "#f97316");
+      } else if (e.kind === "capture") showToast(`\u{1F6A9} \u636E\u70B9 ${e.pointCode} \u88AB ${e.team} \u5360\u9886\uFF01`);
+      else if (e.kind === "supply_pickup") {
+        showToast(`\u{1F4E6} \u62FE\u53D6\u3010${e.weaponName}\u3011`);
+        if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#a5f3fc");
+      } else if (e.kind === "ammo_pickup") {
+        if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#4ade80");
+      } else if (e.kind === "doll_recall") {
+        showToast("\u{1F38E} \u66FF\u8EAB\u4EBA\u5076\u751F\u6548\uFF1A\u56DE\u5230\u951A\u70B9\u4F4D\u7F6E\u4E0E\u72B6\u6001\uFF01");
+        if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#f472b6");
+      } else if (e.kind === "shield_break") showToast("\u{1F4A5} \u62A4\u76FE\u7834\u788E\uFF01");
+      else if (e.kind === "mortar_fire") {
+        screenFx.shake = Math.max(screenFx.shake, 9);
+        if (e.x !== void 0 && e.y !== void 0) effects.muzzle(e.x, e.y - 20, "#fde047");
+      } else if (e.kind === "airstrike_drop") {
+        if (e.x !== void 0 && e.y !== void 0) {
+          effects.explosion(e.x, e.y, 120);
+          screenFx.shake = Math.max(screenFx.shake, 12);
+        }
+      } else if (e.kind === "laser") {
+        if (e.segments && e.segments.length > 0) {
+          const dur = e.duration ?? 0.14;
+          beams.push({ segments: e.segments, color: e.color ?? "#22d3ee", life: dur, maxLife: dur });
+          if (beams.length > 24) beams.shift();
+        }
+        screenFx.shake = Math.max(screenFx.shake, 1.5);
+      } else if (e.kind === "warp") showToast(`\u{1F300} ${e.weaponName ?? "\u4F20\u9001"}\uFF01`);
+    }
+  }
+
+  // src/web/main-web.ts
+  function syncBotsCount(target) {
+    while (bots.length > target) {
+      const b = bots.pop();
+      world.players = world.players.filter((p) => p.id !== b.id);
+    }
+    while (bots.length < target) {
+      const idx = bots.length;
+      let team;
+      if (mode.current === "ffa") {
+        team = "ffa";
+      } else {
+        team = idx % 2 === 0 ? "red" : "blue";
+        if (team === localPlayer.team) team = team === "red" ? "blue" : "red";
+      }
+      const b = world.addPlayer(botNames[idx % botNames.length], team);
+      b.weaponIndex = idx % 4;
+      b.secondary = botSecs[idx % botSecs.length];
+      const cp = world.capturePoints[idx % world.capturePoints.length];
+      b.pos = { x: wrapX(cp.x + (idx - 4) * 47), y: cp.y - 50 };
+      bots.push(b);
+    }
+    bots.forEach((b, idx) => {
+      if (mode.current === "ffa") {
+        b.team = "ffa";
+      } else {
+        let team = idx % 2 === 0 ? "red" : "blue";
+        if (team === localPlayer.team) team = team === "red" ? "blue" : "red";
+        b.team = team;
+      }
+    });
+    updateTeamCountUI();
+  }
+  function updateInputModeBadge(isTouchMode, isAuto) {
+    const badge = document.getElementById("inputDeviceDetectBadge");
+    if (!badge) return;
+    const prefix = isAuto ? "\u5DF2\u81EA\u52A8\u8BC6\u522B" : "\u5DF2\u624B\u52A8\u5207\u6362";
+    if (isTouchMode) {
+      badge.textContent = `\u{1F4F1} ${prefix}\uFF1A\u624B\u673A/\u5E73\u677F\u89E6\u5C4F\u6A21\u5F0F (\u70B9\u51FB\u53EF\u5207\u952E\u9F20)`;
+      badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50 hover:bg-sky-500/35 transition";
+    } else {
+      badge.textContent = `\u{1F4BB} ${prefix}\uFF1APC \u952E\u9F20\u64CD\u63A7\u6A21\u5F0F (\u70B9\u51FB\u53EF\u5207\u89E6\u5C4F)`;
+      badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition";
+    }
+  }
+  function setTouchLayerVisible(visible, isAuto = false) {
+    touchState.enabled = visible;
+    const layer = document.getElementById("touchControlsLayer");
+    if (layer) layer.classList.toggle("hidden", !visible);
+    updateInputModeBadge(visible, isAuto);
+  }
+  function autoDetectDeviceInput() {
+    const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    const touchPoints = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    setTouchLayerVisible(Boolean(coarse || touchPoints && window.innerWidth <= 1024), true);
+  }
   var selectedParamWeaponIdx = 0;
   function syncParamsToUI() {
     const setVal = (inId, vId, val, suf = "") => {
@@ -4497,9 +4494,9 @@
       const active = document.activeElement;
       if (active && ["INPUT", "TEXTAREA"].includes(active.tagName)) return;
       keys[e.code] = true;
-      if (e.code === "KeyR") pendingReload = true;
-      else if (e.code === "KeyG" || e.code === "KeyQ") pendingSecondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
-      else if (e.code === "KeyE") pendingInteract = true;
+      if (e.code === "KeyR") inputQueue.reload = true;
+      else if (e.code === "KeyG" || e.code === "KeyQ") inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
+      else if (e.code === "KeyE") inputQueue.interact = true;
       else if (e.code === "Digit1") tryChangePrimaryWeapon(0);
       else if (e.code === "Digit2") tryChangePrimaryWeapon(1);
       else if (e.code === "Digit3") tryChangePrimaryWeapon(2);
@@ -4516,7 +4513,7 @@
     });
     canvas?.addEventListener("mousedown", (e) => {
       if (e.button === 0) mouse.down = true;
-      else if (e.button === 2) pendingSecondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
+      else if (e.button === 2) inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
     });
     canvas?.addEventListener("mouseup", (e) => {
       if (e.button === 0) mouse.down = false;
@@ -4562,13 +4559,13 @@
       });
     });
     document.getElementById("hudReloadBtn")?.addEventListener("click", () => {
-      pendingReload = true;
+      inputQueue.reload = true;
     });
     document.getElementById("hudGrenadeBtn")?.addEventListener("click", () => {
-      pendingSecondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
+      inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
     });
     document.getElementById("hudQuickMortarBtn")?.addEventListener("click", () => {
-      pendingInteract = true;
+      inputQueue.interact = true;
     });
     document.getElementById("interactBannerBtn")?.addEventListener("click", () => {
       if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {
@@ -4576,33 +4573,33 @@
         lobby?.classList.remove("hidden");
         lobby?.classList.add("flex");
         updateSpawnPointButtonsUI();
-      } else pendingInteract = true;
+      } else inputQueue.interact = true;
     });
     function applyTeamButtons() {
       document.querySelectorAll(".team-select-btn").forEach((b) => {
         const t = b.getAttribute("data-team");
-        const enabled = deathmatchMode === "2teams" ? t === "red" || t === "blue" : t === "ffa";
+        const enabled = mode.current === "2teams" ? t === "red" || t === "blue" : t === "ffa";
         const sel = t === localPlayer.team;
         b.disabled = !enabled;
         b.className = "team-select-btn px-3 py-2 rounded-xl text-left transition flex items-center justify-between " + (sel ? "border-2 border-indigo-400 bg-indigo-500/20 " : "border border-slate-700 bg-slate-950/60 ") + (enabled ? "" : "opacity-40 cursor-not-allowed");
       });
     }
-    function applyMode(mode) {
+    function applyMode(nextMode) {
       if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
         showToast("\u26A0\uFE0F \u5207\u6362\u5BF9\u6218\u6A21\u5F0F\u9700\u5728\u5F85\u673A/\u9635\u4EA1\u6574\u5907\u65F6\u8FDB\u884C");
         return;
       }
-      deathmatchMode = mode;
+      mode.current = nextMode;
       document.querySelectorAll(".mode-btn").forEach((b) => {
-        const sel = b.getAttribute("data-mode") === mode;
+        const sel = b.getAttribute("data-mode") === nextMode;
         b.className = "mode-btn px-3 py-2 rounded-xl text-left transition border " + (sel ? "border-2 border-emerald-400 bg-emerald-500/20" : "border border-slate-700 bg-slate-950/60 hover:border-slate-500");
       });
-      if (mode === "ffa") localPlayer.team = "ffa";
-      else if (localPlayer.team === "ffa" || localPlayer.team === "green") localPlayer.team = "red";
+      if (nextMode === "ffa") localPlayer.team = "ffa";
+      else if (localPlayer.team !== "blue") localPlayer.team = "red";
       syncBotsCount(bots.length);
       applyTeamButtons();
       updateTeamCountUI();
-      showToast(mode === "ffa" ? "\u{1F7E1} \u81EA\u7531\u6DF7\u6218\uFF1A\u5168\u5458\u7686\u654C\uFF0C\u968F\u673A\u51FA\u751F\u70B9" : "\u2694\uFE0F \u53CC\u961F\u5BF9\u6297\uFF08\u7EA2\u961F vs \u84DD\u961F\uFF09\uFF1A\u968F\u673A\u51FA\u751F\u70B9");
+      showToast(nextMode === "ffa" ? "\u{1F7E1} \u81EA\u7531\u6DF7\u6218\uFF1A\u5168\u5458\u7686\u654C\uFF0C\u968F\u673A\u51FA\u751F\u70B9" : "\u2694\uFE0F \u53CC\u961F\u5BF9\u6297\uFF08\u7EA2\u961F vs \u84DD\u961F\uFF09\uFF1A\u968F\u673A\u51FA\u751F\u70B9");
     }
     document.querySelectorAll(".mode-btn").forEach((b) => {
       b.addEventListener("click", () => applyMode(b.getAttribute("data-mode") || "ffa"));
@@ -4771,7 +4768,7 @@
     bindJoystick(document.getElementById("touchAimZone"), document.getElementById("touchAimStick"), true);
     applyTeamButtons();
     document.querySelectorAll(".mode-btn").forEach((b) => {
-      const sel = b.getAttribute("data-mode") === deathmatchMode;
+      const sel = b.getAttribute("data-mode") === mode.current;
       b.className = "mode-btn px-3 py-2 rounded-xl text-left transition border " + (sel ? "border-2 border-emerald-400 bg-emerald-500/20" : "border border-slate-700 bg-slate-950/60 hover:border-slate-500");
     });
     const boostBtn = document.getElementById("touchBoostBtn");
@@ -4783,13 +4780,13 @@
       touchState.boostButtonDown = false;
     });
     document.getElementById("touchGrenadeBtn")?.addEventListener("click", () => {
-      pendingSecondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
+      inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
     });
     document.getElementById("touchReloadBtn")?.addEventListener("click", () => {
-      pendingReload = true;
+      inputQueue.reload = true;
     });
     document.getElementById("touchInteractBtn")?.addEventListener("click", () => {
-      pendingInteract = true;
+      inputQueue.interact = true;
     });
   }
   function pickBotTarget(bot) {
@@ -4818,18 +4815,29 @@
     w.jetpack = target.pos.y + 80 < bot.pos.y;
     return w;
   }
+  function applyPendingLoadoutAndSpawn() {
+    const want = Number(pendingLoadout.weaponIndex);
+    const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0;
+    localPlayer.weaponIndex = wIdx;
+    localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : "frag";
+    localPlayer.deployed = true;
+    localPlayer.alive = true;
+    world.deploy(localPlayer);
+    updateHudWeaponButtons();
+    const spLabel = world.config.randomSpawn ? "\u968F\u673A\u5B89\u5168\u70B9" : "\u961F\u4F0D\u4E3B\u57FA\u5730";
+    showToast(`\u26A1 \u5DF2\u5728\u3010${spLabel}\u3011\u90E8\u7F72\uFF01\u914D\u88C5\u5DF2\u9501\u5B9A\uFF1A${WEAPONS[wIdx].name} + ${(SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag).name}`);
+  }
   var playerInput = defaultWorldInput();
   var prevFireCooldown = 0;
   var lastFrame = performance.now();
   var acc = 0;
   var wasDead = false;
-  var FIXED = 1 / 60;
   function buildLocalInput() {
     const w = defaultWorldInput();
     if (!localPlayer.deployed) return w;
     if (localPlayer.respawnTimer > 0) {
-      if (pendingInteract) {
-        pendingInteract = false;
+      if (inputQueue.interact) {
+        inputQueue.interact = false;
         return w;
       }
       return w;
@@ -4853,9 +4861,9 @@
       w.aim = Math.atan2(mouse.y - (psy - 12 * zoom), mouse.x - psx);
     }
     w.fire = mouse.down || touchState.aimActive && Math.hypot(touchState.aimX, touchState.aimY) > 0.45;
-    w.interact = pendingInteract;
-    w.reload = pendingReload;
-    if (pendingSecondary) w.secondary = { type: pendingSecondary.type, targetX: pendingSecondary.targetX, targetY: pendingSecondary.targetY };
+    w.interact = inputQueue.interact;
+    w.reload = inputQueue.reload;
+    if (inputQueue.secondary) w.secondary = { type: inputQueue.secondary.type, targetX: inputQueue.secondary.targetX, targetY: inputQueue.secondary.targetY };
     return w;
   }
   function onLocalDeath() {
@@ -4880,9 +4888,9 @@
     let guard = 0;
     while (acc >= FIXED && guard < 5) {
       playerInput = buildLocalInput();
-      pendingInteract = false;
-      pendingReload = false;
-      pendingSecondary = null;
+      inputQueue.interact = false;
+      inputQueue.reload = false;
+      inputQueue.secondary = null;
       const inputs = /* @__PURE__ */ new Map([[localPlayer.id, playerInput]]);
       for (const b of bots) inputs.set(b.id, botInput(b));
       world.step(FIXED, inputs);
@@ -4899,7 +4907,7 @@
           const cd = document.getElementById("deathCountdown");
           if (cd) cd.textContent = localPlayer.respawnTimer.toFixed(1);
           const kl = document.getElementById("deathKillerLine");
-          if (kl) kl.textContent = deathInfo ? `\u88AB ${deathInfo.killer}${deathInfo.weapon ? ` \u7684 ${deathInfo.weapon}` : ""} \u51FB\u6740` : "\u7B49\u5F85\u91CD\u751F\u2026";
+          if (kl) kl.textContent = death.info ? `\u88AB ${death.info.killer}${death.info.weapon ? ` \u7684 ${death.info.weapon}` : ""} \u51FB\u6740` : "\u7B49\u5F85\u91CD\u751F\u2026";
         }
       }
       effects.update(FIXED);
@@ -4965,7 +4973,7 @@
       return beams;
     },
     get mode() {
-      return deathmatchMode;
+      return mode.current;
     }
   };
   window.__tune = {
