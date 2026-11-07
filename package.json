@@ -10,7 +10,8 @@
     "build:web": "esbuild src/web/main-web.ts --bundle --format=iife --outfile=docs/bundle.js",
     "build:site": "node scripts/build-site.ts",
     "build:tune": "esbuild src/web/main-proto.ts --bundle --format=iife --outfile=docs/tune-bundle.js",
-    "build:editor": "esbuild src/web/main-editor.ts --bundle --format=iife --outfile=docs/editor-bundle.js"
+    "build:editor": "esbuild src/web/main-editor.ts --bundle --format=iife --outfile=docs/editor-bundle.js",
+    "build:admin": "esbuild src/web/main-admin.ts --bundle --format=iife --outfile=docs/admin-bundle.js"
   },
   "engines": {
     "node": ">=22.18"

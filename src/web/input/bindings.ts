@@ -106,6 +106,7 @@ export function bindAllEvents(): void {
   })
   document.getElementById('hudQuickMortarBtn')?.addEventListener('click', () => { inputQueue.interact = true })
   document.getElementById('openEditorBtn')?.addEventListener('click', () => { window.open('./editor.html', '_blank') })
+  document.getElementById('openAdminBtn')?.addEventListener('click', () => { window.open('./admin.html', '_blank') })
   document.getElementById('interactBannerBtn')?.addEventListener('click', () => {
     if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {
       const lobby = document.getElementById('lobbyModal')

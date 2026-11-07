@@ -2022,6 +2022,124 @@
     return { name: typeof o.name === "string" ? o.name : "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
   }
 
+  // src/core/balanceOverrides.ts
+  var BALANCE_KEY = "pvp-balance-overrides-v1";
+  var WEAPON_NUMERIC_KEYS = [
+    "damage",
+    "headshotMult",
+    "pellets",
+    "spread",
+    "speed",
+    "recoil",
+    "magSize",
+    "maxReserve",
+    "reloadTime",
+    "fireDelay",
+    "terrainRadius",
+    "gravityScale",
+    "chargeSeconds",
+    "damagePerSecond",
+    "ammoPerSecond",
+    "moveSpeedMult",
+    "fuelMult",
+    "ascendMult",
+    "fovMult",
+    "falloffStart",
+    "falloffEnd",
+    "falloffMin",
+    "lifeSeconds",
+    "farRange",
+    "farDamage"
+  ];
+  var WEAPON_BOOL_KEYS = ["explosive", "pierceOnHeadshot", "pierceAll", "passWalls"];
+  var CONFIG_NUMERIC_KEYS = [
+    "maxHp",
+    "respawnDelay",
+    "headRadius",
+    "grenadeDamage",
+    "grenadeRadius",
+    "grenadeFuse",
+    "fragMaxCharges",
+    "fragRechargeSeconds",
+    "dollMaxCharges",
+    "dollDuration",
+    "mortarDamage",
+    "mortarRadius",
+    "watchtowerDuration",
+    "watchtowerFovMult"
+  ];
+  var CONFIG_BOOL_KEYS = ["randomSpawn", "loadoutLock"];
+  var num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  function sanitizeOverrides(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const o = raw;
+    const out = {};
+    if (o.weapons && typeof o.weapons === "object") {
+      const weapons = {};
+      for (const [k, v] of Object.entries(o.weapons)) {
+        const id = Number(k);
+        if (!Number.isInteger(id) || id < 0 || id >= WEAPONS.length) continue;
+        if (!v || typeof v !== "object") continue;
+        const patch = {};
+        for (const key of WEAPON_NUMERIC_KEYS) {
+          const n = num(v[key]);
+          if (n === null) continue;
+          if (key === "damage" || key === "damagePerSecond") patch[key] = Math.max(0, Math.min(5e3, n));
+          else if (key === "magSize") patch[key] = Math.max(1, Math.min(500, Math.round(n)));
+          else if (key === "maxReserve") patch[key] = Math.max(0, Math.min(2e3, Math.round(n)));
+          else if (key === "pellets") patch[key] = Math.max(1, Math.min(30, Math.round(n)));
+          else if (key === "reloadTime" || key === "fireDelay" || key === "chargeSeconds") patch[key] = Math.max(0, Math.min(20, n));
+          else if (key === "moveSpeedMult" || key === "fuelMult" || key === "ascendMult" || key === "fovMult") patch[key] = Math.max(0, Math.min(5, n));
+          else patch[key] = n;
+        }
+        for (const key of WEAPON_BOOL_KEYS) {
+          const b = v[key];
+          if (typeof b === "boolean") patch[key] = b;
+        }
+        if (Object.keys(patch).length > 0) weapons[String(id)] = patch;
+      }
+      if (Object.keys(weapons).length > 0) out.weapons = weapons;
+    }
+    if (o.config && typeof o.config === "object") {
+      const config = {};
+      for (const key of CONFIG_NUMERIC_KEYS) {
+        const n = num(o.config[key]);
+        if (n !== null) config[key] = n;
+      }
+      for (const key of CONFIG_BOOL_KEYS) {
+        const b = o.config[key];
+        if (typeof b === "boolean") config[key] = b;
+      }
+      if (Object.keys(config).length > 0) out.config = config;
+    }
+    if (o.physics && typeof o.physics === "object") {
+      const physics = {};
+      for (const [k, v] of Object.entries(o.physics)) {
+        const n = num(v);
+        if (n !== null) physics[k] = n;
+      }
+      if (Object.keys(physics).length > 0) out.physics = physics;
+    }
+    if (!out.weapons && !out.config && !out.physics) return null;
+    return out;
+  }
+  function applyWeaponOverrides(ov) {
+    if (!ov) return;
+    for (const [k, patch] of Object.entries(ov)) {
+      const id = Number(k);
+      const wep = WEAPONS[id];
+      if (!wep || !patch) continue;
+      Object.assign(wep, patch);
+    }
+  }
+  function applyConfigOverrides(config, ov) {
+    if (!ov) return;
+    Object.assign(config, ov);
+  }
+
   // src/web/effects.ts
   var Effects = class {
     particles = [];
@@ -2205,7 +2323,20 @@
     }
   }
   var customMap = loadCustomMap();
+  function loadBalanceOverrides() {
+    try {
+      const raw = localStorage.getItem(BALANCE_KEY);
+      if (!raw) return null;
+      return sanitizeOverrides(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+  var balanceOverrides = loadBalanceOverrides();
+  applyWeaponOverrides(balanceOverrides?.weapons);
+  if (balanceOverrides?.physics) setPhysicsParams({ ...getPhysicsParams(), ...balanceOverrides.physics });
   var world = new World(20261106, customMap);
+  applyConfigOverrides(world.config, balanceOverrides?.config);
   var localPlayer = world.addPlayer("SkyHunter", "red");
   localPlayer.deployed = false;
   world.config.randomSpawn = true;
@@ -2737,6 +2868,9 @@
     });
     document.getElementById("openEditorBtn")?.addEventListener("click", () => {
       window.open("./editor.html", "_blank");
+    });
+    document.getElementById("openAdminBtn")?.addEventListener("click", () => {
+      window.open("./admin.html", "_blank");
     });
     document.getElementById("interactBannerBtn")?.addEventListener("click", () => {
       if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {
@@ -4784,7 +4918,8 @@
     },
     get mode() {
       return mode.current;
-    }
+    },
+    weapons: () => WEAPONS.map((w) => ({ id: w.id, name: w.name, damage: w.damage, fireDelay: w.fireDelay, moveSpeedMult: w.moveSpeedMult }))
   };
   window.__tune = {
     set: (p) => setPhysicsParams(p),
@@ -4793,6 +4928,7 @@
   };
   (function loadSavedParams() {
     try {
+      if (localStorage.getItem("pvp-balance-overrides-v1")) return;
       const raw = localStorage.getItem("pvp-physics-params-v2");
       if (raw) setPhysicsParams(JSON.parse(raw));
     } catch {

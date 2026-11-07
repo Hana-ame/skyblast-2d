@@ -2,6 +2,8 @@
 // 工程化拆分的单一状态源：所有 app/* 模块只从这里读状态、通过其可变容器写状态。
 import { World, JUMP_PADS } from '../../core/sim/world.ts'
 import { sanitizeMapData } from '../../core/map.ts'
+import { BALANCE_KEY, sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides } from '../../core/balanceOverrides.ts'
+import { setPhysicsParams, getPhysicsParams } from '../../core/sim/physics.ts'
 import type { MapData } from '../../core/map.ts'
 import { Effects } from '../effects.ts'
 import { WORLD_W, WORLD_H } from '../../core/wrap.ts'
@@ -29,7 +31,21 @@ function loadCustomMap(): MapData | undefined {
   } catch { return undefined }
 }
 export const customMap = loadCustomMap()
+
+// 数值调整后台覆盖（localStorage）→ 在创建 World 前应用
+function loadBalanceOverrides() {
+  try {
+    const raw = localStorage.getItem(BALANCE_KEY)
+    if (!raw) return null
+    return sanitizeOverrides(JSON.parse(raw))
+  } catch { return null }
+}
+export const balanceOverrides = loadBalanceOverrides()
+applyWeaponOverrides(balanceOverrides?.weapons)
+if (balanceOverrides?.physics) setPhysicsParams({ ...getPhysicsParams(), ...balanceOverrides.physics })
+
 export const world = new World(20261106, customMap)
+applyConfigOverrides(world.config, balanceOverrides?.config)
 export const localPlayer = world.addPlayer('SkyHunter', 'red')
 localPlayer.deployed = false   // 待机整备中（大厅点「立即进入战场」部署）
 world.config.randomSpawn = true

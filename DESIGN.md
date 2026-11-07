@@ -655,6 +655,20 @@ src/web/
 - 测试：朝上/无遮挡开火不自伤；朝脚下地面开火反射后自伤掉血；激光持续输出测试改为朝上打（避免被自伤打断）。
 - 52/52 测试。
 
-### 10.39 尚未完成（设计位）
+### 10.39 数值调整后台（2026-11-07）
+
+用户："做一下数值调整后台。"
+- 新增 `src/core/balanceOverrides.ts`：`BalanceOverrides`（weapons/config/physics）+ `sanitizeOverrides()`（只认已知键 + 范围夹取，防误填破坏游戏）
+  + `applyWeaponOverrides()` / `applyConfigOverrides()`；localStorage key `pvp-balance-overrides-v1`。
+- 新增后台页面 `docs/admin.html` + `src/web/main-admin.ts`（`npm run build:admin` → `docs/admin-bundle.js`）：
+  9 把武器全部数值字段（含爆炸/穿墙布尔项）、全局配置（血量/复活/手雷/地雷/人偶/迫击炮/塔/随机出生）、物理参数；
+  只保存与默认值不同的字段；保存 / 保存并打开游戏 / 恢复默认 / 导出 JSON / 导入 JSON。
+- 游戏集成：`app/context.ts` 启动时读覆盖 → 先应用武器/物理，再创建 World 并应用 config；有后台覆盖时跳过旧调参页物理存档；
+  大厅顶栏新增 ⚙️ 数值后台入口；`__dbg.weapons()` 便于验证。
+- 构建/CI：`build:admin` 加入 package.json 与两个 workflow。
+- 验证：53/53 测试（覆盖清洗/夹取/应用）；浏览器端到端：后台把霰弹 damage 改 24→30 保存 → 打开游戏 → `__dbg.weapons()`
+  返回 30，localStorage 覆盖 JSON 正确；截图 `docs/media/screenshot-admin.png`。
+
+### 10.40 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

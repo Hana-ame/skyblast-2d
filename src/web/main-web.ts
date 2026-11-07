@@ -2,6 +2,7 @@
 import {
   canvas, world, localPlayer, bots, pendingLoadout, camera, touchState, beams,
 } from './app/context.ts'
+import { WEAPONS } from '../core/weapons.ts'
 import { bindAllEvents } from './input/bindings.ts'
 import { autoDetectDeviceInput } from './input/device.ts'
 import { syncBotsCount, pickBotTarget } from './game/bots.ts'
@@ -36,6 +37,7 @@ startGameLoop()
   botTargets: () => bots.map(b => ({ bot: b.name, team: b.team, target: pickBotTarget(b)?.name ?? null, targetTeam: pickBotTarget(b)?.team ?? null })),
   get beams() { return beams },
   get mode() { return mode.current },
+  weapons: () => WEAPONS.map(w => ({ id: w.id, name: w.name, damage: w.damage, fireDelay: w.fireDelay, moveSpeedMult: w.moveSpeedMult })),
 }
 
 // 调参持久化（tuning 页共享）
@@ -46,6 +48,8 @@ startGameLoop()
 }
 ;(function loadSavedParams(): void {
   try {
+    // 数值后台有覆盖时以后台为准，跳过旧调参页存档
+    if (localStorage.getItem('pvp-balance-overrides-v1')) return
     // v2：飞行槽加倍后的默认值；旧 key 的存档（jetpackFuel 0.5）不再覆盖
     const raw = localStorage.getItem('pvp-physics-params-v2')
     if (raw) setPhysicsParams(JSON.parse(raw) as Record<string, number>)

@@ -26,6 +26,8 @@ jobs:
         run: npm run build:site
       - name: Build map editor
         run: npm run build:editor
+      - name: Build balance admin
+        run: npm run build:admin
       - name: Lobby server smoke
         run: |
           node server/server.js &

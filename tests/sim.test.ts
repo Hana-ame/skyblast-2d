@@ -11,6 +11,7 @@ import { InputMapper } from '../src/input/InputMapper.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
 import { defaultMapData, sanitizeMapData } from '../src/core/map.ts'
+import { sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides } from '../src/core/balanceOverrides.ts'
 import { runDuelSim } from '../src/balance/duelSim.ts'
 import { getPhysicsParams } from '../src/core/sim/physics.ts'
 import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
@@ -1051,4 +1052,38 @@ test('激光自伤：反射回来的光束会伤到自己（枪口第一段不�
     if (q.hp < 100) { damaged = true; break }
   }
   assert.ok(damaged, `reflected beam should damage the shooter, hp=${q.hp}`)
+})
+
+
+test('数值后台覆盖：清洗/夹取/应用武器与全局参数', () => {
+  const raw = sanitizeOverrides({
+    weapons: {
+      1: { damage: 40, fireDelay: 0.2, magSize: 30, moveSpeedMult: 9, bogus: 123 },
+      99: { damage: 1 },
+      bad: { damage: 1 },
+    },
+    config: { maxHp: 120, randomSpawn: true, unknownKey: 5 },
+    physics: { gravity: 1300 },
+  })
+  assert.ok(raw, 'overrides accepted')
+  assert.equal(raw!.weapons!['1'].damage, 40)
+  assert.equal(raw!.weapons!['1'].magSize, 30)
+  assert.equal(raw!.weapons!['1'].moveSpeedMult, 5, 'multiplier clamped to 5')
+  assert.equal((raw!.weapons!['1'] as Record<string, unknown>).bogus, undefined, 'unknown weapon key dropped')
+  assert.equal(raw!.weapons!['99'], undefined, 'out-of-range weapon id dropped')
+  assert.equal(raw!.config!.maxHp, 120)
+  assert.equal((raw!.config as Record<string, unknown>).unknownKey, undefined)
+  assert.equal(raw!.physics!.gravity, 1300)
+  assert.equal(sanitizeOverrides({}), null)
+
+  // 应用到共享 WEAPONS 后能改数值，然后可还原
+  const before = WEAPONS[1].damage
+  applyWeaponOverrides(raw!.weapons)
+  assert.equal(WEAPONS[1].damage, 40, 'weapon override applied')
+  WEAPONS[1].damage = before
+
+  const cfg = { ...DEFAULT_CONFIG } as never as Record<string, unknown>
+  applyConfigOverrides(cfg as never, raw!.config)
+  assert.equal(cfg.maxHp, 120, 'config override applied')
+  assert.equal(cfg.randomSpawn, true)
 })
