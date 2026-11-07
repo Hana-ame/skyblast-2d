@@ -26,6 +26,7 @@ export const CEILING_HOLE_X0 = 5600
 export const CEILING_HOLE_X1 = 7600
 
 /** 默认地图：纯平地（地板，世界内置）+ 一整块天花板（上限，正中留空）。
+ *  空口内加一排正方形不可摧毁方块落脚点，呈拱形（中间高、两侧低），隔一个放一个、相邻一高一低。
  *  所有道具（跳台/迫击炮/瞭望塔/旗帜/地雷等）都搬到了天花板顶面（见 sim/world.ts 的坐标）。 */
 export function defaultMapData(): MapData {
   const solids: MapSolid[] = [
@@ -33,8 +34,19 @@ export function defaultMapData(): MapData {
     { x: 0, y: CEILING_TOP, w: CEILING_HOLE_X0, h: CEILING_THICK, kind: 'platform' },
     // 天花板右板（环形 x 7600~13200）
     { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: 'platform' },
+    // 空口拱形方块落脚点：正方形 160×160，不可摧毁（block=实心地形），中间高两侧低、相邻一高一低
+    ...ARCH_BLOCKS(),
   ]
   return { name: '天花板竞技场', solids }
+}
+
+/** 拱形方块：空口 x 5600~7600 内 7 个正方形（边长 160），中心 x 5700..7500 步长 300。
+ *  顶面 y 从两侧 2320 升到中间 2000（拱形），相邻方块一高一低交错（间隔放置）。 */
+function ARCH_BLOCKS(): MapSolid[] {
+  const SIDE = 160
+  const xs = [5700, 6000, 6300, 6600, 6900, 7200, 7500]
+  const tops = [2320, 2100, 2260, 2000, 2260, 2100, 2320]
+  return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: 'block' as const }))
 }
 
 /** 校验/清洗外部地图 JSON（编辑器导入、localStorage） */

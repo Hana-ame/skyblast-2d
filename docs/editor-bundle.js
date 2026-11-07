@@ -15,9 +15,17 @@
       // 天花板左板（环形 x 0~5600）
       { x: 0, y: CEILING_TOP, w: CEILING_HOLE_X0, h: CEILING_THICK, kind: "platform" },
       // 天花板右板（环形 x 7600~13200）
-      { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: "platform" }
+      { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: "platform" },
+      // 空口拱形方块落脚点：正方形 160×160，不可摧毁（block=实心地形），中间高两侧低、相邻一高一低
+      ...ARCH_BLOCKS()
     ];
     return { name: "\u5929\u82B1\u677F\u7ADE\u6280\u573A", solids };
+  }
+  function ARCH_BLOCKS() {
+    const SIDE = 160;
+    const xs = [5700, 6e3, 6300, 6600, 6900, 7200, 7500];
+    const tops = [2320, 2100, 2260, 2e3, 2260, 2100, 2320];
+    return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" }));
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;
