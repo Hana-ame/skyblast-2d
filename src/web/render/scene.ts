@@ -7,6 +7,7 @@ import { WEAPONS } from '../../core/weapons.ts'
 import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, clamp } from '../../core/wrap.ts'
 import { JUMP_PADS } from '../../core/sim/world.ts'
+import { expandBeamSegments } from './beamGeometry.ts'
 import { getTerrainPattern, syncTerrainPatterns } from '../textures.ts'
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
@@ -361,29 +362,33 @@ export function renderScene(): void {
   }
 
   // 12.5 激光束（分段折线，按秒淡出；反射 3 次由权威端算好）
+  // 世界是环形的：**每段从起点画到「起点 + 段向量」**（用最短环形位移），
+  // 绝不能分别 sx(x1)/sx(x2) —— 那样一段跨接缝时光束会朝反方向横穿整张地图（看起来像穿墙）。
   for (const b of beams) {
     const alpha = Math.max(0, b.life / b.maxLife)
     ctx.save()
     ctx.globalAlpha = alpha
     ctx.lineCap = 'round'
+    // 把每段展开成屏幕坐标折线（跨接缝的段会在 ±WORLD 侧补副本）
+    const polys = expandBeamSegments(b.segments, (wx, wy) => ({ x: sx(wx), y: sy(wy) }), halfW, halfH)
     // 外层辉光
     ctx.strokeStyle = b.color
     ctx.lineWidth = 9
     ctx.globalAlpha = alpha * 0.35
-    for (const seg of b.segments) {
+    for (const pl of polys) {
       ctx.beginPath()
-      ctx.moveTo(sx(seg.x1), sy(seg.y1))
-      ctx.lineTo(sx(seg.x2), sy(seg.y2))
+      ctx.moveTo(pl.x1, pl.y1)
+      ctx.lineTo(pl.x2, pl.y2)
       ctx.stroke()
     }
     // 内芯
     ctx.globalAlpha = alpha
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 2.4
-    for (const seg of b.segments) {
+    for (const pl of polys) {
       ctx.beginPath()
-      ctx.moveTo(sx(seg.x1), sy(seg.y1))
-      ctx.lineTo(sx(seg.x2), sy(seg.y2))
+      ctx.moveTo(pl.x1, pl.y1)
+      ctx.lineTo(pl.x2, pl.y2)
       ctx.stroke()
     }
     ctx.restore()

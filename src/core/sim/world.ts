@@ -555,30 +555,25 @@ export class World {
     if (!originOk) return
     const originX = x
     const originY = y
-    // 单段射程必须 < 世界半宽/半高（6600/2200）：渲染端 sx()/sy() 取「相机→点」的环形最短位移，
-    // 一段超过半图时首尾屏幕坐标会走向相反方向，画出一条横穿全图（看起来穿墙）的直线。
-    // 2000px × (bounces+1) 已达 8000px 总射程，足够战斗使用；接缝处另行终止。
-    const maxSegLen = 2000
+    // 单段上限只是防死循环的兜底（正常由地形/掩体在几十~几百 px 内终止）。
+    // 渲染端按「段起点 + 最短位移」累加绘制，所以单段再长也不会画出横穿全图的直线。
+    const maxSegLen = 14000
     const step = 4
     const bounces = wep.bounces ?? 0
+    const MAX_TOTAL = 24000   // 整束（含反射）总射程兜底
 
+    let totalTravelled = 0
     for (let b = 0; b <= bounces; b++) {
       let travelled = 0
       let hitWall = false
       let blockedByObstacle = false
       const segStartX = x
       const segStartY = y
-      while (travelled < maxSegLen) {
-        // 不跨世界接缝：接缝两侧的点在屏幕上相距半张地图，直线绘制会横穿所有墙体（视觉“穿墙”）。
-        // 到接缝处直接终止本段（世界仍是环形，只是激光不绕圈）。
-        const rawX = x + dx * step
-        const rawY = y + dy * step
-        if (rawX < 0 || rawX >= WORLD_W || rawY < 0 || rawY >= WORLD_H) {
-          hitWall = false
-          break
-        }
-        const nx = rawX
-        const ny = rawY
+      while (travelled < maxSegLen && totalTravelled < MAX_TOTAL) {
+        // 世界是环形的：激光正常跨越接缝继续飞行（最终由地形/掩体/射程兜底终止）。
+        // 接缝只影响「渲染」——scene.ts 按段起点累加最长位移来画，不会画出横穿全图的长线。
+        const nx = wrapX(x + dx * step)
+        const ny = wrapY(y + dy * step)
         // 顺序很重要：先判地形/可破坏障碍，命中判定点若在实体内则本段到此为止，
         // 绝不能先前面的「玩家容差盒」判定（那会让紧贴墙背面的目标被“穿墙”打中）。
         if (this.terrain.isSolidAt(nx, ny)) {
@@ -623,6 +618,7 @@ export class World {
         x = nx
         y = ny
         travelled += step
+        totalTravelled += step
       }
       // 反射后若下一探点仍在实体内（外角/贴墙极端情形）→ 终止，不再继续反弹钻进墙里
       if (hitWall && this.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {

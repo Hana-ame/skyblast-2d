@@ -1080,24 +1080,20 @@
       if (!originOk) return;
       const originX = x;
       const originY = y;
-      const maxSegLen = 2e3;
+      const maxSegLen = 14e3;
       const step = 4;
       const bounces = wep.bounces ?? 0;
+      const MAX_TOTAL = 24e3;
+      let totalTravelled = 0;
       for (let b = 0; b <= bounces; b++) {
         let travelled = 0;
         let hitWall = false;
         let blockedByObstacle = false;
         const segStartX = x;
         const segStartY = y;
-        while (travelled < maxSegLen) {
-          const rawX = x + dx * step;
-          const rawY = y + dy * step;
-          if (rawX < 0 || rawX >= WORLD_W || rawY < 0 || rawY >= WORLD_H) {
-            hitWall = false;
-            break;
-          }
-          const nx = rawX;
-          const ny = rawY;
+        while (travelled < maxSegLen && totalTravelled < MAX_TOTAL) {
+          const nx = wrapX(x + dx * step);
+          const ny = wrapY(y + dy * step);
           if (this.terrain.isSolidAt(nx, ny)) {
             hitWall = true;
             const hitX = this.terrain.isSolidAt(nx, y);
@@ -1140,6 +1136,7 @@
           x = nx;
           y = ny;
           travelled += step;
+          totalTravelled += step;
         }
         if (hitWall && this.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
           hitWall = false;
@@ -4172,6 +4169,26 @@
     }
   }
 
+  // src/web/render/beamGeometry.ts
+  function expandBeamSegments(segments, toScreen, halfW, halfH) {
+    const out = [];
+    for (const seg of segments) {
+      const from = toScreen(seg.x1, seg.y1);
+      const dx = wrapDeltaX(seg.x1, seg.x2);
+      const dy = wrapDeltaY(seg.y1, seg.y2);
+      out.push({ x1: from.x, y1: from.y, x2: from.x + dx, y2: from.y + dy });
+      for (const ox of [-WORLD_W, WORLD_W]) {
+        if (from.x + ox < -halfW - 200 || from.x + ox > halfW + 200) continue;
+        out.push({ x1: from.x + ox, y1: from.y, x2: from.x + dx + ox, y2: from.y + dy });
+      }
+      for (const oy of [-WORLD_H, WORLD_H]) {
+        if (from.y + oy < -halfH - 200 || from.y + oy > halfH + 200) continue;
+        out.push({ x1: from.x, y1: from.y + oy, x2: from.x + dx, y2: from.y + dy + oy });
+      }
+    }
+    return out;
+  }
+
   // src/web/textures.ts
   function mulberry32(seed) {
     let s = seed >>> 0;
@@ -4808,22 +4825,23 @@
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.lineCap = "round";
+      const polys = expandBeamSegments(b.segments, (wx, wy) => ({ x: sx(wx), y: sy(wy) }), halfW, halfH);
       ctx.strokeStyle = b.color;
       ctx.lineWidth = 9;
       ctx.globalAlpha = alpha * 0.35;
-      for (const seg of b.segments) {
+      for (const pl of polys) {
         ctx.beginPath();
-        ctx.moveTo(sx(seg.x1), sy(seg.y1));
-        ctx.lineTo(sx(seg.x2), sy(seg.y2));
+        ctx.moveTo(pl.x1, pl.y1);
+        ctx.lineTo(pl.x2, pl.y2);
         ctx.stroke();
       }
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2.4;
-      for (const seg of b.segments) {
+      for (const pl of polys) {
         ctx.beginPath();
-        ctx.moveTo(sx(seg.x1), sy(seg.y1));
-        ctx.lineTo(sx(seg.x2), sy(seg.y2));
+        ctx.moveTo(pl.x1, pl.y1);
+        ctx.lineTo(pl.x2, pl.y2);
         ctx.stroke();
       }
       ctx.restore();

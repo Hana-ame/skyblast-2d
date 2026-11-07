@@ -11,6 +11,7 @@ import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../src/core/wrap.ts'
+import { expandBeamSegments } from '../src/web/render/beamGeometry.ts'
 
 test('护栏·武器约定：跨武器规则/数值范围全部满足', () => {
   const vs = weaponViolations()
@@ -155,8 +156,10 @@ test('护栏·激光不穿墙：端点不在实体内、段不跨实体、屏幕
             const py = wrapY(seg.y1 + (ddy * k) / steps)
             assert.equal(w.terrain.isSolidAt(px, py), false, `segment crosses solid at (${Math.round(px)},${Math.round(py)})`)
           }
-          // 渲染端按「相机→点」分别取最短位移；本段两端的屏幕距离必须与世界距离一致
-          const sr = Math.hypot(wrapDeltaX(6600, seg.x2) - wrapDeltaX(6600, seg.x1), wrapDeltaY(2200, seg.y2) - wrapDeltaY(2200, seg.y1))
+          // 渲染端：每段按「起点屏幕坐标 + 最短位移」绘制，屏幕长度必须 ≡ 世界长度
+          // （若分别对两端取最短位移，跨接缝的段会画成横穿全图的长线 —— 这正是此前的“穿墙激光”）
+          const screen = expandBeamSegments([seg], (wx, wy) => ({ x: wrapDeltaX(6600, wx), y: wrapDeltaY(2200, wy) }), 2000, 1200)[0]
+          const sr = Math.hypot(screen.x2 - screen.x1, screen.y2 - screen.y1)
           assert.ok(Math.abs(sr - len) < 1.5, `segment render length differs (world ${len.toFixed(0)} vs screen ${sr.toFixed(0)})`)
         }
       }
@@ -201,4 +204,32 @@ test('护栏·激光被可破坏掩体挡住（贴掩体开火也不穿）', () 
   }
   assert.ok(ob.hp < hp0, `destructible cover takes damage, hp=${ob.hp}`)
   assert.equal(target.hp, 100, `target behind destructible cover protected, hp=${target.hp}`)
+})
+
+
+test('护栏·激光跨世界接缝：光束连续（不中断）且屏幕不会画出横穿全图的长线', () => {
+  // ① 目标就在接缝另一侧：光束应继续飞过去并命中（世界是环形的，不能在接缝凭空断掉）
+  const w = new World(31000, { name: 'seam', solids: [] })
+  w.config.randomSpawn = false
+  const a = w.addPlayer('A', 'red')
+  const b = w.addPlayer('B', 'blue')
+  a.weaponIndex = 4
+  a.ammo[4] = 12
+  a.reserveAmmo[4] = 48
+  a.pos = { x: 13180, y: 2700 }
+  b.pos = { x: 120, y: 2700 }
+  for (let i = 0; i < 20; i++) {
+    w.step(DT, new Map([[a.id, input({ fire: true, aim: 0 })], [b.id, input()]]))
+    w.drainEvents()
+  }
+  assert.ok(b.hp < 100, `cross-seam beam reaches the target across the seam, hp=${b.hp}`)
+
+  // ② 渲染不变量：跨接缝的段，屏幕长度 == 世界长度（不会变成半张地图的长线）
+  const seg = { x1: 13190, y1: 1000, x2: 100, y2: 1000 }
+  const screens = expandBeamSegments([seg], (wx, wy) => ({ x: wrapDeltaX(6600, wx), y: wrapDeltaY(2200, wy) }), 2000, 1200)
+  const len = Math.hypot(wrapDeltaX(seg.x1, seg.x2), wrapDeltaY(seg.y1, seg.y2))
+  for (const sc of screens) {
+    const sl = Math.hypot(sc.x2 - sc.x1, sc.y2 - sc.y1)
+    assert.ok(Math.abs(sl - len) < 1e-6, `screen segment length ${sl.toFixed(1)} != world length ${len.toFixed(1)}`)
+  }
 })
