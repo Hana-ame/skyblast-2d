@@ -614,3 +614,47 @@ test('护栏·高斯枪反射：小房间与「横跨地图左右」的大房间
     { x: 6000, y: 2780, w: 1020, h: 20, kind: 'cover' },
   ], { x: 6500, y: 2700 }, -Math.PI / 2)
 })
+
+
+test('护栏·蓄力锁定方向：狙击蓄力期间瞄准输入不再改变发射方向，松手后可重新瞄准', () => {
+  const w = new World(39000, { name: 'charge-arena', solids: [] })
+  w.config.randomSpawn = false
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 2                 // 狙击：chargeSeconds 0.6
+  p.ammo[2] = 3
+  p.reserveAmmo[2] = 15
+  p.pos = { x: 6600, y: 1600 }
+
+  // 前 20 帧朝右蓄力，之后把瞄准转到正下方；发射方向必须仍锁在 0 rad
+  let firedAngle: number | null = null
+  for (let i = 0; i < 60; i++) {
+    const aim = i < 20 ? 0 : Math.PI / 2
+    w.step(DT, new Map([[p.id, input({ fire: true, aim })]]))
+    for (const e of w.drainEvents()) {
+      if (e.kind !== 'projectile_spawn') continue
+      const pr = w.projectiles.find(x => x.id === e.projectileId)
+      if (pr) firedAngle = Math.atan2(pr.vel.y, pr.vel.x)
+    }
+  }
+  assert.ok(firedAngle !== null, 'sniper eventually fires after charging')
+  assert.ok(Math.abs(firedAngle!) < 0.05, `charge must lock the firing direction at 0 rad, got ${(firedAngle! * 180 / Math.PI).toFixed(1)}°`)
+
+  // 松手后锁定解除：可以自由转向
+  for (let i = 0; i < 10; i++) w.step(DT, new Map([[p.id, input({ aim: -Math.PI / 2 })]]))
+  assert.ok(Math.abs(p.aim + Math.PI / 2) < 0.05, `aim is free again after releasing, got ${(p.aim * 180 / Math.PI).toFixed(1)}°`)
+  assert.equal(p.chargeTimer, 0, 'charge timer reset after fire')
+  assert.equal(p.chargeAim, undefined, 'aim lock cleared after firing')
+
+  // 半途松手也解除锁定（不发射）
+  const w2 = new World(39001, { name: 'charge-cancel', solids: [] })
+  w2.config.randomSpawn = false
+  const q = w2.addPlayer('Q', 'ffa')
+  q.weaponIndex = 2
+  q.ammo[2] = 3
+  q.pos = { x: 6600, y: 1600 }
+  for (let i = 0; i < 10; i++) w2.step(DT, new Map([[q.id, input({ fire: true, aim: 0 })]]))
+  assert.ok(q.chargeTimer > 0, 'charging')
+  for (let i = 0; i < 10; i++) w2.step(DT, new Map([[q.id, input({ aim: Math.PI / 2 })]]))
+  assert.ok(Math.abs(q.aim - Math.PI / 2) < 0.05, 'aim unlocked after cancelling the charge')
+  assert.equal(q.chargeAim, undefined, 'aim lock cleared on cancel')
+})

@@ -42,15 +42,30 @@
     v.y = -P.jumpImpulse;
   }
   function jetpack(v, dt, ascendMult = 1) {
-    v.y = Math.max(-P.jetpackMaxUp * ascendMult, v.y - P.jetpackAccel * ascendMult / P.mass * dt);
+    const cap = -P.jetpackMaxUp * ascendMult;
+    if (v.y <= cap) return;
+    v.y = Math.max(cap, v.y - P.jetpackAccel * ascendMult / P.mass * dt);
   }
   function updateJetpackFuel(fuel, active, onGround, dt, maxFuel = P.jetpackFuel) {
     const next = active ? fuel - P.jetpackDrain * dt : onGround ? fuel + P.jetpackRecharge * dt : fuel;
     return Math.min(maxFuel, Math.max(0, next));
   }
   var RECOIL_SCALE = 0.56;
+  var RECOIL_DECAY = 7;
+  var RECOIL_EPSILON = 4;
   function recoilDelta(recoil, aim) {
     return { x: -Math.cos(aim) * recoil * RECOIL_SCALE, y: -Math.sin(aim) * recoil * RECOIL_SCALE };
+  }
+  var RECOIL_INTEGRAL = (1 - Math.exp(-RECOIL_DECAY * (1 / 60))) / RECOIL_DECAY;
+  var RECOIL_DISPLACEMENT_FACTOR = RECOIL_INTEGRAL;
+  function stepRecoilVel(rv, dt) {
+    const k = Math.exp(-RECOIL_DECAY * dt);
+    rv.x *= k;
+    rv.y *= k;
+    if (Math.hypot(rv.x, rv.y) < RECOIL_EPSILON) {
+      rv.x = 0;
+      rv.y = 0;
+    }
   }
 
   // src/core/wrap.ts
@@ -297,11 +312,11 @@
       headshotMult: 1.5,
       pellets: 1,
       spread: 0,
-      speed: 520,
+      speed: 780,
       recoil: 420,
       magSize: 1,
       maxReserve: 20,
-      // 1 发/弹匣，共 20 个弹匣；换弹 2s
+      // 弹速 ×1.5（520→780）；1 发/弹匣，共 20 个弹匣；换弹 2s
       reloadTime: 2,
       fireDelay: 0,
       terrainRadius: 124,
@@ -334,10 +349,10 @@
       magSize: 24,
       maxReserve: 48,
       // 24 / 6每秒 = 连续 4 秒
-      reloadTime: 6,
+      reloadTime: 3,
       fireDelay: 0,
       terrainRadius: 18,
-      // 换弹 6s
+      // 换弹 3s（平衡性补丁：减半）
       explosive: false,
       laser: true,
       pierceAll: true,
@@ -655,9 +670,9 @@
     }
     return null;
   }
-  function lineBlockedByTerrain(terrain, obstacles, obstacleBroadBuckets, x1, y1, x2, y2) {
-    const dx = wrapDeltaX(x1, x2);
-    const dy = wrapDeltaY(y1, y2);
+  function lineBlockedByTerrain(terrain, obstacles, obstacleBroadBuckets, x1, y1, x2, y2, rawDx, rawDy) {
+    const dx = rawDx ?? wrapDeltaX(x1, x2);
+    const dy = rawDy ?? wrapDeltaY(y1, y2);
     const dist = Math.hypot(dx, dy);
     if (dist <= 1) return false;
     const steps = Math.max(1, Math.ceil(dist / 4));
@@ -672,24 +687,30 @@
     }
     return false;
   }
-  function truncateSegmentToFree(terrain, x1, y1, x2, y2) {
-    const dx = wrapDeltaX(x1, x2);
-    const dy = wrapDeltaY(y1, y2);
+  function truncateSegmentToFree(terrain, x1, y1, _x2, _y2, rawDx, rawDy) {
+    const dx = rawDx ?? wrapDeltaX(x1, _x2);
+    const dy = rawDy ?? wrapDeltaY(y1, _y2);
     const len = Math.hypot(dx, dy);
-    if (len <= 1e-6) return { x: x1, y: y1, shortened: false };
+    if (len <= 1e-6) return { x: x1, y: y1, dx: 0, dy: 0, shortened: false };
     const steps = Math.max(1, Math.ceil(len / 3));
     let lastX = x1;
     let lastY = y1;
+    let lastDx = 0;
+    let lastDy = 0;
     for (let k = 1; k <= steps; k++) {
-      const px = wrapX(x1 + dx * k / steps);
-      const py = wrapY(y1 + dy * k / steps);
+      const curDx = dx * k / steps;
+      const curDy = dy * k / steps;
+      const px = wrapX(x1 + curDx);
+      const py = wrapY(y1 + curDy);
       if (terrain.isSolidAt(px, py)) {
-        return { x: lastX, y: lastY, shortened: true };
+        return { x: lastX, y: lastY, dx: lastDx, dy: lastDy, shortened: true };
       }
       lastX = px;
       lastY = py;
+      lastDx = curDx;
+      lastDy = curDy;
     }
-    return { x: x2, y: y2, shortened: false };
+    return { x: wrapX(x1 + dx), y: wrapY(y1 + dy), dx, dy, shortened: false };
   }
   function checkBodyOverlapsAt(terrain, obstacles, x, y, obstacleBroadBuckets) {
     const wx = wrapX(x);
@@ -914,7 +935,9 @@
       }
     }
     const tGrid = terrain.grid;
-    const nx = wrapX(p.pos.x + p.vel.x * dt);
+    if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };
+    const rv = p.recoilVel;
+    const nx = wrapX(p.pos.x + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR);
     if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y)) {
       p.pos.x = nx;
     } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y - 10)) {
@@ -928,18 +951,22 @@
         }
       }
       p.vel.x = 0;
+      rv.x = 0;
     }
-    const nyRaw = p.pos.y + p.vel.y * dt;
+    const vyTotal = p.vel.y + rv.y;
+    const nyRaw = p.pos.y + p.vel.y * dt + rv.y * RECOIL_DISPLACEMENT_FACTOR;
     const ny = wrapY(nyRaw);
     if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny)) {
       p.pos.y = ny;
       p.onGround = false;
     } else {
-      p.onGround = p.vel.y > 0;
+      p.onGround = vyTotal > 0;
       p.vel.y = 0;
+      rv.y = 0;
     }
     p.pos.x = wrapX(p.pos.x);
     p.pos.y = wrapY(p.pos.y);
+    stepRecoilVel(rv, dt);
   }
   function separateOverlappingPlayers(players, playerBroadBuckets, terrain, obstacles, obstacleBroadBuckets) {
     for (let i = 0; i < players.length; i++) {
@@ -1070,32 +1097,53 @@
     if (!originOk) return;
     const originX = x;
     const originY = y;
-    const maxSegLen = 14e3;
+    const segCapFor = (ddx, ddy) => Math.abs(ddx) >= Math.abs(ddy) ? WORLD_W - 200 : WORLD_H - 200;
     const step = 4;
     const bounces = wep.bounces ?? 0;
-    const MAX_TOTAL = 24e3;
     const headR = ctx2.config.headRadius + 3;
     const headRSq = headR * headR;
     const tGrid = ctx2.terrain.grid;
     const obstacleBroadBuckets = ctx2.obstacleBroadBuckets;
     const playerBroadBuckets = ctx2.playerBroadBuckets;
     const obstacles = ctx2.obstacles;
-    let totalTravelled = 0;
-    for (let b = 0; b <= bounces; b++) {
+    let budget = bounces;
+    let b = 0;
+    while (b <= bounces) {
       let travelled = 0;
       let hitWall = false;
       let blockedByObstacle = false;
       const segStartX = x;
       const segStartY = y;
+      const dirX = dx;
+      const dirY = dy;
       const stepX = dx * step;
       const stepY = dy * step;
-      while (travelled < maxSegLen && totalTravelled < MAX_TOTAL) {
+      const maxSegLen = segCapFor(dirX, dirY);
+      while (travelled < maxSegLen) {
         let nx = x + stepX;
-        if (nx >= WORLD_W) nx -= WORLD_W;
-        else if (nx < 0) nx += WORLD_W;
+        let crossedSeam = false;
+        if (nx >= WORLD_W) {
+          nx -= WORLD_W;
+          crossedSeam = true;
+        } else if (nx < 0) {
+          nx += WORLD_W;
+          crossedSeam = true;
+        }
         let ny = y + stepY;
-        if (ny >= WORLD_H) ny -= WORLD_H;
-        else if (ny < 0) ny += WORLD_H;
+        if (ny >= WORLD_H) {
+          ny -= WORLD_H;
+          crossedSeam = true;
+        } else if (ny < 0) {
+          ny += WORLD_H;
+          crossedSeam = true;
+        }
+        if (crossedSeam) {
+          if (budget <= 0) {
+            hitWall = false;
+            break;
+          }
+          budget--;
+        }
         const gx = nx / 20 | 0;
         const gy = ny / 20 | 0;
         if (tGrid[gy * GRID_W + gx] !== 0) {
@@ -1135,8 +1183,8 @@
             if (t.id === p.id && !wep.selfDamage) continue;
             if (t.id !== p.id && t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) continue;
             if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
-            const rawDy = Math.abs(t.pos.y - ny);
-            if (rawDy > 40 && rawDy < WORLD_H - 40) continue;
+            const rawDy2 = Math.abs(t.pos.y - ny);
+            if (rawDy2 > 40 && rawDy2 < WORLD_H - 40) continue;
             const hx = wrapDeltaX(t.pos.x, nx);
             if (hx > 18 || hx < -18) continue;
             const hy = wrapDeltaY(t.pos.y - 24, ny);
@@ -1144,7 +1192,17 @@
             const bx = Math.abs(hx);
             const by = wrapDeltaY(t.pos.y, ny);
             if (isHead || bx <= 14 && by >= -12 && by <= 18) {
-              if (lineBlockedByTerrain(ctx2.terrain, obstacles, obstacleBroadBuckets, segStartX, segStartY, t.pos.x, t.pos.y - 12)) continue;
+              if (lineBlockedByTerrain(
+                ctx2.terrain,
+                obstacles,
+                obstacleBroadBuckets,
+                segStartX,
+                segStartY,
+                t.pos.x,
+                t.pos.y - 12,
+                dirX * travelled,
+                dirY * travelled
+              )) continue;
               hitPlayer.add(t.id);
               const mult = isHead ? wep.headshotMult : 1;
               ctx2.damagePlayer(t, dps * mult * dt, void 0, isHead, false, p.id, p.team, wep.shortName);
@@ -1154,26 +1212,24 @@
         x = nx;
         y = ny;
         travelled += step;
-        totalTravelled += step;
       }
       if (hitWall && ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
         hitWall = false;
       }
-      const seg = { x1: 0, y1: 0, x2: x, y2: y };
-      if (segments.length > 0) {
-        const prev = segments[segments.length - 1];
-        seg.x1 = prev.x2;
-        seg.y1 = prev.y2;
-      } else {
-        seg.x1 = originX;
-        seg.y1 = originY;
-      }
-      const cut = truncateSegmentToFree(ctx2.terrain, seg.x1, seg.y1, seg.x2, seg.y2);
+      const seg = { x1: segStartX, y1: segStartY, x2: x, y2: y, dx: 0, dy: 0 };
+      const rawDx = dirX * travelled;
+      const rawDy = dirY * travelled;
+      const cut = truncateSegmentToFree(ctx2.terrain, seg.x1, seg.y1, seg.x2, seg.y2, rawDx, rawDy);
       seg.x2 = cut.x;
       seg.y2 = cut.y;
+      seg.dx = cut.dx;
+      seg.dy = cut.dy;
       segments.push(seg);
       if (cut.shortened) break;
       if (blockedByObstacle || !hitWall) break;
+      if (budget <= 0) break;
+      budget--;
+      b++;
     }
     ctx2.events.push({
       kind: "laser",
@@ -1216,9 +1272,11 @@
     let writeIdx = 0;
     for (let i = 0; i < ctx2.projectiles.length; i++) {
       const pr = ctx2.projectiles[i];
-      if (pr.damage > 0) {
+      if (pr.damage > 0 && pr.life > 0) {
         ctx2.projectiles[writeIdx++] = pr;
         if (pr.isGravityOrb && pr.life > 0) ctx2.activeGravityOrbs.push(pr);
+      } else {
+        ctx2.events.push({ kind: "projectile_destroy", projectileId: pr.id });
       }
     }
     ctx2.projectiles.length = writeIdx;
@@ -1387,13 +1445,28 @@
             }
             pr.bounces--;
             pr.hitTargets = [pr.owner];
+            ctx2.events.push({
+              kind: "projectile_bounce",
+              projectileId: pr.id,
+              playerId: pr.owner,
+              weaponId: pr.weaponId,
+              x: pr.pos.x,
+              y: pr.pos.y,
+              vx: pr.vel.x,
+              vy: pr.vel.y,
+              bounces: pr.bounces,
+              life: pr.life
+            });
             break;
           }
           dead = true;
           break;
         }
       }
-      if (dead) pr.life = 0;
+      if (dead) {
+        ctx2.events.push({ kind: "projectile_destroy", projectileId: pr.id });
+        pr.life = 0;
+      }
     }
   }
 
@@ -1405,6 +1478,7 @@
       const idx = ctx2.obstacles.findIndex((o) => o.id === ob.id);
       if (idx >= 0) ctx2.obstacles.splice(idx, 1);
       ctx2.events.push({ kind: "explosion", x: ob.x, y: ob.y, radius: 28 });
+      ctx2.events.push({ kind: "obstacle_destroy", obstacleId: ob.id, x: ob.x, y: ob.y });
     }
   }
   function damagePlayerInWorld(ctx2, t, amount, pr, isHead, isPierced, attackerId, attackerTeam, weaponLabel) {
@@ -1421,11 +1495,24 @@
         t.shieldHp = 0;
         t.shieldTimer = 0;
         ctx2.events.push({ kind: "shield", x: t.pos.x, y: t.pos.y, playerId: t.id });
+        ctx2.events.push({ kind: "shield_break", x: t.pos.x, y: t.pos.y, playerId: t.id });
       }
       if (remaining <= 0) return;
     }
     t.hp -= remaining;
-    ctx2.events.push({ kind: "hit", x: t.pos.x, y: t.pos.y, victimId: t.id, attackerId: atkId, headshot: isHead, damage: remaining });
+    ctx2.events.push({
+      kind: "hit",
+      x: t.pos.x,
+      y: t.pos.y,
+      victimId: t.id,
+      attackerId: atkId,
+      headshot: isHead,
+      damage: remaining,
+      weaponLabel: label,
+      victimTeam: t.team,
+      isHeadshot: isHead,
+      isPierced
+    });
     ctx2.onHitCount();
     if (t.hp > 0) return;
     if (t.doll && t.doll.timer > 0) {
@@ -1448,10 +1535,19 @@
     }
     ctx2.events.push({
       kind: "kill",
+      // 新字段（联机协议/新表现层用）
       attackerId: atkId,
       victimId: t.id,
       weaponLabel: label,
       headshot: isHead,
+      // 旧字段（killfeed / 死亡界面直接读名称与队伍，避免显示成「?」）
+      killerId: atkId,
+      killerName: killer?.name ?? "\u6218\u573A\u73AF\u5883",
+      killerTeam: atkTeam,
+      victimName: t.name,
+      victimTeam: t.team,
+      isHeadshot: isHead,
+      isPierced,
       x: t.pos.x,
       y: t.pos.y
     });
@@ -1594,9 +1690,10 @@
       st.timer -= dt;
       if (st.timer <= 0) {
         ctx2.events.push({ kind: "airstrike", x: st.pos.x, y: st.pos.y });
+        ctx2.events.push({ kind: "airstrike_drop", x: st.pos.x, y: st.pos.y });
         const src = ctx2.playerById.get(st.owner) ?? ctx2.players.find((p) => p.id === st.owner);
         for (let b = -2; b <= 2; b++) {
-          ctx2.projectiles.push(createProjectile(
+          const airPr = createProjectile(
             ctx2.nextProjId(),
             src ?? { id: st.owner, pos: st.pos, vel: { x: 0, y: 0 }, aim: 0, team: "ffa", name: "\u7A7A\u88AD" },
             st.pos.x + b * 44,
@@ -1614,7 +1711,20 @@
               r: 7,
               life: 160 / 60
             }
-          ));
+          );
+          ctx2.projectiles.push(airPr);
+          ctx2.events.push({
+            kind: "projectile_spawn",
+            projectileId: airPr.id,
+            playerId: st.owner,
+            weaponId: -1,
+            x: airPr.pos.x,
+            y: airPr.pos.y,
+            vx: airPr.vel.x,
+            vy: airPr.vel.y,
+            bounces: 0,
+            life: airPr.life
+          });
         }
         ctx2.airstrikes.splice(i, 1);
       }
@@ -2044,6 +2154,7 @@
       p.reloading = false;
       p.fireCooldown = 0;
       p.chargeTimer = 0;
+      p.chargeAim = void 0;
       p.secondaryCooldown = 0;
       p.deployed = true;
       p.alive = true;
@@ -2106,7 +2217,12 @@
       stepMapInteractables(this, dt);
       let pw = 0;
       for (let i = 0; i < this.projectiles.length; i++) {
-        if (this.projectiles[i].life > 0) this.projectiles[pw++] = this.projectiles[i];
+        const pr = this.projectiles[i];
+        if (pr.life > 0 && pr.damage > 0) {
+          this.projectiles[pw++] = pr;
+        } else if (!this.events.some((e) => e.kind === "projectile_destroy" && e.projectileId === pr.id)) {
+          this.events.push({ kind: "projectile_destroy", projectileId: pr.id });
+        }
       }
       this.projectiles.length = pw;
       let gw = 0;
@@ -2142,7 +2258,8 @@
           p.fireCooldown = Math.max(p.fireCooldown, 0.3);
         }
       }
-      p.aim = w.aim;
+      const charging = p.chargeTimer > 0 && p.chargeAim !== void 0;
+      p.aim = charging ? p.chargeAim : w.aim;
       const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
       if (p.mountedTowerId) {
         p.vel.x = 0;
@@ -2205,12 +2322,19 @@
         if (w.fire) updateContinuousBeam(this, p, wepNow, dt);
         p.chargeTimer = 0;
       } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-        if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        if (w.fire) {
+          if (p.chargeTimer <= 0) p.chargeAim = p.aim;
+          p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        }
         if (p.chargeTimer > 0) {
           p.chargeTimer += dt;
           if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
             this.fire(p);
             p.chargeTimer = 0;
+            p.chargeAim = void 0;
+          } else if (!w.fire) {
+            p.chargeTimer = 0;
+            p.chargeAim = void 0;
           }
         }
       } else if (w.fire) {
@@ -2223,7 +2347,7 @@
       if (m) {
         if (m.cooldown <= 0) {
           m.cooldown = this.config.mortarCooldown;
-          this.projectiles.push(createProjectile(
+          const mortarPr = createProjectile(
             this.prj++,
             p,
             m.x + Math.cos(m.angle) * 34,
@@ -2231,7 +2355,20 @@
             Math.cos(m.angle) * m.power * 60,
             Math.sin(m.angle) * m.power * 60,
             { damage: this.config.mortarDamage, headshotMult: 1.5, terrainRadius: this.config.mortarRadius, explosive: true, gravityScale: 0.68, weaponLabel: "\u516C\u5171\u8FEB\u51FB\u70AE", color: "#f97316", r: 7.5, life: 175 / 60 }
-          ));
+          );
+          this.projectiles.push(mortarPr);
+          this.events.push({
+            kind: "projectile_spawn",
+            projectileId: mortarPr.id,
+            playerId: p.id,
+            weaponId: -1,
+            x: mortarPr.pos.x,
+            y: mortarPr.pos.y,
+            vx: mortarPr.vel.x,
+            vy: mortarPr.vel.y,
+            bounces: 0,
+            life: mortarPr.life
+          });
           this.events.push({ kind: "mortar_fire", x: m.x, y: m.y, playerId: p.id });
         }
         return;
@@ -2247,8 +2384,9 @@
       if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
       if (wep.recoil > 0) {
         const rk = recoilDelta(wep.recoil, p.aim);
-        p.vel.x += rk.x;
-        p.vel.y += rk.y;
+        if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };
+        p.recoilVel.x = rk.x;
+        p.recoilVel.y = rk.y;
       }
       const mx = wrapX(p.pos.x + Math.cos(p.aim) * 24);
       const my = p.pos.y - 12 + Math.sin(p.aim) * 24;
@@ -2277,6 +2415,18 @@
           life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60
         });
         this.projectiles.push(pr);
+        this.events.push({
+          kind: "projectile_spawn",
+          projectileId: pr.id,
+          playerId: p.id,
+          weaponId: pr.weaponId,
+          x: pr.pos.x,
+          y: pr.pos.y,
+          vx: pr.vel.x,
+          vy: pr.vel.y,
+          bounces: pr.bounces,
+          life: pr.life
+        });
         if (pr.isGravityOrb && pr.life > 0 && pr.damage > 0) this.activeGravityOrbs.push(pr);
       }
     }
@@ -2849,20 +2999,24 @@
     }
   }
   var EVENT_KINDS = [
+    "hit",
     "kill",
-    "headshot",
-    "pierce",
     "explosion",
     "obstacle_destroy",
     "capture",
     "supply_pickup",
     "ammo_pickup",
     "warp",
+    "shield",
     "shield_break",
     "doll_recall",
     "mortar_fire",
+    "airstrike",
     "airstrike_drop",
     "laser",
+    "watchtower",
+    "headshot",
+    "pierce",
     "projectile_spawn",
     "projectile_bounce",
     "projectile_destroy"
@@ -2889,6 +3043,8 @@
         w.u16(qPosY(s.y1));
         w.u16(qPosX(s.x2));
         w.u16(qPosY(s.y2));
+        w.i16(Math.round((s.dx ?? 0) * 4));
+        w.i16(Math.round((s.dy ?? 0) * 4));
       }
       return;
     }

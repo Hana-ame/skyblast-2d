@@ -291,7 +291,7 @@ test('高斯枪：按住持续输出（射速无限），一梭子可打 8 秒�
   assert.ok(drainedPerSec > 5 && drainedPerSec < 7, `ammo drains ~6/s, got ${drainedPerSec.toFixed(2)}`)
   // 弹量/2 后：24 / 6 = 4 秒
   assert.equal(WEAPONS[4].magSize / (WEAPONS[4].ammoPerSecond ?? 1), 4, 'one magazine = 4s')
-  assert.equal(WEAPONS[4].reloadTime, 6.0, 'gauss reloadTime = 6s')
+  assert.equal(WEAPONS[4].reloadTime, 3.0, 'gauss reloadTime = 3s (halved)')
   // 松手即停
   w.drainEvents()
   w.step(DT, new Map([[p.id, input({ fire: false, aim: -Math.PI / 2 })]]))
@@ -387,7 +387,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[4].bounces, 2, 'gauss bounces 2 times')
   assert.equal(WEAPONS[4].damagePerSecond, 90, 'gauss dps halved (180 -> 90)')
   assert.equal(WEAPONS[4].magSize, 24, 'gauss magazine 24 (4s)')
-  assert.equal(WEAPONS[4].reloadTime, 6.0, 'gauss reload 6s')
+  assert.equal(WEAPONS[4].reloadTime, 3.0, 'gauss reload 3s (halved)')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
   assert.ok(WEAPONS[5].fireDelay <= 0.1, 'M249 high fire rate (damage-synced with rifle, DPS preserved)')

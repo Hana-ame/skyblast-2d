@@ -37,6 +37,8 @@ export interface PlayerState {
   reloadTimer: number    // 秒
   fireCooldown: number   // 秒
   chargeTimer: number    // 蓄力已持续秒数（狙击等蓄力武器；松手清零，满 chargeSeconds 发射）
+  /** 蓄力锁定方向（rad）：蓄力开始时记录，蓄力期间不再跟随瞄准输入 → 蓄力中不能改发射方向 */
+  chargeAim?: number
   // 副武器
   secondary: string      // 'frag'|'Flash'|'mine'|'airstrike'|'shield'|'doll'|'impact'
   secondaryCooldown: number

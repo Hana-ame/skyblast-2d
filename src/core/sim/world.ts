@@ -282,7 +282,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     p.fragRechargeTimer = 0
     p.fuel = getPhysicsParams().jetpackFuel * (WEAPONS[p.weaponIndex]?.fuelMult ?? 1)
     p.shieldHp = 0; p.shieldTimer = 0; p.watchtowerTimer = 0; p.mountedTowerId = null; p.warpCooldown = 0
-    p.doll = null; p.dollCharges = 0; p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.secondaryCooldown = 0
+    p.doll = null; p.dollCharges = 0; p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.chargeAim = undefined; p.secondaryCooldown = 0
     p.deployed = true; p.alive = true; p.respawnTimer = 0
     resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
     ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
@@ -395,7 +395,9 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       }
     }
 
-    p.aim = w.aim
+    // 蓄力中锁定发射方向：蓄力期间瞄准输入不再改变 p.aim（松手/满蓄力发射后解除）
+    const charging = p.chargeTimer > 0 && p.chargeAim !== undefined
+    p.aim = charging ? p.chargeAim! : w.aim
     const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
     if (p.mountedTowerId) {
       p.vel.x = 0
@@ -461,12 +463,21 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (w.fire) updateContinuousBeam(this, p, wepNow, dt)
       p.chargeTimer = 0
     } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-      if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4)
+      if (w.fire) {
+        // 蓄力开始的那一帧记录锁定方向
+        if (p.chargeTimer <= 0) p.chargeAim = p.aim
+        p.chargeTimer = Math.max(p.chargeTimer, 1e-4)
+      }
       if (p.chargeTimer > 0) {
         p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
           this.fire(p)
           p.chargeTimer = 0
+          p.chargeAim = undefined
+        } else if (!w.fire) {
+          // 松手取消蓄力（不发射）→ 解除方向锁定
+          p.chargeTimer = 0
+          p.chargeAim = undefined
         }
       }
     } else if (w.fire) {

@@ -367,10 +367,10 @@
       magSize: 24,
       maxReserve: 48,
       // 24 / 6每秒 = 连续 4 秒
-      reloadTime: 6,
+      reloadTime: 3,
       fireDelay: 0,
       terrainRadius: 18,
-      // 换弹 6s
+      // 换弹 3s（平衡性补丁：减半）
       explosive: false,
       laser: true,
       pierceAll: true,
@@ -2172,6 +2172,7 @@
       p.reloading = false;
       p.fireCooldown = 0;
       p.chargeTimer = 0;
+      p.chargeAim = void 0;
       p.secondaryCooldown = 0;
       p.deployed = true;
       p.alive = true;
@@ -2275,7 +2276,8 @@
           p.fireCooldown = Math.max(p.fireCooldown, 0.3);
         }
       }
-      p.aim = w.aim;
+      const charging = p.chargeTimer > 0 && p.chargeAim !== void 0;
+      p.aim = charging ? p.chargeAim : w.aim;
       const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
       if (p.mountedTowerId) {
         p.vel.x = 0;
@@ -2338,12 +2340,19 @@
         if (w.fire) updateContinuousBeam(this, p, wepNow, dt);
         p.chargeTimer = 0;
       } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-        if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        if (w.fire) {
+          if (p.chargeTimer <= 0) p.chargeAim = p.aim;
+          p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        }
         if (p.chargeTimer > 0) {
           p.chargeTimer += dt;
           if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
             this.fire(p);
             p.chargeTimer = 0;
+            p.chargeAim = void 0;
+          } else if (!w.fire) {
+            p.chargeTimer = 0;
+            p.chargeAim = void 0;
           }
         }
       } else if (w.fire) {

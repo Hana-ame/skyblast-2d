@@ -92,7 +92,7 @@ export const WEAPONS: WeaponDef[] = [
     id: 4, name: '高斯枪', shortName: '高斯枪', isSupplyOnly: true,
     damage: 25, headshotMult: 2.0, pellets: 1, spread: 0.0,
     speed: 3000, recoil: 0, magSize: 24, maxReserve: 48,   // 24 / 6每秒 = 连续 4 秒
-    reloadTime: 6.0, fireDelay: 0, terrainRadius: 18,      // 换弹 6s
+    reloadTime: 3.0, fireDelay: 0, terrainRadius: 18,      // 换弹 3s（平衡性补丁：减半）
     explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 2, beam: true,
     friendlyFire: true, selfDamage: true,   // 高斯：反射光束可打到友军/自己
     damagePerSecond: 90, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',   // 伤害减半（180→90）；单匣 4s；换弹 6s

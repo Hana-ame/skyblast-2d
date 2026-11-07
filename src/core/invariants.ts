@@ -72,7 +72,7 @@ export function weaponViolations(): Violation[] {
   if (laser) {
     const dur = laser.magSize / (laser.ammoPerSecond ?? 1)
     if (Math.abs(dur - 4) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 4 秒')
-    if (laser.reloadTime !== 6) add('rule.laserreload', '高斯枪换弹必须 6 秒')
+    if (laser.reloadTime !== 3) add('rule.laserreload', '高斯枪换弹必须 3 秒（平衡性补丁：6s 减半）')
     if (laser.damagePerSecond !== 90) add('rule.laserdps', '高斯枪 DPS 必须为 90（减半）')
     if ((laser.fovMult ?? 1) !== 1) add('rule.laserfov', '高斯枪视野必须正常（1.0）')
     if (!laser.beam) add('rule.laserbeam', '高斯枪必须是持续光束')
