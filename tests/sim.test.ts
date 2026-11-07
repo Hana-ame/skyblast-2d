@@ -285,7 +285,7 @@ test('激光：按住持续输出（射速无限），一梭子可打 8 秒；�
   const drainedPerSec = ammo0 - p.ammo[4]
   assert.ok(drainedPerSec > 5 && drainedPerSec < 7, `ammo drains ~6/s, got ${drainedPerSec.toFixed(2)}`)
   // 弹量/2 后：24 / 6 = 4 秒
-  assert.equal(WEAPONS[4].magSize / (WEAPONS[4].ammoPerSecond ?? 1), 4, 'one magazine = 4s')
+  assert.equal(WEAPONS[4].magSize / (WEAPONS[4].ammoPerSecond ?? 1), 2, 'one magazine = 2s')
   // 松手即停
   w.drainEvents()
   w.step(DT, new Map([[p.id, input({ fire: false, aim: -Math.PI / 2 })]]))
@@ -376,7 +376,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
   assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
   assert.equal(WEAPONS[4].damagePerSecond, 180, 'laser dps reduced (240 -> 180)')
-  assert.equal(WEAPONS[4].magSize, 24, 'laser ammo halved')
+  assert.equal(WEAPONS[4].magSize, 12, 'laser magazine 12')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
   assert.ok(WEAPONS[5].fireDelay <= 0.1, 'M249 high fire rate (damage-synced with rifle, DPS preserved)')

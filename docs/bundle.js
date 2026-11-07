@@ -359,9 +359,9 @@
       spread: 0,
       speed: 3e3,
       recoil: 0,
-      magSize: 24,
+      magSize: 12,
       maxReserve: 48,
-      // 24 / 6每秒 = 连续 4 秒（弹量/2）
+      // 12 / 6每秒 = 连续 2 秒
       reloadTime: 4,
       fireDelay: 0,
       terrainRadius: 18,
