@@ -1,6 +1,8 @@
 // web/app/context.ts —— 浏览器端共享上下文（画布/相机/权威世界/输入状态/表现层数据）
 // 工程化拆分的单一状态源：所有 app/* 模块只从这里读状态、通过其可变容器写状态。
 import { World, JUMP_PADS } from '../../core/sim/world.ts'
+import { sanitizeMapData } from '../../core/map.ts'
+import type { MapData } from '../../core/map.ts'
 import { Effects } from '../effects.ts'
 import { WORLD_W, WORLD_H } from '../../core/wrap.ts'
 import type { PlayerState, TeamId } from '../../core/types.ts'
@@ -18,7 +20,16 @@ export function resizeCanvas(): void {
 }
 
 // ── 世界（服务器权威；本页 = 主机） ──
-export const world = new World(20261106)
+// 如果编辑器保存了自定义地图（localStorage），则用自定义地形启动
+function loadCustomMap(): MapData | undefined {
+  try {
+    const raw = localStorage.getItem('pvp-custom-map')
+    if (!raw) return undefined
+    return sanitizeMapData(JSON.parse(raw)) ?? undefined
+  } catch { return undefined }
+}
+export const customMap = loadCustomMap()
+export const world = new World(20261106, customMap)
 export const localPlayer = world.addPlayer('SkyHunter', 'red')
 localPlayer.deployed = false   // 待机整备中（大厅点「立即进入战场」部署）
 world.config.randomSpawn = true

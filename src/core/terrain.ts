@@ -1,6 +1,7 @@
 // core/terrain.ts —— 极简平地地图：一整块平地 + 方形掩体 + 几个浮空平台
 // 服务器权威：World 持有；地形静态（build 一次，两端一致，不进快照）。
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY } from './wrap.ts'
+import type { MapSolid } from './map.ts'
 
 export const TILE_SIZE = 20
 export const GRID_W = Math.floor(WORLD_W / TILE_SIZE)   // 660
@@ -43,13 +44,26 @@ export class Terrain {
     this.shadows.push({ x, y, w, h, label, alpha: 0.76 })
   }
 
-  build(): void {
+  build(customSolids?: MapSolid[]): void {
     this.grid.fill(0)
     this.rects.length = 0
     this.shadows.length = 0
 
     // 一整块平地（双轴环形，无任何边界）
     this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, '#1e293b', '#334155', 'earth')
+
+    if (customSolids) {
+      // 自定义地图（编辑器）：按 kind 着色
+      for (const r of customSolids) {
+        const style = r.kind === 'platform'
+          ? { color: '#334155', border: '#38bdf8', kind: 'platform', label: '平台' }
+          : r.kind === 'block'
+            ? { color: '#334155', border: '#a855f7', kind: 'block', label: '方块' }
+            : { color: '#1f2937', border: '#f97316', kind: 'cover', label: '方形掩体' }
+        this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label)
+      }
+      return
+    }
 
     // 方形掩体（贴地，均匀分布）
     const covers = [

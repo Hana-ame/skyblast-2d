@@ -10,6 +10,7 @@ import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
+import { defaultMapData, sanitizeMapData } from '../src/core/map.ts'
 import { runDuelSim } from '../src/balance/duelSim.ts'
 import { getPhysicsParams } from '../src/core/sim/physics.ts'
 import { wrapX, wrapDeltaX, wrapDeltaY, wrapY, wrapDist } from '../src/core/wrap.ts'
@@ -1003,4 +1004,27 @@ test('引力枪防御：引力场近距吸收其他枪的子弹', () => {
   for (let i = 0; i < 30; i++) w.step(DT, new Map([[shooter.id, input()]]))
   assert.ok(!w.projectiles.some(p => p.weaponId === 1), 'bullet absorbed by gravity field')
   assert.ok(victim.hp >= 100, `victim protected by gravity field, hp=${victim.hp}`)
+})
+
+
+test('地图编辑器数据：默认地图/清洗/自定义地图可被 World 使用', () => {
+  const def = defaultMapData()
+  assert.ok(def.solids.length === 13, `default map has 13 solids, got ${def.solids.length}`)
+  // 清洗：非法项丢弃、kind 回退
+  const clean = sanitizeMapData({ name: 't', solids: [
+    { x: 100, y: 2500, w: 60, h: 20, kind: 'platform' },
+    { x: 200, y: 2500, w: 60, h: 20, kind: 'bogus' },
+    { x: NaN, y: 0, w: 10, h: 10, kind: 'cover' },
+    { x: 300, y: 2500, w: 0, h: 20, kind: 'cover' },
+  ] })
+  assert.ok(clean, 'sanitized map')
+  assert.equal(clean!.solids.length, 2, 'invalid solids dropped')
+  assert.equal(clean!.solids[1].kind, 'cover', 'unknown kind falls back to cover')
+  assert.equal(sanitizeMapData({ solids: [] }), null, 'empty map rejected')
+
+  // 自定义地图进入 World：在自定义位置有实体
+  const w = new World(311, clean!)
+  assert.ok(w.terrain.isSolidAt(110, 2510), 'custom platform solid in world')
+  assert.ok(w.terrain.isSolidAt(210, 2510), 'custom cover solid in world')
+  assert.ok(!w.terrain.isSolidAt(500, 2510), 'no solid where not placed')
 })

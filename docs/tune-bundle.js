@@ -110,11 +110,18 @@
       this.rects.push({ x, y, w, h, color: "#090d16", borderColor: "#1e293b", kind: "tunnel_bg", label });
       this.shadows.push({ x, y, w, h, label, alpha: 0.76 });
     }
-    build() {
+    build(customSolids) {
       this.grid.fill(0);
       this.rects.length = 0;
       this.shadows.length = 0;
       this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, "#1e293b", "#334155", "earth");
+      if (customSolids) {
+        for (const r of customSolids) {
+          const style = r.kind === "platform" ? { color: "#334155", border: "#38bdf8", kind: "platform", label: "\u5E73\u53F0" } : r.kind === "block" ? { color: "#334155", border: "#a855f7", kind: "block", label: "\u65B9\u5757" } : { color: "#1f2937", border: "#f97316", kind: "cover", label: "\u65B9\u5F62\u63A9\u4F53" };
+          this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label);
+        }
+        return;
+      }
       const covers = [
         { x: 800, y: SURFACE_Y - 100, w: 120, h: 100, c: "#f43f5e" },
         { x: 2600, y: SURFACE_Y - 80, w: 100, h: 80, c: "#38bdf8" },
@@ -314,9 +321,10 @@
       magSize: 24,
       maxReserve: 48,
       // 24 / 6每秒 = 连续 4 秒（弹量/2）
-      reloadTime: 2,
+      reloadTime: 4,
       fireDelay: 0,
       terrainRadius: 18,
+      // 换弹时间 ×2
       explosive: false,
       laser: true,
       pierceAll: true,
@@ -611,10 +619,10 @@
     spawnIndex = 0;
     ammoSpawnTimer = 0;
     usedAmmoSpots = /* @__PURE__ */ new Set();
-    constructor(seed = 12345) {
+    constructor(seed = 12345, map) {
       this.seed = seed;
       this.rng = new Rng(seed);
-      this.terrain.build();
+      this.terrain.build(map?.solids);
       this.resetMatch();
     }
     /** 全场重置（对局开始/地形重置按钮） */

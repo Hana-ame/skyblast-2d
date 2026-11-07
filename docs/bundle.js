@@ -110,11 +110,18 @@
       this.rects.push({ x, y, w, h, color: "#090d16", borderColor: "#1e293b", kind: "tunnel_bg", label });
       this.shadows.push({ x, y, w, h, label, alpha: 0.76 });
     }
-    build() {
+    build(customSolids) {
       this.grid.fill(0);
       this.rects.length = 0;
       this.shadows.length = 0;
       this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, "#1e293b", "#334155", "earth");
+      if (customSolids) {
+        for (const r of customSolids) {
+          const style = r.kind === "platform" ? { color: "#334155", border: "#38bdf8", kind: "platform", label: "\u5E73\u53F0" } : r.kind === "block" ? { color: "#334155", border: "#a855f7", kind: "block", label: "\u65B9\u5757" } : { color: "#1f2937", border: "#f97316", kind: "cover", label: "\u65B9\u5F62\u63A9\u4F53" };
+          this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label);
+        }
+        return;
+      }
       const covers = [
         { x: 800, y: SURFACE_Y - 100, w: 120, h: 100, c: "#f43f5e" },
         { x: 2600, y: SURFACE_Y - 80, w: 100, h: 80, c: "#38bdf8" },
@@ -612,10 +619,10 @@
     spawnIndex = 0;
     ammoSpawnTimer = 0;
     usedAmmoSpots = /* @__PURE__ */ new Set();
-    constructor(seed = 12345) {
+    constructor(seed = 12345, map) {
       this.seed = seed;
       this.rng = new Rng(seed);
-      this.terrain.build();
+      this.terrain.build(map?.solids);
       this.resetMatch();
     }
     /** 全场重置（对局开始/地形重置按钮） */
@@ -1994,6 +2001,26 @@
     }
   };
 
+  // src/core/map.ts
+  function sanitizeMapData(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const o = raw;
+    const solidsRaw = Array.isArray(o.solids) ? o.solids : [];
+    const solids = [];
+    for (const s of solidsRaw) {
+      if (!s || typeof s !== "object") continue;
+      const r = s;
+      const x = Number(r.x), y = Number(r.y), w = Number(r.w), h = Number(r.h);
+      if (![x, y, w, h].every(Number.isFinite)) continue;
+      if (w <= 0 || h <= 0) continue;
+      const kind = r.kind === "platform" || r.kind === "block" ? r.kind : "cover";
+      solids.push({ x, y, w, h, kind });
+      if (solids.length >= 2e3) break;
+    }
+    if (solids.length === 0) return null;
+    return { name: typeof o.name === "string" ? o.name : "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
+  }
+
   // src/web/effects.ts
   var Effects = class {
     particles = [];
@@ -2167,7 +2194,17 @@
     canvas.width = window.innerWidth || 1024;
     canvas.height = window.innerHeight || 640;
   }
-  var world = new World(20261106);
+  function loadCustomMap() {
+    try {
+      const raw = localStorage.getItem("pvp-custom-map");
+      if (!raw) return void 0;
+      return sanitizeMapData(JSON.parse(raw)) ?? void 0;
+    } catch {
+      return void 0;
+    }
+  }
+  var customMap = loadCustomMap();
+  var world = new World(20261106, customMap);
   var localPlayer = world.addPlayer("SkyHunter", "red");
   localPlayer.deployed = false;
   world.config.randomSpawn = true;
@@ -2696,6 +2733,9 @@
     });
     document.getElementById("hudQuickMortarBtn")?.addEventListener("click", () => {
       inputQueue.interact = true;
+    });
+    document.getElementById("openEditorBtn")?.addEventListener("click", () => {
+      window.open("./editor.html", "_blank");
     });
     document.getElementById("interactBannerBtn")?.addEventListener("click", () => {
       if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {

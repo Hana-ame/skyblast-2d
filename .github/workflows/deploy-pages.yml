@@ -28,6 +28,7 @@ jobs:
           npm run build:web
           npm run build:tune
           npm run build:site
+          npm run build:editor
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

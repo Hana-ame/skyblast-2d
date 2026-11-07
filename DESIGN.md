@@ -635,6 +635,18 @@ src/web/
 - 含超级兵器 25 种子复测：激光胜率与之前基本持平（换弹在 1v1 中很少触发），仍为最强补给武器。
 - 50/50 测试；README/DESIGN 同步。
 
-### 10.37 尚未完成（设计位）
+### 10.37 地图编辑器（2026-11-07）
+
+- 新增 `src/core/map.ts`：`MapData/MapSolid`（kind：platform/cover/block）、`defaultMapData()`、`sanitizeMapData()`（外部 JSON 校验/清洗）；
+  `Terrain.build(customSolids?)` 支持自定义矩形；`World(seed, map?)` 接受地图数据。
+- 新增 **地图编辑器页面** `docs/editor.html` + `src/web/main-editor.ts`（打包为 `docs/editor-bundle.js`）：
+  笔刷（平台/掩体/方块，1~10 格）、左键拖拽绘制、右键擦除、滚轮缩放、中键/空格平移、20px 格点、坐标/缩放显示；
+  保存 localStorage、应用到游戏（写入 `pvp-custom-map` 并跳转）、默认地图/清空、JSON 导出/导入。
+- 游戏启动时 `app/context.ts` 读取 `pvp-custom-map`，有则用自定义地形启动；顶栏新增 🛠️ 地图编辑器入口。
+- 构建/CI：`package.json` 增加 `build:editor`，`.github/workflows/{ci,deploy-pages}.yml` 均加入 editor 构建。
+- 验证：51/51 测试（新增地图数据清洗/自定义地图碰撞）；浏览器端到端：编辑器画一块方块（13→14 块）→ 保存 →
+  应用 → 游戏加载自定义地形（15 rect 含 block，指定坐标 solid=true，玩家可正常部署）。
+
+### 10.38 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

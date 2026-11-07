@@ -5,6 +5,7 @@
 // 单位制：秒制（v2 px/frame@60 → px/s：速度×60）。随机量全部走注入的 Rng。
 import { applyGravity, jetpack, jump, move, updateJetpackFuel, getPhysicsParams } from './physics.ts'
 import { Terrain, OBSTACLE_PRESETS, TILE_SIZE } from '../terrain.ts'
+import type { MapData } from '../map.ts'
 import { Rng } from '../rng.ts'
 import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, weaponFalloff } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
@@ -138,10 +139,10 @@ export class World {
   private ammoSpawnTimer = 0
   private usedAmmoSpots = new Set<number>()
 
-  constructor(seed = 12345) {
+  constructor(seed = 12345, map?: MapData) {
     this.seed = seed
     this.rng = new Rng(seed)
-    this.terrain.build()
+    this.terrain.build(map?.solids)
     this.resetMatch()
   }
 

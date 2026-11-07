@@ -105,6 +105,7 @@ export function bindAllEvents(): void {
     inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
   })
   document.getElementById('hudQuickMortarBtn')?.addEventListener('click', () => { inputQueue.interact = true })
+  document.getElementById('openEditorBtn')?.addEventListener('click', () => { window.open('./editor.html', '_blank') })
   document.getElementById('interactBannerBtn')?.addEventListener('click', () => {
     if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {
       const lobby = document.getElementById('lobbyModal')
