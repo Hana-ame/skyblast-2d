@@ -1234,9 +1234,11 @@
     let writeIdx = 0;
     for (let i = 0; i < ctx2.projectiles.length; i++) {
       const pr = ctx2.projectiles[i];
-      if (pr.damage > 0) {
+      if (pr.damage > 0 && pr.life > 0) {
         ctx2.projectiles[writeIdx++] = pr;
         if (pr.isGravityOrb && pr.life > 0) ctx2.activeGravityOrbs.push(pr);
+      } else {
+        ctx2.events.push({ kind: "projectile_destroy", projectileId: pr.id });
       }
     }
     ctx2.projectiles.length = writeIdx;
@@ -1405,13 +1407,28 @@
             }
             pr.bounces--;
             pr.hitTargets = [pr.owner];
+            ctx2.events.push({
+              kind: "projectile_bounce",
+              projectileId: pr.id,
+              playerId: pr.owner,
+              weaponId: pr.weaponId,
+              x: pr.pos.x,
+              y: pr.pos.y,
+              vx: pr.vel.x,
+              vy: pr.vel.y,
+              bounces: pr.bounces,
+              life: pr.life
+            });
             break;
           }
           dead = true;
           break;
         }
       }
-      if (dead) pr.life = 0;
+      if (dead) {
+        ctx2.events.push({ kind: "projectile_destroy", projectileId: pr.id });
+        pr.life = 0;
+      }
     }
   }
 
@@ -1423,6 +1440,7 @@
       const idx = ctx2.obstacles.findIndex((o) => o.id === ob.id);
       if (idx >= 0) ctx2.obstacles.splice(idx, 1);
       ctx2.events.push({ kind: "explosion", x: ob.x, y: ob.y, radius: 28 });
+      ctx2.events.push({ kind: "obstacle_destroy", obstacleId: ob.id, x: ob.x, y: ob.y });
     }
   }
   function damagePlayerInWorld(ctx2, t, amount, pr, isHead, isPierced, attackerId, attackerTeam, weaponLabel) {
@@ -1439,11 +1457,24 @@
         t.shieldHp = 0;
         t.shieldTimer = 0;
         ctx2.events.push({ kind: "shield", x: t.pos.x, y: t.pos.y, playerId: t.id });
+        ctx2.events.push({ kind: "shield_break", x: t.pos.x, y: t.pos.y, playerId: t.id });
       }
       if (remaining <= 0) return;
     }
     t.hp -= remaining;
-    ctx2.events.push({ kind: "hit", x: t.pos.x, y: t.pos.y, victimId: t.id, attackerId: atkId, headshot: isHead, damage: remaining });
+    ctx2.events.push({
+      kind: "hit",
+      x: t.pos.x,
+      y: t.pos.y,
+      victimId: t.id,
+      attackerId: atkId,
+      headshot: isHead,
+      damage: remaining,
+      weaponLabel: label,
+      victimTeam: t.team,
+      isHeadshot: isHead,
+      isPierced
+    });
     ctx2.onHitCount();
     if (t.hp > 0) return;
     if (t.doll && t.doll.timer > 0) {
@@ -1466,10 +1497,19 @@
     }
     ctx2.events.push({
       kind: "kill",
+      // 新字段（联机协议/新表现层用）
       attackerId: atkId,
       victimId: t.id,
       weaponLabel: label,
       headshot: isHead,
+      // 旧字段（killfeed / 死亡界面直接读名称与队伍，避免显示成「?」）
+      killerId: atkId,
+      killerName: killer?.name ?? "\u6218\u573A\u73AF\u5883",
+      killerTeam: atkTeam,
+      victimName: t.name,
+      victimTeam: t.team,
+      isHeadshot: isHead,
+      isPierced,
       x: t.pos.x,
       y: t.pos.y
     });
@@ -1612,9 +1652,10 @@
       st.timer -= dt;
       if (st.timer <= 0) {
         ctx2.events.push({ kind: "airstrike", x: st.pos.x, y: st.pos.y });
+        ctx2.events.push({ kind: "airstrike_drop", x: st.pos.x, y: st.pos.y });
         const src = ctx2.playerById.get(st.owner) ?? ctx2.players.find((p) => p.id === st.owner);
         for (let b = -2; b <= 2; b++) {
-          ctx2.projectiles.push(createProjectile(
+          const airPr = createProjectile(
             ctx2.nextProjId(),
             src ?? { id: st.owner, pos: st.pos, vel: { x: 0, y: 0 }, aim: 0, team: "ffa", name: "\u7A7A\u88AD" },
             st.pos.x + b * 44,
@@ -1632,7 +1673,20 @@
               r: 7,
               life: 160 / 60
             }
-          ));
+          );
+          ctx2.projectiles.push(airPr);
+          ctx2.events.push({
+            kind: "projectile_spawn",
+            projectileId: airPr.id,
+            playerId: st.owner,
+            weaponId: -1,
+            x: airPr.pos.x,
+            y: airPr.pos.y,
+            vx: airPr.vel.x,
+            vy: airPr.vel.y,
+            bounces: 0,
+            life: airPr.life
+          });
         }
         ctx2.airstrikes.splice(i, 1);
       }
@@ -2124,7 +2178,12 @@
       stepMapInteractables(this, dt);
       let pw = 0;
       for (let i = 0; i < this.projectiles.length; i++) {
-        if (this.projectiles[i].life > 0) this.projectiles[pw++] = this.projectiles[i];
+        const pr = this.projectiles[i];
+        if (pr.life > 0 && pr.damage > 0) {
+          this.projectiles[pw++] = pr;
+        } else if (!this.events.some((e) => e.kind === "projectile_destroy" && e.projectileId === pr.id)) {
+          this.events.push({ kind: "projectile_destroy", projectileId: pr.id });
+        }
       }
       this.projectiles.length = pw;
       let gw = 0;
@@ -2241,7 +2300,7 @@
       if (m) {
         if (m.cooldown <= 0) {
           m.cooldown = this.config.mortarCooldown;
-          this.projectiles.push(createProjectile(
+          const mortarPr = createProjectile(
             this.prj++,
             p,
             m.x + Math.cos(m.angle) * 34,
@@ -2249,7 +2308,20 @@
             Math.cos(m.angle) * m.power * 60,
             Math.sin(m.angle) * m.power * 60,
             { damage: this.config.mortarDamage, headshotMult: 1.5, terrainRadius: this.config.mortarRadius, explosive: true, gravityScale: 0.68, weaponLabel: "\u516C\u5171\u8FEB\u51FB\u70AE", color: "#f97316", r: 7.5, life: 175 / 60 }
-          ));
+          );
+          this.projectiles.push(mortarPr);
+          this.events.push({
+            kind: "projectile_spawn",
+            projectileId: mortarPr.id,
+            playerId: p.id,
+            weaponId: -1,
+            x: mortarPr.pos.x,
+            y: mortarPr.pos.y,
+            vx: mortarPr.vel.x,
+            vy: mortarPr.vel.y,
+            bounces: 0,
+            life: mortarPr.life
+          });
           this.events.push({ kind: "mortar_fire", x: m.x, y: m.y, playerId: p.id });
         }
         return;
@@ -2295,6 +2367,18 @@
           life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60
         });
         this.projectiles.push(pr);
+        this.events.push({
+          kind: "projectile_spawn",
+          projectileId: pr.id,
+          playerId: p.id,
+          weaponId: pr.weaponId,
+          x: pr.pos.x,
+          y: pr.pos.y,
+          vx: pr.vel.x,
+          vy: pr.vel.y,
+          bounces: pr.bounces,
+          life: pr.life
+        });
         if (pr.isGravityOrb && pr.life > 0 && pr.damage > 0) this.activeGravityOrbs.push(pr);
       }
     }

@@ -344,9 +344,16 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     stepMapInteractables(this, dt)
 
     // 5. 原地双指针清理失效实体
+    // 弹丸消失必须同时发 projectile_destroy（客户端事件化推算依赖它移除本地弹丸），
+    // 否则客户端会留下"幽灵弹丸"。已经在上方发过的用 destroyedIds 去重。
     let pw = 0
     for (let i = 0; i < this.projectiles.length; i++) {
-      if (this.projectiles[i].life > 0) this.projectiles[pw++] = this.projectiles[i]
+      const pr = this.projectiles[i]
+      if (pr.life > 0 && pr.damage > 0) {
+        this.projectiles[pw++] = pr
+      } else if (!this.events.some(e => e.kind === 'projectile_destroy' && e.projectileId === pr.id)) {
+        this.events.push({ kind: 'projectile_destroy', projectileId: pr.id })
+      }
     }
     this.projectiles.length = pw
 
@@ -473,9 +480,15 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (m) {
       if (m.cooldown <= 0) {
         m.cooldown = this.config.mortarCooldown
-        this.projectiles.push(createProjectile(this.prj++, p, m.x + Math.cos(m.angle) * 34, m.y - 18 + Math.sin(m.angle) * 34,
+        const mortarPr = createProjectile(this.prj++, p, m.x + Math.cos(m.angle) * 34, m.y - 18 + Math.sin(m.angle) * 34,
           Math.cos(m.angle) * m.power * 60, Math.sin(m.angle) * m.power * 60,
-          { damage: this.config.mortarDamage, headshotMult: 1.5, terrainRadius: this.config.mortarRadius, explosive: true, gravityScale: 0.68, weaponLabel: '公共迫击炮', color: '#f97316', r: 7.5, life: 175 / 60 }))
+          { damage: this.config.mortarDamage, headshotMult: 1.5, terrainRadius: this.config.mortarRadius, explosive: true, gravityScale: 0.68, weaponLabel: '公共迫击炮', color: '#f97316', r: 7.5, life: 175 / 60 })
+        this.projectiles.push(mortarPr)
+        this.events.push({
+          kind: 'projectile_spawn', projectileId: mortarPr.id, playerId: p.id, weaponId: -1,
+          x: mortarPr.pos.x, y: mortarPr.pos.y, vx: mortarPr.vel.x, vy: mortarPr.vel.y,
+          bounces: 0, life: mortarPr.life,
+        })
         this.events.push({ kind: 'mortar_fire', x: m.x, y: m.y, playerId: p.id })
       }
       return
@@ -512,6 +525,11 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       })
       this.projectiles.push(pr)
+      // 事件化：发射（客户端据此本地推算弹道，无需每帧同步位置）
+      this.events.push({
+        kind: 'projectile_spawn', projectileId: pr.id, playerId: p.id, weaponId: pr.weaponId,
+        x: pr.pos.x, y: pr.pos.y, vx: pr.vel.x, vy: pr.vel.y, bounces: pr.bounces, life: pr.life,
+      })
       if (pr.isGravityOrb && pr.life > 0 && pr.damage > 0) this.activeGravityOrbs.push(pr)
     }
   }

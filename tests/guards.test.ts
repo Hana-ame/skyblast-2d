@@ -8,6 +8,7 @@ import { allViolations, layoutViolations, weaponViolations } from '../src/core/i
 import { defaultMapData } from '../src/core/map.ts'
 import { WEAPONS, DEFAULT_CONFIG } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
+import type { WorldEvent } from '../src/core/types.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
@@ -374,4 +375,51 @@ test('护栏·高斯枪反射次数=2（段数最多 3）', () => {
     for (const e of w.drainEvents()) if (e.kind === 'laser') maxSegs = Math.max(maxSegs, e.segments?.length ?? 0)
   }
   assert.equal(maxSegs, 3, `2 reflections => at most 3 segments, got ${maxSegs}`)
+})
+
+
+test('护栏·击杀事件必须携带名称与队伍（防止 killfeed 显示「?」）', () => {
+  const w = new World(36000)
+  w.config.randomSpawn = false
+  const a = w.addPlayer('Alice', 'red')
+  const b = w.addPlayer('Bob', 'blue')
+  a.weaponIndex = 1
+  a.ammo[1] = 30
+  a.pos = { x: 3000, y: 2740 }
+  b.pos = { x: 3060, y: 2740 }
+  b.hp = 5
+  const evs: WorldEvent[] = []
+  for (let i = 0; i < 60; i++) {
+    w.step(DT, new Map([[a.id, input({ fire: true })], [b.id, input()]]))
+    evs.push(...w.drainEvents())
+  }
+  const kill = evs.find(e => e.kind === 'kill')
+  assert.ok(kill, 'kill event emitted')
+  assert.equal(kill!.killerName, 'Alice', 'killer name present (killfeed would show "?" otherwise)')
+  assert.equal(kill!.victimName, 'Bob', 'victim name present')
+  assert.equal(kill!.killerTeam, 'red', 'killer team present')
+  assert.equal(kill!.victimTeam, 'blue', 'victim team present')
+  assert.ok(kill!.weaponLabel, 'weapon label present')
+})
+
+test('护栏·弹丸事件化：发射/反弹/销毁事件成对出现（客户端推算需要）', () => {
+  const w = new World(36100)
+  w.config.randomSpawn = false
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 1
+  p.ammo[1] = 30
+  p.pos = { x: 6600, y: 2400 }
+  const evs: WorldEvent[] = []
+  // 步枪弹丸寿命 ≈130 tick；跑满寿命才能观察到 destroy 事件
+  for (let i = 0; i < 260; i++) {
+    w.step(DT, new Map([[p.id, input({ fire: true })]]))
+    evs.push(...w.drainEvents())
+  }
+  const spawns = evs.filter(e => e.kind === 'projectile_spawn')
+  assert.ok(spawns.length > 0, 'projectile_spawn emitted')
+  for (const s of spawns) {
+    assert.ok(typeof s.projectileId === 'number', 'spawn carries projectileId')
+    assert.ok(typeof s.x === 'number' && typeof s.y === 'number', 'spawn carries position')
+  }
+  assert.ok(evs.some(e => e.kind === 'projectile_destroy'), 'projectile_destroy emitted')
 })

@@ -367,9 +367,12 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
   let writeIdx = 0
   for (let i = 0; i < ctx.projectiles.length; i++) {
     const pr = ctx.projectiles[i]
-    if (pr.damage > 0) {
+    if (pr.damage > 0 && pr.life > 0) {
       ctx.projectiles[writeIdx++] = pr
       if (pr.isGravityOrb && pr.life > 0) ctx.activeGravityOrbs.push(pr)
+    } else {
+      // 事件化：寿命耗尽/0 伤害清理 → 通知客户端移除
+      ctx.events.push({ kind: 'projectile_destroy', projectileId: pr.id })
     }
   }
   ctx.projectiles.length = writeIdx
@@ -545,6 +548,12 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
           if (!hitX && !hitY) { pr.vel.x = -pr.vel.x; pr.vel.y = -pr.vel.y }
           pr.bounces--
           pr.hitTargets = [pr.owner]
+          // 事件化：反弹（客户端本地推算据此校正）
+          ctx.events.push({
+            kind: 'projectile_bounce', projectileId: pr.id, playerId: pr.owner,
+            weaponId: pr.weaponId, x: pr.pos.x, y: pr.pos.y,
+            vx: pr.vel.x, vy: pr.vel.y, bounces: pr.bounces, life: pr.life,
+          })
           break
         }
         dead = true
@@ -552,7 +561,11 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
       }
     }
 
-    if (dead) pr.life = 0
+    if (dead) {
+      // 事件化：销毁（客户端移除本地推算弹丸）
+      ctx.events.push({ kind: 'projectile_destroy', projectileId: pr.id })
+      pr.life = 0
+    }
   }
 }
 

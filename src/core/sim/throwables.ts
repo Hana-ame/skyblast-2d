@@ -39,6 +39,7 @@ export function damageObstacleInWorld(ctx: ThrowablesContext, ob: Obstacle, dmg:
     const idx = ctx.obstacles.findIndex(o => o.id === ob.id)
     if (idx >= 0) ctx.obstacles.splice(idx, 1)
     ctx.events.push({ kind: 'explosion', x: ob.x, y: ob.y, radius: 28 })
+    ctx.events.push({ kind: 'obstacle_destroy', obstacleId: ob.id, x: ob.x, y: ob.y })
   }
 }
 
@@ -66,11 +67,16 @@ export function damagePlayerInWorld(
       t.shieldHp = 0
       t.shieldTimer = 0
       ctx.events.push({ kind: 'shield', x: t.pos.x, y: t.pos.y, playerId: t.id })
+      ctx.events.push({ kind: 'shield_break', x: t.pos.x, y: t.pos.y, playerId: t.id })
     }
     if (remaining <= 0) return
   }
   t.hp -= remaining
-  ctx.events.push({ kind: 'hit', x: t.pos.x, y: t.pos.y, victimId: t.id, attackerId: atkId, headshot: isHead, damage: remaining })
+  ctx.events.push({
+    kind: 'hit', x: t.pos.x, y: t.pos.y,
+    victimId: t.id, attackerId: atkId, headshot: isHead, damage: remaining,
+    weaponLabel: label, victimTeam: t.team, isHeadshot: isHead, isPierced,
+  })
   ctx.onHitCount()
   if (t.hp > 0) return
 
@@ -95,10 +101,19 @@ export function damagePlayerInWorld(
   }
   ctx.events.push({
     kind: 'kill',
+    // 新字段（联机协议/新表现层用）
     attackerId: atkId,
     victimId: t.id,
     weaponLabel: label,
     headshot: isHead,
+    // 旧字段（killfeed / 死亡界面直接读名称与队伍，避免显示成「?」）
+    killerId: atkId,
+    killerName: killer?.name ?? '战场环境',
+    killerTeam: atkTeam,
+    victimName: t.name,
+    victimTeam: t.team,
+    isHeadshot: isHead,
+    isPierced,
     x: t.pos.x,
     y: t.pos.y,
   })
@@ -249,9 +264,10 @@ export function stepExplosionsAndThrowables(ctx: ThrowablesContext, dt: number):
     st.timer -= dt
     if (st.timer <= 0) {
       ctx.events.push({ kind: 'airstrike', x: st.pos.x, y: st.pos.y })
+      ctx.events.push({ kind: 'airstrike_drop', x: st.pos.x, y: st.pos.y })
       const src = ctx.playerById.get(st.owner) ?? ctx.players.find(p => p.id === st.owner)
       for (let b = -2; b <= 2; b++) {
-        ctx.projectiles.push(createProjectile(
+        const airPr = createProjectile(
           ctx.nextProjId(),
           src ?? ({ id: st.owner, pos: st.pos, vel: { x: 0, y: 0 }, aim: 0, team: 'ffa', name: '空袭' } as unknown as PlayerState),
           st.pos.x + b * 44,
@@ -269,7 +285,12 @@ export function stepExplosionsAndThrowables(ctx: ThrowablesContext, dt: number):
             r: 7,
             life: 160 / 60,
           },
-        ))
+        )
+        ctx.projectiles.push(airPr)
+        ctx.events.push({
+          kind: 'projectile_spawn', projectileId: airPr.id, playerId: st.owner, weaponId: -1,
+          x: airPr.pos.x, y: airPr.pos.y, vx: airPr.vel.x, vy: airPr.vel.y, bounces: 0, life: airPr.life,
+        })
       }
       ctx.airstrikes.splice(i, 1)
     }
