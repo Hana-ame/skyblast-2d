@@ -179,8 +179,6 @@ export interface GameConfig {
   watchtowerDuration: number
   watchtowerFovMult: number
   respawnDelay: number
-  /** 复活后的隐身/无敌保护时长（秒）：不可见、无实体、不能开枪、不受伤害，可移动 */
-  spawnProtectSeconds: number
   loadoutLock: boolean
   randomSpawn: boolean     // 死亡竞赛：每次出生在随机安全点
   grenadeFriendlyFire: boolean   // 手雷是否伤友军
@@ -219,7 +217,6 @@ export const DEFAULT_CONFIG: GameConfig = {
   watchtowerDuration: 20,
   watchtowerFovMult: 1.65,
   respawnDelay: 4.0,
-  spawnProtectSeconds: 2.0,
   loadoutLock: true,
   randomSpawn: false,
   grenadeFriendlyFire: true,

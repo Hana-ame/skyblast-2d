@@ -294,7 +294,6 @@
     watchtowerDuration: 20,
     watchtowerFovMult: 1.65,
     respawnDelay: 4,
-    spawnProtectSeconds: 2,
     loadoutLock: true,
     randomSpawn: false,
     grenadeFriendlyFire: true,

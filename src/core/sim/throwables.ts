@@ -55,8 +55,6 @@ export function damagePlayerInWorld(
   weaponLabel?: string,
 ): void {
   if (t.respawnTimer > 0 || !t.deployed || amount <= 0) return
-  // 复活保护：隐身/无敌期间不结算任何伤害
-  if ((t.spawnProtectTimer ?? 0) > 0) return
   const atkId = attackerId ?? pr?.owner ?? 0
   const atkTeam = attackerTeam ?? ctx.ownerTeamOf(atkId)
   const label = weaponLabel ?? pr?.weaponLabel ?? '未知'

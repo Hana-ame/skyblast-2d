@@ -28,7 +28,6 @@ export function playerHitsPoint(
     const other = list[i]
     if (other.id === selfId) continue
     if (!other.deployed || !other.alive || other.respawnTimer > 0) continue
-    if ((other.spawnProtectTimer ?? 0) > 0) continue   // 复活保护：无实体
     if (y <= other.pos.y - 30 || y >= other.pos.y + 16) continue
     if (Math.abs(wrapDeltaX(x, other.pos.x)) <= 10) return true
   }
@@ -48,7 +47,6 @@ export function playerBlockingAt(
     const other = list[i]
     if (other.id === selfId) continue
     if (!other.deployed || !other.alive || other.respawnTimer > 0) continue
-    if ((other.spawnProtectTimer ?? 0) > 0) continue   // 复活保护：无实体
     if (bodiesOverlap(x, y, other.pos.x, other.pos.y)) return other
   }
   return null

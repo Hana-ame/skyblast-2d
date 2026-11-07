@@ -114,15 +114,6 @@ export function updateHudUI(): void {
     teamEl.textContent = label
     teamEl.className = `px-1.5 py-0.5 rounded text-[10px] font-bold ${cls}`
   }
-  // 复活保护提示（隐身/无敌/不能开枪）
-  const spawnBadge = document.getElementById('hudSpawnProtectBadge')
-  if (spawnBadge) {
-    const t = localPlayer.spawnProtectTimer ?? 0
-    if (t > 0 && localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-      spawnBadge.textContent = `👻 复活保护 ${t.toFixed(1)}s（隐身·无敌·不能开枪）`
-      spawnBadge.classList.remove('hidden')
-    } else spawnBadge.classList.add('hidden')
-  }
   const fovBadge = document.getElementById('hudSniperFovBadge')
   if (fovBadge) {
     const wepForFov = WEAPONS[localPlayer.weaponIndex]

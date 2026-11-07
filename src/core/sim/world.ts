@@ -237,7 +237,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       fragCharges: DEFAULT_CONFIG.fragMaxCharges, fragRechargeTimer: 0,
       jetpack: false, fuel: getPhysicsParams().jetpackFuel,
       shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0, mountedTowerId: null, warpCooldown: 0,
-      doll: null, dollCharges: 0, respawnTimer: 0, spawnProtectTimer: 0,
+      doll: null, dollCharges: 0, respawnTimer: 0,
       kills: 0, deaths: 0,
     }
     this.respawnAt(p, team)
@@ -250,7 +250,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     this.respawnAt(p, p.team)
   }
 
-  private respawnAt(p: PlayerState, team: TeamId, opts: { protect?: boolean } = {}): void {
+  private respawnAt(p: PlayerState, team: TeamId): void {
     // 记住上次武器：常规主武器沿用到重生；补给特武是临时武器，重生时回退到上次的常规主武器
     const cur = WEAPONS[p.weaponIndex]
     const lastIdx = p.lastPrimaryIndex ?? p.weaponIndex
@@ -284,8 +284,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     p.shieldHp = 0; p.shieldTimer = 0; p.watchtowerTimer = 0; p.mountedTowerId = null; p.warpCooldown = 0
     p.doll = null; p.dollCharges = 0; p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.secondaryCooldown = 0
     p.deployed = true; p.alive = true; p.respawnTimer = 0
-    // 复活保护：仅在「阵亡后重生」启用（首次生成/部署直接参战）
-    p.spawnProtectTimer = opts.protect ? Math.max(0, this.config.spawnProtectSeconds ?? 0) : 0
     resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
     ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
   }
@@ -380,7 +378,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (!p.deployed) return
     if (p.respawnTimer > 0) {
       p.respawnTimer -= dt
-      if (p.respawnTimer <= 0) this.respawnAt(p, p.team, { protect: true })
+      if (p.respawnTimer <= 0) this.respawnAt(p, p.team)
       return
     }
     if (!p.alive) return
@@ -426,11 +424,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       p.shieldTimer -= dt
       if (p.shieldTimer <= 0) { p.shieldTimer = 0; p.shieldHp = 0 }
     }
-    // 复活保护倒计时（归零即恢复实体/可开枪/可被击中）
-    if ((p.spawnProtectTimer ?? 0) > 0) {
-      p.spawnProtectTimer = Math.max(0, (p.spawnProtectTimer ?? 0) - dt)
-      if (p.spawnProtectTimer <= 0) p.spawnProtectTimer = 0
-    }
     if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt)
     if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
 
@@ -461,14 +454,14 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     }
 
     if (w.interact) handlePlayerInteract(this, p)
-    if (w.secondary && (p.spawnProtectTimer ?? 0) <= 0) this.useSecondary(p, w.secondary)
+    if (w.secondary) this.useSecondary(p, w.secondary)
 
     const wepNow = WEAPONS[p.weaponIndex]
     if (wepNow?.beam) {
-      if (w.fire && (p.spawnProtectTimer ?? 0) <= 0) updateContinuousBeam(this, p, wepNow, dt)
+      if (w.fire) updateContinuousBeam(this, p, wepNow, dt)
       p.chargeTimer = 0
     } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-      if (w.fire && (p.spawnProtectTimer ?? 0) <= 0) p.chargeTimer = Math.max(p.chargeTimer, 1e-4)
+      if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4)
       if (p.chargeTimer > 0) {
         p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
@@ -483,8 +476,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
 
   private fire(p: PlayerState): void {
     if (p.respawnTimer > 0 || !p.alive) return
-    // 复活保护期间禁止开枪
-    if ((p.spawnProtectTimer ?? 0) > 0) return
     const m = this.mortars.find(mm => mm.operatorId === p.id)
     if (m) {
       if (m.cooldown <= 0) {

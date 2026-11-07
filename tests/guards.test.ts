@@ -473,54 +473,40 @@ test('护栏·弹丸事件化：发射/反弹/销毁事件成对出现（客户�
 })
 
 
-test('护栏·复活保护：重生后 2 秒隐身/无敌/无实体/不能开枪，但可移动，结束后恢复', () => {
+test('护栏·复活即参战：重生后立刻有实体/可开枪，且手榴弹不在冷却、可立即投掷', () => {
   const w = new World(37000)
   w.config.randomSpawn = false
   const a = w.addPlayer('A', 'red')
   const b = w.addPlayer('B', 'blue')
   a.weaponIndex = 1
-  b.weaponIndex = 1
   a.pos = { x: 3000, y: 2740 }
   b.pos = { x: 3600, y: 2740 }
-  // 走真实死亡路径：被打死后重生（只有阵亡重生才给保护）
+  // 真实死亡 → 重生
   ;(w as unknown as { explode: (...x: unknown[]) => void }).explode(a.pos.x, a.pos.y, 200, 999, 0, undefined, b.id, b.team, '测试')
   assert.ok(a.respawnTimer > 0, 'died')
+  // 先消耗掉手榴弹并触发冷却，验证重生后是被重置的
+  a.fragCharges = 0
+  a.secondaryCooldown = 5
   for (let i = 0; i < 260; i++) w.step(DT, new Map([[a.id, input()], [b.id, input()]]))
   assert.ok(a.alive, 'respawned')
-  assert.ok((a.spawnProtectTimer ?? 0) > 1.5, `protection starts at ~2s, got ${(a.spawnProtectTimer ?? 0).toFixed(2)}`)
 
-  // ① 不能开枪
-  a.pos = { x: 3000, y: 2740 }
-  b.pos = { x: 3600, y: 2740 }
-  const ammo0 = a.ammo[1]
-  for (let i = 0; i < 20; i++) w.step(DT, new Map([[a.id, input({ fire: true })], [b.id, input()]]))
-  assert.equal(a.ammo[1], ammo0, 'protected player cannot fire')
+  // ① 不再有复活无敌/隐身/禁枪
+  assert.equal(a.hp, 100, 'respawns at full hp with no invulnerability window')
 
-  // ② 不受伤害
-  b.pos = { x: 3060, y: 2740 }
-  const hp0 = a.hp
-  for (let i = 0; i < 20; i++) w.step(DT, new Map([[a.id, input()], [b.id, input({ fire: true })]]))
-  assert.equal(a.hp, hp0, 'protected player takes no damage')
+  // ② 重生后手榴弹立即就绪：有充能、无冷却
+  assert.ok(a.fragCharges > 0, `grenade charge available right after respawn, got ${a.fragCharges}`)
+  assert.equal(a.secondaryCooldown, 0, 'no grenade cooldown after respawn')
 
-  // ③ 无实体：B 朝 A 走不会被挡
-  const bx0 = b.pos.x
-  for (let i = 0; i < 20; i++) w.step(DT, new Map([[a.id, input()], [b.id, input({ move: -1 })]]))
-  assert.ok(b.pos.x < bx0 - 20, `B walks through the invisible A (${bx0.toFixed(0)} -> ${b.pos.x.toFixed(0)})`)
+  // ③ 重生后同一 tick 就能扔出手榴弹（不进入 cd）
+  const before = w.grenades.length
+  w.step(DT, new Map([[a.id, input({ secondary: { type: 'frag', targetX: a.pos.x + 100, targetY: a.pos.y } })], [b.id, input()]]))
+  assert.ok(w.grenades.length > before, 'grenade can be thrown immediately after respawn')
 
-  // ④ 可以移动
-  const ax0 = a.pos.x
-  for (let i = 0; i < 15; i++) w.step(DT, new Map([[a.id, input({ move: 1 })], [b.id, input()]]))
-  assert.ok(a.pos.x > ax0 + 10, `protected player can still move (${ax0.toFixed(0)} -> ${a.pos.x.toFixed(0)})`)
-
-  // 结束后恢复：可被击中
-  for (let i = 0; i < 140; i++) w.step(DT, new Map([[a.id, input()], [b.id, input()]]))
-  assert.equal((a.spawnProtectTimer ?? 0), 0, 'protection expired')
-  b.pos = { x: a.pos.x + 60, y: 2740 }
-  const hp1 = a.hp
-  for (let i = 0; i < 40; i++) w.step(DT, new Map([[a.id, input()], [b.id, input({ fire: true, aim: Math.PI })]]))
-  assert.ok(a.hp < hp1, 'damage resumes after protection ends')
+  // ④ 可以立刻开枪（无禁枪窗口）
+  const ammo0 = a.ammo[a.weaponIndex]
+  for (let i = 0; i < 5; i++) w.step(DT, new Map([[a.id, input({ fire: true, aim: 0 })], [b.id, input()]]))
+  assert.ok(a.ammo[a.weaponIndex] < ammo0 || w.projectiles.length > 0, 'can fire immediately after respawn')
 })
-
 
 test('护栏·二进制事件通道：所有 kind 往返保真（未知 kind 不得退化成 kill）', () => {
   const w = new World(38000)
