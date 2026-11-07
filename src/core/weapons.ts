@@ -92,7 +92,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 3000, recoil: 0, magSize: 24, maxReserve: 48,   // 24 / 6每秒 = 连续 4 秒（弹量/2）
     reloadTime: 4.0, fireDelay: 0, terrainRadius: 18,   // 换弹时间 ×2
     explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 3, beam: true,
-    damagePerSecond: 240, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.30, color: '#22d3ee',   // 伤害 ×2
+    damagePerSecond: 240, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',   // 伤害 ×2；视野不再 +30%
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,

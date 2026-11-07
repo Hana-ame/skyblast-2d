@@ -238,19 +238,7 @@ export function renderScene(): void {
     const py = sy(p.pos.y)
     if (!inView(px, py)) continue
 
-    // 激光类武器的长瞄准线
-    if (w.laser && !pMounted) {
-      ctx.save()
-      ctx.translate(px, py)
-      ctx.strokeStyle = w.id === 4 ? 'rgba(34, 211, 238, 0.35)' : 'rgba(192, 132, 252, 0.32)'
-      ctx.lineWidth = 1.4
-      ctx.beginPath()
-      ctx.moveTo(0, -10)
-      ctx.lineTo(Math.cos(p.aim) * 820, -10 + Math.sin(p.aim) * 820)
-      ctx.stroke()
-      ctx.restore()
-    }
-
+    // （已取消激光类长瞄准线：不再从枪口画 820px 辅助线）
     drawPlayerSprite(ctx, p, px, py, {
       tick: world.tick,
       isLocal: p.id === localPlayer.id,

@@ -335,9 +335,9 @@
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
-      fovMult: 1.3,
+      fovMult: 1,
       color: "#22d3ee"
-      // 伤害 ×2
+      // 伤害 ×2；视野不再 +30%
     },
     {
       id: 5,
@@ -4609,17 +4609,6 @@
       const px = sx(p.pos.x);
       const py = sy(p.pos.y);
       if (!inView(px, py)) continue;
-      if (w.laser && !pMounted) {
-        ctx.save();
-        ctx.translate(px, py);
-        ctx.strokeStyle = w.id === 4 ? "rgba(34, 211, 238, 0.35)" : "rgba(192, 132, 252, 0.32)";
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.moveTo(0, -10);
-        ctx.lineTo(Math.cos(p.aim) * 820, -10 + Math.sin(p.aim) * 820);
-        ctx.stroke();
-        ctx.restore();
-      }
       drawPlayerSprite(ctx, p, px, py, {
         tick: world.tick,
         isLocal: p.id === localPlayer.id,

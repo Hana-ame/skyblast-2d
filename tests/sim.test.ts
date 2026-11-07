@@ -584,9 +584,10 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
 })
 
 
-test('瞭望塔：按 E 上塔锁定（不能移动）+ 下塔后视野加成消失；补给武器视野+30%', () => {
+test('瞭望塔：按 E 上塔锁定（不能移动）+ 下塔后视野加成消失；狙击/M249 视野+30%、激光正常视野', () => {
   // FOV：狙击 + 激光/M249 为 1.30；引力枪不再 +30%
-  for (const id of [2, 4, 5]) assert.equal(WEAPONS[id].fovMult, 1.30, `weapon ${id} +30% fov`)
+  for (const id of [2, 5]) assert.equal(WEAPONS[id].fovMult, 1.30, `weapon ${id} +30% fov`)
+  assert.equal(WEAPONS[4].fovMult, 1.0, 'laser fov normal (no +30%)')
   assert.equal(WEAPONS[6].fovMult, 1.0, 'gravity gun fov normal')
 
   const w = new World(81)
