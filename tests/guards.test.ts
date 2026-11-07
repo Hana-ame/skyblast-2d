@@ -122,7 +122,7 @@ test('护栏·后坐力各向同性（行为级）：扣除重力后四方向踢
 })
 
 
-test('护栏·激光不穿墙：端点不在实体内、段不跨实体、屏幕长度一致、薄墙后不受伤害', () => {
+test('护栏·高斯枪不穿墙：端点不在实体内、段不跨实体、屏幕长度一致、薄墙后不受伤害', () => {
   // ① 随机角度：每段端点不在实体内、段内不穿实体、渲染侧最短位移长度≡世界长度（不会画横穿全图直线）
   let segs = 0
   for (let s = 0; s < 40; s++) {
@@ -131,7 +131,7 @@ test('护栏·激光不穿墙：端点不在实体内、段不跨实体、屏幕
     const a = w.addPlayer('A', 'ffa')
     const ax = 400 + ((s * 211) % 12400)
     const ay = 1800 + ((s * 97) % 900)
-    // 玩家需在开阔处（不在实体、不在空口拱形方块区 5600~7600），避免方块网格边界干扰激光段断言
+    // 玩家需在开阔处（不在实体、不在空口拱形方块区 5600~7600），避免方块网格边界干扰光束段断言
     if (w.terrain.isSolidAt(ax, ay)) continue
     if (ax > 5500 && ax < 7700) continue
     a.pos = { x: ax, y: ay }
@@ -157,7 +157,7 @@ test('护栏·激光不穿墙：端点不在实体内、段不跨实体、屏幕
             assert.equal(w.terrain.isSolidAt(px, py), false, `segment crosses solid at (${Math.round(px)},${Math.round(py)})`)
           }
           // 渲染端：每段按「起点屏幕坐标 + 最短位移」绘制，屏幕长度必须 ≡ 世界长度
-          // （若分别对两端取最短位移，跨接缝的段会画成横穿全图的长线 —— 这正是此前的“穿墙激光”）
+          // （若分别对两端取最短位移，跨接缝的段会画成横穿全图的长线 —— 这正是此前的“穿墙光束”）
           const screen = expandBeamSegments([seg], (wx, wy) => ({ x: wrapDeltaX(6600, wx), y: wrapDeltaY(2200, wy) }), 2000, 1200)[0]
           const sr = Math.hypot(screen.x2 - screen.x1, screen.y2 - screen.y1)
           assert.ok(Math.abs(sr - len) < 1.5, `segment render length differs (world ${len.toFixed(0)} vs screen ${sr.toFixed(0)})`)
@@ -167,7 +167,7 @@ test('护栏·激光不穿墙：端点不在实体内、段不跨实体、屏幕
   }
   assert.ok(segs > 50, `collected laser segments: ${segs}`)
 
-  // ② 薄墙（12px）+ 目标紧贴墙背面：不能被激光打到
+  // ② 薄墙（12px）+ 目标紧贴墙背面：不能被光束打到
   for (const thick of [12, 20, 40]) {
     const w = new World(22000 + thick, { name: 'thin', solids: [{ x: 6620, y: 2400, w: thick, h: 400, kind: 'cover' }] })
     w.config.randomSpawn = false
@@ -186,7 +186,7 @@ test('护栏·激光不穿墙：端点不在实体内、段不跨实体、屏幕
   }
 })
 
-test('护栏·激光被可破坏掩体挡住（贴掩体开火也不穿）', () => {
+test('护栏·高斯枪被可破坏掩体挡住（贴掩体开火也不穿）', () => {
   const w = new World(23000)
   w.config.randomSpawn = false
   const shooter = w.addPlayer('S', 'red')
@@ -207,7 +207,7 @@ test('护栏·激光被可破坏掩体挡住（贴掩体开火也不穿）', () 
 })
 
 
-test('护栏·激光跨世界接缝：光束连续（不中断）且屏幕不会画出横穿全图的长线', () => {
+test('护栏·高斯枪跨世界接缝：光束连续（不中断）且屏幕不会画出横穿全图的长线', () => {
   // ① 目标就在接缝另一侧：光束应继续飞过去并命中（世界是环形的，不能在接缝凭空断掉）
   const w = new World(31000, { name: 'seam', solids: [] })
   w.config.randomSpawn = false

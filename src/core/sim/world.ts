@@ -29,8 +29,9 @@ const HOLE_X1 = 7600         // 空口右
 export const SPAWN_POINTS: { x: number; y: number; team: TeamId }[] = [
   { x: 1100, y: GROUND_STAND, team: 'red' },     // 左出生点留地面
   { x: 12100, y: GROUND_STAND, team: 'blue' },   // 右出生点留地面
-  { x: 4300, y: CEILING_STAND, team: 'green' },  // 绿出生→天花板左侧（空口左外侧）
-  { x: 8800, y: CEILING_STAND, team: 'ffa' },    // FFA出生→天花板右侧（空口右外侧）
+  // 用户：天花板上方**不准放重生点**（FFA 和 TEAM 都不许）→ green/ffa 出生点也放地面
+  { x: 3300, y: GROUND_STAND, team: 'green' },   // 绿出生→地面（西侧平地，空口方块区外）
+  { x: 9900, y: GROUND_STAND, team: 'ffa' },     // FFA出生→地面（东侧平地，空口方块区外）
 ]
 
 export const AMMO_SPOTS: { x: number; y: number; area: string }[] = [
@@ -87,14 +88,10 @@ const WARP_PORTALS: WarpPortal[] = [
   { id: 'warp_6', name: 'W6 东区传送门', x: 12280, y: CEILING_STAND, targetId: 'warp_5', color: '#10b981' },
 ]
 
-/** 平地地图的随机出生候选点：天花板顶面一排 + 地面一排（都避开空口与实体） */
+/** 平地地图的随机出生候选点：**只留地面一排**（用户：天花板上方**不准放任何重生点**，FFA 和 TEAM 都不许） */
 const RANDOM_SPAWN_CANDIDATES: { x: number; y: number }[] = (() => {
   const out: { x: number; y: number }[] = []
-  for (let x = 400; x < WORLD_W; x += 620) {
-    // 天花板顶面候选（空口 5600~7600 内不放，改放板面）
-    if (x >= HOLE_X0 && x < HOLE_X1) continue
-    out.push({ x, y: CEILING_STAND })
-  }
+  // 删除天花板顶面候选（y=CEILING_STAND）：玩家不可在头顶板面出生
   for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 })
   for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 })
   return out

@@ -1,9 +1,9 @@
-// web/app/params.ts —— 参数调校台（滑块绑定 + 回显）
+// web/app/params.ts —— 物理调校弹窗（滑块绑定 + 回显；数值总后台见 admin.html）
 import { world } from './context.ts'
 import { getPhysicsParams, setPhysicsParams } from '../../core/sim/physics.ts'
 import { WEAPONS } from '../../core/weapons.ts'
 
-// ── 参数调校台 ──
+// ── 物理调校弹窗（旧内嵌调参台，仅保留物理滑块） ──
 export const paramState = { weaponIdx: 0 }
 
 export function syncParamsToUI(): void {

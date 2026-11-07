@@ -1,4 +1,4 @@
-// web/render/beamGeometry.ts —— 激光段 → 屏幕折线的纯几何（可单测，避免“跨接缝画成横穿全图”重现）
+// web/render/beamGeometry.ts —— 光束段（高斯枪）→ 屏幕折线的纯几何（可单测，避免“跨接缝画成横穿全图”重现）
 import { WORLD_W, WORLD_H, wrapDeltaX, wrapDeltaY } from '../../core/wrap.ts'
 
 export interface WorldSeg { x1: number; y1: number; x2: number; y2: number }

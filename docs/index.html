@@ -66,7 +66,7 @@
         <span>🏠</span><span>待机/配对</span>
       </button>
       <button id="openParamsBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 active:scale-95 text-xs font-semibold text-amber-300 transition flex items-center gap-1">
-        <span>⚙️</span><span>参数调校</span>
+        <span>⚙️</span><span>物理调校</span>
       </button>
       <button id="toggleTouchBtn" type="button" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition" title="切换触屏虚拟摇杆">
         📱 触屏
@@ -232,7 +232,7 @@
                 💻 已自动识别：PC 键鼠模式 (点击可切触屏)
               </button>
             </h1>
-            <p class="text-xs text-slate-400">13200×4400 双轴环形地图 · 对战模式(自由混战/双队对抗·随机出生) · 激光即时光束(反射3次) · 狙击/火箭无限射程 · 手枪移速最快 · 替身人偶(特殊补给)</p>
+            <p class="text-xs text-slate-400">13200×4400 双轴环形地图 · 对战模式(自由混战/双队对抗·随机出生) · 高斯枪即时光束(反射3次) · 狙击/火箭无限射程 · 手枪移速最快 · 替身人偶(特殊补给)</p>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -383,12 +383,12 @@
               <p>· <strong class="text-white">服务器权威</strong>：所有命中/副武器/占点/补给全部在权威 core 结算，客户端只发送意图（Intent）。</p>
               <p>· <strong class="text-white">快照同步</strong>：障碍物/地雷/占点/弹药点/补给箱全量进快照，多端一致（v2 的平行宇宙问题已消除）。</p>
               <p>· <strong class="text-white">环形世界</strong>：13200×4400 双轴无缝循环（上下也 wrap），跨缝瞄准/弹道/插值全部连续。</p>
-              <p>· <strong class="text-white">补给规则</strong>：激光/M249/引力枪只能从空投特武箱获得；替身人偶只能从粉色特殊补给箱获得充能（上限 2），无充能时不可用。</p>
-              <p>· <strong class="text-white">激光反弹</strong>：激光炮撞墙反弹 1 次后继续飞行。</p>
+              <p>· <strong class="text-white">补给规则</strong>：高斯枪/M249/引力枪只能从空投特武箱获得；替身人偶只能从粉色特殊补给箱获得充能（上限 2），无充能时不可用。</p>
+              <p>· <strong class="text-white">高斯反弹</strong>：高斯枪撞墙反弹 3 次后继续飞行。</p>
               <p class="text-slate-400">· PeerJS 配对面板将接入 net/transport/Peer.ts（联机入口为下一里程碑）。</p>
             </div>
             <div class="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-              <strong class="text-slate-200">战术规则：</strong>主武器重生前选定（重生后锁定）| 副武器只有手榴弹（1 充能自然回复）| 狙击/火箭无限射程 | 激光是即时光束、反射3次 | 手枪移速最快 | 靠近🗼瞭望塔/🌀传送门/🔥迫击炮按 E 互动 | 拾取📦弹药点与🎁特武箱/🎎人偶箱
+              <strong class="text-slate-200">战术规则：</strong>主武器重生前选定（重生后锁定）| 副武器只有手榴弹（1 充能自然回复）| 狙击/火箭无限射程 | 高斯枪是即时光束、反射3次 | 手枪移速最快 | 靠近🗼瞭望塔/🌀传送门/🔥迫击炮按 E 互动 | 拾取📦弹药点与🎁特武箱/🎎人偶箱
             </div>
           </div>
         </div>
@@ -396,13 +396,13 @@
     </div>
   </div>
 
-  <!-- ==================== 参数自由调校面板 ==================== -->
+  <!-- ==================== 数值调整后台（旧内嵌调参台已废弃，改为独立页面 admin.html） ==================== -->
   <div id="paramsModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-2 sm:p-4 overflow-y-auto">
     <div class="glass-panel w-full max-w-4xl rounded-2xl border border-amber-500/40 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
       <div class="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
         <div>
-          <h2 class="text-base font-extrabold text-amber-300">⚙️ 游戏参数自由调校台 (全按钮组切换 · 实时生效)</h2>
-          <p class="text-xs text-slate-400">角色物理、7把主武器(含激光/M249/引力枪)、副武器、地雷与迫击炮参数均可自由修改</p>
+          <h2 class="text-base font-extrabold text-amber-300">⚙️ 数值调整后台（已迁移至独立页面）</h2>
+          <p class="text-xs text-slate-400">角色物理、9把武器(含高斯枪/M249/引力枪)、副武器、地雷与迫击炮参数均可自由修改</p>
         </div>
         <div class="flex items-center gap-2">
           <button id="resetParamsBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">
@@ -451,7 +451,7 @@
               <button type="button" data-pwep="1" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">步枪</button>
               <button type="button" data-pwep="2" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">狙击</button>
               <button type="button" data-pwep="3" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">榴弹</button>
-              <button type="button" data-pwep="4" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">⚡激光炮</button>
+              <button type="button" data-pwep="4" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">⚡高斯枪</button>
               <button type="button" data-pwep="5" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">🔥加特林</button>
               <button type="button" data-pwep="6" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">🌀引力枪</button>
             </div>
@@ -525,6 +525,6 @@
   <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
   <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=347773c862"></script>
+  <script src="./bundle.js?v=9202902b1a"></script>
 </body>
 </html>

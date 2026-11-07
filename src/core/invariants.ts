@@ -40,7 +40,7 @@ export function weaponViolations(): Violation[] {
   const gravity = byName('引力枪')
   const shotgun = byName('霰弹枪')
   const sniper = byName('狙击步枪')
-  const laser = byName('激光')
+  const laser = byName('高斯枪')
   const rocket = byName('火箭筒')
   const smg = byName('冲锋枪')
 
@@ -58,9 +58,9 @@ export function weaponViolations(): Violation[] {
   if (shotgun && shotgun.headshotMult !== 1) add('rule.shotgunhead', '霰弹无爆头加成')
   if (laser) {
     const dur = laser.magSize / (laser.ammoPerSecond ?? 1)
-    if (Math.abs(dur - 2) > 1e-9) add('rule.laserdur', '激光单匣必须连续 2 秒')
-    if ((laser.fovMult ?? 1) !== 1) add('rule.laserfov', '激光视野必须正常（1.0）')
-    if (!laser.beam) add('rule.laserbeam', '激光必须是持续光束')
+    if (Math.abs(dur - 2) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 2 秒')
+    if ((laser.fovMult ?? 1) !== 1) add('rule.laserfov', '高斯枪视野必须正常（1.0）')
+    if (!laser.beam) add('rule.laserbeam', '高斯枪必须是持续光束')
   }
   if (smg && Math.abs((smg.fireDelay ?? 0) - 0.05) > 1e-9) add('rule.smgfire', '冲锋枪射击间隔必须 0.05s')
   if (pistol && pistol.moveSpeedMult !== 1.5) add('rule.pistolmove', '手枪移速必须 1.5x')

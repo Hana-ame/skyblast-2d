@@ -156,7 +156,7 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.fillStyle = accent
         ctx.fillRect(30, -11, 6, 9)
         break
-      case 4: // 激光炮（能量线圈）
+      case 4: // 高斯枪（能量线圈）
         ctx.fillStyle = metal
         roundRect(ctx, 6, -9, 28, 8, 3); ctx.fill()
         ctx.strokeStyle = accent

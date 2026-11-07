@@ -21,10 +21,10 @@ export interface WeaponDef {
   pierceOnHeadshot?: boolean
   pierceAll?: boolean
   gravityScale?: number    // 弹道重力缩放（0=直线）
-  bounces?: number         // 撞墙反弹次数（激光 2 次）
+  bounces?: number         // 撞墙反弹次数（高斯枪 3 次）
   passWalls?: boolean      // 穿透原始地形（引力弹）
   dragPerSecond?: number   // 每秒速度保留比例（<1 表示逐渐减速；引力弹）
-  beam?: boolean           // 渲染为光束（激光）
+  beam?: boolean           // 渲染为光束（高斯枪）
   ascendMult?: number      // 升空速度倍率（喷气上升速度）
   falloffStart?: number     // 距离衰减起点（px，之前满伤）
   falloffEnd?: number       // 距离衰减终点（px，之后为 falloffMin）
@@ -87,7 +87,7 @@ export const WEAPONS: WeaponDef[] = [
     explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.7, fuelMult: 0.7, ascendMult: 0.7, fovMult: 1.0, color: '#fb7185',
   },
   {
-    id: 4, name: '激光', shortName: '激光', isSupplyOnly: true,
+    id: 4, name: '高斯枪', shortName: '高斯枪', isSupplyOnly: true,
     damage: 50, headshotMult: 2.0, pellets: 1, spread: 0.0,
     speed: 3000, recoil: 0, magSize: 12, maxReserve: 48,   // 12 / 6每秒 = 连续 2 秒
     reloadTime: 4.0, fireDelay: 0, terrainRadius: 18,   // 换弹时间 ×2

@@ -263,13 +263,13 @@ test('PeerJS 传输：假 DataConnection 上跑通 服务器权威 + 欢迎包 +
 })
 
 
-test('激光：按住持续输出（射速无限），一梭子可打 8 秒；松手即停', () => {
+test('高斯枪：按住持续输出（射速无限），一梭子可打 8 秒；松手即停', () => {
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
-  p.weaponIndex = 4   // 激光炮
+  p.weaponIndex = 4   // 高斯枪
   p.pos = { x: 6450, y: 2784 }   // 天花板空口内、方块之间空隙朝上打（上方无遮挡，避免反射自伤）
   const ammo0 = p.ammo[4]
-  // 按住 1 秒：应连续产生激光事件（不是单发）
+  // 按住 1 秒：应连续产生光束事件（不是单发）
   let beamEvents = 0
   for (let i = 0; i < 60; i++) {
     w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
@@ -338,7 +338,7 @@ test('喷射燃料：槽已加倍（默认 1.0s 续航），断续点按仍不�
   assert.ok(q.fuel > 0.2, `doubled gauge keeps flying at 1.5s, fuel=${q.fuel.toFixed(2)}`)
 })
 
-test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换枪被拒', () => {
+test('特武（高斯枪/加特林/引力枪）只能从补给箱获得，常规换枪被拒', () => {
   const w = new World(43)
   const p = w.addPlayer('P', 'red')
   const start = p.weaponIndex
@@ -583,8 +583,8 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
 })
 
 
-test('瞭望塔：按 E 上塔锁定（不能移动）+ 下塔后视野加成消失；狙击/M249 视野+30%、激光正常视野', () => {
-  // FOV：狙击 + 激光/M249 为 1.30；引力枪不再 +30%
+test('瞭望塔：按 E 上塔锁定（不能移动）+ 下塔后视野加成消失；狙击/M249 视野+30%、高斯枪正常视野', () => {
+  // FOV：狙击 + M249 为 1.30；高斯枪/引力枪不 +30%
   for (const id of [2, 5]) assert.equal(WEAPONS[id].fovMult, 1.30, `weapon ${id} +30% fov`)
   assert.equal(WEAPONS[4].fovMult, 1.0, 'laser fov normal (no +30%)')
   assert.equal(WEAPONS[6].fovMult, 1.0, 'gravity gun fov normal')
@@ -1075,7 +1075,7 @@ test('地图编辑器数据：默认地图/清洗/自定义地图可被 World �
 })
 
 
-test('激光自伤：反射回来的光束会伤到自己（枪口第一段不自伤）', () => {
+test('高斯枪自伤：反射回来的光束会伤到自己（枪口第一段不自伤）', () => {
   // ① 正前方开火：不自伤（站在天花板空口内、方块间隙 x=6450 下方朝上，上方无遮挡）
   const w = new World(221)
   const p = w.addPlayer('P', 'ffa')
@@ -1133,7 +1133,7 @@ test('数值后台覆盖：清洗/夹取/应用武器与全局参数', () => {
 })
 
 
-test('激光被可破坏掩体挡住（不再穿过去）', () => {
+test('高斯枪被可破坏掩体挡住（不再穿过去）', () => {
   const w = new World(231)
   w.config.randomSpawn = false
   const a = w.addPlayer('A', 'red')

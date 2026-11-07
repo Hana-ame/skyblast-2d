@@ -207,7 +207,7 @@ export function renderScene(): void {
     drawMineSprite(ctx, m, mx, my, world.tick, world.config.mineTriggerRadius)
   }
 
-  // 10. 玩家 sprite + 头顶标签（含替身人偶幻影/激光武器瞄准线）
+  // 10. 玩家 sprite + 头顶标签（含替身人偶幻影）
   for (const p of world.players) {
     if (p.respawnTimer > 0 || !p.deployed) continue
     const w = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
@@ -239,7 +239,7 @@ export function renderScene(): void {
     const py = sy(p.pos.y)
     if (!inView(px, py)) continue
 
-    // （已取消激光类长瞄准线：不再从枪口画 820px 辅助线）
+    // （已取消光束类长瞄准线：不再从枪口画 820px 辅助线）
     drawPlayerSprite(ctx, p, px, py, {
       tick: world.tick,
       isLocal: p.id === localPlayer.id,
@@ -361,7 +361,7 @@ export function renderScene(): void {
     drawAirstrikeSprite(ctx, st, ax, ay, world.tick)
   }
 
-  // 12.5 激光束（分段折线，按秒淡出；反射 3 次由权威端算好）
+  // 12.5 高斯枪光束（分段折线，按秒淡出；反射 3 次由权威端算好）
   // 世界是环形的：**每段从起点画到「起点 + 段向量」**（用最短环形位移），
   // 绝不能分别 sx(x1)/sx(x2) —— 那样一段跨接缝时光束会朝反方向横穿整张地图（看起来像穿墙）。
   for (const b of beams) {
