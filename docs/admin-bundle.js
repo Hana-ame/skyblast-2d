@@ -124,9 +124,9 @@
       spread: 0,
       speed: 3e3,
       recoil: 0,
-      magSize: 24,
+      magSize: 12,
       maxReserve: 48,
-      // 24 / 6每秒 = 连续 4 秒（弹量/2）
+      // 12 / 6每秒 = 连续 2 秒
       reloadTime: 4,
       fireDelay: 0,
       terrainRadius: 18,
@@ -137,13 +137,13 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
-      damagePerSecond: 240,
+      damagePerSecond: 180,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
-      fovMult: 1.3,
+      fovMult: 1,
       color: "#22d3ee"
-      // 伤害 ×2
+      // 伤害下调（240→180）；视野正常
     },
     {
       id: 5,

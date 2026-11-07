@@ -7,11 +7,12 @@
     "start": "node src/main.ts",
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "build:web": "esbuild src/web/main-web.ts --bundle --format=iife --outfile=docs/bundle.js",
+    "build:web": "node scripts/build-web.ts",
     "build:site": "node scripts/build-site.ts",
     "build:tune": "esbuild src/web/main-proto.ts --bundle --format=iife --outfile=docs/tune-bundle.js",
     "build:editor": "esbuild src/web/main-editor.ts --bundle --format=iife --outfile=docs/editor-bundle.js",
-    "build:admin": "esbuild src/web/main-admin.ts --bundle --format=iife --outfile=docs/admin-bundle.js"
+    "build:admin": "esbuild src/web/main-admin.ts --bundle --format=iife --outfile=docs/admin-bundle.js",
+    "check": "tsc --noEmit && node --test tests/*.test.ts"
   },
   "engines": {
     "node": ">=22.18"

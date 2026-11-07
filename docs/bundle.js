@@ -590,7 +590,7 @@
     { x: 6600, y: 2760 },
     { x: 10200, y: 2760 },
     { x: 11420, y: 2760 },
-    { x: 5400, y: 2760 }
+    { x: 3900, y: 2760 }
   ];
   var WATCHTOWERS = [
     { id: "tower_1", name: "\u897F\u90E8\u77AD\u671B\u5854", x: 3700, y: 2760, operatorId: null },

@@ -162,6 +162,20 @@ M249        66.4%  3.3%   0.67    63.8%  69.3%  66.2%
 - 支持导出/导入 JSON（`{ name, solids: [{x,y,w,h,kind}] }`），核心校验在 `src/core/map.ts`。
 - 数据/逻辑与游戏共用：`World(seed, map)` 接受 `MapData`，地形 = 平地 + 自定义 solids。
 
+## 开发约定（防回归）
+
+数值/地图改动很容易"改了这个坏那个"，因此仓库内置了三层护栏，`npm run check`（= typecheck + 全部测试）必须绿：
+
+1. **`src/core/invariants.ts`**：集中声明硬性约定
+   - 武器：跨武器规则（M249 伤害=突击、引力枪=手枪、冲锋枪=手枪、手枪 12/60、火箭筒 1/20 且射击间隔 0、狙击 >800px=99、霰弹 8 丸无爆头、激光单匣 2s 且视野 1.0、手枪 1.5×移速/2×飞行/1.25×升空、火箭筒 0.7 三项…），以及字段范围（倍率 0~5、falloff start<end、复苏/换弹>0 等）。
+   - 布局：默认地图下所有地标（出生/据点/炮/塔/传送门/补给/弹药/地雷）必须在空地且在边界内；跳台必须贴地且上方无遮挡；据点 id 唯一。
+2. **`tests/guards.test.ts`**：把上述约定跑成测试，并额外验证固定出生/随机出生不嵌实体、空地形小地图可正常战斗、地图 solids 边界与 kind 合法。
+3. **`tests/helpers.ts`**：新测试请优先用 `emptyWorld(seed)` / `worldWith(seed, solids)`，不要把断言钉死在默认地图坐标上；地图调整时只有 `layoutViolations` 相关的护栏会提示你需要移动哪些地标。
+
+改数值的流程：改 `weapons.ts` → 若改变的是"约定值"，同步 `invariants.ts` → `npm run check`。
+改地图的流程：改 `defaultMapData()` → `npm run check`，`layout.solid` 会列出被建筑盖住的地标，逐个挪到空地即可。
+打 bundle：`npm run build:web` 会**自动**把 `docs/index.html` 的 `bundle.js?v=` 换成新内容哈希，无需手动 bump（此前手动版本号导致过缓存旧包问题）。
+
 ## 代码结构（工程化）
 
 ```

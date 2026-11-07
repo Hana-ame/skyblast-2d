@@ -714,6 +714,17 @@ src/web/
 - 另修：枪口贴墙时原本会从墙体内部生成本段光束（视觉“穿墙”）→ 枪口若在实体内，前推最多 60px 找空位；仍在实体内则本帧不出光束。
 - 测试：新增"激光被可破坏掩体挡住"；54/54。缓存版本 bump `bundle.js?v=10 → v=11`。
 
-### 10.45 尚未完成（设计位）
+### 10.45 代码质量护栏：约定校验 + 测试助手 + 构建自动化（2026-11-07）
+
+用户："你把代码写好一点，不要改了这个坏那个。"
+- 新增 `src/core/invariants.ts`：`weaponViolations()`（跨武器硬规则 + 字段范围）、`layoutViolations(world)`（地标不嵌实体/界内、跳台贴地、据点 id 唯一）、`allViolations()`。
+- 新增 `tests/guards.test.ts`（7 项护栏）：武器约定、默认地图布局、故意覆盖据点能报错、固定/随机出生安全、空地形小地图可战斗、地图 solids 边界/kind。
+- 新增 `tests/helpers.ts`：`emptyWorld` / `worldWith` / `input` / `DT` / `GROUND_Y`，新测试不依赖默认地图坐标。
+- `npm run check` = `tsc --noEmit && node --test tests/*.test.ts`；README 增加「开发约定（防回归）」流程。
+- 修复护栏发现的真实问题：地雷 (5400,2760) 被街区掩体覆盖 → 移到 (3900,2760)。
+- `npm run build:web` 改为 `scripts/build-web.ts`：构建后按 bundle 内容 sha256 前 10 位自动更新 `docs/index.html` 的 `bundle.js?v=`，杜绝缓存旧包。
+- 测试 54→**61/61**；构建/CI 复用新脚本。
+
+### 10.46 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。
