@@ -2,6 +2,7 @@
 // 服务器权威：World 持有；地形静态（build 一次，两端一致，不进快照）。
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY } from './wrap.ts'
 import type { MapSolid } from './map.ts'
+import { defaultMapData } from './map.ts'
 
 export const TILE_SIZE = 20
 export const GRID_W = Math.floor(WORLD_W / TILE_SIZE)   // 660
@@ -65,29 +66,15 @@ export class Terrain {
       return
     }
 
-    // 方形掩体（贴地，均匀分布）
-    const covers = [
-      { x: 800, y: SURFACE_Y - 100, w: 120, h: 100, c: '#f43f5e' },
-      { x: 2600, y: SURFACE_Y - 80, w: 100, h: 80, c: '#38bdf8' },
-      { x: 4600, y: SURFACE_Y - 120, w: 140, h: 120, c: '#f97316' },
-      { x: 5800, y: SURFACE_Y - 90, w: 120, h: 90, c: '#10b981' },
-      { x: 7800, y: SURFACE_Y - 80, w: 100, h: 80, c: '#a855f7' },
-      { x: 10600, y: SURFACE_Y - 110, w: 130, h: 110, c: '#0ea5e9' },
-      { x: 12800, y: SURFACE_Y - 90, w: 110, h: 90, c: '#eab308' },
-    ]
-    for (const c of covers) this.addSolidBlock(c.x, c.y, c.w, c.h, '#1f2937', c.c, 'cover', '方形掩体')
-
-    // 几个浮空平台（离地 260px，普通喷气可达）
-    const platformY = SURFACE_Y - 260
-    const platforms = [
-      { x: 2200, w: 300, c: '#38bdf8' },
-      { x: 3800, w: 260, c: '#10b981' },
-      { x: 5400, w: 300, c: '#f97316' },
-      { x: 7600, w: 280, c: '#a855f7' },
-      { x: 9600, w: 300, c: '#38bdf8' },
-      { x: 11800, w: 280, c: '#0ea5e9' },
-    ]
-    for (const pl of platforms) this.addSolidBlock(pl.x, platformY, pl.w, 22, '#334155', pl.c, 'platform', '平台')
+    // 默认地图（城市街区）；也可以由编辑器传入自定义 solids
+    for (const r of defaultMapData().solids) {
+      const style = r.kind === 'platform'
+        ? { color: '#334155', border: '#38bdf8', kind: 'platform', label: '平台' }
+        : r.kind === 'block'
+          ? { color: '#334155', border: '#a855f7', kind: 'block', label: '方块' }
+          : { color: '#1f2937', border: '#f97316', kind: 'cover', label: '街区建筑' }
+      this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label)
+    }
   }
 
   /** 点是否被原始地形挡住（双轴环形 x/y） */
@@ -110,7 +97,7 @@ export interface ObstacleInit { id: string; x: number; y: number; w: number; h: 
 export const OBSTACLE_PRESETS: ObstacleInit[] = [
   { id: 'obs_1', x: 1600, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
   { id: 'obs_2', x: 3400, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
-  { id: 'obs_3', x: 4900, y: 2720, w: 60, h: 80, hp: 240, label: '方形掩体', color: '#78350f', borderColor: '#f59e0b' },
+  { id: 'obs_3', x: 4600, y: 2720, w: 60, h: 80, hp: 240, label: '方形掩体', color: '#78350f', borderColor: '#f59e0b' },
   { id: 'obs_box_1', x: 6420, y: 2730, w: 68, h: 70, hp: 170, label: '重装掩体箱', color: '#365314', borderColor: '#84cc16' },
   { id: 'obs_5', x: 9200, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#7c2d12', borderColor: '#fb923c' },
   { id: 'obs_6', x: 11200, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },

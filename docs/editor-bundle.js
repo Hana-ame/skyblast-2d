@@ -2,24 +2,41 @@
 (() => {
   // src/core/map.ts
   function defaultMapData() {
-    const covers = [
-      { x: 800, y: 2700, w: 120, h: 100, kind: "cover" },
-      { x: 2600, y: 2720, w: 100, h: 80, kind: "cover" },
-      { x: 4600, y: 2680, w: 140, h: 120, kind: "cover" },
-      { x: 5800, y: 2710, w: 120, h: 90, kind: "cover" },
-      { x: 7800, y: 2720, w: 100, h: 80, kind: "cover" },
-      { x: 10600, y: 2690, w: 130, h: 110, kind: "cover" },
-      { x: 12800, y: 2710, w: 110, h: 90, kind: "cover" }
+    const solids = [
+      // 地面层街区（x 4840~9840）
+      { x: 4840, y: 2680, w: 240, h: 120, kind: "cover" },
+      { x: 5280, y: 2620, w: 240, h: 160, kind: "cover" },
+      { x: 5660, y: 2720, w: 160, h: 80, kind: "cover" },
+      { x: 6200, y: 2680, w: 180, h: 120, kind: "cover" },
+      { x: 6680, y: 2720, w: 240, h: 80, kind: "cover" },
+      { x: 7380, y: 2700, w: 240, h: 100, kind: "cover" },
+      { x: 7820, y: 2660, w: 220, h: 140, kind: "cover" },
+      { x: 8340, y: 2660, w: 220, h: 140, kind: "cover" },
+      { x: 8860, y: 2660, w: 300, h: 140, kind: "cover" },
+      { x: 9480, y: 2620, w: 360, h: 180, kind: "cover" },
+      // 中层建筑（截断处按街区节奏补全 x 5600~8000）
+      { x: 5600, y: 1980, w: 220, h: 140, kind: "cover" },
+      { x: 5900, y: 2080, w: 260, h: 120, kind: "cover" },
+      { x: 6200, y: 1900, w: 180, h: 160, kind: "cover" },
+      { x: 6500, y: 2e3, w: 240, h: 120, kind: "cover" },
+      { x: 6820, y: 1880, w: 200, h: 140, kind: "cover" },
+      { x: 7100, y: 2020, w: 260, h: 140, kind: "cover" },
+      { x: 7420, y: 1900, w: 240, h: 140, kind: "cover" },
+      { x: 7720, y: 2060, w: 220, h: 120, kind: "cover" },
+      // 中层建筑（用户提供，x 8060~9800）
+      { x: 8260, y: 1940, w: 260, h: 140, kind: "cover" },
+      { x: 8060, y: 1840, w: 140, h: 180, kind: "cover" },
+      { x: 8700, y: 1960, w: 220, h: 160, kind: "cover" },
+      { x: 9140, y: 1860, w: 140, h: 180, kind: "cover" },
+      { x: 8980, y: 2080, w: 120, h: 140, kind: "cover" },
+      { x: 9400, y: 1980, w: 140, h: 140, kind: "cover" },
+      { x: 9200, y: 2180, w: 220, h: 160, kind: "cover" },
+      { x: 9620, y: 2100, w: 180, h: 100, kind: "cover" },
+      // 高空长桥
+      { x: 3240, y: 1340, w: 1920, h: 80, kind: "cover" },
+      { x: 5200, y: 1320, w: 4800, h: 80, kind: "cover" }
     ];
-    const platforms = [
-      { x: 2200, y: 2540, w: 300, h: 22, kind: "platform" },
-      { x: 3800, y: 2540, w: 260, h: 22, kind: "platform" },
-      { x: 5400, y: 2540, w: 300, h: 22, kind: "platform" },
-      { x: 7600, y: 2540, w: 280, h: 22, kind: "platform" },
-      { x: 9600, y: 2540, w: 300, h: 22, kind: "platform" },
-      { x: 11800, y: 2540, w: 280, h: 22, kind: "platform" }
-    ];
-    return { name: "\u9ED8\u8BA4\u5E73\u5730", solids: [...covers, ...platforms] };
+    return { name: "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;

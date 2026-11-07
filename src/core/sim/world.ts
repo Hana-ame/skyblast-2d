@@ -30,8 +30,8 @@ export const AMMO_SPOTS: { x: number; y: number; area: string }[] = [
   { x: 1300, y: 2760, area: '西区平地' },
   { x: 2100, y: 2760, area: '西区平台下' },
   { x: 2900, y: 2760, area: '中西平地' },
-  { x: 4900, y: 2760, area: '中央西平地' },
-  { x: 6300, y: 2760, area: '中央平地' },
+  { x: 4600, y: 2760, area: '中央西平地' },
+  { x: 6500, y: 2760, area: '中央平地' },
   { x: 8100, y: 2760, area: '中东平地' },
   { x: 10200, y: 2760, area: '东区平地' },
 ]
@@ -47,7 +47,7 @@ const SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
 
 /** 特殊补给位：只出「替身人偶」（不在常规配装里） */
 const DOLL_SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 4800, y: 2760, area: '中央西特殊补给点' },
+  { x: 4600, y: 2760, area: '中央西特殊补给点' },
   { x: 8560, y: 2760, area: '东区特殊补给点' },
 ]
 
@@ -61,7 +61,7 @@ const MORTARS_INIT: Omit<Mortar, 'cooldown' | 'operatorId'>[] = [
 
 const MINE_PRESETS: { x: number; y: number }[] = [
   { x: 1720, y: 2760 }, { x: 4150, y: 2760 }, { x: 6600, y: 2760 },
-  { x: 9000, y: 2760 }, { x: 11420, y: 2760 }, { x: 5400, y: 2760 },
+  { x: 10200, y: 2760 }, { x: 11420, y: 2760 }, { x: 5400, y: 2760 },
 ]
 
 const WATCHTOWERS: Watchtower[] = [
@@ -75,8 +75,8 @@ const WARP_PORTALS: WarpPortal[] = [
   { id: 'warp_1', name: 'W1 西区传送门', x: 880, y: 2740, targetId: 'warp_2', color: '#06b6d4' },
   { id: 'warp_2', name: 'W2 中西传送门', x: 3150, y: 2740, targetId: 'warp_1', color: '#06b6d4' },
   { id: 'warp_3', name: 'W3 中央传送门', x: 4700, y: 2740, targetId: 'warp_4', color: '#a855f7' },
-  { id: 'warp_4', name: 'W4 中东传送门', x: 9550, y: 2740, targetId: 'warp_3', color: '#a855f7' },
-  { id: 'warp_5', name: 'W5 中央东传送门', x: 6900, y: 2740, targetId: 'warp_6', color: '#10b981' },
+  { id: 'warp_4', name: 'W4 中东传送门', x: 10000, y: 2740, targetId: 'warp_3', color: '#a855f7' },
+  { id: 'warp_5', name: 'W5 中央东传送门', x: 7000, y: 2740, targetId: 'warp_6', color: '#10b981' },
   { id: 'warp_6', name: 'W6 东区传送门', x: 12280, y: 2740, targetId: 'warp_5', color: '#10b981' },
 ]
 
@@ -94,7 +94,7 @@ export const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
   // 全部位于可站立地表：远离竖井洞、台地内部与出生点（此前 2 个在竖井里、1 个埋在台地内，且完全没渲染 → "莫名弹起"）
   { x: 1000, y: 2800, vx: 210, vy: -810 },
   { x: 4300, y: 2800, vx: 180, vy: -870 },
-  { x: 8450, y: 2800, vx: -180, vy: -870 },
+  { x: 10400, y: 2800, vx: -180, vy: -870 },
   { x: 13050, y: 2800, vx: -210, vy: -810 },
 ]
 
@@ -102,7 +102,7 @@ const CP_INITS: { id: string; code: string; name: string; x: number; y: number; 
   { id: 'cp_a', code: 'A', name: '据点A·西区', x: 1720, y: 2740, ownerTeam: 'red' },
   { id: 'cp_b', code: 'B', name: '据点B·中央西', x: 4150, y: 2740, ownerTeam: null },
   { id: 'cp_c', code: 'C', name: '据点C·中央', x: 6600, y: 2740, ownerTeam: 'green' },
-  { id: 'cp_d', code: 'D', name: '据点D·中东', x: 9000, y: 2740, ownerTeam: null },
+  { id: 'cp_d', code: 'D', name: '据点D·中东', x: 10200, y: 2740, ownerTeam: null },
   { id: 'cp_e', code: 'E', name: '据点E·东区', x: 11420, y: 2740, ownerTeam: 'blue' },
 ]
 

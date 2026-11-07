@@ -268,7 +268,7 @@ test('激光：按住持续输出（射速无限），一梭子可打 8 秒；�
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4   // 激光炮
-  p.pos = { x: 7300, y: 2784 }   // 朝上打（无遮挡，避免反射自伤）
+  p.pos = { x: 2100, y: 2784 }   // 朝上打（该列上方无遮挡，避免反射自伤）
   const ammo0 = p.ammo[4]
   // 按住 1 秒：应连续产生激光事件（不是单发）
   let beamEvents = 0
@@ -1011,7 +1011,7 @@ test('引力枪防御：引力场近距吸收其他枪的子弹', () => {
 
 test('地图编辑器数据：默认地图/清洗/自定义地图可被 World 使用', () => {
   const def = defaultMapData()
-  assert.ok(def.solids.length === 13, `default map has 13 solids, got ${def.solids.length}`)
+  assert.ok(def.solids.length === 28, `default map has 28 solids, got ${def.solids.length}`)
   // 清洗：非法项丢弃、kind 回退
   const clean = sanitizeMapData({ name: 't', solids: [
     { x: 100, y: 2500, w: 60, h: 20, kind: 'platform' },
@@ -1037,7 +1037,7 @@ test('激光自伤：反射回来的光束会伤到自己（枪口第一段不�
   const w = new World(221)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4
-  p.pos = { x: 7300, y: 2784 }   // 远离地雷
+  p.pos = { x: 2100, y: 2784 }   // 无遮挡列
   for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
   assert.equal(p.hp, 100, 'forward beam does not hurt the shooter')
 
@@ -1045,7 +1045,7 @@ test('激光自伤：反射回来的光束会伤到自己（枪口第一段不�
   const w2 = new World(222)
   const q = w2.addPlayer('Q', 'ffa')
   q.weaponIndex = 4
-  q.pos = { x: 7300, y: 2784 }
+  q.pos = { x: 2100, y: 2784 }
   let damaged = false
   for (let i = 0; i < 60; i++) {
     w2.step(DT, new Map([[q.id, input({ fire: true, aim: Math.PI / 2 })]]))

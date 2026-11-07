@@ -78,6 +78,63 @@
     return Math.max(min, Math.min(max, v));
   }
 
+  // src/core/map.ts
+  function defaultMapData() {
+    const solids = [
+      // 地面层街区（x 4840~9840）
+      { x: 4840, y: 2680, w: 240, h: 120, kind: "cover" },
+      { x: 5280, y: 2620, w: 240, h: 160, kind: "cover" },
+      { x: 5660, y: 2720, w: 160, h: 80, kind: "cover" },
+      { x: 6200, y: 2680, w: 180, h: 120, kind: "cover" },
+      { x: 6680, y: 2720, w: 240, h: 80, kind: "cover" },
+      { x: 7380, y: 2700, w: 240, h: 100, kind: "cover" },
+      { x: 7820, y: 2660, w: 220, h: 140, kind: "cover" },
+      { x: 8340, y: 2660, w: 220, h: 140, kind: "cover" },
+      { x: 8860, y: 2660, w: 300, h: 140, kind: "cover" },
+      { x: 9480, y: 2620, w: 360, h: 180, kind: "cover" },
+      // 中层建筑（截断处按街区节奏补全 x 5600~8000）
+      { x: 5600, y: 1980, w: 220, h: 140, kind: "cover" },
+      { x: 5900, y: 2080, w: 260, h: 120, kind: "cover" },
+      { x: 6200, y: 1900, w: 180, h: 160, kind: "cover" },
+      { x: 6500, y: 2e3, w: 240, h: 120, kind: "cover" },
+      { x: 6820, y: 1880, w: 200, h: 140, kind: "cover" },
+      { x: 7100, y: 2020, w: 260, h: 140, kind: "cover" },
+      { x: 7420, y: 1900, w: 240, h: 140, kind: "cover" },
+      { x: 7720, y: 2060, w: 220, h: 120, kind: "cover" },
+      // 中层建筑（用户提供，x 8060~9800）
+      { x: 8260, y: 1940, w: 260, h: 140, kind: "cover" },
+      { x: 8060, y: 1840, w: 140, h: 180, kind: "cover" },
+      { x: 8700, y: 1960, w: 220, h: 160, kind: "cover" },
+      { x: 9140, y: 1860, w: 140, h: 180, kind: "cover" },
+      { x: 8980, y: 2080, w: 120, h: 140, kind: "cover" },
+      { x: 9400, y: 1980, w: 140, h: 140, kind: "cover" },
+      { x: 9200, y: 2180, w: 220, h: 160, kind: "cover" },
+      { x: 9620, y: 2100, w: 180, h: 100, kind: "cover" },
+      // 高空长桥
+      { x: 3240, y: 1340, w: 1920, h: 80, kind: "cover" },
+      { x: 5200, y: 1320, w: 4800, h: 80, kind: "cover" }
+    ];
+    return { name: "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
+  }
+  function sanitizeMapData(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const o = raw;
+    const solidsRaw = Array.isArray(o.solids) ? o.solids : [];
+    const solids = [];
+    for (const s of solidsRaw) {
+      if (!s || typeof s !== "object") continue;
+      const r = s;
+      const x = Number(r.x), y = Number(r.y), w = Number(r.w), h = Number(r.h);
+      if (![x, y, w, h].every(Number.isFinite)) continue;
+      if (w <= 0 || h <= 0) continue;
+      const kind = r.kind === "platform" || r.kind === "block" ? r.kind : "cover";
+      solids.push({ x, y, w, h, kind });
+      if (solids.length >= 2e3) break;
+    }
+    if (solids.length === 0) return null;
+    return { name: typeof o.name === "string" ? o.name : "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
+  }
+
   // src/core/terrain.ts
   var TILE_SIZE = 20;
   var GRID_W = Math.floor(WORLD_W / TILE_SIZE);
@@ -122,26 +179,10 @@
         }
         return;
       }
-      const covers = [
-        { x: 800, y: SURFACE_Y - 100, w: 120, h: 100, c: "#f43f5e" },
-        { x: 2600, y: SURFACE_Y - 80, w: 100, h: 80, c: "#38bdf8" },
-        { x: 4600, y: SURFACE_Y - 120, w: 140, h: 120, c: "#f97316" },
-        { x: 5800, y: SURFACE_Y - 90, w: 120, h: 90, c: "#10b981" },
-        { x: 7800, y: SURFACE_Y - 80, w: 100, h: 80, c: "#a855f7" },
-        { x: 10600, y: SURFACE_Y - 110, w: 130, h: 110, c: "#0ea5e9" },
-        { x: 12800, y: SURFACE_Y - 90, w: 110, h: 90, c: "#eab308" }
-      ];
-      for (const c of covers) this.addSolidBlock(c.x, c.y, c.w, c.h, "#1f2937", c.c, "cover", "\u65B9\u5F62\u63A9\u4F53");
-      const platformY = SURFACE_Y - 260;
-      const platforms = [
-        { x: 2200, w: 300, c: "#38bdf8" },
-        { x: 3800, w: 260, c: "#10b981" },
-        { x: 5400, w: 300, c: "#f97316" },
-        { x: 7600, w: 280, c: "#a855f7" },
-        { x: 9600, w: 300, c: "#38bdf8" },
-        { x: 11800, w: 280, c: "#0ea5e9" }
-      ];
-      for (const pl of platforms) this.addSolidBlock(pl.x, platformY, pl.w, 22, "#334155", pl.c, "platform", "\u5E73\u53F0");
+      for (const r of defaultMapData().solids) {
+        const style = r.kind === "platform" ? { color: "#334155", border: "#38bdf8", kind: "platform", label: "\u5E73\u53F0" } : r.kind === "block" ? { color: "#334155", border: "#a855f7", kind: "block", label: "\u65B9\u5757" } : { color: "#1f2937", border: "#f97316", kind: "cover", label: "\u8857\u533A\u5EFA\u7B51" };
+        this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label);
+      }
     }
     /** 点是否被原始地形挡住（双轴环形 x/y） */
     isSolidAt(x, y) {
@@ -159,7 +200,7 @@
   var OBSTACLE_PRESETS = [
     { id: "obs_1", x: 1600, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
     { id: "obs_2", x: 3400, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_3", x: 4900, y: 2720, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
+    { id: "obs_3", x: 4600, y: 2720, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
     { id: "obs_box_1", x: 6420, y: 2730, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
     { id: "obs_5", x: 9200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
     { id: "obs_6", x: 11200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
@@ -519,8 +560,8 @@
     { x: 1300, y: 2760, area: "\u897F\u533A\u5E73\u5730" },
     { x: 2100, y: 2760, area: "\u897F\u533A\u5E73\u53F0\u4E0B" },
     { x: 2900, y: 2760, area: "\u4E2D\u897F\u5E73\u5730" },
-    { x: 4900, y: 2760, area: "\u4E2D\u592E\u897F\u5E73\u5730" },
-    { x: 6300, y: 2760, area: "\u4E2D\u592E\u5E73\u5730" },
+    { x: 4600, y: 2760, area: "\u4E2D\u592E\u897F\u5E73\u5730" },
+    { x: 6500, y: 2760, area: "\u4E2D\u592E\u5E73\u5730" },
     { x: 8100, y: 2760, area: "\u4E2D\u4E1C\u5E73\u5730" },
     { x: 10200, y: 2760, area: "\u4E1C\u533A\u5E73\u5730" }
   ];
@@ -533,7 +574,7 @@
     { x: 10300, y: 2760, area: "\u4E1C\u533A\u8865\u7ED9\u70B9" }
   ];
   var DOLL_SUPPLY_SPOTS = [
-    { x: 4800, y: 2760, area: "\u4E2D\u592E\u897F\u7279\u6B8A\u8865\u7ED9\u70B9" },
+    { x: 4600, y: 2760, area: "\u4E2D\u592E\u897F\u7279\u6B8A\u8865\u7ED9\u70B9" },
     { x: 8560, y: 2760, area: "\u4E1C\u533A\u7279\u6B8A\u8865\u7ED9\u70B9" }
   ];
   var MORTARS_INIT = [
@@ -547,7 +588,7 @@
     { x: 1720, y: 2760 },
     { x: 4150, y: 2760 },
     { x: 6600, y: 2760 },
-    { x: 9e3, y: 2760 },
+    { x: 10200, y: 2760 },
     { x: 11420, y: 2760 },
     { x: 5400, y: 2760 }
   ];
@@ -561,8 +602,8 @@
     { id: "warp_1", name: "W1 \u897F\u533A\u4F20\u9001\u95E8", x: 880, y: 2740, targetId: "warp_2", color: "#06b6d4" },
     { id: "warp_2", name: "W2 \u4E2D\u897F\u4F20\u9001\u95E8", x: 3150, y: 2740, targetId: "warp_1", color: "#06b6d4" },
     { id: "warp_3", name: "W3 \u4E2D\u592E\u4F20\u9001\u95E8", x: 4700, y: 2740, targetId: "warp_4", color: "#a855f7" },
-    { id: "warp_4", name: "W4 \u4E2D\u4E1C\u4F20\u9001\u95E8", x: 9550, y: 2740, targetId: "warp_3", color: "#a855f7" },
-    { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 6900, y: 2740, targetId: "warp_6", color: "#10b981" },
+    { id: "warp_4", name: "W4 \u4E2D\u4E1C\u4F20\u9001\u95E8", x: 1e4, y: 2740, targetId: "warp_3", color: "#a855f7" },
+    { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 7e3, y: 2740, targetId: "warp_6", color: "#10b981" },
     { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: 2740, targetId: "warp_5", color: "#10b981" }
   ];
   var RANDOM_SPAWN_CANDIDATES = (() => {
@@ -577,14 +618,14 @@
     // 全部位于可站立地表：远离竖井洞、台地内部与出生点（此前 2 个在竖井里、1 个埋在台地内，且完全没渲染 → "莫名弹起"）
     { x: 1e3, y: 2800, vx: 210, vy: -810 },
     { x: 4300, y: 2800, vx: 180, vy: -870 },
-    { x: 8450, y: 2800, vx: -180, vy: -870 },
+    { x: 10400, y: 2800, vx: -180, vy: -870 },
     { x: 13050, y: 2800, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
     { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: 2740, ownerTeam: "red" },
     { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 4150, y: 2740, ownerTeam: null },
     { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E", x: 6600, y: 2740, ownerTeam: "green" },
-    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 9e3, y: 2740, ownerTeam: null },
+    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 10200, y: 2740, ownerTeam: null },
     { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: 2740, ownerTeam: "blue" }
   ];
   var World = class {
@@ -2001,26 +2042,6 @@
       };
     }
   };
-
-  // src/core/map.ts
-  function sanitizeMapData(raw) {
-    if (!raw || typeof raw !== "object") return null;
-    const o = raw;
-    const solidsRaw = Array.isArray(o.solids) ? o.solids : [];
-    const solids = [];
-    for (const s of solidsRaw) {
-      if (!s || typeof s !== "object") continue;
-      const r = s;
-      const x = Number(r.x), y = Number(r.y), w = Number(r.w), h = Number(r.h);
-      if (![x, y, w, h].every(Number.isFinite)) continue;
-      if (w <= 0 || h <= 0) continue;
-      const kind = r.kind === "platform" || r.kind === "block" ? r.kind : "cover";
-      solids.push({ x, y, w, h, kind });
-      if (solids.length >= 2e3) break;
-    }
-    if (solids.length === 0) return null;
-    return { name: typeof o.name === "string" ? o.name : "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
-  }
 
   // src/core/balanceOverrides.ts
   var BALANCE_KEY = "pvp-balance-overrides-v1";
