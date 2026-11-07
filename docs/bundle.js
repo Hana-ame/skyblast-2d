@@ -492,14 +492,16 @@
       name: "\u9730\u5F39\u67AA",
       shortName: "\u9730\u5F39",
       isSupplyOnly: false,
-      damage: 12,
+      damage: 24,
       headshotMult: 1,
       pellets: 8,
       spread: 0.24,
+      // 伤害=手枪弹
       speed: 1e3,
-      recoil: 780,
+      recoil: 1560,
       magSize: 8,
       maxReserve: 72,
+      // 后坐力 ×2
       reloadTime: 1.5,
       fireDelay: 0.72,
       terrainRadius: 12,

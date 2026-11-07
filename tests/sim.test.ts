@@ -355,12 +355,13 @@ test('特武（激光/加特林/引力枪）只能从补给箱获得，常规换
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [12, 33, 100, 115, 50, 33, 24, 24, 24])   // 霰弹 12×8；M249=突击(33)；引力枪/手枪/冲锋枪 24
+  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 33, 100, 115, 50, 33, 24, 24, 24])   // 霰弹=手枪弹 24；M249=突击(33)；引力枪/手枪/冲锋枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：8 弹丸 ×19 伤害；弹匣 8/72；无爆头加成
   assert.equal(WEAPONS[0].pellets, 8, 'shotgun 8 pellets')
-  assert.equal(WEAPONS[0].damage, 12, 'shotgun 12 dmg per pellet')
+  assert.equal(WEAPONS[0].damage, 24, 'shotgun damage equals pistol bullet')
+  assert.equal(WEAPONS[0].recoil, 1560, 'shotgun recoil doubled')
   assert.equal(WEAPONS[0].magSize, 8, 'shotgun magazine 8')
   assert.equal(WEAPONS[0].maxReserve, 72, 'shotgun reserve 72')
   assert.equal(WEAPONS[0].headshotMult, 1.0, 'no headshot bonus')
@@ -736,7 +737,7 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
 })
 
 
-test('霰弹：8 丸全中=96（留 4 血，需两轮齐射）；中距离不全中伤害更低', () => {
+test('霰弹：伤害=手枪弹 24/丸，贴脸一轮齐射致死', () => {
   const w = new World(121)
   const shooter = w.addPlayer('S', 'red')
   const victim = w.addPlayer('V', 'blue')
@@ -744,8 +745,8 @@ test('霰弹：8 丸全中=96（留 4 血，需两轮齐射）；中距离不全
   shooter.pos = { x: 2200, y: 2784 }
   victim.pos = { x: 2260, y: 2784 }
   for (let i = 0; i < 20; i++) w.step(DT, new Map([[shooter.id, input({ fire: i === 0, aim: 0 })]]))
-  assert.ok(victim.hp > 0 && victim.hp <= 8, `point-blank full hit leaves a few hp, hp=${victim.hp}`)
-  // 中距离 600px：散布导致不全中，伤害更低
+  assert.ok(victim.hp <= 0 || victim.deaths > 0, `point-blank volley kills, hp=${victim.hp}`)
+  // 中距离 600px：散布导致不全中，伤害明显更低
   const w2 = new World(122)
   const s2 = w2.addPlayer('S', 'red')
   const v2 = w2.addPlayer('V', 'blue')
