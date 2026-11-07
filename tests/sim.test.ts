@@ -375,7 +375,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[3].speed, 520, 'bazooka slow')
   assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
   assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
-  assert.equal(WEAPONS[4].damagePerSecond, 240, 'laser damage doubled')
+  assert.equal(WEAPONS[4].damagePerSecond, 180, 'laser dps reduced (240 -> 180)')
   assert.equal(WEAPONS[4].magSize, 24, 'laser ammo halved')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')

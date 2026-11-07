@@ -372,13 +372,13 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
-      damagePerSecond: 240,
+      damagePerSecond: 180,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1,
       color: "#22d3ee"
-      // 伤害 ×2；视野不再 +30%
+      // 伤害下调（240→180）；视野正常
     },
     {
       id: 5,
