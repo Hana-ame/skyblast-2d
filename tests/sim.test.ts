@@ -711,8 +711,8 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
   const w = new World(111)
   const a = w.addPlayer('A', 'ffa')
   const b = w.addPlayer('B', 'ffa')
-  a.pos = { x: 2300, y: 2740 }   // 开阔地表（避开竖井/建筑/障碍）
-  b.pos = { x: 2340, y: 2740 }
+  a.pos = { x: 3300, y: 2740 }   // 开阔平地（避开平台/掩体/地雷）
+  b.pos = { x: 3340, y: 2740 }
   for (let i = 0; i < 60; i++) w.step(DT, new Map([[a.id, input({ move: 1 })], [b.id, input()]]))
   const gap = Math.abs(b.pos.x - a.pos.x)
   assert.ok(gap >= 20, `players collide (gap=${gap.toFixed(1)})`)
@@ -721,8 +721,8 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
   const w2 = new World(112)
   const c = w2.addPlayer('C', 'ffa')
   const d = w2.addPlayer('D', 'ffa')
-  d.pos = { x: 2300, y: 2760 }
-  c.pos = { x: 2300, y: 2600 }   // 正上方
+  d.pos = { x: 3300, y: 2760 }
+  c.pos = { x: 3300, y: 2600 }   // 正上方（此处无平台）
   for (let i = 0; i < 90; i++) w2.step(DT, new Map([[c.id, input()], [d.id, input()]]))
   assert.ok(Math.abs(c.pos.x - d.pos.x) < 6, `stays above head, dx=${(c.pos.x - d.pos.x).toFixed(1)}`)
   assert.ok(c.pos.y <= d.pos.y - 40 && c.pos.y >= d.pos.y - 50, `stands on head: c.y=${c.pos.y.toFixed(0)} d.y=${d.pos.y.toFixed(0)}`)
@@ -731,8 +731,8 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
   const w3 = new World(113)
   const e = w3.addPlayer('E', 'ffa')
   const f = w3.addPlayer('F', 'ffa')
-  e.pos = { x: 2300, y: 2740 }
-  f.pos = { x: 2320, y: 2740 }
+  e.pos = { x: 3300, y: 2740 }
+  f.pos = { x: 3320, y: 2740 }
   const f0 = f.pos.x
   for (let i = 0; i < 120; i++) w3.step(DT, new Map([[e.id, input({ move: 1 })], [f.id, input()]]))
   assert.ok(f.pos.x > f0 + 5, `pushed by walking into them: ${f0.toFixed(0)} -> ${f.pos.x.toFixed(0)}`)
@@ -834,12 +834,12 @@ test('手枪：飞行容量为双倍（2.0）且落地能回满', () => {
   const w = new World(151)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 7
-  p.pos = { x: 6600, y: 2000 }
+  p.pos = { x: 7300, y: 2000 }
   // 先在空中耗尽（飞 3s）
   for (let i = 0; i < 180; i++) w.step(DT, new Map([[p.id, input({ jetpack: true })]]))
   assert.ok(p.fuel < 0.05, `fuel drained, fuel=${p.fuel.toFixed(2)}`)
   // 落地回充：0.7/s，2.0 槽约需 2.9s（多等 5s 确保回满）
-  p.pos = { x: 6600, y: 2784 }
+  p.pos = { x: 7300, y: 2784 }
   for (let i = 0; i < 60 * 5; i++) w.step(DT, new Map([[p.id, input({ jetpack: false })]]))
   const fuelMaxPistol = getPhysicsParams().jetpackFuel * WEAPONS[7].fuelMult!
   assert.ok(Math.abs(p.fuel - fuelMaxPistol) < 0.02, `pistol fuel refills to ${fuelMaxPistol}, fuel=${p.fuel.toFixed(2)}`)

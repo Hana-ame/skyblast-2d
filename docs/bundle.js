@@ -100,325 +100,41 @@
       this.setGridRect(x, y, w, h, 2);
       this.rects.push({ x, y, w, h, color, borderColor, kind, label });
     }
-    /** 装饰图元：只进渲染列表、不写碰撞网格（窗户/路灯/缆线/天线/蒸汽口/警示条/桶/管道/梯子/标牌） */
+    /** 装饰图元：只进渲染列表、不写碰撞网格 */
     addDeco(x, y, w, h, kind, color, borderColor = "") {
       this.rects.push({ x, y, w, h, color, borderColor, kind, label: "" });
     }
-    /** 挖空（地道/掩体）：网格清 0 + 背景图元 + 阴影区 */
+    /** 挖空（保留供未来扩展；当前平地地图未使用） */
     carveTunnel(x, y, w, h, label = "\u5730\u4E0B\u5730\u9053") {
       this.setGridRect(x, y, w, h, 0);
       this.rects.push({ x, y, w, h, color: "#090d16", borderColor: "#1e293b", kind: "tunnel_bg", label });
       this.shadows.push({ x, y, w, h, label, alpha: 0.76 });
-    }
-    /** 简单迷宫式建筑：外墙（底部留门）+ 两道交错内墙 + 实心天台（不做楼板/窗户/坑洼结构） */
-    buildMultiStoryBuilding(bx, groundY, width, floors, floorHeight, name, accent) {
-      const totalH = floors * floorHeight;
-      const topY = groundY - totalH;
-      this.rects.push({ x: bx, y: topY, w: width, h: totalH, color: "#111827", borderColor: accent, kind: "building_bg", label: name });
-      this.shadows.push({ x: bx + 20, y: topY + 20, w: width - 40, h: totalH - 20, label: `${name}\u5BA4\u5185`, alpha: 0.62 });
-      this.addSolidBlock(bx - 20, topY, width + 40, 24, "#334155", accent, "building_roof", `${name}\u5929\u53F0`);
-      const wallTop = topY + 24;
-      const doorTop = groundY - 110;
-      for (const wx of [bx, bx + width - 24]) {
-        this.addSolidBlock(wx, wallTop, 24, doorTop - wallTop, "#334155", accent, "wall");
-      }
-      const inner1 = bx + Math.round(width * 0.33);
-      const inner2 = bx + Math.round(width * 0.66);
-      const lowerH = Math.min(460, Math.round(totalH * 0.42));
-      const upperH = Math.min(420, Math.round(totalH * 0.38));
-      this.addSolidBlock(inner1, doorTop - lowerH, 24, lowerH, "#334155", accent, "wall");
-      this.addSolidBlock(inner2, wallTop, 24, upperH, "#334155", accent, "wall");
-      const midY = topY + Math.round(totalH * 0.5);
-      this.addSolidBlock(bx + 24, midY, Math.round(width * 0.28), 20, "#334155", accent, "wall");
-      this.addSolidBlock(bx + width - 24 - Math.round(width * 0.24), midY, Math.round(width * 0.24), 20, "#334155", accent, "wall");
-    }
-    buildHollowPipe(px, py, length, height, label) {
-      const t = 22;
-      this.rects.push({ x: px, y: py, w: length, h: height, color: "#0f172a", borderColor: "#06b6e4", kind: "pipe_bg", label });
-      this.shadows.push({ x: px, y: py + t, w: length, h: height - t * 2, label, alpha: 0.68 });
-      this.addSolidBlock(px, py, length, t, "#164e63", "#22d3ee", "pipe_wall", label);
-      this.addSolidBlock(px, py + height - t, length, t, "#164e63", "#22d3ee", "pipe_wall", label);
     }
     build() {
       this.grid.fill(0);
       this.rects.length = 0;
       this.shadows.length = 0;
       this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, "#1e293b", "#334155", "earth");
-      this.carveTunnel(0, 3560, WORLD_W, 160, "\u73AF\u7403\u5730\u4E0B\u4E3B\u5E72\u5730\u9053");
-      this.carveTunnel(0, 4020, WORLD_W, 560, "\u6DF1\u5C42\u6697\u5F71\u73AF\u5E26");
-      for (const sx of [700, 2900, 5200, 7800, 10100, 12400]) {
-        this.carveTunnel(sx, SURFACE_Y, 160, WORLD_H - SURFACE_Y, "\u73AF\u7403\u5782\u76F4\u5347\u964D\u4E95");
-        for (let sy = SURFACE_Y + 180; sy < WORLD_H; sy += 220) {
-          const off = sy / 220 % 2 === 0 ? 0 : 90;
-          this.addSolidBlock(sx + off, sy, 70, 20, "#475569", "#94a3b8", "step");
-        }
-      }
-      this.carveTunnel(3600, 3320, 1100, 460, "\u897F\u533A\u5730\u4E0B\u6218\u7565\u63A9\u4F53");
-      this.addSolidBlock(3760, 3560, 780, 24, "#334155", "#38bdf8", "bunker_floor");
-      this.carveTunnel(6e3, 3260, 1200, 560, "\u4E2D\u592E\u5730\u4E0B\u6838\u5FC3\u63A9\u4F53");
-      this.addSolidBlock(6160, 3540, 880, 24, "#334155", "#10b981", "bunker_floor");
-      this.carveTunnel(9600, 3320, 1100, 460, "\u4E1C\u533A\u5730\u4E0B\u88C5\u7532\u63A9\u4F53");
-      this.addSolidBlock(9760, 3560, 780, 24, "#334155", "#f43f5e", "bunker_floor");
-      this.buildMultiStoryBuilding(1400, SURFACE_Y, 640, 4, 240, "\u897F\u7FFC\u6307\u6325\u5927\u697C", "#f43f5e");
-      this.buildMultiStoryBuilding(3200, SURFACE_Y, 560, 3, 240, "\u897F\u533A\u5DE5\u4E1A\u5382\u623F", "#f97316");
-      this.buildMultiStoryBuilding(5500, SURFACE_Y, 680, 5, 240, "\u4E2D\u592E\u53CC\u5B50\u5317\u5854", "#38bdf8");
-      this.buildMultiStoryBuilding(7020, SURFACE_Y, 680, 5, 240, "\u4E2D\u592E\u53CC\u5B50\u5357\u5854", "#10b981");
-      this.buildMultiStoryBuilding(9300, SURFACE_Y, 560, 3, 240, "\u4E1C\u533A\u901A\u4FE1\u5927\u697C", "#a855f7");
-      this.buildMultiStoryBuilding(11100, SURFACE_Y, 640, 4, 240, "\u4E1C\u7FFC\u8981\u585E\u5927\u697C", "#0ea5e9");
-      this.buildHollowPipe(2180, 2240, 860, 160, "\u897F\u533A\u9AD8\u67B6\u8F93\u9001\u7BA1\u9053");
-      this.buildHollowPipe(4100, 2460, 1180, 160, "\u4E2D\u897F\u90E8\u4E3B\u5E72\u5DE5\u4E1A\u7BA1\u9053");
-      this.buildHollowPipe(6240, 1820, 720, 160, "\u4E2D\u592E\u53CC\u5854\u7A7A\u4E2D\u8FDE\u5ECA\u7BA1\u9053");
-      this.buildHollowPipe(7960, 2460, 1180, 160, "\u4E2D\u4E1C\u90E8\u4E3B\u5E72\u5DE5\u4E1A\u7BA1\u9053");
-      this.buildHollowPipe(10040, 2240, 860, 160, "\u4E1C\u533A\u9AD8\u67B6\u8F93\u9001\u7BA1\u9053");
-      const sky = [
-        { x: 600, y: 2180, w: 620, c: "#f43f5e" },
-        { x: 2300, y: 1620, w: 560, c: "#fb923c" },
-        { x: 4300, y: 1460, w: 680, c: "#38bdf8" },
-        { x: 6150, y: 1080, w: 900, c: "#10b981" },
-        { x: 8200, y: 1460, w: 680, c: "#a855f7" },
-        { x: 10300, y: 1620, w: 560, c: "#38bdf8" },
-        { x: 11980, y: 2180, w: 620, c: "#0ea5e9" }
-      ];
-      for (const s of sky) this.addSolidBlock(s.x, s.y, s.w, 36, "#334155", s.c, "sky_island");
-      this.buildExtraStructures();
-      this.buildDecorations();
-      this.buildNatureDeco();
-    }
-    // 设计规则（防卡死）：新增结构之间、结构与既有墙体/平台之间保持 ≥60px 通行间隙；
-    // 不制造 <40px 的夹缝；立柱/掩体必须贴地且远离重生点抖动范围（±45px + 身宽 10px）。
-    /** 安全区：出生点/据点/炮位/传送门/补给/塔/测试用坐标 —— 新平台不得覆盖 */
-    safeZones() {
-      return [
-        // 队伍出生点与据点
-        { x: 1100, y: 2740, r: 150 },
-        { x: 12100, y: 2740, r: 150 },
-        { x: 6600, y: 1460, r: 130 },
-        { x: 6600, y: 2380, r: 130 },
-        { x: 1720, y: 1780, r: 100 },
-        { x: 4150, y: 3500, r: 100 },
-        { x: 6600, y: 2740, r: 120 },
-        { x: 6600, y: 3480, r: 100 },
-        { x: 11420, y: 1780, r: 100 },
-        // 迫击炮/瞭望塔/传送门
-        { x: 920, y: 2180, r: 110 },
-        { x: 4620, y: 1460, r: 110 },
-        { x: 6600, y: 1080, r: 140 },
-        { x: 8520, y: 1460, r: 110 },
-        { x: 12260, y: 2180, r: 110 },
-        { x: 2580, y: 1620, r: 120 },
-        { x: 5840, y: 1600, r: 120 },
-        { x: 7360, y: 1600, r: 120 },
-        { x: 10580, y: 1620, r: 120 },
-        { x: 880, y: 2760, r: 90 },
-        { x: 6320, y: 1040, r: 110 },
-        { x: 2980, y: 3680, r: 90 },
-        { x: 9580, y: 2040, r: 100 },
-        { x: 6880, y: 3500, r: 90 },
-        { x: 12280, y: 2140, r: 90 },
-        // 补给/弹药/人偶
-        { x: 6800, y: 1020, r: 100 },
-        { x: 4150, y: 3520, r: 90 },
-        { x: 6600, y: 3500, r: 90 },
-        { x: 10150, y: 3520, r: 90 },
-        { x: 2600, y: 1580, r: 100 },
-        { x: 10550, y: 1580, r: 100 },
-        { x: 4820, y: 2100, r: 90 },
-        { x: 8560, y: 2760, r: 90 },
-        // 测试/玩法敏感位（勿覆盖）
-        { x: 1412, y: 2100, r: 80 },
-        { x: 1300, y: 2100, r: 80 },
-        { x: 6600, y: 2660, r: 90 },
-        { x: 2300, y: 2770, r: 90 },
-        { x: 1200, y: 2760, r: 80 }
-      ];
-    }
-    /** 仅在空白处加平台：与已有实体保持 ≥24px 间隙、与安全区保持距离 */
-    addPlatformIfClear(x, y, w, h, color, border, kind, label = "") {
-      const pad = 24;
-      const zone = this.safeZones();
-      for (const z of zone) {
-        if (Math.abs(z.x - (x + w / 2)) < z.r + w / 2 && Math.abs(z.y - y) < z.r + h) return false;
-      }
-      for (const r of this.rects) {
-        if (r.kind.startsWith("deco_") || r.kind === "tunnel_bg") continue;
-        if (x < r.x + r.w + pad && x + w > r.x - pad && y < r.y + r.h + pad && y + h > r.y - pad) return false;
-      }
-      this.addSolidBlock(x, y, w, h, color, border, kind, label);
-      return true;
-    }
-    /** 地表台地/断崖：从地面抬起的整块岩台，制造高低差与跳跃落点 */
-    addHill(x, topY, w, border, kind = "cliff") {
-      const h = SURFACE_Y - topY;
-      if (h <= 40 || h > 420) return false;
-      for (const z of this.safeZones()) {
-        if (Math.abs(z.x - (x + w / 2)) < z.r + w / 2 && Math.abs(z.y - SURFACE_Y) < z.r + 60) return false;
-      }
-      for (const r of this.rects) {
-        if (r.kind === "earth" || r.kind === "tunnel_bg" || r.kind.startsWith("deco_")) continue;
-        if (x < r.x + r.w + 16 && x + w > r.x - 16 && topY < r.y + r.h + 16 && SURFACE_Y > r.y - 16) return false;
-      }
-      this.addSolidBlock(x, topY, w, h, "#1e293b", border, kind, "\u53F0\u5730");
-      return true;
-    }
-    /** 补充结构（简化版）：地表台地 + 均布中/高平台 + 3 座废墟拱门 + 左中右 3 处洞窟 + 既有节点 */
-    buildExtraStructures() {
-      const hills = [
-        { x: 160, y: 2680, w: 240, c: "#fb923c" },
-        { x: 2500, y: 2640, w: 300, c: "#38bdf8" },
-        { x: 6240, y: 2680, w: 240, c: "#10b981" },
-        { x: 9e3, y: 2660, w: 280, c: "#a855f7" },
-        { x: 12640, y: 2680, w: 300, c: "#0ea5e9" }
-      ];
-      for (const hl of hills) this.addHill(hl.x, hl.y, hl.w, hl.c);
-      const mids = [
-        { x: 320, y: 2360, w: 180, c: "#fb923c" },
-        { x: 1600, y: 2440, w: 170, c: "#f43f5e" },
-        { x: 2800, y: 2320, w: 190, c: "#38bdf8" },
-        { x: 4050, y: 2400, w: 180, c: "#38bdf8" },
-        { x: 5300, y: 2300, w: 180, c: "#10b981" },
-        { x: 6300, y: 2260, w: 190, c: "#10b981" },
-        { x: 7700, y: 2400, w: 180, c: "#a855f7" },
-        { x: 9e3, y: 2320, w: 190, c: "#a855f7" },
-        { x: 10400, y: 2440, w: 170, c: "#38bdf8" },
-        { x: 12e3, y: 2320, w: 180, c: "#0ea5e9" }
-      ];
-      for (const m of mids) this.addPlatformIfClear(m.x, m.y, m.w, 22, "#334155", m.c, "platform", "\u6D6E\u7A7A\u5E73\u53F0");
-      const highs = [
-        { x: 900, y: 1760, w: 170, c: "#fb923c" },
-        { x: 3600, y: 1840, w: 170, c: "#38bdf8" },
-        { x: 6600, y: 1700, w: 180, c: "#10b981" },
-        { x: 9800, y: 1760, w: 170, c: "#a855f7" },
-        { x: 12400, y: 1840, w: 160, c: "#0ea5e9" }
-      ];
-      for (const hl of highs) this.addPlatformIfClear(hl.x, hl.y, hl.w, 22, "#334155", hl.c, "platform", "\u9AD8\u7A7A\u5E73\u53F0");
-      const arches = [
-        { x: 3820, y: 2380, w: 220, h: 320, c: "#38bdf8" },
-        { x: 6300, y: 2320, w: 260, h: 380, c: "#10b981" },
-        { x: 9900, y: 2360, w: 200, h: 340, c: "#38bdf8" }
-      ];
-      for (const a of arches) {
-        if (!this.addPlatformIfClear(a.x, a.y, 40, a.h - 70, "#334155", a.c, "ruin_pillar")) continue;
-        this.addSolidBlock(a.x + 40, a.y, a.w - 80, 22, "#1e293b", a.c, "ruin_lintel", "\u5E9F\u589F\u62F1\u95E8");
-        this.addSolidBlock(a.x, a.y, a.w, 22, "#334155", a.c, "ruin_lintel");
-      }
-      this.carveTunnel(1200, 2960, 1500, 220, "\u897F\u533A\u82D4\u85D3\u6D1E\u7A9F");
-      this.addSolidBlock(1200, 3160, 1500, 20, "#14532d", "#4ade80", "cave_floor");
-      this.addSolidBlock(1680, 3120, 90, 20, "#1e3a2b", "#4ade80", "cave_shelf");
-      this.carveTunnel(2460, 2800, 100, 200, "\u82D4\u85D3\u6D1E\u7A9F\u7AD6\u4E95");
-      this.carveTunnel(4620, 3040, 900, 200, "\u4E2D\u592E\u6C34\u6676\u6D1E\u7A9F");
-      this.addSolidBlock(4620, 3220, 900, 20, "#1e1b4b", "#a78bfa", "cave_floor");
-      this.addSolidBlock(5080, 3170, 80, 20, "#241d4d", "#a78bfa", "cave_shelf");
-      this.carveTunnel(5e3, 2800, 100, 250, "\u6C34\u6676\u6D1E\u7A9F\u7AD6\u4E95");
-      this.carveTunnel(9600, 2980, 1500, 220, "\u4E1C\u533A\u6C34\u6676\u6D1E\u7A9F");
-      this.addSolidBlock(9600, 3180, 1500, 20, "#1e1b4b", "#a78bfa", "cave_floor");
-      this.addSolidBlock(10100, 3130, 90, 20, "#241d4d", "#a78bfa", "cave_shelf");
-      this.carveTunnel(10700, 2800, 100, 200, "\u6C34\u6676\u6D1E\u7A9F\u7AD6\u4E95");
-      this.addSolidBlock(6180, 2560, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u4E2D\u5C42\u8FDE\u6865");
-      this.addSolidBlock(6180, 2070, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u9AD8\u5C42\u8FDE\u6865");
-      this.addSolidBlock(2e3, 2600, 280, 20, "#334155", "#f97316", "bridge", "\u897F\u7FFC\u8FDE\u63A5\u6865");
-      this.addSolidBlock(11760, 2600, 280, 20, "#334155", "#0ea5e9", "bridge", "\u4E1C\u7FFC\u8FDE\u63A5\u6865");
-      const containers = [
-        { x: 5e3, y: 2720, w: 120, h: 80, c: "#f97316" },
-        { x: 7800, y: 2720, w: 120, h: 80, c: "#22d3ee" },
-        { x: 9950, y: 2720, w: 100, h: 80, c: "#a855f7" },
-        { x: 3850, y: 2740, w: 100, h: 60, c: "#eab308" }
-      ];
-      for (const c of containers) this.addSolidBlock(c.x, c.y, c.w, c.h, "#1f2937", c.c, "container");
       const covers = [
-        { x: 1560, y: 1780, c: "#f43f5e" },
-        { x: 4240, y: 3500, c: "#38bdf8" },
-        { x: 6680, y: 3480, c: "#10b981" },
-        { x: 11280, y: 1780, c: "#0ea5e9" }
+        { x: 800, y: SURFACE_Y - 100, w: 120, h: 100, c: "#f43f5e" },
+        { x: 2600, y: SURFACE_Y - 80, w: 100, h: 80, c: "#38bdf8" },
+        { x: 4600, y: SURFACE_Y - 120, w: 140, h: 120, c: "#f97316" },
+        { x: 5800, y: SURFACE_Y - 90, w: 120, h: 90, c: "#10b981" },
+        { x: 7800, y: SURFACE_Y - 80, w: 100, h: 80, c: "#a855f7" },
+        { x: 10600, y: SURFACE_Y - 110, w: 130, h: 110, c: "#0ea5e9" },
+        { x: 12800, y: SURFACE_Y - 90, w: 110, h: 90, c: "#eab308" }
       ];
-      for (const c of covers) this.addSolidBlock(c.x, c.y, 60, 60, "#334155", c.c, "cover");
-      this.addSolidBlock(4300, 3440, 60, 120, "#334155", "#38bdf8", "pillar");
-      this.addSolidBlock(6800, 3420, 60, 120, "#334155", "#10b981", "pillar");
-      this.addSolidBlock(9900, 3440, 60, 120, "#334155", "#f43f5e", "pillar");
-    }
-    /** 自然装饰层：平台吊藤 / 洞窟钟乳石 / 岩壁苔藓（空洞骑士式绿植氛围，不参与碰撞） */
-    buildNatureDeco() {
-      const platKinds = /* @__PURE__ */ new Set(["ledge", "platform", "sky_island", "ruin_lintel", "bridge"]);
-      for (const r of [...this.rects]) {
-        if (!platKinds.has(r.kind)) continue;
-        const phase = Math.round(r.x / 20) % 3;
-        if (phase === 0) {
-          this.addDeco(r.x + r.w * 0.3, r.y + r.h, 10, 30 + Math.round(r.x) % 30, "deco_vine", "#4ade80");
-        }
-        if (phase === 1 && r.w > 170) this.addDeco(r.x + 6, r.y - 6, Math.min(r.w - 12, 50), 10, "deco_moss", "#4ade80");
-      }
-      for (const c of [...this.rects]) {
-        if (c.kind !== "tunnel_bg" || !(c.label ?? "").includes("\u6D1E\u7A9F")) continue;
-        for (let x = c.x + 160; x < c.x + c.w - 100; x += 260) {
-          const h = 16 + Math.round(x) * 7 % 24;
-          this.addDeco(x, c.y, 12, h, "deco_stalactite", "#475569");
-        }
-        for (let x = c.x + 100; x < c.x + c.w - 60; x += 380) {
-          this.addDeco(x, c.y + c.h - 18, 26, 12, "deco_moss", "#22c55e");
-        }
-      }
-      for (const ax of [600, 2400, 4200, 7400, 10600, 12600]) {
-        const ay = 2300 + Math.round(ax / 100) % 3 * 90;
-        this.addDeco(ax, ay, 120, 70, "deco_ruin_arch", "#334155");
-      }
-    }
-    /** 装饰层：窗户/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌（不参与碰撞） */
-    buildDecorations() {
-      const buildings = [
-        { bx: 1400, w: 640, floors: 4, name: "\u897F\u7FFC\u6307\u6325\u5927\u697C" },
-        { bx: 3200, w: 560, floors: 3, name: "\u897F\u533A\u5DE5\u4E1A\u5382\u623F" },
-        { bx: 5500, w: 680, floors: 5, name: "\u4E2D\u592E\u53CC\u5B50\u5317\u5854" },
-        { bx: 7020, w: 680, floors: 5, name: "\u4E2D\u592E\u53CC\u5B50\u5357\u5854" },
-        { bx: 9300, w: 560, floors: 3, name: "\u4E1C\u533A\u901A\u4FE1\u5927\u697C" },
-        { bx: 11100, w: 640, floors: 4, name: "\u4E1C\u7FFC\u8981\u585E\u5927\u697C" }
+      for (const c of covers) this.addSolidBlock(c.x, c.y, c.w, c.h, "#1f2937", c.c, "cover", "\u65B9\u5F62\u63A9\u4F53");
+      const platformY = SURFACE_Y - 260;
+      const platforms = [
+        { x: 2200, w: 300, c: "#38bdf8" },
+        { x: 3800, w: 260, c: "#10b981" },
+        { x: 5400, w: 300, c: "#f97316" },
+        { x: 7600, w: 280, c: "#a855f7" },
+        { x: 9600, w: 300, c: "#38bdf8" },
+        { x: 11800, w: 280, c: "#0ea5e9" }
       ];
-      const warm = ["#fbbf24", "#fde68a", "#fb923c", "#f97316"];
-      buildings.forEach((b, bi) => {
-        const topY = SURFACE_Y - b.floors * 240;
-        this.addDeco(b.bx + b.w / 2 - 3, topY - 64, 6, 64, "deco_antenna", "#94a3b8");
-        for (let f = 0; f < b.floors; f++) {
-          if (f % 2 !== 0) continue;
-          const fy = SURFACE_Y - f * 240;
-          for (let k = 0; k < 2; k++) {
-            const lit = (bi + f + k) % 3 !== 0;
-            const wx = b.bx + 40 + k * Math.max(60, (b.w - 120) / 3);
-            this.addDeco(wx, fy - 170, 42, 40, lit ? "deco_window_lit" : "deco_window_dark", lit ? warm[(bi + k) % warm.length] : "#0f172a");
-          }
-        }
-        this.addDeco(b.bx - 16, topY + 20, b.w + 32, 6, "deco_stripe", "#f59e0b");
-      });
-      for (let x = 400; x < WORLD_W; x += 720) {
-        this.addDeco(x, SURFACE_Y - 52, 8, 52, "deco_lamp", "#fbbf24");
-      }
-      const cables = [
-        { x: 6180, y: 1900, w: 840 },
-        { x: 2040, y: 2400, w: 300 },
-        { x: 11740, y: 2400, w: 260 },
-        { x: 2300, y: 1600, w: 800 },
-        { x: 8200, y: 1460, w: 1100 }
-      ];
-      for (const c of cables) this.addDeco(c.x, c.y, c.w, 60, "deco_cable", "#64748b");
-      for (const v of [3780, 6180, 9780]) this.addDeco(v, 3550, 26, 26, "deco_vent", "#94a3b8");
-      for (const b of [1560, 2100, 3200, 4300, 5400, 6300, 7200, 9800, 11300, 12600]) {
-        this.addDeco(b, SURFACE_Y - 30, 16, 30, "deco_barrel", "#f59e0b");
-      }
-      for (const p of [{ x: 2400, w: 620 }, { x: 8450, w: 520 }, { x: 12100, w: 300 }]) {
-        this.addDeco(p.x, SURFACE_Y - 22, p.w, 10, "deco_pipe_run", "#22d3ee");
-      }
-      for (const sx of [700, 2900, 5200, 7800, 10100, 12400]) {
-        this.addDeco(sx + 2, SURFACE_Y + 24, 14, 1200, "deco_ladder", "#94a3b8");
-      }
-      for (const cp of [
-        { x: 1620, y: 1840, t: "A" },
-        { x: 4050, y: 3560, t: "B" },
-        { x: 6500, y: 2800, t: "C" },
-        { x: 6500, y: 3540, t: "D" },
-        { x: 11360, y: 1840, t: "E" }
-      ]) {
-        this.addDeco(cp.x - 30, cp.y - 130, 60, 22, "deco_sign", "#22d3ee", cp.t);
-      }
-      for (const px of [2180, 4100, 6240, 7960, 10040]) {
-        this.addDeco(px - 10, 2240 + 160, 20, 30, "deco_bracket", "#22d3ee");
-      }
+      for (const pl of platforms) this.addSolidBlock(pl.x, platformY, pl.w, 22, "#334155", pl.c, "platform", "\u5E73\u53F0");
     }
     /** 点是否被原始地形挡住（双轴环形 x/y） */
     isSolidAt(x, y) {
@@ -434,27 +150,13 @@
     }
   };
   var OBSTACLE_PRESETS = [
-    { id: "obs_1", x: 1320, y: 2680, w: 48, h: 120, hp: 260, label: "\u5927\u697C\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_2", x: 2080, y: 2680, w: 48, h: 120, hp: 260, label: "\u5927\u697C\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_3", x: 3120, y: 2680, w: 48, h: 120, hp: 240, label: "\u5382\u623F\u88C5\u7532\u5899", color: "#78350f", borderColor: "#f59e0b" },
-    { id: "obs_4", x: 5420, y: 2680, w: 52, h: 120, hp: 300, label: "\u53CC\u5854\u91CD\u578B\u95F8\u95E8", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_5", x: 7740, y: 2680, w: 52, h: 120, hp: 300, label: "\u53CC\u5854\u91CD\u578B\u95F8\u95E8", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_6", x: 11020, y: 2680, w: 48, h: 120, hp: 260, label: "\u8981\u585E\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_7", x: 11780, y: 2680, w: 48, h: 120, hp: 260, label: "\u8981\u585E\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_8", x: 2600, y: 2264, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_9", x: 4680, y: 2484, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_10", x: 6580, y: 1844, w: 36, h: 112, hp: 180, label: "\u9AD8\u7A7A\u7BA1\u9053\u8DEF\u969C", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_11", x: 8540, y: 2484, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_12", x: 10460, y: 2264, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_ug_1", x: 3580, y: 3560, w: 44, h: 160, hp: 320, label: "\u5730\u4E0B\u63A9\u4F53\u897F\u95F8\u95E8", color: "#4c1d95", borderColor: "#a855f7" },
-    { id: "obs_ug_2", x: 4700, y: 3560, w: 44, h: 160, hp: 320, label: "\u5730\u4E0B\u63A9\u4F53\u4E1C\u95F8\u95E8", color: "#4c1d95", borderColor: "#a855f7" },
-    { id: "obs_ug_3", x: 5980, y: 3560, w: 48, h: 160, hp: 360, label: "\u4E2D\u592E\u5730\u6838\u9632\u7206\u5899", color: "#065f46", borderColor: "#10b981" },
-    { id: "obs_ug_4", x: 7200, y: 3560, w: 48, h: 160, hp: 360, label: "\u4E2D\u592E\u5730\u6838\u9632\u7206\u5899", color: "#065f46", borderColor: "#10b981" },
-    { id: "obs_ug_5", x: 9580, y: 3560, w: 44, h: 160, hp: 320, label: "\u4E1C\u533A\u5730\u4E0B\u897F\u95F8\u95E8", color: "#881337", borderColor: "#f43f5e" },
-    { id: "obs_ug_6", x: 10700, y: 3560, w: 44, h: 160, hp: 320, label: "\u4E1C\u533A\u5730\u4E0B\u4E1C\u95F8\u95E8", color: "#881337", borderColor: "#f43f5e" },
+    { id: "obs_1", x: 1600, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_2", x: 3400, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_3", x: 4900, y: 2720, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
     { id: "obs_box_1", x: 6420, y: 2730, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_box_2", x: 6720, y: 2730, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_box_3", x: 6560, y: 1010, w: 80, h: 70, hp: 190, label: "\u6D6E\u5C9B\u6838\u5FC3\u62A4\u76FE\u7BB1", color: "#1e3a8a", borderColor: "#60a5fa" }
+    { id: "obs_5", x: 9200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
+    { id: "obs_6", x: 11200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_7", x: 12500, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
   ];
 
   // src/core/rng.ts
@@ -806,90 +508,61 @@
     { x: 6600, y: 2380, team: "ffa" }
   ];
   var AMMO_SPOTS = [
-    { x: 1560, y: 2520, area: "\u897F\u7FFC\u5927\u697C\u4E8C\u5C42" },
-    { x: 1840, y: 2040, area: "\u897F\u7FFC\u5927\u697C\u56DB\u5C42" },
-    { x: 2620, y: 2260, area: "\u897F\u533A\u7BA1\u9053\u5185" },
-    { x: 3400, y: 2280, area: "\u897F\u533A\u5382\u623F\u4E09\u5C42" },
-    { x: 4450, y: 2420, area: "\u4E2D\u897F\u90E8\u7BA1\u9053\u5185" },
-    { x: 4760, y: 1430, area: "\u897F\u90E8\u9AD8\u7A7A\u5E73\u53F0" },
-    { x: 5680, y: 2100, area: "\u53CC\u5854\u5317\u5854\u4E09\u5C42" },
-    { x: 7250, y: 2100, area: "\u53CC\u5854\u5357\u5854\u4E09\u5C42" },
-    { x: 6680, y: 1020, area: "\u4E2D\u592E\u6700\u9AD8\u6D6E\u5C9B" },
-    { x: 8420, y: 2560, area: "\u4E2D\u4E1C\u90E8\u7BA1\u9053\u5185" },
-    { x: 8520, y: 1420, area: "\u4E2D\u4E1C\u90E8\u9AD8\u7A7A\u6D6E\u5C9B" },
-    { x: 9540, y: 2520, area: "\u4E1C\u533A\u901A\u4FE1\u5927\u697C" },
-    { x: 10120, y: 3520, area: "\u4E1C\u533A\u5730\u4E0B\u63A9\u4F53" },
-    { x: 10380, y: 2340, area: "\u4E1C\u533A\u9AD8\u67B6\u7BA1\u9053\u5185" },
-    { x: 11360, y: 2520, area: "\u4E1C\u7FFC\u5927\u697C\u4E8C\u5C42" },
-    { x: 12600, y: 2760, area: "\u6781\u4E1C\u8FB9\u5883\u8865\u7ED9\u70B9" }
+    { x: 1300, y: 2760, area: "\u897F\u533A\u5E73\u5730" },
+    { x: 2100, y: 2760, area: "\u897F\u533A\u5E73\u53F0\u4E0B" },
+    { x: 2900, y: 2760, area: "\u4E2D\u897F\u5E73\u5730" },
+    { x: 4900, y: 2760, area: "\u4E2D\u592E\u897F\u5E73\u5730" },
+    { x: 6300, y: 2760, area: "\u4E2D\u592E\u5E73\u5730" },
+    { x: 8100, y: 2760, area: "\u4E2D\u4E1C\u5E73\u5730" },
+    { x: 10200, y: 2760, area: "\u4E1C\u533A\u5E73\u5730" }
   ];
   var SUPPLY_SPOTS = [
-    { x: 6800, y: 1020, area: "\u4E2D\u592E\u6700\u9AD8\u6D6E\u5C9B" },
-    { x: 4150, y: 3520, area: "\u897F\u533A\u5730\u4E0B\u6218\u7565\u63A9\u4F53" },
-    { x: 6600, y: 3500, area: "\u4E2D\u592E\u5730\u4E0B\u6838\u5FC3\u63A9\u4F53" },
-    { x: 10150, y: 3520, area: "\u4E1C\u533A\u5730\u4E0B\u88C5\u7532\u63A9\u4F53" },
-    { x: 2600, y: 1580, area: "\u897F\u90E8\u9AD8\u7A7A\u5E73\u53F0" },
-    { x: 10550, y: 1580, area: "\u4E1C\u90E8\u9AD8\u7A7A\u5E73\u53F0" }
+    { x: 1500, y: 2760, area: "\u897F\u533A\u8865\u7ED9\u70B9" },
+    { x: 3100, y: 2760, area: "\u4E2D\u897F\u8865\u7ED9\u70B9" },
+    { x: 4300, y: 2760, area: "\u4E2D\u592E\u897F\u8865\u7ED9\u70B9" },
+    { x: 5100, y: 2760, area: "\u4E2D\u592E\u8865\u7ED9\u70B9" },
+    { x: 8300, y: 2760, area: "\u4E2D\u4E1C\u8865\u7ED9\u70B9" },
+    { x: 10300, y: 2760, area: "\u4E1C\u533A\u8865\u7ED9\u70B9" }
   ];
   var DOLL_SUPPLY_SPOTS = [
-    { x: 4820, y: 2100, area: "\u4E2D\u897F\u90E8\u9AD8\u7A7A\u8FDE\u5ECA\u65C1" },
-    { x: 8560, y: 2760, area: "\u4E1C\u533A\u5730\u8868\u7279\u6B8A\u8865\u7ED9\u70B9" }
+    { x: 4800, y: 2760, area: "\u4E2D\u592E\u897F\u7279\u6B8A\u8865\u7ED9\u70B9" },
+    { x: 8560, y: 2760, area: "\u4E1C\u533A\u7279\u6B8A\u8865\u7ED9\u70B9" }
   ];
   var MORTARS_INIT = [
-    { id: "mortar_left", name: "\u897F\u7FFC\u9AD8\u53F0\u8FEB\u51FB\u70AE", x: 920, y: 2180, angle: -Math.PI * 0.28, power: 24 },
-    { id: "mortar_mid_w", name: "\u4E2D\u897F\u6D6E\u5C9B\u8FEB\u51FB\u70AE", x: 4620, y: 1460, angle: -Math.PI * 0.3, power: 23 },
-    { id: "mortar_center", name: "\u4E2D\u592E\u5929\u9876\u8FEB\u51FB\u70AE", x: 6600, y: 1080, angle: -Math.PI * 0.35, power: 24.5 },
-    { id: "mortar_mid_e", name: "\u4E2D\u4E1C\u6D6E\u5C9B\u8FEB\u51FB\u70AE", x: 8520, y: 1460, angle: -Math.PI * 0.7, power: 23 },
-    { id: "mortar_right", name: "\u4E1C\u7FFC\u9AD8\u53F0\u8FEB\u51FB\u70AE", x: 12260, y: 2180, angle: -Math.PI * 0.72, power: 24 }
+    { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: 2740, angle: -Math.PI * 0.28, power: 24 },
+    { id: "mortar_mid_w", name: "\u4E2D\u592E\u897F\u8FEB\u51FB\u70AE", x: 3300, y: 2740, angle: -Math.PI * 0.3, power: 23 },
+    { id: "mortar_center", name: "\u4E2D\u592E\u8FEB\u51FB\u70AE", x: 6e3, y: 2740, angle: -Math.PI * 0.35, power: 24.5 },
+    { id: "mortar_mid_e", name: "\u4E2D\u592E\u4E1C\u8FEB\u51FB\u70AE", x: 8620, y: 2740, angle: -Math.PI * 0.7, power: 23 },
+    { id: "mortar_right", name: "\u4E1C\u533A\u8FEB\u51FB\u70AE", x: 12260, y: 2740, angle: -Math.PI * 0.72, power: 24 }
   ];
   var MINE_PRESETS = [
     { x: 1720, y: 2760 },
-    { x: 4150, y: 3520 },
-    { x: 6350, y: 2760 },
-    { x: 6850, y: 2760 },
-    { x: 6600, y: 3500 },
-    { x: 11420, y: 2760 }
+    { x: 4150, y: 2760 },
+    { x: 6600, y: 2760 },
+    { x: 9e3, y: 2760 },
+    { x: 11420, y: 2760 },
+    { x: 5400, y: 2760 }
   ];
   var WATCHTOWERS = [
-    { id: "tower_1", name: "\u897F\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 2580, y: 1620, operatorId: null },
-    { id: "tower_2", name: "\u4E2D\u592E\u5317\u5854\u77AD\u671B\u53F0", x: 5840, y: 1600, operatorId: null },
-    { id: "tower_3", name: "\u4E2D\u592E\u5357\u5854\u77AD\u671B\u53F0", x: 7360, y: 1600, operatorId: null },
-    { id: "tower_4", name: "\u4E1C\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 10580, y: 1620, operatorId: null }
+    { id: "tower_1", name: "\u897F\u90E8\u77AD\u671B\u5854", x: 3700, y: 2760, operatorId: null },
+    { id: "tower_2", name: "\u4E2D\u897F\u77AD\u671B\u5854", x: 7e3, y: 2760, operatorId: null },
+    { id: "tower_3", name: "\u4E2D\u592E\u4E1C\u77AD\u671B\u5854", x: 8800, y: 2760, operatorId: null },
+    { id: "tower_4", name: "\u4E1C\u90E8\u77AD\u671B\u5854", x: 11900, y: 2760, operatorId: null }
   ];
   var WARP_PORTALS = [
-    { id: "warp_1", name: "W1 \u897F\u7FFC\u5730\u8868\u4F20\u9001\u95E8", x: 880, y: 2760, targetId: "warp_2", color: "#06b6d4" },
-    { id: "warp_2", name: "W2 \u4E2D\u592E\u9AD8\u7A7A\u6D6E\u5C9B\u95E8", x: 6320, y: 1040, targetId: "warp_1", color: "#06b6d4" },
-    { id: "warp_3", name: "W3 \u897F\u533A\u6DF1\u5C42\u5730\u9053\u95E8", x: 2980, y: 3680, targetId: "warp_4", color: "#a855f7" },
-    { id: "warp_4", name: "W4 \u4E1C\u533A\u901A\u4FE1\u697C\u9876\u95E8", x: 9580, y: 2040, targetId: "warp_3", color: "#a855f7" },
-    { id: "warp_5", name: "W5 \u4E2D\u592E\u5730\u4E0B\u63A9\u4F53\u95E8", x: 6880, y: 3500, targetId: "warp_6", color: "#10b981" },
-    { id: "warp_6", name: "W6 \u6781\u4E1C\u8FB9\u5883\u9AD8\u53F0\u95E8", x: 12280, y: 2140, targetId: "warp_5", color: "#10b981" }
+    { id: "warp_1", name: "W1 \u897F\u533A\u4F20\u9001\u95E8", x: 880, y: 2740, targetId: "warp_2", color: "#06b6d4" },
+    { id: "warp_2", name: "W2 \u4E2D\u897F\u4F20\u9001\u95E8", x: 3150, y: 2740, targetId: "warp_1", color: "#06b6d4" },
+    { id: "warp_3", name: "W3 \u4E2D\u592E\u4F20\u9001\u95E8", x: 4700, y: 2740, targetId: "warp_4", color: "#a855f7" },
+    { id: "warp_4", name: "W4 \u4E2D\u4E1C\u4F20\u9001\u95E8", x: 9550, y: 2740, targetId: "warp_3", color: "#a855f7" },
+    { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 6900, y: 2740, targetId: "warp_6", color: "#10b981" },
+    { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: 2740, targetId: "warp_5", color: "#10b981" }
   ];
   var RANDOM_SPAWN_CANDIDATES = (() => {
     const out = [];
     for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 });
-    for (const p of [
-      { x: 2700, y: 1120 },
-      { x: 3700, y: 1840 },
-      { x: 5250, y: 2e3 },
-      { x: 5400, y: 940 },
-      { x: 8800, y: 1800 },
-      { x: 9600, y: 1180 },
-      { x: 11500, y: 1840 },
-      { x: 12900, y: 1440 }
-    ]) {
-      out.push(p);
-    }
+    for (const px of [2200, 3800, 5400, 7600, 9600, 11800]) out.push({ x: px + 150, y: SURFACE_Y - 300 });
     for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 });
-    for (const cp of ["cp_a", "cp_b", "cp_c", "cp_d", "cp_e"]) {
-      const map = {
-        cp_a: { x: 1720, y: 1780 },
-        cp_b: { x: 4150, y: 3500 },
-        cp_c: { x: 6600, y: 2740 },
-        cp_d: { x: 6600, y: 3480 },
-        cp_e: { x: 11420, y: 1780 }
-      };
-      out.push(map[cp]);
-    }
+    for (const cx of [1720, 4150, 6600, 9e3, 11420]) out.push({ x: cx, y: 2740 });
     return out;
   })();
   var JUMP_PADS = [
@@ -900,11 +573,11 @@
     { x: 13050, y: 2800, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
-    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u7FFC\u5927\u697C\u5929\u53F0", x: 1720, y: 1840, ownerTeam: "red" },
-    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u897F\u533A\u5730\u4E0B\u63A9\u4F53", x: 4150, y: 3560, ownerTeam: null },
-    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E\u6838\u5FC3\u5927\u6865", x: 6600, y: 2800, ownerTeam: "green" },
-    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u592E\u5730\u4E0B\u5730\u6838", x: 6600, y: 3540, ownerTeam: null },
-    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u7FFC\u8981\u585E\u5929\u53F0", x: 11420, y: 1840, ownerTeam: "blue" }
+    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: 2740, ownerTeam: "red" },
+    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 4150, y: 2740, ownerTeam: null },
+    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E", x: 6600, y: 2740, ownerTeam: "green" },
+    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 9e3, y: 2740, ownerTeam: null },
+    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: 2740, ownerTeam: "blue" }
   ];
   var World = class {
     terrain = new Terrain();
@@ -2274,9 +1947,20 @@
           const a = list[i];
           const b = list[j];
           if (!this.bodiesOverlap(a.pos.x, a.pos.y, b.pos.x, b.pos.y)) continue;
-          const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1;
-          this.tryNudge(b, dir, 0.6);
-          this.tryNudge(a, -dir, 0.6);
+          const dx = Math.abs(wrapDeltaX(a.pos.x, b.pos.x));
+          const ox = 20 - dx;
+          const top = Math.max(a.pos.y - 30, b.pos.y - 30);
+          const bottom = Math.min(a.pos.y + 16, b.pos.y + 16);
+          const oy = bottom - top;
+          if (oy > 0 && (ox <= 20 && dx <= 8 || oy <= ox)) {
+            const upper = a.pos.y <= b.pos.y ? a : b;
+            const upY = wrapY(upper.pos.y - oy);
+            if (!this.terrain.isSolidAt(upper.pos.x, upY - 26)) upper.pos.y = upY;
+          } else {
+            const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1;
+            this.tryNudge(b, dir, 0.6);
+            this.tryNudge(a, -dir, 0.6);
+          }
         }
       }
     }

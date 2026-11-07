@@ -26,87 +26,66 @@ export const SPAWN_POINTS: { x: number; y: number; team: TeamId }[] = [
 ]
 
 export const AMMO_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 1560, y: 2520, area: '西翼大楼二层' },
-  { x: 1840, y: 2040, area: '西翼大楼四层' },
-  { x: 2620, y: 2260, area: '西区管道内' },
-  { x: 3400, y: 2280, area: '西区厂房三层' },
-  { x: 4450, y: 2420, area: '中西部管道内' },
-  { x: 4760, y: 1430, area: '西部高空平台' },
-  { x: 5680, y: 2100, area: '双塔北塔三层' },
-  { x: 7250, y: 2100, area: '双塔南塔三层' },
-  { x: 6680, y: 1020, area: '中央最高浮岛' },
-  { x: 8420, y: 2560, area: '中东部管道内' },
-  { x: 8520, y: 1420, area: '中东部高空浮岛' },
-  { x: 9540, y: 2520, area: '东区通信大楼' },
-  { x: 10120, y: 3520, area: '东区地下掩体' },
-  { x: 10380, y: 2340, area: '东区高架管道内' },
-  { x: 11360, y: 2520, area: '东翼大楼二层' },
-  { x: 12600, y: 2760, area: '极东边境补给点' },
+  { x: 1300, y: 2760, area: '西区平地' },
+  { x: 2100, y: 2760, area: '西区平台下' },
+  { x: 2900, y: 2760, area: '中西平地' },
+  { x: 4900, y: 2760, area: '中央西平地' },
+  { x: 6300, y: 2760, area: '中央平地' },
+  { x: 8100, y: 2760, area: '中东平地' },
+  { x: 10200, y: 2760, area: '东区平地' },
 ]
 
 const SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 6800, y: 1020, area: '中央最高浮岛' },
-  { x: 4150, y: 3520, area: '西区地下战略掩体' },
-  { x: 6600, y: 3500, area: '中央地下核心掩体' },
-  { x: 10150, y: 3520, area: '东区地下装甲掩体' },
-  { x: 2600, y: 1580, area: '西部高空平台' },
-  { x: 10550, y: 1580, area: '东部高空平台' },
+  { x: 1500, y: 2760, area: '西区补给点' },
+  { x: 3100, y: 2760, area: '中西补给点' },
+  { x: 4300, y: 2760, area: '中央西补给点' },
+  { x: 5100, y: 2760, area: '中央补给点' },
+  { x: 8300, y: 2760, area: '中东补给点' },
+  { x: 10300, y: 2760, area: '东区补给点' },
 ]
 
 /** 特殊补给位：只出「替身人偶」（不在常规配装里） */
 const DOLL_SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 4820, y: 2100, area: '中西部高空连廊旁' },
-  { x: 8560, y: 2760, area: '东区地表特殊补给点' },
+  { x: 4800, y: 2760, area: '中央西特殊补给点' },
+  { x: 8560, y: 2760, area: '东区特殊补给点' },
 ]
 
 const MORTARS_INIT: Omit<Mortar, 'cooldown' | 'operatorId'>[] = [
-  { id: 'mortar_left', name: '西翼高台迫击炮', x: 920, y: 2180, angle: -Math.PI * 0.28, power: 24.0 },
-  { id: 'mortar_mid_w', name: '中西浮岛迫击炮', x: 4620, y: 1460, angle: -Math.PI * 0.30, power: 23.0 },
-  { id: 'mortar_center', name: '中央天顶迫击炮', x: 6600, y: 1080, angle: -Math.PI * 0.35, power: 24.5 },
-  { id: 'mortar_mid_e', name: '中东浮岛迫击炮', x: 8520, y: 1460, angle: -Math.PI * 0.70, power: 23.0 },
-  { id: 'mortar_right', name: '东翼高台迫击炮', x: 12260, y: 2180, angle: -Math.PI * 0.72, power: 24.0 },
+  { id: 'mortar_left', name: '西区迫击炮', x: 920, y: 2740, angle: -Math.PI * 0.28, power: 24.0 },
+  { id: 'mortar_mid_w', name: '中央西迫击炮', x: 3300, y: 2740, angle: -Math.PI * 0.30, power: 23.0 },
+  { id: 'mortar_center', name: '中央迫击炮', x: 6000, y: 2740, angle: -Math.PI * 0.35, power: 24.5 },
+  { id: 'mortar_mid_e', name: '中央东迫击炮', x: 8620, y: 2740, angle: -Math.PI * 0.70, power: 23.0 },
+  { id: 'mortar_right', name: '东区迫击炮', x: 12260, y: 2740, angle: -Math.PI * 0.72, power: 24.0 },
 ]
 
 const MINE_PRESETS: { x: number; y: number }[] = [
-  { x: 1720, y: 2760 }, { x: 4150, y: 3520 }, { x: 6350, y: 2760 },
-  { x: 6850, y: 2760 }, { x: 6600, y: 3500 }, { x: 11420, y: 2760 },
+  { x: 1720, y: 2760 }, { x: 4150, y: 2760 }, { x: 6600, y: 2760 },
+  { x: 9000, y: 2760 }, { x: 11420, y: 2760 }, { x: 5400, y: 2760 },
 ]
 
 const WATCHTOWERS: Watchtower[] = [
-  { id: 'tower_1', name: '西部高空瞭望塔', x: 2580, y: 1620, operatorId: null },
-  { id: 'tower_2', name: '中央北塔瞭望台', x: 5840, y: 1600, operatorId: null },
-  { id: 'tower_3', name: '中央南塔瞭望台', x: 7360, y: 1600, operatorId: null },
-  { id: 'tower_4', name: '东部高空瞭望塔', x: 10580, y: 1620, operatorId: null },
+  { id: 'tower_1', name: '西部瞭望塔', x: 3700, y: 2760, operatorId: null },
+  { id: 'tower_2', name: '中西瞭望塔', x: 7000, y: 2760, operatorId: null },
+  { id: 'tower_3', name: '中央东瞭望塔', x: 8800, y: 2760, operatorId: null },
+  { id: 'tower_4', name: '东部瞭望塔', x: 11900, y: 2760, operatorId: null },
 ]
 
 const WARP_PORTALS: WarpPortal[] = [
-  { id: 'warp_1', name: 'W1 西翼地表传送门', x: 880, y: 2760, targetId: 'warp_2', color: '#06b6d4' },
-  { id: 'warp_2', name: 'W2 中央高空浮岛门', x: 6320, y: 1040, targetId: 'warp_1', color: '#06b6d4' },
-  { id: 'warp_3', name: 'W3 西区深层地道门', x: 2980, y: 3680, targetId: 'warp_4', color: '#a855f7' },
-  { id: 'warp_4', name: 'W4 东区通信楼顶门', x: 9580, y: 2040, targetId: 'warp_3', color: '#a855f7' },
-  { id: 'warp_5', name: 'W5 中央地下掩体门', x: 6880, y: 3500, targetId: 'warp_6', color: '#10b981' },
-  { id: 'warp_6', name: 'W6 极东边境高台门', x: 12280, y: 2140, targetId: 'warp_5', color: '#10b981' },
+  { id: 'warp_1', name: 'W1 西区传送门', x: 880, y: 2740, targetId: 'warp_2', color: '#06b6d4' },
+  { id: 'warp_2', name: 'W2 中西传送门', x: 3150, y: 2740, targetId: 'warp_1', color: '#06b6d4' },
+  { id: 'warp_3', name: 'W3 中央传送门', x: 4700, y: 2740, targetId: 'warp_4', color: '#a855f7' },
+  { id: 'warp_4', name: 'W4 中东传送门', x: 9550, y: 2740, targetId: 'warp_3', color: '#a855f7' },
+  { id: 'warp_5', name: 'W5 中央东传送门', x: 6900, y: 2740, targetId: 'warp_6', color: '#10b981' },
+  { id: 'warp_6', name: 'W6 东区传送门', x: 12280, y: 2740, targetId: 'warp_5', color: '#10b981' },
 ]
 
-/** 死斗模式随机出生候选点（按地表/高空平台/掩体分层，落点再经 ensureFreePosition 校验） */
+/** 平地地图的随机出生候选点（地面沿线 + 平台 + 据点/基地） */
 const RANDOM_SPAWN_CANDIDATES: { x: number; y: number }[] = (() => {
   const out: { x: number; y: number }[] = []
-  // 地表沿线
   for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 })
-  // 高空平台
-  for (const p of [{ x: 2700, y: 1120 }, { x: 3700, y: 1840 }, { x: 5250, y: 2000 }, { x: 5400, y: 940 },
-                   { x: 8800, y: 1800 }, { x: 9600, y: 1180 }, { x: 11500, y: 1840 }, { x: 12900, y: 1440 }]) {
-    out.push(p)
-  }
-  // 队伍基地与据点
+  for (const px of [2200, 3800, 5400, 7600, 9600, 11800]) out.push({ x: px + 150, y: SURFACE_Y - 300 })
   for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 })
-  for (const cp of ['cp_a', 'cp_b', 'cp_c', 'cp_d', 'cp_e']) {
-    const map: Record<string, { x: number; y: number }> = {
-      cp_a: { x: 1720, y: 1780 }, cp_b: { x: 4150, y: 3500 }, cp_c: { x: 6600, y: 2740 },
-      cp_d: { x: 6600, y: 3480 }, cp_e: { x: 11420, y: 1780 },
-    }
-    out.push(map[cp])
-  }
+  for (const cx of [1720, 4150, 6600, 9000, 11420]) out.push({ x: cx, y: 2740 })
   return out
 })()
 
@@ -119,11 +98,11 @@ export const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
 ]
 
 const CP_INITS: { id: string; code: string; name: string; x: number; y: number; ownerTeam: TeamId | null }[] = [
-  { id: 'cp_a', code: 'A', name: '据点A·西翼大楼天台', x: 1720, y: 1840, ownerTeam: 'red' },
-  { id: 'cp_b', code: 'B', name: '据点B·西区地下掩体', x: 4150, y: 3560, ownerTeam: null },
-  { id: 'cp_c', code: 'C', name: '据点C·中央核心大桥', x: 6600, y: 2800, ownerTeam: 'green' },
-  { id: 'cp_d', code: 'D', name: '据点D·中央地下地核', x: 6600, y: 3540, ownerTeam: null },
-  { id: 'cp_e', code: 'E', name: '据点E·东翼要塞天台', x: 11420, y: 1840, ownerTeam: 'blue' },
+  { id: 'cp_a', code: 'A', name: '据点A·西区', x: 1720, y: 2740, ownerTeam: 'red' },
+  { id: 'cp_b', code: 'B', name: '据点B·中央西', x: 4150, y: 2740, ownerTeam: null },
+  { id: 'cp_c', code: 'C', name: '据点C·中央', x: 6600, y: 2740, ownerTeam: 'green' },
+  { id: 'cp_d', code: 'D', name: '据点D·中东', x: 9000, y: 2740, ownerTeam: null },
+  { id: 'cp_e', code: 'E', name: '据点E·东区', x: 11420, y: 2740, ownerTeam: 'blue' },
 ]
 
 export class World {
@@ -1492,9 +1471,21 @@ export class World {
         const a = list[i]
         const b = list[j]
         if (!this.bodiesOverlap(a.pos.x, a.pos.y, b.pos.x, b.pos.y)) continue
-        const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1
-        this.tryNudge(b, dir, 0.6)
-        this.tryNudge(a, -dir, 0.6)
+        const dx = Math.abs(wrapDeltaX(a.pos.x, b.pos.x))
+        const ox = 20 - dx                                  // 水平穿透量
+        const top = Math.max(a.pos.y - 30, b.pos.y - 30)
+        const bottom = Math.min(a.pos.y + 16, b.pos.y + 16)
+        const oy = bottom - top                             // 垂直穿透量
+        if (oy > 0 && (ox <= 20 && dx <= 8 || oy <= ox)) {
+          // 垂直穿透更小 → 沿 y 分离（上方的人抬升，保持“站头”而不是被横向推散）
+          const upper = a.pos.y <= b.pos.y ? a : b
+          const upY = wrapY(upper.pos.y - oy)
+          if (!this.terrain.isSolidAt(upper.pos.x, upY - 26)) upper.pos.y = upY
+        } else {
+          const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1
+          this.tryNudge(b, dir, 0.6)
+          this.tryNudge(a, -dir, 0.6)
+        }
       }
     }
   }

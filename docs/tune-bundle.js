@@ -41,12 +41,12 @@
   function jump(v) {
     v.y = -P.jumpImpulse;
   }
-  function jetpack(v, dt) {
-    v.y = Math.max(-P.jetpackMaxUp, v.y - P.jetpackAccel / P.mass * dt);
+  function jetpack(v, dt, ascendMult = 1) {
+    v.y = Math.max(-P.jetpackMaxUp * ascendMult, v.y - P.jetpackAccel * ascendMult / P.mass * dt);
   }
-  function updateJetpackFuel(fuel, active, onGround, dt) {
+  function updateJetpackFuel(fuel, active, onGround, dt, maxFuel = P.jetpackFuel) {
     const next = active ? fuel - P.jetpackDrain * dt : onGround ? fuel + P.jetpackRecharge * dt : fuel;
-    return Math.min(P.jetpackFuel, Math.max(0, next));
+    return Math.min(maxFuel, Math.max(0, next));
   }
 
   // src/core/wrap.ts
@@ -100,195 +100,41 @@
       this.setGridRect(x, y, w, h, 2);
       this.rects.push({ x, y, w, h, color, borderColor, kind, label });
     }
-    /** 装饰图元：只进渲染列表、不写碰撞网格（窗户/路灯/缆线/天线/蒸汽口/警示条/桶/管道/梯子/标牌） */
+    /** 装饰图元：只进渲染列表、不写碰撞网格 */
     addDeco(x, y, w, h, kind, color, borderColor = "") {
       this.rects.push({ x, y, w, h, color, borderColor, kind, label: "" });
     }
-    /** 挖空（地道/掩体）：网格清 0 + 背景图元 + 阴影区 */
+    /** 挖空（保留供未来扩展；当前平地地图未使用） */
     carveTunnel(x, y, w, h, label = "\u5730\u4E0B\u5730\u9053") {
       this.setGridRect(x, y, w, h, 0);
       this.rects.push({ x, y, w, h, color: "#090d16", borderColor: "#1e293b", kind: "tunnel_bg", label });
       this.shadows.push({ x, y, w, h, label, alpha: 0.76 });
-    }
-    /** 多层楼房：楼板/外墙/天井/射击窗（v2 布局原样保留） */
-    buildMultiStoryBuilding(bx, groundY, width, floors, floorHeight, name, accent) {
-      const totalH = floors * floorHeight;
-      const topY = groundY - totalH;
-      this.rects.push({ x: bx, y: topY, w: width, h: totalH, color: "#111827", borderColor: accent, kind: "building_bg", label: name });
-      this.shadows.push({ x: bx + 20, y: topY + 20, w: width - 40, h: totalH - 20, label: `${name}\u5BA4\u5185`, alpha: 0.62 });
-      this.addSolidBlock(bx - 20, topY, width + 40, 24, "#334155", accent, "building_roof", `${name}\u5929\u53F0`);
-      for (let f = 0; f < floors; f++) {
-        const fy = groundY - f * floorHeight;
-        if (f > 0) {
-          if (f % 2 === 0) this.addSolidBlock(bx + 120, fy - 20, width - 120, 20, "#475569", "#64748b", "floor_slab");
-          else this.addSolidBlock(bx, fy - 20, width - 120, 20, "#475569", "#64748b", "floor_slab");
-        }
-        const slabTop = f > 0 ? fy - 20 : fy - 20;
-        const wallBase = fy - floorHeight + 20;
-        if (f === 0) {
-          this.addSolidBlock(bx, slabTop, 24, fy - 110 - slabTop, "#334155", accent, "wall");
-          this.addSolidBlock(bx + width - 24, slabTop, 24, fy - 110 - slabTop, "#334155", accent, "wall");
-        } else {
-          const winBottom = fy - 150;
-          const winTop = fy - 60;
-          this.addSolidBlock(bx, wallBase - 20, 24, winBottom - (wallBase - 20), "#334155", accent, "wall");
-          this.addSolidBlock(bx + width - 24, wallBase - 20, 24, winBottom - (wallBase - 20), "#334155", accent, "wall");
-          this.addSolidBlock(bx, winTop, 24, fy - winTop, "#334155", accent, "wall");
-          this.addSolidBlock(bx + width - 24, winTop, 24, fy - winTop, "#334155", accent, "wall");
-        }
-      }
-    }
-    buildHollowPipe(px, py, length, height, label) {
-      const t = 22;
-      this.rects.push({ x: px, y: py, w: length, h: height, color: "#0f172a", borderColor: "#06b6e4", kind: "pipe_bg", label });
-      this.shadows.push({ x: px, y: py + t, w: length, h: height - t * 2, label, alpha: 0.68 });
-      this.addSolidBlock(px, py, length, t, "#164e63", "#22d3ee", "pipe_wall", label);
-      this.addSolidBlock(px, py + height - t, length, t, "#164e63", "#22d3ee", "pipe_wall", label);
     }
     build() {
       this.grid.fill(0);
       this.rects.length = 0;
       this.shadows.length = 0;
       this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, "#1e293b", "#334155", "earth");
-      this.carveTunnel(0, 3560, WORLD_W, 160, "\u73AF\u7403\u5730\u4E0B\u4E3B\u5E72\u5730\u9053");
-      this.carveTunnel(0, 4020, WORLD_W, 560, "\u6DF1\u5C42\u6697\u5F71\u73AF\u5E26");
-      for (const sx of [700, 2900, 5200, 7800, 10100, 12400]) {
-        this.carveTunnel(sx, SURFACE_Y, 160, WORLD_H - SURFACE_Y, "\u73AF\u7403\u5782\u76F4\u5347\u964D\u4E95");
-        for (let sy = SURFACE_Y + 180; sy < WORLD_H; sy += 220) {
-          const off = sy / 220 % 2 === 0 ? 0 : 90;
-          this.addSolidBlock(sx + off, sy, 70, 20, "#475569", "#94a3b8", "step");
-        }
-      }
-      this.carveTunnel(3600, 3320, 1100, 460, "\u897F\u533A\u5730\u4E0B\u6218\u7565\u63A9\u4F53");
-      this.addSolidBlock(3760, 3560, 780, 24, "#334155", "#38bdf8", "bunker_floor");
-      this.carveTunnel(6e3, 3260, 1200, 560, "\u4E2D\u592E\u5730\u4E0B\u6838\u5FC3\u63A9\u4F53");
-      this.addSolidBlock(6160, 3540, 880, 24, "#334155", "#10b981", "bunker_floor");
-      this.carveTunnel(9600, 3320, 1100, 460, "\u4E1C\u533A\u5730\u4E0B\u88C5\u7532\u63A9\u4F53");
-      this.addSolidBlock(9760, 3560, 780, 24, "#334155", "#f43f5e", "bunker_floor");
-      this.buildMultiStoryBuilding(1400, SURFACE_Y, 640, 4, 240, "\u897F\u7FFC\u6307\u6325\u5927\u697C", "#f43f5e");
-      this.buildMultiStoryBuilding(3200, SURFACE_Y, 560, 3, 240, "\u897F\u533A\u5DE5\u4E1A\u5382\u623F", "#f97316");
-      this.buildMultiStoryBuilding(5500, SURFACE_Y, 680, 5, 240, "\u4E2D\u592E\u53CC\u5B50\u5317\u5854", "#38bdf8");
-      this.buildMultiStoryBuilding(7020, SURFACE_Y, 680, 5, 240, "\u4E2D\u592E\u53CC\u5B50\u5357\u5854", "#10b981");
-      this.buildMultiStoryBuilding(9300, SURFACE_Y, 560, 3, 240, "\u4E1C\u533A\u901A\u4FE1\u5927\u697C", "#a855f7");
-      this.buildMultiStoryBuilding(11100, SURFACE_Y, 640, 4, 240, "\u4E1C\u7FFC\u8981\u585E\u5927\u697C", "#0ea5e9");
-      this.buildHollowPipe(2180, 2240, 860, 160, "\u897F\u533A\u9AD8\u67B6\u8F93\u9001\u7BA1\u9053");
-      this.buildHollowPipe(4100, 2460, 1180, 160, "\u4E2D\u897F\u90E8\u4E3B\u5E72\u5DE5\u4E1A\u7BA1\u9053");
-      this.buildHollowPipe(6240, 1820, 720, 160, "\u4E2D\u592E\u53CC\u5854\u7A7A\u4E2D\u8FDE\u5ECA\u7BA1\u9053");
-      this.buildHollowPipe(7960, 2460, 1180, 160, "\u4E2D\u4E1C\u90E8\u4E3B\u5E72\u5DE5\u4E1A\u7BA1\u9053");
-      this.buildHollowPipe(10040, 2240, 860, 160, "\u4E1C\u533A\u9AD8\u67B6\u8F93\u9001\u7BA1\u9053");
-      const sky = [
-        { x: 600, y: 2180, w: 620, c: "#f43f5e" },
-        { x: 2300, y: 1620, w: 560, c: "#fb923c" },
-        { x: 4300, y: 1460, w: 680, c: "#38bdf8" },
-        { x: 6150, y: 1080, w: 900, c: "#10b981" },
-        { x: 8200, y: 1460, w: 680, c: "#a855f7" },
-        { x: 10300, y: 1620, w: 560, c: "#38bdf8" },
-        { x: 11980, y: 2180, w: 620, c: "#0ea5e9" }
-      ];
-      for (const s of sky) this.addSolidBlock(s.x, s.y, s.w, 36, "#334155", s.c, "sky_island");
-      this.buildExtraStructures();
-      this.buildDecorations();
-    }
-    // 设计规则（防卡死）：新增结构之间、结构与既有墙体/平台之间保持 ≥60px 通行间隙；
-    // 不制造 <40px 的夹缝；立柱/掩体必须贴地且远离重生点抖动范围（±45px + 身宽 10px）。
-    /** 补充结构：连桥 / 高空平台 / 地面集装箱 / 据点掩体 / 地下立柱 */
-    buildExtraStructures() {
-      this.addSolidBlock(6180, 2560, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u4E2D\u5C42\u8FDE\u6865");
-      this.addSolidBlock(6180, 2070, 840, 20, "#334155", "#38bdf8", "bridge", "\u53CC\u5B50\u5854\u9AD8\u5C42\u8FDE\u6865");
-      this.addSolidBlock(2e3, 2600, 280, 20, "#334155", "#f97316", "bridge", "\u897F\u7FFC\u8FDE\u63A5\u6865");
-      this.addSolidBlock(11760, 2600, 280, 20, "#334155", "#0ea5e9", "bridge", "\u4E1C\u7FFC\u8FDE\u63A5\u6865");
-      const platforms = [
-        { x: 2700, y: 1180, w: 300, c: "#fb923c" },
-        { x: 3700, y: 1900, w: 260, c: "#38bdf8" },
-        { x: 5250, y: 2060, w: 220, c: "#10b981" },
-        { x: 5400, y: 1e3, w: 220, c: "#a855f7" },
-        { x: 8800, y: 1860, w: 300, c: "#a855f7" },
-        { x: 9600, y: 1240, w: 320, c: "#38bdf8" },
-        { x: 11500, y: 1900, w: 280, c: "#0ea5e9" },
-        { x: 12900, y: 1500, w: 260, c: "#f43f5e" }
-      ];
-      for (const p of platforms) this.addSolidBlock(p.x, p.y, p.w, 22, "#334155", p.c, "platform");
-      const containers = [
-        { x: 5e3, y: 2720, w: 120, h: 80, c: "#f97316" },
-        { x: 7800, y: 2720, w: 120, h: 80, c: "#22d3ee" },
-        // 避开南塔右墙(7676-7700)
-        { x: 9950, y: 2720, w: 100, h: 80, c: "#a855f7" },
-        // 避开通信楼右墙(9836-9860)
-        { x: 3850, y: 2740, w: 100, h: 60, c: "#eab308" }
-      ];
-      for (const c of containers) this.addSolidBlock(c.x, c.y, c.w, c.h, "#1f2937", c.c, "container");
       const covers = [
-        { x: 1560, y: 1780, c: "#f43f5e" },
-        // CP A 1720
-        { x: 4240, y: 3500, c: "#38bdf8" },
-        // CP B 4150
-        { x: 6680, y: 3480, c: "#10b981" },
-        // CP D 6600
-        { x: 11280, y: 1780, c: "#0ea5e9" }
-        // CP E 11420
+        { x: 800, y: SURFACE_Y - 100, w: 120, h: 100, c: "#f43f5e" },
+        { x: 2600, y: SURFACE_Y - 80, w: 100, h: 80, c: "#38bdf8" },
+        { x: 4600, y: SURFACE_Y - 120, w: 140, h: 120, c: "#f97316" },
+        { x: 5800, y: SURFACE_Y - 90, w: 120, h: 90, c: "#10b981" },
+        { x: 7800, y: SURFACE_Y - 80, w: 100, h: 80, c: "#a855f7" },
+        { x: 10600, y: SURFACE_Y - 110, w: 130, h: 110, c: "#0ea5e9" },
+        { x: 12800, y: SURFACE_Y - 90, w: 110, h: 90, c: "#eab308" }
       ];
-      for (const c of covers) this.addSolidBlock(c.x, c.y, 60, 60, "#334155", c.c, "cover");
-      this.addSolidBlock(4300, 3440, 60, 120, "#334155", "#38bdf8", "pillar");
-      this.addSolidBlock(6800, 3420, 60, 120, "#334155", "#10b981", "pillar");
-      this.addSolidBlock(9900, 3440, 60, 120, "#334155", "#f43f5e", "pillar");
-    }
-    /** 装饰层：窗户/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌（不参与碰撞） */
-    buildDecorations() {
-      const buildings = [
-        { bx: 1400, w: 640, floors: 4, name: "\u897F\u7FFC\u6307\u6325\u5927\u697C" },
-        { bx: 3200, w: 560, floors: 3, name: "\u897F\u533A\u5DE5\u4E1A\u5382\u623F" },
-        { bx: 5500, w: 680, floors: 5, name: "\u4E2D\u592E\u53CC\u5B50\u5317\u5854" },
-        { bx: 7020, w: 680, floors: 5, name: "\u4E2D\u592E\u53CC\u5B50\u5357\u5854" },
-        { bx: 9300, w: 560, floors: 3, name: "\u4E1C\u533A\u901A\u4FE1\u5927\u697C" },
-        { bx: 11100, w: 640, floors: 4, name: "\u4E1C\u7FFC\u8981\u585E\u5927\u697C" }
+      for (const c of covers) this.addSolidBlock(c.x, c.y, c.w, c.h, "#1f2937", c.c, "cover", "\u65B9\u5F62\u63A9\u4F53");
+      const platformY = SURFACE_Y - 260;
+      const platforms = [
+        { x: 2200, w: 300, c: "#38bdf8" },
+        { x: 3800, w: 260, c: "#10b981" },
+        { x: 5400, w: 300, c: "#f97316" },
+        { x: 7600, w: 280, c: "#a855f7" },
+        { x: 9600, w: 300, c: "#38bdf8" },
+        { x: 11800, w: 280, c: "#0ea5e9" }
       ];
-      const warm = ["#fbbf24", "#fde68a", "#fb923c", "#f97316"];
-      buildings.forEach((b, bi) => {
-        const topY = SURFACE_Y - b.floors * 240;
-        this.addDeco(b.bx + b.w / 2 - 3, topY - 64, 6, 64, "deco_antenna", "#94a3b8");
-        for (let f = 0; f < b.floors; f++) {
-          const fy = SURFACE_Y - f * 240;
-          for (let k = 0; k < 3; k++) {
-            const lit = (bi + f + k) % 3 !== 0;
-            const wx = b.bx + 40 + k * Math.max(60, (b.w - 120) / 3);
-            this.addDeco(wx, fy - 170, 42, 40, lit ? "deco_window_lit" : "deco_window_dark", lit ? warm[(bi + k) % warm.length] : "#0f172a");
-          }
-        }
-        this.addDeco(b.bx - 16, topY + 20, b.w + 32, 6, "deco_stripe", "#f59e0b");
-      });
-      for (let x = 400; x < WORLD_W; x += 720) {
-        this.addDeco(x, SURFACE_Y - 52, 8, 52, "deco_lamp", "#fbbf24");
-      }
-      const cables = [
-        { x: 6180, y: 1900, w: 840 },
-        { x: 2040, y: 2400, w: 300 },
-        { x: 11740, y: 2400, w: 260 },
-        { x: 2300, y: 1600, w: 800 },
-        { x: 8200, y: 1460, w: 1100 }
-      ];
-      for (const c of cables) this.addDeco(c.x, c.y, c.w, 60, "deco_cable", "#64748b");
-      for (const v of [3780, 6180, 9780]) this.addDeco(v, 3550, 26, 26, "deco_vent", "#94a3b8");
-      for (const b of [1560, 2100, 3200, 4300, 5400, 6300, 7200, 9800, 11300, 12600]) {
-        this.addDeco(b, SURFACE_Y - 30, 16, 30, "deco_barrel", "#f59e0b");
-      }
-      for (const p of [{ x: 2400, w: 620 }, { x: 8450, w: 520 }, { x: 12100, w: 300 }]) {
-        this.addDeco(p.x, SURFACE_Y - 22, p.w, 10, "deco_pipe_run", "#22d3ee");
-      }
-      for (const sx of [700, 2900, 5200, 7800, 10100, 12400]) {
-        this.addDeco(sx + 2, SURFACE_Y + 24, 14, 1200, "deco_ladder", "#94a3b8");
-      }
-      for (const cp of [
-        { x: 1620, y: 1840, t: "A" },
-        { x: 4050, y: 3560, t: "B" },
-        { x: 6500, y: 2800, t: "C" },
-        { x: 6500, y: 3540, t: "D" },
-        { x: 11360, y: 1840, t: "E" }
-      ]) {
-        this.addDeco(cp.x - 30, cp.y - 130, 60, 22, "deco_sign", "#22d3ee", cp.t);
-      }
-      for (const px of [2180, 4100, 6240, 7960, 10040]) {
-        this.addDeco(px - 10, 2240 + 160, 20, 30, "deco_bracket", "#22d3ee");
-      }
+      for (const pl of platforms) this.addSolidBlock(pl.x, platformY, pl.w, 22, "#334155", pl.c, "platform", "\u5E73\u53F0");
     }
     /** 点是否被原始地形挡住（双轴环形 x/y） */
     isSolidAt(x, y) {
@@ -304,27 +150,13 @@
     }
   };
   var OBSTACLE_PRESETS = [
-    { id: "obs_1", x: 1320, y: 2680, w: 48, h: 120, hp: 260, label: "\u5927\u697C\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_2", x: 2080, y: 2680, w: 48, h: 120, hp: 260, label: "\u5927\u697C\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_3", x: 3120, y: 2680, w: 48, h: 120, hp: 240, label: "\u5382\u623F\u88C5\u7532\u5899", color: "#78350f", borderColor: "#f59e0b" },
-    { id: "obs_4", x: 5420, y: 2680, w: 52, h: 120, hp: 300, label: "\u53CC\u5854\u91CD\u578B\u95F8\u95E8", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_5", x: 7740, y: 2680, w: 52, h: 120, hp: 300, label: "\u53CC\u5854\u91CD\u578B\u95F8\u95E8", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_6", x: 11020, y: 2680, w: 48, h: 120, hp: 260, label: "\u8981\u585E\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_7", x: 11780, y: 2680, w: 48, h: 120, hp: 260, label: "\u8981\u585E\u9632\u7206\u95E8", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_8", x: 2600, y: 2264, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_9", x: 4680, y: 2484, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_10", x: 6580, y: 1844, w: 36, h: 112, hp: 180, label: "\u9AD8\u7A7A\u7BA1\u9053\u8DEF\u969C", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_11", x: 8540, y: 2484, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_12", x: 10460, y: 2264, w: 36, h: 112, hp: 180, label: "\u7BA1\u9053\u5BC6\u5C01\u95F8", color: "#155e75", borderColor: "#22d3ee" },
-    { id: "obs_ug_1", x: 3580, y: 3560, w: 44, h: 160, hp: 320, label: "\u5730\u4E0B\u63A9\u4F53\u897F\u95F8\u95E8", color: "#4c1d95", borderColor: "#a855f7" },
-    { id: "obs_ug_2", x: 4700, y: 3560, w: 44, h: 160, hp: 320, label: "\u5730\u4E0B\u63A9\u4F53\u4E1C\u95F8\u95E8", color: "#4c1d95", borderColor: "#a855f7" },
-    { id: "obs_ug_3", x: 5980, y: 3560, w: 48, h: 160, hp: 360, label: "\u4E2D\u592E\u5730\u6838\u9632\u7206\u5899", color: "#065f46", borderColor: "#10b981" },
-    { id: "obs_ug_4", x: 7200, y: 3560, w: 48, h: 160, hp: 360, label: "\u4E2D\u592E\u5730\u6838\u9632\u7206\u5899", color: "#065f46", borderColor: "#10b981" },
-    { id: "obs_ug_5", x: 9580, y: 3560, w: 44, h: 160, hp: 320, label: "\u4E1C\u533A\u5730\u4E0B\u897F\u95F8\u95E8", color: "#881337", borderColor: "#f43f5e" },
-    { id: "obs_ug_6", x: 10700, y: 3560, w: 44, h: 160, hp: 320, label: "\u4E1C\u533A\u5730\u4E0B\u4E1C\u95F8\u95E8", color: "#881337", borderColor: "#f43f5e" },
+    { id: "obs_1", x: 1600, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_2", x: 3400, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_3", x: 4900, y: 2720, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
     { id: "obs_box_1", x: 6420, y: 2730, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_box_2", x: 6720, y: 2730, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_box_3", x: 6560, y: 1010, w: 80, h: 70, hp: 190, label: "\u6D6E\u5C9B\u6838\u5FC3\u62A4\u76FE\u7BB1", color: "#1e3a8a", borderColor: "#60a5fa" }
+    { id: "obs_5", x: 9200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
+    { id: "obs_6", x: 11200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_7", x: 12500, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
   ];
 
   // src/core/rng.ts
@@ -362,40 +194,47 @@
       name: "\u9730\u5F39\u67AA",
       shortName: "\u9730\u5F39",
       isSupplyOnly: false,
-      damage: 16,
-      headshotMult: 1.8,
+      damage: 24,
+      headshotMult: 1,
       pellets: 8,
-      spread: 0.28,
+      spread: 0.24,
+      // 伤害=手枪弹
       speed: 1e3,
-      recoil: 780,
-      magSize: 6,
-      maxReserve: 30,
+      recoil: 1560,
+      magSize: 8,
+      maxReserve: 72,
+      // 后坐力 ×2
       reloadTime: 1.5,
-      fireDelay: 0.5,
+      fireDelay: 0.72,
       terrainRadius: 12,
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1.08,
       fuelMult: 1.05,
       fovMult: 1,
-      color: "#fbbf24"
+      color: "#fbbf24",
+      falloffStart: 200,
+      falloffEnd: 700,
+      falloffMin: 0.45
+      // 霰弹随距离衰减（中距仍可用）
     },
     {
       id: 1,
       name: "\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 19,
+      damage: 33,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
-      speed: 1250,
+      speed: 1500,
       recoil: 84,
       magSize: 28,
       maxReserve: 140,
       reloadTime: 1.7,
       fireDelay: 0.12,
       terrainRadius: 8,
+      // 伤害 46（用户要求 ×2），射速保持原值
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1,
@@ -414,43 +253,50 @@
       spread: 3e-3,
       speed: 4e3,
       recoil: 390,
-      magSize: 5,
-      maxReserve: 25,
-      reloadTime: 2.3,
-      fireDelay: 0.92,
+      magSize: 3,
+      maxReserve: 15,
+      reloadTime: 2.8,
+      fireDelay: 0.95,
+      chargeSeconds: 0.6,
       terrainRadius: 16,
       explosive: false,
       laser: true,
       pierceOnHeadshot: true,
       lifeSeconds: 999,
-      moveSpeedMult: 0.92,
-      fuelMult: 0.9,
+      moveSpeedMult: 0.6,
+      fuelMult: 0.6,
       fovMult: 1.3,
-      color: "#c084fc"
+      color: "#c084fc",
+      farRange: 800,
+      farDamage: 99
+      // 超过视距的非爆头命中只造成 99（留 1 血）
     },
     {
       id: 3,
       name: "\u706B\u7BAD\u7B52",
       shortName: "\u706B\u7BAD\u7B52",
       isSupplyOnly: false,
-      damage: 105,
+      damage: 115,
       headshotMult: 1.5,
       pellets: 1,
       spread: 0,
       speed: 520,
       recoil: 420,
-      magSize: 4,
+      magSize: 1,
       maxReserve: 20,
-      reloadTime: 2.4,
-      fireDelay: 0.9,
-      terrainRadius: 92,
+      // 1 发/弹匣，共 20 个弹匣；换弹 2s
+      reloadTime: 2,
+      fireDelay: 0,
+      terrainRadius: 124,
+      // 射击间隔 = 0（节奏由 2s 换弹决定）
       explosive: true,
       gravityScale: 0,
       lifeSeconds: 999,
       rocket: true,
       pierceOnHeadshot: false,
-      moveSpeedMult: 0.82,
-      fuelMult: 0.72,
+      moveSpeedMult: 0.7,
+      fuelMult: 0.7,
+      ascendMult: 0.7,
       fovMult: 1,
       color: "#fb7185"
     },
@@ -465,9 +311,9 @@
       spread: 0,
       speed: 3e3,
       recoil: 0,
-      magSize: 48,
-      maxReserve: 96,
-      // 48 / 6每秒 = 连续 8 秒
+      magSize: 24,
+      maxReserve: 48,
+      // 24 / 6每秒 = 连续 4 秒（弹量/2）
       reloadTime: 2,
       fireDelay: 0,
       terrainRadius: 18,
@@ -477,19 +323,20 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
-      damagePerSecond: 150,
+      damagePerSecond: 240,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1.3,
       color: "#22d3ee"
+      // 伤害 ×2
     },
     {
       id: 5,
       name: "M249",
       shortName: "M249",
       isSupplyOnly: true,
-      damage: 19,
+      damage: 33,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
@@ -498,8 +345,9 @@
       magSize: 120,
       maxReserve: 240,
       reloadTime: 3,
-      fireDelay: 0.045,
+      fireDelay: 0.06,
       terrainRadius: 8,
+      // M249 伤害=突击(33)，高射速补给枪
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.78,
@@ -512,78 +360,98 @@
       name: "\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 52,
+      damage: 24,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
-      speed: 900,
+      // 伤害降低（=手枪）
+      speed: 1100,
       recoil: 240,
       magSize: 6,
       maxReserve: 18,
       reloadTime: 2.2,
-      fireDelay: 0.68,
-      terrainRadius: 95,
+      fireDelay: 0.9,
+      terrainRadius: 130,
       lifeSeconds: 2.2,
       explosive: true,
       isGravityOrb: true,
       gravityScale: 0.02,
       passWalls: true,
-      dragPerSecond: 0.45,
+      dragPerSecond: 0.7,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
       fuelMult: 0.8,
-      fovMult: 1.3,
-      color: "#a855f7"
+      fovMult: 1,
+      color: "#a855f7",
+      // 引力场弯曲其他子弹
+      falloffStart: 200,
+      falloffEnd: 700,
+      falloffMin: 0.12
+      // 射程与霰弹类似（200→700），远端衰减更狠
     },
     {
       id: 7,
       name: "\u624B\u67AA",
       shortName: "\u624B\u67AA",
       isSupplyOnly: false,
-      damage: 25,
+      damage: 24,
       headshotMult: 2,
       pellets: 1,
-      spread: 0.012,
-      speed: 1500,
+      spread: 0.09,
+      speed: 1e3,
       recoil: 60,
       magSize: 12,
-      maxReserve: 48,
+      maxReserve: 60,
       reloadTime: 0.9,
-      fireDelay: 0.22,
+      fireDelay: 0.17,
       terrainRadius: 6,
       explosive: false,
       gravityScale: 0.03,
       pierceOnHeadshot: false,
-      moveSpeedMult: 1.3,
-      fuelMult: 1.15,
+      moveSpeedMult: 1.5,
+      fuelMult: 2,
+      ascendMult: 1.25,
       fovMult: 1,
       color: "#fde047"
+      // 移速1.5/飞行容量2.0/升空速度1.25
     },
     {
       id: 8,
       name: "\u51B2\u950B\u67AA",
       shortName: "\u51B2\u950B\u67AA",
       isSupplyOnly: false,
-      damage: 14,
+      damage: 24,
       headshotMult: 1.8,
       pellets: 1,
-      spread: 0.07,
-      speed: 1400,
+      spread: 0.24,
+      // 伤害 = 手枪；极高射速用大散布/弹匣平衡
+      speed: 1e3,
       recoil: 48,
-      magSize: 40,
-      maxReserve: 160,
-      reloadTime: 1.6,
-      fireDelay: 0.08,
+      magSize: 30,
+      maxReserve: 150,
+      reloadTime: 2.2,
+      fireDelay: 0.05,
       terrainRadius: 8,
+      // 射速极高
       explosive: false,
       gravityScale: 0.04,
       pierceOnHeadshot: false,
-      moveSpeedMult: 1.05,
-      fuelMult: 1.05,
+      moveSpeedMult: 1.25,
+      fuelMult: 1,
       fovMult: 1,
       color: "#4ade80"
     }
   ];
+  function weaponFalloff(wep, dist) {
+    const start = wep.falloffStart ?? 0;
+    const end = wep.falloffEnd ?? 0;
+    const min = wep.falloffMin ?? 1;
+    if (end <= start) return 1;
+    if (dist <= start) return 1;
+    if (dist >= end) return min;
+    const t = (dist - start) / (end - start);
+    return 1 - (1 - min) * t;
+  }
   var SECONDARIES = {
     frag: { id: "frag", name: "\u624B\u69B4\u5F39", icon: "\u{1F4A3}", cd: 0.8 },
     doll: { id: "doll", name: "\u66FF\u8EAB\u4EBA\u5076", icon: "\u{1F38E}", cd: 24, supplyOnly: true }
@@ -619,7 +487,7 @@
     respawnDelay: 4,
     loadoutLock: true,
     randomSpawn: false,
-    fragMaxCharges: 2,
+    fragMaxCharges: 1,
     fragRechargeSeconds: 6,
     dollMaxCharges: 2
   };
@@ -640,104 +508,76 @@
     { x: 6600, y: 2380, team: "ffa" }
   ];
   var AMMO_SPOTS = [
-    { x: 1560, y: 2520, area: "\u897F\u7FFC\u5927\u697C\u4E8C\u5C42" },
-    { x: 1840, y: 2040, area: "\u897F\u7FFC\u5927\u697C\u56DB\u5C42" },
-    { x: 2620, y: 2260, area: "\u897F\u533A\u7BA1\u9053\u5185" },
-    { x: 3400, y: 2280, area: "\u897F\u533A\u5382\u623F\u4E09\u5C42" },
-    { x: 4450, y: 2420, area: "\u4E2D\u897F\u90E8\u7BA1\u9053\u5185" },
-    { x: 4760, y: 1430, area: "\u897F\u90E8\u9AD8\u7A7A\u5E73\u53F0" },
-    { x: 5680, y: 2100, area: "\u53CC\u5854\u5317\u5854\u4E09\u5C42" },
-    { x: 7250, y: 2100, area: "\u53CC\u5854\u5357\u5854\u4E09\u5C42" },
-    { x: 6680, y: 1020, area: "\u4E2D\u592E\u6700\u9AD8\u6D6E\u5C9B" },
-    { x: 8420, y: 2560, area: "\u4E2D\u4E1C\u90E8\u7BA1\u9053\u5185" },
-    { x: 8520, y: 1420, area: "\u4E2D\u4E1C\u90E8\u9AD8\u7A7A\u6D6E\u5C9B" },
-    { x: 9540, y: 2520, area: "\u4E1C\u533A\u901A\u4FE1\u5927\u697C" },
-    { x: 10120, y: 3520, area: "\u4E1C\u533A\u5730\u4E0B\u63A9\u4F53" },
-    { x: 10380, y: 2340, area: "\u4E1C\u533A\u9AD8\u67B6\u7BA1\u9053\u5185" },
-    { x: 11360, y: 2520, area: "\u4E1C\u7FFC\u5927\u697C\u4E8C\u5C42" },
-    { x: 12600, y: 2760, area: "\u6781\u4E1C\u8FB9\u5883\u8865\u7ED9\u70B9" }
+    { x: 1300, y: 2760, area: "\u897F\u533A\u5E73\u5730" },
+    { x: 2100, y: 2760, area: "\u897F\u533A\u5E73\u53F0\u4E0B" },
+    { x: 2900, y: 2760, area: "\u4E2D\u897F\u5E73\u5730" },
+    { x: 4900, y: 2760, area: "\u4E2D\u592E\u897F\u5E73\u5730" },
+    { x: 6300, y: 2760, area: "\u4E2D\u592E\u5E73\u5730" },
+    { x: 8100, y: 2760, area: "\u4E2D\u4E1C\u5E73\u5730" },
+    { x: 10200, y: 2760, area: "\u4E1C\u533A\u5E73\u5730" }
   ];
   var SUPPLY_SPOTS = [
-    { x: 6800, y: 1020, area: "\u4E2D\u592E\u6700\u9AD8\u6D6E\u5C9B" },
-    { x: 4150, y: 3520, area: "\u897F\u533A\u5730\u4E0B\u6218\u7565\u63A9\u4F53" },
-    { x: 6600, y: 3500, area: "\u4E2D\u592E\u5730\u4E0B\u6838\u5FC3\u63A9\u4F53" },
-    { x: 10150, y: 3520, area: "\u4E1C\u533A\u5730\u4E0B\u88C5\u7532\u63A9\u4F53" },
-    { x: 2600, y: 1580, area: "\u897F\u90E8\u9AD8\u7A7A\u5E73\u53F0" },
-    { x: 10550, y: 1580, area: "\u4E1C\u90E8\u9AD8\u7A7A\u5E73\u53F0" }
+    { x: 1500, y: 2760, area: "\u897F\u533A\u8865\u7ED9\u70B9" },
+    { x: 3100, y: 2760, area: "\u4E2D\u897F\u8865\u7ED9\u70B9" },
+    { x: 4300, y: 2760, area: "\u4E2D\u592E\u897F\u8865\u7ED9\u70B9" },
+    { x: 5100, y: 2760, area: "\u4E2D\u592E\u8865\u7ED9\u70B9" },
+    { x: 8300, y: 2760, area: "\u4E2D\u4E1C\u8865\u7ED9\u70B9" },
+    { x: 10300, y: 2760, area: "\u4E1C\u533A\u8865\u7ED9\u70B9" }
   ];
   var DOLL_SUPPLY_SPOTS = [
-    { x: 4820, y: 2100, area: "\u4E2D\u897F\u90E8\u9AD8\u7A7A\u8FDE\u5ECA\u65C1" },
-    { x: 8560, y: 2760, area: "\u4E1C\u533A\u5730\u8868\u7279\u6B8A\u8865\u7ED9\u70B9" }
+    { x: 4800, y: 2760, area: "\u4E2D\u592E\u897F\u7279\u6B8A\u8865\u7ED9\u70B9" },
+    { x: 8560, y: 2760, area: "\u4E1C\u533A\u7279\u6B8A\u8865\u7ED9\u70B9" }
   ];
   var MORTARS_INIT = [
-    { id: "mortar_left", name: "\u897F\u7FFC\u9AD8\u53F0\u8FEB\u51FB\u70AE", x: 920, y: 2180, angle: -Math.PI * 0.28, power: 24 },
-    { id: "mortar_mid_w", name: "\u4E2D\u897F\u6D6E\u5C9B\u8FEB\u51FB\u70AE", x: 4620, y: 1460, angle: -Math.PI * 0.3, power: 23 },
-    { id: "mortar_center", name: "\u4E2D\u592E\u5929\u9876\u8FEB\u51FB\u70AE", x: 6600, y: 1080, angle: -Math.PI * 0.35, power: 24.5 },
-    { id: "mortar_mid_e", name: "\u4E2D\u4E1C\u6D6E\u5C9B\u8FEB\u51FB\u70AE", x: 8520, y: 1460, angle: -Math.PI * 0.7, power: 23 },
-    { id: "mortar_right", name: "\u4E1C\u7FFC\u9AD8\u53F0\u8FEB\u51FB\u70AE", x: 12260, y: 2180, angle: -Math.PI * 0.72, power: 24 }
+    { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: 2740, angle: -Math.PI * 0.28, power: 24 },
+    { id: "mortar_mid_w", name: "\u4E2D\u592E\u897F\u8FEB\u51FB\u70AE", x: 3300, y: 2740, angle: -Math.PI * 0.3, power: 23 },
+    { id: "mortar_center", name: "\u4E2D\u592E\u8FEB\u51FB\u70AE", x: 6e3, y: 2740, angle: -Math.PI * 0.35, power: 24.5 },
+    { id: "mortar_mid_e", name: "\u4E2D\u592E\u4E1C\u8FEB\u51FB\u70AE", x: 8620, y: 2740, angle: -Math.PI * 0.7, power: 23 },
+    { id: "mortar_right", name: "\u4E1C\u533A\u8FEB\u51FB\u70AE", x: 12260, y: 2740, angle: -Math.PI * 0.72, power: 24 }
   ];
   var MINE_PRESETS = [
     { x: 1720, y: 2760 },
-    { x: 4150, y: 3520 },
-    { x: 6350, y: 2760 },
-    { x: 6850, y: 2760 },
-    { x: 6600, y: 3500 },
-    { x: 11420, y: 2760 }
+    { x: 4150, y: 2760 },
+    { x: 6600, y: 2760 },
+    { x: 9e3, y: 2760 },
+    { x: 11420, y: 2760 },
+    { x: 5400, y: 2760 }
   ];
   var WATCHTOWERS = [
-    { id: "tower_1", name: "\u897F\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 2580, y: 1620, operatorId: null },
-    { id: "tower_2", name: "\u4E2D\u592E\u5317\u5854\u77AD\u671B\u53F0", x: 5840, y: 1600, operatorId: null },
-    { id: "tower_3", name: "\u4E2D\u592E\u5357\u5854\u77AD\u671B\u53F0", x: 7360, y: 1600, operatorId: null },
-    { id: "tower_4", name: "\u4E1C\u90E8\u9AD8\u7A7A\u77AD\u671B\u5854", x: 10580, y: 1620, operatorId: null }
+    { id: "tower_1", name: "\u897F\u90E8\u77AD\u671B\u5854", x: 3700, y: 2760, operatorId: null },
+    { id: "tower_2", name: "\u4E2D\u897F\u77AD\u671B\u5854", x: 7e3, y: 2760, operatorId: null },
+    { id: "tower_3", name: "\u4E2D\u592E\u4E1C\u77AD\u671B\u5854", x: 8800, y: 2760, operatorId: null },
+    { id: "tower_4", name: "\u4E1C\u90E8\u77AD\u671B\u5854", x: 11900, y: 2760, operatorId: null }
   ];
   var WARP_PORTALS = [
-    { id: "warp_1", name: "W1 \u897F\u7FFC\u5730\u8868\u4F20\u9001\u95E8", x: 880, y: 2760, targetId: "warp_2", color: "#06b6d4" },
-    { id: "warp_2", name: "W2 \u4E2D\u592E\u9AD8\u7A7A\u6D6E\u5C9B\u95E8", x: 6320, y: 1040, targetId: "warp_1", color: "#06b6d4" },
-    { id: "warp_3", name: "W3 \u897F\u533A\u6DF1\u5C42\u5730\u9053\u95E8", x: 2980, y: 3680, targetId: "warp_4", color: "#a855f7" },
-    { id: "warp_4", name: "W4 \u4E1C\u533A\u901A\u4FE1\u697C\u9876\u95E8", x: 9580, y: 2040, targetId: "warp_3", color: "#a855f7" },
-    { id: "warp_5", name: "W5 \u4E2D\u592E\u5730\u4E0B\u63A9\u4F53\u95E8", x: 6880, y: 3500, targetId: "warp_6", color: "#10b981" },
-    { id: "warp_6", name: "W6 \u6781\u4E1C\u8FB9\u5883\u9AD8\u53F0\u95E8", x: 12280, y: 2140, targetId: "warp_5", color: "#10b981" }
+    { id: "warp_1", name: "W1 \u897F\u533A\u4F20\u9001\u95E8", x: 880, y: 2740, targetId: "warp_2", color: "#06b6d4" },
+    { id: "warp_2", name: "W2 \u4E2D\u897F\u4F20\u9001\u95E8", x: 3150, y: 2740, targetId: "warp_1", color: "#06b6d4" },
+    { id: "warp_3", name: "W3 \u4E2D\u592E\u4F20\u9001\u95E8", x: 4700, y: 2740, targetId: "warp_4", color: "#a855f7" },
+    { id: "warp_4", name: "W4 \u4E2D\u4E1C\u4F20\u9001\u95E8", x: 9550, y: 2740, targetId: "warp_3", color: "#a855f7" },
+    { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 6900, y: 2740, targetId: "warp_6", color: "#10b981" },
+    { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: 2740, targetId: "warp_5", color: "#10b981" }
   ];
   var RANDOM_SPAWN_CANDIDATES = (() => {
     const out = [];
     for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 });
-    for (const p of [
-      { x: 2700, y: 1120 },
-      { x: 3700, y: 1840 },
-      { x: 5250, y: 2e3 },
-      { x: 5400, y: 940 },
-      { x: 8800, y: 1800 },
-      { x: 9600, y: 1180 },
-      { x: 11500, y: 1840 },
-      { x: 12900, y: 1440 }
-    ]) {
-      out.push(p);
-    }
+    for (const px of [2200, 3800, 5400, 7600, 9600, 11800]) out.push({ x: px + 150, y: SURFACE_Y - 300 });
     for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 });
-    for (const cp of ["cp_a", "cp_b", "cp_c", "cp_d", "cp_e"]) {
-      const map = {
-        cp_a: { x: 1720, y: 1780 },
-        cp_b: { x: 4150, y: 3500 },
-        cp_c: { x: 6600, y: 2740 },
-        cp_d: { x: 6600, y: 3480 },
-        cp_e: { x: 11420, y: 1780 }
-      };
-      out.push(map[cp]);
-    }
+    for (const cx of [1720, 4150, 6600, 9e3, 11420]) out.push({ x: cx, y: 2740 });
     return out;
   })();
   var JUMP_PADS = [
-    { x: 1220, y: 2800, vx: 210, vy: -810 },
-    { x: 5300, y: 2800, vx: 180, vy: -870 },
-    { x: 7880, y: 2800, vx: -180, vy: -870 },
-    { x: 11960, y: 2800, vx: -210, vy: -810 }
+    // 全部位于可站立地表：远离竖井洞、台地内部与出生点（此前 2 个在竖井里、1 个埋在台地内，且完全没渲染 → "莫名弹起"）
+    { x: 1e3, y: 2800, vx: 210, vy: -810 },
+    { x: 4300, y: 2800, vx: 180, vy: -870 },
+    { x: 8450, y: 2800, vx: -180, vy: -870 },
+    { x: 13050, y: 2800, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
-    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u7FFC\u5927\u697C\u5929\u53F0", x: 1720, y: 1840, ownerTeam: "red" },
-    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u897F\u533A\u5730\u4E0B\u63A9\u4F53", x: 4150, y: 3560, ownerTeam: null },
-    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E\u6838\u5FC3\u5927\u6865", x: 6600, y: 2800, ownerTeam: "green" },
-    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u592E\u5730\u4E0B\u5730\u6838", x: 6600, y: 3540, ownerTeam: null },
-    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u7FFC\u8981\u585E\u5929\u53F0", x: 11420, y: 1840, ownerTeam: "blue" }
+    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: 2740, ownerTeam: "red" },
+    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 4150, y: 2740, ownerTeam: null },
+    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E", x: 6600, y: 2740, ownerTeam: "green" },
+    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 9e3, y: 2740, ownerTeam: null },
+    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: 2740, ownerTeam: "blue" }
   ];
   var World = class {
     terrain = new Terrain();
@@ -855,6 +695,7 @@
         reloading: false,
         reloadTimer: 0,
         fireCooldown: 0,
+        chargeTimer: 0,
         secondary: "frag",
         secondaryCooldown: 0,
         fragCharges: DEFAULT_CONFIG.fragMaxCharges,
@@ -911,6 +752,7 @@
       p.dollCharges = 0;
       p.reloading = false;
       p.fireCooldown = 0;
+      p.chargeTimer = 0;
       p.secondaryCooldown = 0;
       p.deployed = true;
       p.alive = true;
@@ -944,6 +786,7 @@
           }
         }
       }
+      this.separatePlayers();
       this.stepProjectiles(dt);
       this.stepGrenades(dt);
       this.stepLandmines(dt);
@@ -992,9 +835,9 @@
       const fuelMax = getPhysicsParams().jetpackFuel * (wepCur.fuelMult ?? 1);
       const fuel = Math.min(p.fuel, fuelMax);
       const canJet = !p.mountedTowerId && w.jetpack && fuel > 0;
-      if (canJet) jetpack(p.vel, dt);
+      if (canJet) jetpack(p.vel, dt, wepCur.ascendMult ?? 1);
       p.jetpack = canJet;
-      p.fuel = Math.min(fuelMax, updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt));
+      p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax);
       if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt);
       if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt);
       if (p.fragCharges < this.config.fragMaxCharges) {
@@ -1038,11 +881,21 @@
       }
       if (w.interact) this.interact(p);
       if (w.secondary) this.useSecondary(p, w.secondary, dt);
-      if (w.fire) {
-        const wepNow = WEAPONS[p.weaponIndex];
-        if (wepNow?.beam) this.updateContinuousBeam(p, wepNow, dt);
-        else this.fire(p);
-      } else if (WEAPONS[p.weaponIndex]?.beam && !p.reloading && p.ammo[p.weaponIndex] > 0) {
+      const wepNow = WEAPONS[p.weaponIndex];
+      if (wepNow?.beam) {
+        if (w.fire) this.updateContinuousBeam(p, wepNow, dt);
+        p.chargeTimer = 0;
+      } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
+        if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        if (p.chargeTimer > 0) {
+          p.chargeTimer += dt;
+          if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
+            this.fire(p);
+            p.chargeTimer = 0;
+          }
+        }
+      } else if (w.fire) {
+        this.fire(p);
       }
     }
     // ── 开火 ──────────────────────────────────────────────
@@ -1096,12 +949,24 @@
           beam: !!wep.beam,
           rocket: !!wep.rocket,
           dragPerSecond: wep.dragPerSecond ?? 1,
+          weaponId: wep.id,
+          curveRate: wep.curveRate ?? 0,
           weaponLabel: wep.shortName,
           color: wep.color,
           r: wep.isGravityOrb ? 8.5 : wep.rocket ? 8 : wep.explosive ? 5.5 : wep.id === 4 ? 4.5 : 3.2,
           life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60
         }));
       }
+    }
+    /** 距离衰减：按「发射者→命中点」最短环形距离计算武器 falloff 倍率 */
+    projectileFalloff(pr, hx, hy) {
+      if (pr.weaponId < 0) return 1;
+      const wep = WEAPONS[pr.weaponId];
+      if (!wep || wep.falloffStart === void 0) return 1;
+      const owner = this.players.find((x) => x.id === pr.owner);
+      if (!owner) return 1;
+      const dist = wrapDist(owner.pos.x, owner.pos.y - 12, hx, hy);
+      return weaponFalloff(wep, dist);
     }
     /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
     updateContinuousBeam(p, wep, dt) {
@@ -1212,6 +1077,8 @@
         beam: !!o.beam,
         rocket: !!o.rocket,
         dragPerSecond: o.dragPerSecond ?? 1,
+        weaponId: o.weaponId ?? -1,
+        curveRate: o.curveRate ?? 0,
         weaponLabel: o.weaponLabel,
         color: o.color,
         hitTargets: [p.id]
@@ -1351,15 +1218,18 @@
       }
       applyGravity(p.vel, dt, w.dive ? 1.55 : 1);
       for (const pad of JUMP_PADS) {
-        if (wrapDist(p.pos.x, p.pos.y, pad.x, pad.y) < 42 && p.vel.y >= -120) {
+        const d = wrapDist(p.pos.x, p.pos.y, pad.x, pad.y);
+        if (d < 34 && p.onGround && p.vel.y >= -20) {
           p.vel.x += pad.vx;
           p.vel.y = pad.vy;
+          p.onGround = false;
         }
       }
       const hitBody = (x, y) => {
         const wx = wrapX(x);
         if (this.terrain.isSolidAt(wx, y)) return true;
-        return this.obstacleAt(wx, y) !== null;
+        if (this.obstacleAt(wx, y) !== null) return true;
+        return this.playerHitsPoint(wx, y, p.id);
       };
       const pts = (cx, cy) => hitBody(cx - BODY_HALF_W, cy + BODY_BOTTOM) || hitBody(cx + BODY_HALF_W, cy + BODY_BOTTOM) || hitBody(cx, cy + BODY_BOTTOM) || hitBody(cx - BODY_HALF_W, cy) || hitBody(cx + BODY_HALF_W, cy) || hitBody(cx, cy - BODY_TOP);
       const nx = wrapX(p.pos.x + p.vel.x * dt);
@@ -1367,7 +1237,11 @@
       else if (!pts(nx, p.pos.y - 10)) {
         p.pos.x = nx;
         p.pos.y -= 10;
-      } else p.vel.x = 0;
+      } else {
+        const blocker = this.playerBlockingAt(nx, p.pos.y, p.id);
+        if (blocker) this.tryNudge(blocker, Math.sign(nx - p.pos.x), 1.4);
+        p.vel.x = 0;
+      }
       const nyRaw = p.pos.y + p.vel.y * dt;
       const ny = wrapY(nyRaw);
       if (!pts(p.pos.x, ny)) {
@@ -1424,6 +1298,45 @@
     // 卡死计数器：身体嵌实体超时自动推出（防窄缝/结构挤压永久卡住）
     stuckTicks = /* @__PURE__ */ new Map();
     /** 身体 AABB（脚底锚点）：宽±10，高 -30..+16 */
+    /** 两个玩家身体 AABB 是否相交（宽 20，高 -30..+16，脚底锚点） */
+    bodiesOverlap(ax, ay, bx, by) {
+      const dx = Math.abs(wrapDeltaX(ax, bx));
+      if (dx >= 20) return false;
+      return ay + 16 > by - 30 && ay - 30 < by + 16;
+    }
+    /** 单个点是否落在其他玩家身体 AABB 内（用于 6 采样点碰撞；不能把采样点当整具身体） */
+    playerHitsPoint(x, y, selfId) {
+      for (const other of this.players) {
+        if (other.id === selfId) continue;
+        if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
+        if (Math.abs(wrapDeltaX(x, other.pos.x)) > 10) continue;
+        if (y > other.pos.y - 30 && y < other.pos.y + 16) return true;
+      }
+      return false;
+    }
+    /** 找指定位置与玩家 selfId 身体相交的其他玩家（用于玩家间碰撞） */
+    playerBlockingAt(x, y, selfId) {
+      for (const other of this.players) {
+        if (other.id === selfId) continue;
+        if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
+        if (this.bodiesOverlap(x, y, other.pos.x, other.pos.y)) return other;
+      }
+      return null;
+    }
+    /** 轻推另一个玩家（"顶着人"：被挡住时把对方朝同方向推一点，仍需避让地形/障碍/其他人） */
+    tryNudge(other, dir, amount) {
+      if (dir === 0) return;
+      const nx = wrapX(other.pos.x + dir * amount);
+      if (this.terrain.isSolidAt(nx, other.pos.y - 6)) return;
+      if (this.terrain.isSolidAt(nx, other.pos.y + 15)) return;
+      if (this.obstacleAt(nx, other.pos.y)) return;
+      for (const t of this.players) {
+        if (t.id === other.id) continue;
+        if (!t.deployed || !t.alive || t.respawnTimer > 0) continue;
+        if (this.bodiesOverlap(nx, other.pos.y, t.pos.x, t.pos.y)) return;
+      }
+      other.pos.x = nx;
+    }
     bodyOverlapsAt(x, y) {
       const wx = wrapX(x);
       const halfW = 10;
@@ -1526,6 +1439,9 @@
     // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
     // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
     stepProjectiles(dt) {
+      for (let i = this.projectiles.length - 1; i >= 0; i--) {
+        if (this.projectiles[i].damage <= 0) this.projectiles.splice(i, 1);
+      }
       const g = getPhysicsParams().gravity;
       const SUBSTEP_PX = 8;
       for (const pr of this.projectiles) {
@@ -1534,6 +1450,38 @@
           const k = Math.pow(pr.dragPerSecond, dt);
           pr.vel.x *= k;
           pr.vel.y *= k;
+        }
+        if (!pr.isGravityOrb && !pr.beam) {
+          let absorbed = false;
+          for (const orb of this.projectiles) {
+            if (!orb.isGravityOrb || orb.life <= 0) continue;
+            const dx2 = wrapDeltaX(pr.pos.x, orb.pos.x);
+            const dy2 = wrapDeltaY(pr.pos.y, orb.pos.y);
+            const d = Math.hypot(dx2, dy2);
+            const FIELD = 360;
+            const ABSORB = 46;
+            if (d <= ABSORB) {
+              absorbed = true;
+              break;
+            }
+            if (d > FIELD) continue;
+            const falloff = 1 - d / FIELD;
+            const cur = Math.atan2(pr.vel.y, pr.vel.x);
+            const want = Math.atan2(dy2, dx2);
+            let delta = want - cur;
+            while (delta > Math.PI) delta -= Math.PI * 2;
+            while (delta < -Math.PI) delta += Math.PI * 2;
+            const bend = Math.sign(delta) * Math.min(Math.abs(delta), 7 * falloff * dt);
+            const cosB = Math.cos(bend);
+            const sinB = Math.sin(bend);
+            const vx = pr.vel.x;
+            pr.vel.x = vx * cosB - pr.vel.y * sinB;
+            pr.vel.y = vx * sinB + pr.vel.y * cosB;
+          }
+          if (absorbed) {
+            pr.life = 0;
+            continue;
+          }
         }
         pr.vel.y += g * pr.gravityScale * dt;
         pr.life -= dt;
@@ -1560,10 +1508,10 @@
               pr.hitTargets.push(t.id);
               const piercing = pr.pierceOnHeadshot || pr.pierceAll;
               if (pr.explosive) {
-                this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult, 960, pr);
+                this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * pr.headshotMult * this.projectileFalloff(pr, pr.pos.x, pr.pos.y), 960, pr);
                 hit = true;
               } else {
-                this.damage(t, Math.round(pr.damage * pr.headshotMult), pr, true, piercing);
+                this.damage(t, Math.round(pr.damage * pr.headshotMult * this.projectileFalloff(pr, t.pos.x, t.pos.y - 24)), pr, true, piercing);
                 t.vel.x += pr.vel.x * 0.12;
                 t.vel.y += pr.vel.y * 0.12 - 72;
                 if (!piercing) hit = true;
@@ -1576,10 +1524,20 @@
             if (dxBody <= 13 + pr.r && dyBody >= -12 && dyBody <= 18) {
               pr.hitTargets.push(t.id);
               if (pr.explosive) {
-                this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 900, pr);
+                this.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage * this.projectileFalloff(pr, pr.pos.x, pr.pos.y), 900, pr);
                 hit = true;
               } else {
-                this.damage(t, Math.round(pr.damage), pr, false, false);
+                let dmg = Math.round(pr.damage);
+                const wep = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
+                if (wep?.farRange && pr.weaponId === 2) {
+                  const owner = this.players.find((x) => x.id === pr.owner);
+                  if (owner) {
+                    const dist2 = wrapDist(owner.pos.x, owner.pos.y - 12, t.pos.x, t.pos.y - 12);
+                    if (dist2 > wep.farRange) dmg = Math.min(dmg, wep.farDamage ?? dmg);
+                  }
+                }
+                dmg = Math.round(dmg * this.projectileFalloff(pr, t.pos.x, t.pos.y - 12));
+                this.damage(t, dmg, pr, false, false);
                 t.vel.x += pr.vel.x * 0.09;
                 t.vel.y += pr.vel.y * 0.09;
                 if (!pr.pierceAll) hit = true;
@@ -1768,18 +1726,18 @@
       const g0 = 1250;
       for (const g of this.grenades) {
         g.vel.y += g0 * 0.88 * dt;
-        g.vel.x *= 0.99;
+        g.vel.x *= 0.995;
         const nx = wrapX(g.pos.x + g.vel.x * dt);
-        if (this.terrain.isSolidAt(nx, g.pos.y) || this.obstacleAt(nx, g.pos.y)) g.vel.x *= -0.35;
+        if (this.terrain.isSolidAt(nx, g.pos.y) || this.obstacleAt(nx, g.pos.y)) g.vel.x *= -0.55;
         else g.pos.x = nx;
         const ny = g.pos.y + g.vel.y * dt;
         if (this.terrain.isSolidAt(g.pos.x, ny) || this.obstacleAt(g.pos.x, ny)) {
-          g.vel.y *= -0.28;
-          g.vel.x *= 0.42;
-          if (Math.abs(g.vel.y) < 81) {
+          g.vel.y *= -0.45;
+          g.vel.x *= 0.78;
+          if (Math.abs(g.vel.y) < 72) {
             g.vel.y = 0;
-            g.vel.x *= 0.6;
-            if (Math.abs(g.vel.x) < 11) g.vel.x = 0;
+            g.vel.x *= 0.88;
+            if (Math.abs(g.vel.x) < 8) g.vel.x = 0;
           }
         } else g.pos.y = wrapY(ny);
         g.fuse -= dt;
@@ -1977,6 +1935,31 @@
             this.ammoPacks.splice(i, 1);
             this.events.push({ kind: "ammo_pickup", playerId: p.id, x: pack.x, y: pack.y });
             break;
+          }
+        }
+      }
+    }
+    /** 玩家重叠分离：两两检查，沿 x 各推 0.5px（受地形/障碍/其他人限制），避免叠人卡死 */
+    separatePlayers() {
+      const list = this.players.filter((p) => p.deployed && p.alive && p.respawnTimer <= 0);
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i];
+          const b = list[j];
+          if (!this.bodiesOverlap(a.pos.x, a.pos.y, b.pos.x, b.pos.y)) continue;
+          const dx = Math.abs(wrapDeltaX(a.pos.x, b.pos.x));
+          const ox = 20 - dx;
+          const top = Math.max(a.pos.y - 30, b.pos.y - 30);
+          const bottom = Math.min(a.pos.y + 16, b.pos.y + 16);
+          const oy = bottom - top;
+          if (oy > 0 && (ox <= 20 && dx <= 8 || oy <= ox)) {
+            const upper = a.pos.y <= b.pos.y ? a : b;
+            const upY = wrapY(upper.pos.y - oy);
+            if (!this.terrain.isSolidAt(upper.pos.x, upY - 26)) upper.pos.y = upY;
+          } else {
+            const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1;
+            this.tryNudge(b, dir, 0.6);
+            this.tryNudge(a, -dir, 0.6);
           }
         }
       }
