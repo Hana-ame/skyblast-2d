@@ -63,6 +63,7 @@ export function weaponViolations(): Violation[] {
   if (rifle && Math.abs((rifle.fireDelay ?? 0) - 0.12) > 1e-9) add('rule.riflefire', '突击步枪射击间隔必须 0.12s')
   if (rocket && (rocket.magSize !== 1 || rocket.maxReserve !== 20)) add('rule.rocketmag', '火箭筒必须 1/20 弹匣')
   if (rocket && rocket.fireDelay !== 0) add('rule.rocketfire', '火箭筒射击间隔必须 0')
+  if (rocket && rocket.speed !== 780) add('rule.rocketspeed', '火箭筒弹速必须 780（520 × 1.5）')
   if (sniper && (sniper.damage !== 100 || sniper.edgeDamage !== 99 || sniper.farRange !== undefined)) {
     add('rule.sniperedge', '狙击命中身体必须 100（含远距），打中碰撞箱边缘必须 99')
   }
