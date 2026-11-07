@@ -314,9 +314,10 @@
       magSize: 24,
       maxReserve: 48,
       // 24 / 6每秒 = 连续 4 秒（弹量/2）
-      reloadTime: 2,
+      reloadTime: 4,
       fireDelay: 0,
       terrainRadius: 18,
+      // 换弹时间 ×2
       explosive: false,
       laser: true,
       pierceAll: true,
