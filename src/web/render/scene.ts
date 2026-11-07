@@ -210,6 +210,9 @@ export function renderScene(): void {
   // 10. 玩家 sprite + 头顶标签（含替身人偶幻影）
   for (const p of world.players) {
     if (p.respawnTimer > 0 || !p.deployed) continue
+    // 复活隐身：对别人完全不可见（自己仍然可见，否则没法操作）
+    const invisible = (p.spawnProtectTimer ?? 0) > 0 && p.id !== localPlayer.id
+    if (invisible) continue
     const w = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
     const pMounted = world.mortars.some(m => m.operatorId === p.id)
 

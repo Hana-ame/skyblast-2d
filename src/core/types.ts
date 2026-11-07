@@ -58,6 +58,8 @@ export interface PlayerState {
   dollCharges: number
   // 重生倒计时（>0 表示死亡等待重生）
   respawnTimer: number
+  /** 复活保护/隐身剩余秒数（>0 时：不可见、无实体、不可开枪、不受伤害，但可以移动） */
+  spawnProtectTimer?: number
   kills: number
   deaths: number
 }

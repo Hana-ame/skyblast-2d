@@ -174,6 +174,7 @@ export function updateContinuousBeam(
   dt: number,
 ): void {
   if (p.respawnTimer > 0 || !p.alive) return
+  if ((p.spawnProtectTimer ?? 0) > 0) return   // 复活保护：不可开枪
   const wi = p.weaponIndex
   if (p.reloading) return
   if (p.ammo[wi] <= 0) {
@@ -273,6 +274,7 @@ export function updateContinuousBeam(
           if (t.id === p.id && !wep.selfDamage) continue
           if (t.id !== p.id && t.team === p.team && p.team !== 'ffa' && !wep.friendlyFire) continue
           if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
+          if ((t.spawnProtectTimer ?? 0) > 0) continue   // 复活保护：不可被光束命中
           const rawDy = Math.abs(t.pos.y - ny)
           if (rawDy > 40 && rawDy < WORLD_H - 40) continue
           const hx = wrapDeltaX(t.pos.x, nx)
@@ -461,6 +463,7 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
           if (t.id !== pr.owner && t.team === ownerTeam && t.team !== 'ffa' && !allowFF) continue
           if (t.id === pr.owner && !allowSelf) continue
           if (t.respawnTimer > 0 || !t.deployed || !t.alive) continue
+          if ((t.spawnProtectTimer ?? 0) > 0) continue   // 复活保护：不可被弹丸命中
           const rawDy = Math.abs(t.pos.y - ny)
           if (rawDy > 42 && rawDy < WORLD_H - 42) continue
           if (pr.hitTargets.includes(t.id)) continue

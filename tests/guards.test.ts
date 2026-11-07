@@ -423,3 +423,52 @@ test('护栏·弹丸事件化：发射/反弹/销毁事件成对出现（客户�
   }
   assert.ok(evs.some(e => e.kind === 'projectile_destroy'), 'projectile_destroy emitted')
 })
+
+
+test('护栏·复活保护：重生后 2 秒隐身/无敌/无实体/不能开枪，但可移动，结束后恢复', () => {
+  const w = new World(37000)
+  w.config.randomSpawn = false
+  const a = w.addPlayer('A', 'red')
+  const b = w.addPlayer('B', 'blue')
+  a.weaponIndex = 1
+  b.weaponIndex = 1
+  a.pos = { x: 3000, y: 2740 }
+  b.pos = { x: 3600, y: 2740 }
+  // 走真实死亡路径：被打死后重生（只有阵亡重生才给保护）
+  ;(w as unknown as { explode: (...x: unknown[]) => void }).explode(a.pos.x, a.pos.y, 200, 999, 0, undefined, b.id, b.team, '测试')
+  assert.ok(a.respawnTimer > 0, 'died')
+  for (let i = 0; i < 260; i++) w.step(DT, new Map([[a.id, input()], [b.id, input()]]))
+  assert.ok(a.alive, 'respawned')
+  assert.ok((a.spawnProtectTimer ?? 0) > 1.5, `protection starts at ~2s, got ${(a.spawnProtectTimer ?? 0).toFixed(2)}`)
+
+  // ① 不能开枪
+  a.pos = { x: 3000, y: 2740 }
+  b.pos = { x: 3600, y: 2740 }
+  const ammo0 = a.ammo[1]
+  for (let i = 0; i < 20; i++) w.step(DT, new Map([[a.id, input({ fire: true })], [b.id, input()]]))
+  assert.equal(a.ammo[1], ammo0, 'protected player cannot fire')
+
+  // ② 不受伤害
+  b.pos = { x: 3060, y: 2740 }
+  const hp0 = a.hp
+  for (let i = 0; i < 20; i++) w.step(DT, new Map([[a.id, input()], [b.id, input({ fire: true })]]))
+  assert.equal(a.hp, hp0, 'protected player takes no damage')
+
+  // ③ 无实体：B 朝 A 走不会被挡
+  const bx0 = b.pos.x
+  for (let i = 0; i < 20; i++) w.step(DT, new Map([[a.id, input()], [b.id, input({ move: -1 })]]))
+  assert.ok(b.pos.x < bx0 - 20, `B walks through the invisible A (${bx0.toFixed(0)} -> ${b.pos.x.toFixed(0)})`)
+
+  // ④ 可以移动
+  const ax0 = a.pos.x
+  for (let i = 0; i < 15; i++) w.step(DT, new Map([[a.id, input({ move: 1 })], [b.id, input()]]))
+  assert.ok(a.pos.x > ax0 + 10, `protected player can still move (${ax0.toFixed(0)} -> ${a.pos.x.toFixed(0)})`)
+
+  // 结束后恢复：可被击中
+  for (let i = 0; i < 140; i++) w.step(DT, new Map([[a.id, input()], [b.id, input()]]))
+  assert.equal((a.spawnProtectTimer ?? 0), 0, 'protection expired')
+  b.pos = { x: a.pos.x + 60, y: 2740 }
+  const hp1 = a.hp
+  for (let i = 0; i < 40; i++) w.step(DT, new Map([[a.id, input()], [b.id, input({ fire: true, aim: Math.PI })]]))
+  assert.ok(a.hp < hp1, 'damage resumes after protection ends')
+})

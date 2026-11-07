@@ -531,6 +531,7 @@
     watchtowerDuration: 20,
     watchtowerFovMult: 1.65,
     respawnDelay: 4,
+    spawnProtectSeconds: 2,
     loadoutLock: true,
     randomSpawn: false,
     grenadeFriendlyFire: true,
@@ -762,6 +763,7 @@
       const other = list[i];
       if (other.id === selfId) continue;
       if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
+      if ((other.spawnProtectTimer ?? 0) > 0) continue;
       if (y <= other.pos.y - 30 || y >= other.pos.y + 16) continue;
       if (Math.abs(wrapDeltaX(x, other.pos.x)) <= 10) return true;
     }
@@ -774,6 +776,7 @@
       const other = list[i];
       if (other.id === selfId) continue;
       if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
+      if ((other.spawnProtectTimer ?? 0) > 0) continue;
       if (bodiesOverlap(x, y, other.pos.x, other.pos.y)) return other;
     }
     return null;
@@ -1059,6 +1062,7 @@
   }
   function updateContinuousBeam(ctx2, p, wep, dt) {
     if (p.respawnTimer > 0 || !p.alive) return;
+    if ((p.spawnProtectTimer ?? 0) > 0) return;
     const wi = p.weaponIndex;
     if (p.reloading) return;
     if (p.ammo[wi] <= 0) {
@@ -1153,6 +1157,7 @@
             if (t.id === p.id && !wep.selfDamage) continue;
             if (t.id !== p.id && t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) continue;
             if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
+            if ((t.spawnProtectTimer ?? 0) > 0) continue;
             const rawDy = Math.abs(t.pos.y - ny);
             if (rawDy > 40 && rawDy < WORLD_H - 40) continue;
             const hx = wrapDeltaX(t.pos.x, nx);
@@ -1319,6 +1324,7 @@
             if (t.id !== pr.owner && t.team === ownerTeam && t.team !== "ffa" && !allowFF) continue;
             if (t.id === pr.owner && !allowSelf) continue;
             if (t.respawnTimer > 0 || !t.deployed || !t.alive) continue;
+            if ((t.spawnProtectTimer ?? 0) > 0) continue;
             const rawDy = Math.abs(t.pos.y - ny);
             if (rawDy > 42 && rawDy < WORLD_H - 42) continue;
             if (pr.hitTargets.includes(t.id)) continue;
@@ -1445,6 +1451,7 @@
   }
   function damagePlayerInWorld(ctx2, t, amount, pr, isHead, isPierced, attackerId, attackerTeam, weaponLabel) {
     if (t.respawnTimer > 0 || !t.deployed || amount <= 0) return;
+    if ((t.spawnProtectTimer ?? 0) > 0) return;
     const atkId = attackerId ?? pr?.owner ?? 0;
     const atkTeam = attackerTeam ?? ctx2.ownerTeamOf(atkId);
     const label = weaponLabel ?? pr?.weaponLabel ?? "\u672A\u77E5";
@@ -2065,6 +2072,7 @@
         doll: null,
         dollCharges: 0,
         respawnTimer: 0,
+        spawnProtectTimer: 0,
         kills: 0,
         deaths: 0
       };
@@ -2076,7 +2084,7 @@
     deploy(p) {
       this.respawnAt(p, p.team);
     }
-    respawnAt(p, team) {
+    respawnAt(p, team, opts = {}) {
       const cur = WEAPONS[p.weaponIndex];
       const lastIdx = p.lastPrimaryIndex ?? p.weaponIndex;
       if (!cur || cur.isSupplyOnly) {
@@ -2120,6 +2128,7 @@
       p.deployed = true;
       p.alive = true;
       p.respawnTimer = 0;
+      p.spawnProtectTimer = opts.protect ? Math.max(0, this.config.spawnProtectSeconds ?? 0) : 0;
       resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
       ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
     }
@@ -2204,7 +2213,7 @@
       if (!p.deployed) return;
       if (p.respawnTimer > 0) {
         p.respawnTimer -= dt;
-        if (p.respawnTimer <= 0) this.respawnAt(p, p.team);
+        if (p.respawnTimer <= 0) this.respawnAt(p, p.team, { protect: true });
         return;
       }
       if (!p.alive) return;
@@ -2250,6 +2259,10 @@
           p.shieldHp = 0;
         }
       }
+      if ((p.spawnProtectTimer ?? 0) > 0) {
+        p.spawnProtectTimer = Math.max(0, (p.spawnProtectTimer ?? 0) - dt);
+        if (p.spawnProtectTimer <= 0) p.spawnProtectTimer = 0;
+      }
       if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt);
       if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt);
       if (p.reloading) {
@@ -2276,13 +2289,13 @@
         mountedNow.angle = a;
       }
       if (w.interact) handlePlayerInteract(this, p);
-      if (w.secondary) this.useSecondary(p, w.secondary);
+      if (w.secondary && (p.spawnProtectTimer ?? 0) <= 0) this.useSecondary(p, w.secondary);
       const wepNow = WEAPONS[p.weaponIndex];
       if (wepNow?.beam) {
-        if (w.fire) updateContinuousBeam(this, p, wepNow, dt);
+        if (w.fire && (p.spawnProtectTimer ?? 0) <= 0) updateContinuousBeam(this, p, wepNow, dt);
         p.chargeTimer = 0;
       } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-        if (w.fire) p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        if (w.fire && (p.spawnProtectTimer ?? 0) <= 0) p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
         if (p.chargeTimer > 0) {
           p.chargeTimer += dt;
           if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
@@ -2296,6 +2309,7 @@
     }
     fire(p) {
       if (p.respawnTimer > 0 || !p.alive) return;
+      if ((p.spawnProtectTimer ?? 0) > 0) return;
       const m = this.mortars.find((mm) => mm.operatorId === p.id);
       if (m) {
         if (m.cooldown <= 0) {
@@ -2977,6 +2991,14 @@
       const [label, cls] = TEAM_BADGE[localPlayer.team] ?? TEAM_BADGE.red;
       teamEl.textContent = label;
       teamEl.className = `px-1.5 py-0.5 rounded text-[10px] font-bold ${cls}`;
+    }
+    const spawnBadge = document.getElementById("hudSpawnProtectBadge");
+    if (spawnBadge) {
+      const t = localPlayer.spawnProtectTimer ?? 0;
+      if (t > 0 && localPlayer.deployed && localPlayer.respawnTimer <= 0) {
+        spawnBadge.textContent = `\u{1F47B} \u590D\u6D3B\u4FDD\u62A4 ${t.toFixed(1)}s\uFF08\u9690\u8EAB\xB7\u65E0\u654C\xB7\u4E0D\u80FD\u5F00\u67AA\uFF09`;
+        spawnBadge.classList.remove("hidden");
+      } else spawnBadge.classList.add("hidden");
     }
     const fovBadge = document.getElementById("hudSniperFovBadge");
     if (fovBadge) {
@@ -5401,6 +5423,8 @@
     }
     for (const p of world.players) {
       if (p.respawnTimer > 0 || !p.deployed) continue;
+      const invisible = (p.spawnProtectTimer ?? 0) > 0 && p.id !== localPlayer.id;
+      if (invisible) continue;
       const w = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
       const pMounted = world.mortars.some((m) => m.operatorId === p.id);
       if (p.doll) {
