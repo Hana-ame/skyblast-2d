@@ -1,7 +1,7 @@
 // web/render/beamGeometry.ts —— 光束段（高斯枪）→ 屏幕折线的纯几何（可单测，避免“跨接缝画成横穿全图”重现）
 import { WORLD_W, WORLD_H, wrapDeltaX, wrapDeltaY } from '../../core/wrap.ts'
 
-export interface WorldSeg { x1: number; y1: number; x2: number; y2: number }
+export interface WorldSeg { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }
 export interface ScreenSeg { x1: number; y1: number; x2: number; y2: number }
 
 /**
@@ -19,8 +19,10 @@ export function expandBeamSegments(
   const out: ScreenSeg[] = []
   for (const seg of segments) {
     const from = toScreen(seg.x1, seg.y1)
-    const dx = wrapDeltaX(seg.x1, seg.x2)
-    const dy = wrapDeltaY(seg.y1, seg.y2)
+    // 优先用权威端算好的真实（未 wrap）位移：单段可长于半世界（地面→天花板 2440px>2200），
+    // 用 wrapDelta 会折叠成反向最短路径，把光束画反/画短。
+    const dx = seg.dx ?? wrapDeltaX(seg.x1, seg.x2)
+    const dy = seg.dy ?? wrapDeltaY(seg.y1, seg.y2)
     out.push({ x1: from.x, y1: from.y, x2: from.x + dx, y2: from.y + dy })
     for (const ox of [-WORLD_W, WORLD_W]) {
       if (from.x + ox < -halfW - 200 || from.x + ox > halfW + 200) continue
@@ -36,5 +38,5 @@ export function expandBeamSegments(
 
 /** 一段世界段的世界长度（最短环形位移） */
 export function worldSegLength(seg: WorldSeg): number {
-  return Math.hypot(wrapDeltaX(seg.x1, seg.x2), wrapDeltaY(seg.y1, seg.y2))
+  return Math.hypot(seg.dx ?? wrapDeltaX(seg.x1, seg.x2), seg.dy ?? wrapDeltaY(seg.y1, seg.y2))
 }

@@ -706,24 +706,30 @@
     }
     return false;
   }
-  function truncateSegmentToFree(terrain, x1, y1, x2, y2) {
-    const dx = wrapDeltaX(x1, x2);
-    const dy = wrapDeltaY(y1, y2);
+  function truncateSegmentToFree(terrain, x1, y1, _x2, _y2, rawDx, rawDy) {
+    const dx = rawDx ?? wrapDeltaX(x1, _x2);
+    const dy = rawDy ?? wrapDeltaY(y1, _y2);
     const len = Math.hypot(dx, dy);
-    if (len <= 1e-6) return { x: x1, y: y1, shortened: false };
+    if (len <= 1e-6) return { x: x1, y: y1, dx: 0, dy: 0, shortened: false };
     const steps = Math.max(1, Math.ceil(len / 3));
     let lastX = x1;
     let lastY = y1;
+    let lastDx = 0;
+    let lastDy = 0;
     for (let k = 1; k <= steps; k++) {
-      const px = wrapX(x1 + dx * k / steps);
-      const py = wrapY(y1 + dy * k / steps);
+      const curDx = dx * k / steps;
+      const curDy = dy * k / steps;
+      const px = wrapX(x1 + curDx);
+      const py = wrapY(y1 + curDy);
       if (terrain.isSolidAt(px, py)) {
-        return { x: lastX, y: lastY, shortened: true };
+        return { x: lastX, y: lastY, dx: lastDx, dy: lastDy, shortened: true };
       }
       lastX = px;
       lastY = py;
+      lastDx = curDx;
+      lastDy = curDy;
     }
-    return { x: x2, y: y2, shortened: false };
+    return { x: wrapX(x1 + dx), y: wrapY(y1 + dy), dx, dy, shortened: false };
   }
   function checkBodyOverlapsAt(terrain, obstacles, x, y, obstacleBroadBuckets) {
     const wx = wrapX(x);
@@ -1113,36 +1119,53 @@
     if (!originOk) return;
     const originX = x;
     const originY = y;
-    const maxSegLen = 14e3;
+    const segCapFor = (ddx, ddy) => Math.abs(ddx) >= Math.abs(ddy) ? WORLD_W - 200 : WORLD_H - 200;
     const step = 4;
     const bounces = wep.bounces ?? 0;
-    const MAX_TOTAL = 24e3;
     const headR = ctx2.config.headRadius + 3;
     const headRSq = headR * headR;
     const tGrid = ctx2.terrain.grid;
     const obstacleBroadBuckets = ctx2.obstacleBroadBuckets;
     const playerBroadBuckets = ctx2.playerBroadBuckets;
     const obstacles = ctx2.obstacles;
-    let totalTravelled = 0;
     for (let b = 0; b <= bounces; b++) {
       let travelled = 0;
       let hitWall = false;
       let blockedByObstacle = false;
       const segStartX = x;
       const segStartY = y;
+      const dirX = dx;
+      const dirY = dy;
       const stepX = dx * step;
       const stepY = dy * step;
-      while (travelled < maxSegLen && totalTravelled < MAX_TOTAL) {
+      const maxSegLen = segCapFor(dirX, dirY);
+      while (travelled < maxSegLen) {
         let nx = x + stepX;
-        if (nx >= WORLD_W) nx -= WORLD_W;
-        else if (nx < 0) nx += WORLD_W;
+        let wrappedX = false;
+        if (nx >= WORLD_W) {
+          nx -= WORLD_W;
+          wrappedX = true;
+        } else if (nx < 0) {
+          nx += WORLD_W;
+          wrappedX = true;
+        }
         let ny = y + stepY;
-        if (ny >= WORLD_H) ny -= WORLD_H;
-        else if (ny < 0) ny += WORLD_H;
+        let wrappedY = false;
+        if (ny >= WORLD_H) {
+          ny -= WORLD_H;
+          wrappedY = true;
+        } else if (ny < 0) {
+          ny += WORLD_H;
+          wrappedY = true;
+        }
         const gx = nx / 20 | 0;
         const gy = ny / 20 | 0;
         if (tGrid[gy * GRID_W + gx] !== 0) {
           hitWall = true;
+          if (wrappedX || wrappedY) {
+            hitWall = false;
+            break;
+          }
           const prevGx = x / 20 | 0;
           const prevGy = y / 20 | 0;
           const hitX = tGrid[prevGy * GRID_W + gx] !== 0;
@@ -1179,8 +1202,8 @@
             if (t.id !== p.id && t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) continue;
             if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
             if ((t.spawnProtectTimer ?? 0) > 0) continue;
-            const rawDy = Math.abs(t.pos.y - ny);
-            if (rawDy > 40 && rawDy < WORLD_H - 40) continue;
+            const rawDy2 = Math.abs(t.pos.y - ny);
+            if (rawDy2 > 40 && rawDy2 < WORLD_H - 40) continue;
             const hx = wrapDeltaX(t.pos.x, nx);
             if (hx > 18 || hx < -18) continue;
             const hy = wrapDeltaY(t.pos.y - 24, ny);
@@ -1198,23 +1221,18 @@
         x = nx;
         y = ny;
         travelled += step;
-        totalTravelled += step;
       }
       if (hitWall && ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
         hitWall = false;
       }
-      const seg = { x1: 0, y1: 0, x2: x, y2: y };
-      if (segments.length > 0) {
-        const prev = segments[segments.length - 1];
-        seg.x1 = prev.x2;
-        seg.y1 = prev.y2;
-      } else {
-        seg.x1 = originX;
-        seg.y1 = originY;
-      }
-      const cut = truncateSegmentToFree(ctx2.terrain, seg.x1, seg.y1, seg.x2, seg.y2);
+      const seg = { x1: segStartX, y1: segStartY, x2: x, y2: y, dx: 0, dy: 0 };
+      const rawDx = dirX * travelled;
+      const rawDy = dirY * travelled;
+      const cut = truncateSegmentToFree(ctx2.terrain, seg.x1, seg.y1, seg.x2, seg.y2, rawDx, rawDy);
       seg.x2 = cut.x;
       seg.y2 = cut.y;
+      seg.dx = cut.dx;
+      seg.dy = cut.dy;
       segments.push(seg);
       if (cut.shortened) break;
       if (blockedByObstacle || !hitWall) break;
@@ -4943,8 +4961,8 @@
     const out = [];
     for (const seg of segments) {
       const from = toScreen(seg.x1, seg.y1);
-      const dx = wrapDeltaX(seg.x1, seg.x2);
-      const dy = wrapDeltaY(seg.y1, seg.y2);
+      const dx = seg.dx ?? wrapDeltaX(seg.x1, seg.x2);
+      const dy = seg.dy ?? wrapDeltaY(seg.y1, seg.y2);
       out.push({ x1: from.x, y1: from.y, x2: from.x + dx, y2: from.y + dy });
       for (const ox of [-WORLD_W, WORLD_W]) {
         if (from.x + ox < -halfW - 200 || from.x + ox > halfW + 200) continue;

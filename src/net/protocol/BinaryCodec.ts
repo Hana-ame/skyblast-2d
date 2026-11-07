@@ -1255,6 +1255,9 @@ function encodeWorldEvent(w: ByteWriter, e: WorldEvent): void {
     for (let i = 0; i < e.segments.length; i++) {
       const s = e.segments[i]
       w.u16(qPosX(s.x1)); w.u16(qPosY(s.y1)); w.u16(qPosX(s.x2)); w.u16(qPosY(s.y2))
+      // 真实位移（可为负、可超过世界尺寸）→ 用 i16 保证跨接缝/长段不折叠
+      w.i16(Math.round((s.dx ?? 0) * 4))
+      w.i16(Math.round((s.dy ?? 0) * 4))
     }
     return
   }
@@ -1292,7 +1295,10 @@ function decodeWorldEvent(r: ByteReader): WorldEvent {
     const segLen = r.u8()
     const segments = new Array(segLen)
     for (let i = 0; i < segLen; i++) {
-      segments[i] = { x1: uPosX(r.u16()), y1: uPosY(r.u16()), x2: uPosX(r.u16()), y2: uPosY(r.u16()) }
+      const x1 = uPosX(r.u16()), y1 = uPosY(r.u16()), x2 = uPosX(r.u16()), y2 = uPosY(r.u16())
+      const dx = r.i16() / 4
+      const dy = r.i16() / 4
+      segments[i] = { x1, y1, x2, y2, dx, dy }
     }
     return { kind: 'laser', x, y, duration, color, playerId, weaponLabel, segments }
   }

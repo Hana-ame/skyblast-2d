@@ -11,12 +11,12 @@ import { WEAPONS, DEFAULT_CONFIG } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
 import type { WorldEvent } from '../src/core/types.ts'
 import { encodeServerMsgBinary, decodeServerMsgBinary } from '../src/net/protocol/BinaryCodec.ts'
+import { expandBeamSegments, worldSegLength } from '../src/web/render/beamGeometry.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
 import type { WorldInput } from '../src/core/types.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../src/core/wrap.ts'
-import { expandBeamSegments } from '../src/web/render/beamGeometry.ts'
 
 test('护栏·武器约定：跨武器规则/数值范围全部满足', () => {
   const vs = weaponViolations()
@@ -195,8 +195,9 @@ test('护栏·高斯枪不穿墙：端点不在实体内、段不跨实体、屏
           segs++
           assert.equal(w.terrain.isSolidAt(seg.x1, seg.y1), false, `segment origin inside solid @(${seg.x1},${seg.y1})`)
           assert.equal(w.terrain.isSolidAt(seg.x2, seg.y2), false, `segment end inside solid @(${seg.x2},${seg.y2})`)
-          const ddx = wrapDeltaX(seg.x1, seg.x2)
-          const ddy = wrapDeltaY(seg.y1, seg.y2)
+          // 用真实位移（dx/dy）：长段/跨接缝时 wrapDelta 会折叠成反向最短路径
+          const ddx = seg.dx ?? wrapDeltaX(seg.x1, seg.x2)
+          const ddy = seg.dy ?? wrapDeltaY(seg.y1, seg.y2)
           const len = Math.hypot(ddx, ddy)
           const steps = Math.max(1, Math.ceil(len / 4))
           for (let k = 1; k < steps; k++) {
@@ -208,7 +209,8 @@ test('护栏·高斯枪不穿墙：端点不在实体内、段不跨实体、屏
           // （若分别对两端取最短位移，跨接缝的段会画成横穿全图的长线 —— 这正是此前的“穿墙光束”）
           const screen = expandBeamSegments([seg], (wx, wy) => ({ x: wrapDeltaX(6600, wx), y: wrapDeltaY(2200, wy) }), 2000, 1200)[0]
           const sr = Math.hypot(screen.x2 - screen.x1, screen.y2 - screen.y1)
-          assert.ok(Math.abs(sr - len) < 1.5, `segment render length differs (world ${len.toFixed(0)} vs screen ${sr.toFixed(0)})`)
+          const realLen = worldSegLength(seg)
+          assert.ok(Math.abs(sr - realLen) < 1.5, `segment render length differs (world ${realLen.toFixed(0)} vs screen ${sr.toFixed(0)})`)
         }
       }
     }
@@ -570,4 +572,59 @@ test('护栏·codec kind 表必须覆盖 core 实际发出的每个事件 kind�
 
   const missing = [...emitted].filter(k => !table.has(k))
   assert.deepEqual(missing, [], `这些 kind 不在 EVENT_KINDS 里，二进制联机会被解码成 'kill'：${missing.join(', ')}`)
+})
+
+
+test('护栏·高斯枪反射：小房间与「横跨地图左右」的大房间都能完整反射 2 次', () => {
+  const beamRun = (solids: MapSolid[], shooter: { x: number; y: number }, aim: number) => {
+    const w = new World(39000, { name: 'beam-room', solids })
+    w.config.randomSpawn = false
+    const p = w.addPlayer('P', 'ffa')
+    p.weaponIndex = 4                    // 高斯枪：bounces = 2
+    p.ammo[4] = 24
+    p.reserveAmmo[4] = 48
+    p.pos = shooter
+    w.step(DT, new Map([[p.id, input({ aim, fire: true })]]))
+    const e = w.drainEvents().find(ev => ev.kind === 'laser')
+    return (e?.segments ?? []) as { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }[]
+  }
+
+  const checkRoom = (label: string, solids: MapSolid[], shooter: { x: number; y: number }, aim: number) => {
+    const segs = beamRun(solids, shooter, aim)
+    assert.equal(segs.length, 3, `${label}: 2 reflections => 3 segments, got ${segs.length}`)
+    // 渲染不变量：屏幕段长度必须等于真实世界长度（用 dx/dy，而不是折叠后的 wrapDelta）
+    // 逐段验证（expandBeamSegments 会为跨接缝补副本，不能按下标对齐）
+    for (let i = 0; i < segs.length; i++) {
+      const real = worldSegLength(segs[i])
+      const cam = { x: segs[i].x1, y: segs[i].y1 }
+      const poly = expandBeamSegments([segs[i]], (wx, wy) => ({ x: wrapDeltaX(cam.x, wx), y: wrapDeltaY(cam.y, wy) }), 20000, 20000)[0]
+      const screen = Math.hypot(poly.x2 - poly.x1, poly.y2 - poly.y1)
+      assert.ok(Math.abs(screen - real) < 1.5, `${label} seg${i}: screen ${screen.toFixed(0)} != world ${real.toFixed(0)}`)
+      assert.ok(real > 100, `${label} seg${i}: not collapsed to a few px (${real.toFixed(1)})`)
+    }
+  }
+
+  // ① 小房间 1000x600
+  checkRoom('small-room', [
+    { x: 6000, y: 2000, w: 20, h: 600, kind: 'cover' },
+    { x: 7000, y: 2000, w: 20, h: 600, kind: 'cover' },
+    { x: 6000, y: 2000, w: 1020, h: 20, kind: 'cover' },
+    { x: 6000, y: 2580, w: 1020, h: 20, kind: 'cover' },
+  ], { x: 6200, y: 2400 }, 0)
+
+  // ② 横跨地图左右的大房间：宽 12000 > 半世界 6600，高 2440 > 半世界 2200
+  checkRoom('world-wide-room', [
+    { x: 600, y: 400, w: 20, h: 2400, kind: 'cover' },
+    { x: 12600, y: 400, w: 20, h: 2400, kind: 'cover' },
+    { x: 600, y: 400, w: 12020, h: 20, kind: 'cover' },
+    { x: 600, y: 2780, w: 12020, h: 20, kind: 'cover' },
+  ], { x: 6600, y: 1600 }, 0)
+
+  // ③ 高空竖井：单段 2440px 垂直往返，专门覆盖 |dy| > 半世界 2200
+  checkRoom('tall-shaft', [
+    { x: 6000, y: 300, w: 20, h: 2500, kind: 'cover' },
+    { x: 7000, y: 300, w: 20, h: 2500, kind: 'cover' },
+    { x: 6000, y: 300, w: 1020, h: 20, kind: 'cover' },
+    { x: 6000, y: 2780, w: 1020, h: 20, kind: 'cover' },
+  ], { x: 6500, y: 2700 }, -Math.PI / 2)
 })

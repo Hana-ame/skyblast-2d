@@ -76,30 +76,46 @@ export function lineBlockedByTerrain(
 }
 
 /** 把一段光束截断到「最后一个空点」：保证任何被绘制/判定使用的线段都不穿过实体 */
+/**
+ * 把一段光束截断到「最后一个空点」。
+ * 端点由「起点 + 真实未 wrap 位移」推导（而不是直接取 wrap 后的 x2/y2）：
+ * 跨接缝或长段时，wrap 后的末端与起点并非最短路径关系，直接用会画出跨世界的假长线。
+ * 返回的 dx/dy 是该段真正要绘制的位移，渲染端直接用它，不再自己算 wrapDelta。
+ */
 export function truncateSegmentToFree(
   terrain: Terrain,
   x1: number,
   y1: number,
-  x2: number,
-  y2: number,
-): { x: number; y: number; shortened: boolean } {
-  const dx = wrapDeltaX(x1, x2)
-  const dy = wrapDeltaY(y1, y2)
+  _x2: number,
+  _y2: number,
+  /** 真实（未 wrap）位移：单段可能长于半世界（如地面→天花板 2440px > 2200），
+   *  用 wrapDelta 会把它折叠成反向最短路径，把段截成几个像素。 */
+  rawDx?: number,
+  rawDy?: number,
+): { x: number; y: number; dx: number; dy: number; shortened: boolean } {
+  const dx = rawDx ?? wrapDeltaX(x1, _x2)
+  const dy = rawDy ?? wrapDeltaY(y1, _y2)
   const len = Math.hypot(dx, dy)
-  if (len <= 1e-6) return { x: x1, y: y1, shortened: false }
+  if (len <= 1e-6) return { x: x1, y: y1, dx: 0, dy: 0, shortened: false }
   const steps = Math.max(1, Math.ceil(len / 3))
   let lastX = x1
   let lastY = y1
+  let lastDx = 0
+  let lastDy = 0
   for (let k = 1; k <= steps; k++) {
-    const px = wrapX(x1 + (dx * k) / steps)
-    const py = wrapY(y1 + (dy * k) / steps)
+    const curDx = (dx * k) / steps
+    const curDy = (dy * k) / steps
+    const px = wrapX(x1 + curDx)
+    const py = wrapY(y1 + curDy)
     if (terrain.isSolidAt(px, py)) {
-      return { x: lastX, y: lastY, shortened: true }
+      return { x: lastX, y: lastY, dx: lastDx, dy: lastDy, shortened: true }
     }
     lastX = px
     lastY = py
+    lastDx = curDx
+    lastDy = curDy
   }
-  return { x: x2, y: y2, shortened: false }
+  return { x: wrapX(x1 + dx), y: wrapY(y1 + dy), dx, dy, shortened: false }
 }
 
 /** 扫描覆盖身体 AABB 的地形格与障碍物，判断玩家躯干是否发生穿模 */

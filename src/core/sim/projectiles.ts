@@ -186,7 +186,7 @@ export function updateContinuousBeam(
   p.ammo[wi] = Math.max(0, p.ammo[wi] - aps * dt)
   if (p.ammo[wi] <= 0 && (p.reserveAmmo[wi] || 0) > 0) ctx.startReload(p)
 
-  const segments: { x1: number; y1: number; x2: number; y2: number }[] = []
+  const segments: { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }[] = []
   const hitPlayer = new Set<number>()
   const hitObstacle = new Set<string>()
 
@@ -207,10 +207,15 @@ export function updateContinuousBeam(
   if (!originOk) return
   const originX = x
   const originY = y
-  const maxSegLen = 14000
+  // 每段独立射程，按「本段主导轴」取小于该轴绕世界一圈的距离：
+  //   水平主导 → WORLD_W-200 (13000)，够"横跨地图左右的大房间"单段 11976；
+  //   垂直主导 → WORLD_H-200 (4200)，避免竖直激光绕过世界上下接缝、从背面打回射手
+  //              （实测：地面上朝正上方开火，2748px 后到顶接缝，绕到底部反射回来打中射手）。
+  // 不能跨段累计预算——那会让大房间第二段被截断、反射次数变少。
+  const segCapFor = (ddx: number, ddy: number): number =>
+    Math.abs(ddx) >= Math.abs(ddy) ? WORLD_W - 200 : WORLD_H - 200
   const step = 4
   const bounces = wep.bounces ?? 0
-  const MAX_TOTAL = 24000
   const headR = ctx.config.headRadius + 3
   const headRSq = headR * headR
   const tGrid = ctx.terrain.grid
@@ -218,27 +223,37 @@ export function updateContinuousBeam(
   const playerBroadBuckets = ctx.playerBroadBuckets
   const obstacles = ctx.obstacles
 
-  let totalTravelled = 0
   for (let b = 0; b <= bounces; b++) {
     let travelled = 0
     let hitWall = false
     let blockedByObstacle = false
     const segStartX = x
     const segStartY = y
+    const dirX = dx       // 本段方向（反射会改 dx/dy，这里先存一份用于真实位移）
+    const dirY = dy
     const stepX = dx * step
     const stepY = dy * step
-    while (travelled < maxSegLen && totalTravelled < MAX_TOTAL) {
+    const maxSegLen = segCapFor(dirX, dirY)
+    while (travelled < maxSegLen) {
       let nx = x + stepX
-      if (nx >= WORLD_W) nx -= WORLD_W
-      else if (nx < 0) nx += WORLD_W
+      let wrappedX = false
+      if (nx >= WORLD_W) { nx -= WORLD_W; wrappedX = true }
+      else if (nx < 0) { nx += WORLD_W; wrappedX = true }
       let ny = y + stepY
-      if (ny >= WORLD_H) ny -= WORLD_H
-      else if (ny < 0) ny += WORLD_H
+      let wrappedY = false
+      if (ny >= WORLD_H) { ny -= WORLD_H; wrappedY = true }
+      else if (ny < 0) { ny += WORLD_H; wrappedY = true }
 
       const gx = (nx / 20) | 0
       const gy = (ny / 20) | 0
       if (tGrid[gy * GRID_W + gx] !== 0) {
         hitWall = true
+        // 穿过世界接缝后撞进实体（如向上射到顶接缝、对面是底部基岩）：
+        // 这是"钻进接缝对面的地形"，不是可反射的墙面 → 直接终止本段，不产生反射。
+        if (wrappedX || wrappedY) { hitWall = false; break }
+        // 反射点必须退回到「最后一个空点」（x,y 当前就是），绝不能让下一段从墙体内部出发，
+        // 否则下一段的真实位移会算成"从墙内穿出"（实测会得到 dx≈±13176 这类荒谬值），
+        // 进而让反射光束打到墙背面的目标。
         const prevGx = (x / 20) | 0
         const prevGy = (y / 20) | 0
         const hitX = tGrid[prevGy * GRID_W + gx] !== 0
@@ -295,23 +310,23 @@ export function updateContinuousBeam(
       x = nx
       y = ny
       travelled += step
-      totalTravelled += step
     }
     if (hitWall && ctx.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
       hitWall = false
     }
-    const seg = { x1: 0, y1: 0, x2: x, y2: y }
-    if (segments.length > 0) {
-      const prev = segments[segments.length - 1]
-      seg.x1 = prev.x2
-      seg.y1 = prev.y2
-    } else {
-      seg.x1 = originX
-      seg.y1 = originY
-    }
-    const cut = truncateSegmentToFree(ctx.terrain, seg.x1, seg.y1, seg.x2, seg.y2)
+    // 段起点必须是本段真实的起点（segStartX/Y），不能用上一段"截断后"的端点：
+    // 截断会把上段端点拉回墙前，若拿它当本源点，本源点与 rawDx 就错位，
+    // 真实位移会算出 dx≈±13176 这种荒谬值（并让反射光束打到墙背面）。
+    const seg = { x1: segStartX, y1: segStartY, x2: x, y2: y, dx: 0, dy: 0 }
+    // 真实（未 wrap）位移：单段可能 > 半世界（如地面→天花板 2440px），
+    // 用 wrapDelta 会折叠成反向最短路径 → 段被截成几像素、反射丢失。
+    const rawDx = dirX * travelled
+    const rawDy = dirY * travelled
+    const cut = truncateSegmentToFree(ctx.terrain, seg.x1, seg.y1, seg.x2, seg.y2, rawDx, rawDy)
     seg.x2 = cut.x
     seg.y2 = cut.y
+    seg.dx = cut.dx
+    seg.dy = cut.dy
     segments.push(seg)
     if (cut.shortened) break
     if (blockedByObstacle || !hitWall) break

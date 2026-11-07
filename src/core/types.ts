@@ -234,7 +234,7 @@ export interface WorldInput {
 // 为保证两边都能工作，这里取「并集」：新字段 + 旧字段 + 两套 kind 都保留。
 export interface WorldEvent {
   /** 高斯枪光束分段（kind='laser' 时） */
-  segments?: { x1: number; y1: number; x2: number; y2: number }[]
+  segments?: { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }[]
   duration?: number
   color?: string
   kind:
