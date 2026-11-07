@@ -776,6 +776,21 @@ src/web/
   `霰弹枪/突击步枪/狙击步枪/火箭筒/高斯枪/M249/引力枪/手枪/冲锋枪`（防止 UI/文档再出现旧名）。
 - 测试 67/67；bundle 重新构建。
 
-### 10.50 尚未完成（设计位）
+### 10.50 友军伤害 / 自伤做成可选项（2026-11-07）
+
+用户："手雷，高斯枪，引力枪，火箭筒 都有友军伤害，其他关闭。所有枪械的友军伤害，自伤都做成可选项"。
+- `WeaponDef` 新增 `friendlyFire?: boolean`、`selfDamage?: boolean`；`GameConfig` 新增 `grenadeFriendlyFire`、`grenadeSelfDamage`。
+- 默认值：手雷 @config = true/true；高斯枪(4)/引力枪(6)/火箭筒(3) 武器上 = true/true；其余 6 把枪 = 关闭。
+- 生效路径：
+  - 弹丸命中玩家：友军仅在 `wep.friendlyFire` 时结算；自身仅在 `wep.selfDamage` 时结算；
+  - `explode()`：手雷读 config，枪械爆炸读各自 WeaponDef（地雷/迫击炮等无武器来源保持旧行为：不伤友军、可自伤）；
+  - 高斯光束：`selfDamage` 控制反射自伤、`friendlyFire` 控制友军穿透伤害（枪口第一段仍不自伤）。
+- 可调：`balanceOverrides.WEAPON_BOOL_KEYS` 加入两项 → 数值后台每把武器出现 friendlyFire/selfDamage 勾选框；
+  `CONFIG_BOOL_KEYS` 加入手雷两项 → 全局配置出现勾选框；运行时改 `WEAPONS[i].friendlyFire` 亦立即生效。
+- 验证（Node + 浏览器）：霰弹/突击/手枪/冲锋枪打队友 = 100（不掉血）；火箭筒/高斯枪 = 0；引力枪 = 79（爆炸衰减）；
+  高斯朝脚下开火自伤致死、突击自伤不掉血；手雷默认自伤 14 / 队友 0，关闭友伤后队友 100，关闭自伤后自己 100。
+- 测试 67→**69/69**（新增"默认开关表""友伤开关行为 + 运行时可选"两项护栏）；大厅规则面板加入友伤说明。
+
+### 10.51 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。

@@ -598,7 +598,8 @@ export class World {
           if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
           // 自伤：第一段（枪口出发）不伤自己，只有反射回来的光束才会打到自己
           if (t.id === p.id && b === 0) continue
-          if (t.id !== p.id && t.team === p.team && p.team !== 'ffa') continue
+          if (t.id === p.id && !wep.selfDamage) continue
+          if (t.id !== p.id && t.team === p.team && p.team !== 'ffa' && !wep.friendlyFire) continue
           const hx = wrapDeltaX(t.pos.x, nx)
           const hy = wrapDeltaY(t.pos.y - 24, ny)
           const isHead = Math.hypot(hx, hy) <= this.config.headRadius + 3
@@ -1115,7 +1116,13 @@ export class World {
         let hit = false
         for (const t of this.players) {
           if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue
-          if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== 'ffa') continue
+          // 友军伤害：默认关闭；只有显式开启 friendlyFire 的武器（高斯/引力/火箭）才会伤到队友
+          if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== 'ffa') {
+            const wepFF = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : undefined
+            if (!wepFF?.friendlyFire) continue
+          }
+          // 自伤：默认关闭（弹丸自身命中列表已含 owner；爆炸/反射等特殊路径另行处理）
+          if (t.id === pr.owner && !(pr.weaponId >= 0 && WEAPONS[pr.weaponId]?.selfDamage)) continue
           const dxHead = wrapDeltaX(t.pos.x, pr.pos.x)
           const dyHead = wrapDeltaY(t.pos.y - 24, pr.pos.y)
           if (Math.hypot(dxHead, dyHead) <= this.config.headRadius + pr.r) {
@@ -1263,7 +1270,15 @@ export class World {
       t.vel.y += (ny * knockback - 210) * falloff * sign
       const isSelf = t.id === atkId
       const isTeammate = !isSelf && t.team === atkTeam && t.team !== 'ffa'
-      if (!isTeammate) {
+      // 友伤/自伤开关：手雷走 config；枪械爆炸走各自的 WeaponDef 标记
+      const isGrenade = label === '手榴弹'
+      const srcWep = pr && pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : undefined
+      // 手雷走全局配置；枪械走各自 WeaponDef；地雷/迫击炮等非枪械来源保持旧行为（不伤友军、可自伤）
+      const ffAllowed = isGrenade ? this.config.grenadeFriendlyFire : (srcWep ? (srcWep.friendlyFire ?? false) : false)
+      const selfAllowed = isGrenade ? this.config.grenadeSelfDamage : (srcWep ? (srcWep.selfDamage ?? false) : true)
+      if (isTeammate && !ffAllowed) continue
+      if (isSelf && !selfAllowed) continue
+      {
         const dmg = Math.round(maxDamage * falloff * (isSelf ? 0.25 : 1))
         const headDist = Math.hypot(dx, wrapDeltaY(cy, t.pos.y - 26))
         const isHead = headDist < this.config.headRadius * 1.6 && dist < radius * 0.6

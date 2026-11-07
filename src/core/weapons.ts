@@ -33,6 +33,8 @@ export interface WeaponDef {
   farRange?: number        // 远距阈值：超过该距离命中按 farDamage 结算（狙击）
   farDamage?: number       // 超过 farRange 时的伤害（狙击 99，非爆头留 1 血）
   chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
+  friendlyFire?: boolean   // 是否对友军造成伤害（默认 false=关闭；手雷/高斯/引力/火箭开启）
+  selfDamage?: boolean     // 是否会对使用者自己造成伤害（默认 false；高斯反射光束等开启）
   damagePerSecond?: number // 持续光束每秒伤害（beam 武器）
   ammoPerSecond?: number   // 持续光束每秒耗弹（beam 武器）
   rocket?: boolean         // 渲染为火箭弹（直线慢速爆炸弹）
@@ -85,6 +87,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 520, recoil: 420, magSize: 1, maxReserve: 20,   // 1 发/弹匣，共 20 个弹匣；换弹 2s
     reloadTime: 2.0, fireDelay: 0, terrainRadius: 124,   // 射击间隔 = 0（节奏由 2s 换弹决定）
     explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.7, fuelMult: 0.7, ascendMult: 0.7, fovMult: 1.0, color: '#fb7185',
+    friendlyFire: true, selfDamage: true,   // 火箭筒：爆炸友伤/自伤
   },
   {
     id: 4, name: '高斯枪', shortName: '高斯枪', isSupplyOnly: true,
@@ -92,6 +95,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 3000, recoil: 0, magSize: 12, maxReserve: 48,   // 12 / 6每秒 = 连续 2 秒
     reloadTime: 4.0, fireDelay: 0, terrainRadius: 18,   // 换弹时间 ×2
     explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 3, beam: true,
+    friendlyFire: true, selfDamage: true,   // 高斯：反射光束可打到友军/自己
     damagePerSecond: 180, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',   // 伤害下调（240→180）；视野正常
   },
   {
@@ -107,6 +111,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1100, recoil: 240, magSize: 6, maxReserve: 18,
     reloadTime: 2.2, fireDelay: 0.9, terrainRadius: 130, lifeSeconds: 2.2,
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.7,
+    friendlyFire: true, selfDamage: true,   // 引力枪：爆炸友伤/自伤
     pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.0, color: '#a855f7',   // 引力场弯曲其他子弹
     falloffStart: 200, falloffEnd: 700, falloffMin: 0.12,   // 射程与霰弹类似（200→700），远端衰减更狠
   },
@@ -177,6 +182,8 @@ export interface GameConfig {
   respawnDelay: number
   loadoutLock: boolean
   randomSpawn: boolean     // 死亡竞赛：每次出生在随机安全点
+  grenadeFriendlyFire: boolean   // 手雷是否伤友军
+  grenadeSelfDamage: boolean     // 手雷是否伤自己
   fragMaxCharges: number   // 手雷最大充能数（自然回复）
   fragRechargeSeconds: number  // 每充能回复秒数
   dollMaxCharges: number    // 替身人偶最多可囤几个（只从补给箱获得）        // v2 规则：部署后锁定配装，仅重生前可换
@@ -212,6 +219,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   respawnDelay: 4.0,
   loadoutLock: true,
   randomSpawn: false,
+  grenadeFriendlyFire: true,
+  grenadeSelfDamage: true,
   fragMaxCharges: 1,
   fragRechargeSeconds: 6.0,
   dollMaxCharges: 2,

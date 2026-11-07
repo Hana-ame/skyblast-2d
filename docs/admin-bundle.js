@@ -111,7 +111,10 @@
       fuelMult: 0.7,
       ascendMult: 0.7,
       fovMult: 1,
-      color: "#fb7185"
+      color: "#fb7185",
+      friendlyFire: true,
+      selfDamage: true
+      // 火箭筒：爆炸友伤/自伤
     },
     {
       id: 4,
@@ -137,6 +140,9 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
+      friendlyFire: true,
+      selfDamage: true,
+      // 高斯：反射光束可打到友军/自己
       damagePerSecond: 180,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
@@ -192,6 +198,9 @@
       gravityScale: 0.02,
       passWalls: true,
       dragPerSecond: 0.7,
+      friendlyFire: true,
+      selfDamage: true,
+      // 引力枪：爆炸友伤/自伤
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
       fuelMult: 0.8,
@@ -287,6 +296,8 @@
     respawnDelay: 4,
     loadoutLock: true,
     randomSpawn: false,
+    grenadeFriendlyFire: true,
+    grenadeSelfDamage: true,
     fragMaxCharges: 1,
     fragRechargeSeconds: 6,
     dollMaxCharges: 2
@@ -351,7 +362,7 @@
     "farRange",
     "farDamage"
   ];
-  var WEAPON_BOOL_KEYS = ["explosive", "pierceOnHeadshot", "pierceAll", "passWalls"];
+  var WEAPON_BOOL_KEYS = ["explosive", "pierceOnHeadshot", "pierceAll", "passWalls", "friendlyFire", "selfDamage"];
   var CONFIG_NUMERIC_KEYS = [
     "maxHp",
     "respawnDelay",
@@ -368,7 +379,7 @@
     "watchtowerDuration",
     "watchtowerFovMult"
   ];
-  var CONFIG_BOOL_KEYS = ["randomSpawn", "loadoutLock"];
+  var CONFIG_BOOL_KEYS = ["randomSpawn", "loadoutLock", "grenadeFriendlyFire", "grenadeSelfDamage"];
   var num = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : null;

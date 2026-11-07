@@ -17,14 +17,14 @@ export const WEAPON_NUMERIC_KEYS: (keyof WeaponDef)[] = [
   'moveSpeedMult', 'fuelMult', 'ascendMult', 'fovMult',
   'falloffStart', 'falloffEnd', 'falloffMin', 'lifeSeconds', 'farRange', 'farDamage',
 ]
-export const WEAPON_BOOL_KEYS: (keyof WeaponDef)[] = ['explosive', 'pierceOnHeadshot', 'pierceAll', 'passWalls']
+export const WEAPON_BOOL_KEYS: (keyof WeaponDef)[] = ['explosive', 'pierceOnHeadshot', 'pierceAll', 'passWalls', 'friendlyFire', 'selfDamage']
 
 export const CONFIG_NUMERIC_KEYS: (keyof GameConfig)[] = [
   'maxHp', 'respawnDelay', 'headRadius', 'grenadeDamage', 'grenadeRadius', 'grenadeFuse',
   'fragMaxCharges', 'fragRechargeSeconds', 'dollMaxCharges', 'dollDuration',
   'mortarDamage', 'mortarRadius', 'watchtowerDuration', 'watchtowerFovMult',
 ]
-export const CONFIG_BOOL_KEYS: (keyof GameConfig)[] = ['randomSpawn', 'loadoutLock']
+export const CONFIG_BOOL_KEYS: (keyof GameConfig)[] = ['randomSpawn', 'loadoutLock', 'grenadeFriendlyFire', 'grenadeSelfDamage']
 
 const num = (v: unknown): number | null => {
   const n = Number(v)

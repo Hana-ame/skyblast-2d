@@ -384,6 +384,8 @@
               <p>· <strong class="text-white">快照同步</strong>：障碍物/地雷/占点/弹药点/补给箱全量进快照，多端一致（v2 的平行宇宙问题已消除）。</p>
               <p>· <strong class="text-white">环形世界</strong>：13200×4400 双轴无缝循环（上下也 wrap），跨缝瞄准/弹道/插值全部连续。</p>
               <p>· <strong class="text-white">补给规则</strong>：高斯枪/M249/引力枪只能从空投特武箱获得；替身人偶只能从粉色特殊补给箱获得充能（上限 2），无充能时不可用。</p>
+              <p>· <strong class="text-white">友军伤害</strong>：默认只有 <span class="text-amber-300">手榴弹 / 高斯枪 / 引力枪 / 火箭筒</span> 会伤害队友与自己，其余枪械友伤/自伤关闭；
+                两者均为可选项（数值后台可逐武器开关，手雷在全局配置里）。</p>
               <p>· <strong class="text-white">高斯反弹</strong>：高斯枪撞墙反弹 3 次后继续飞行。</p>
               <p class="text-slate-400">· PeerJS 配对面板将接入 net/transport/Peer.ts（联机入口为下一里程碑）。</p>
             </div>
@@ -525,6 +527,6 @@
   <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
   <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=3c5f676d96"></script>
+  <script src="./bundle.js?v=a0e24b61ac"></script>
 </body>
 </html>

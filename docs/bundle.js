@@ -334,7 +334,10 @@
       fuelMult: 0.7,
       ascendMult: 0.7,
       fovMult: 1,
-      color: "#fb7185"
+      color: "#fb7185",
+      friendlyFire: true,
+      selfDamage: true
+      // 火箭筒：爆炸友伤/自伤
     },
     {
       id: 4,
@@ -360,6 +363,9 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
+      friendlyFire: true,
+      selfDamage: true,
+      // 高斯：反射光束可打到友军/自己
       damagePerSecond: 180,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
@@ -415,6 +421,9 @@
       gravityScale: 0.02,
       passWalls: true,
       dragPerSecond: 0.7,
+      friendlyFire: true,
+      selfDamage: true,
+      // 引力枪：爆炸友伤/自伤
       pierceOnHeadshot: false,
       moveSpeedMult: 0.86,
       fuelMult: 0.8,
@@ -524,6 +533,8 @@
     respawnDelay: 4,
     loadoutLock: true,
     randomSpawn: false,
+    grenadeFriendlyFire: true,
+    grenadeSelfDamage: true,
     fragMaxCharges: 1,
     fragRechargeSeconds: 6,
     dollMaxCharges: 2
@@ -1115,7 +1126,8 @@
           for (const t of this.players) {
             if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
             if (t.id === p.id && b === 0) continue;
-            if (t.id !== p.id && t.team === p.team && p.team !== "ffa") continue;
+            if (t.id === p.id && !wep.selfDamage) continue;
+            if (t.id !== p.id && t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) continue;
             const hx = wrapDeltaX(t.pos.x, nx);
             const hy = wrapDeltaY(t.pos.y - 24, ny);
             const isHead = Math.hypot(hx, hy) <= this.config.headRadius + 3;
@@ -1600,7 +1612,11 @@
           let hit = false;
           for (const t of this.players) {
             if (t.respawnTimer > 0 || !t.deployed || !t.alive || pr.hitTargets.includes(t.id)) continue;
-            if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== "ffa") continue;
+            if (t.id !== pr.owner && t.team === this.ownerTeamOf(pr.owner) && t.team !== "ffa") {
+              const wepFF = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
+              if (!wepFF?.friendlyFire) continue;
+            }
+            if (t.id === pr.owner && !(pr.weaponId >= 0 && WEAPONS[pr.weaponId]?.selfDamage)) continue;
             const dxHead = wrapDeltaX(t.pos.x, pr.pos.x);
             const dyHead = wrapDeltaY(t.pos.y - 24, pr.pos.y);
             if (Math.hypot(dxHead, dyHead) <= this.config.headRadius + pr.r) {
@@ -1742,7 +1758,13 @@
         t.vel.y += (ny * knockback - 210) * falloff * sign;
         const isSelf = t.id === atkId;
         const isTeammate = !isSelf && t.team === atkTeam && t.team !== "ffa";
-        if (!isTeammate) {
+        const isGrenade = label === "\u624B\u69B4\u5F39";
+        const srcWep = pr && pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
+        const ffAllowed = isGrenade ? this.config.grenadeFriendlyFire : srcWep ? srcWep.friendlyFire ?? false : false;
+        const selfAllowed = isGrenade ? this.config.grenadeSelfDamage : srcWep ? srcWep.selfDamage ?? false : true;
+        if (isTeammate && !ffAllowed) continue;
+        if (isSelf && !selfAllowed) continue;
+        {
           const dmg = Math.round(maxDamage * falloff * (isSelf ? 0.25 : 1));
           const headDist = Math.hypot(dx, wrapDeltaY(cy, t.pos.y - 26));
           const isHead = headDist < this.config.headRadius * 1.6 && dist < radius * 0.6;
@@ -2121,7 +2143,7 @@
     "farRange",
     "farDamage"
   ];
-  var WEAPON_BOOL_KEYS = ["explosive", "pierceOnHeadshot", "pierceAll", "passWalls"];
+  var WEAPON_BOOL_KEYS = ["explosive", "pierceOnHeadshot", "pierceAll", "passWalls", "friendlyFire", "selfDamage"];
   var CONFIG_NUMERIC_KEYS = [
     "maxHp",
     "respawnDelay",
@@ -2138,7 +2160,7 @@
     "watchtowerDuration",
     "watchtowerFovMult"
   ];
-  var CONFIG_BOOL_KEYS = ["randomSpawn", "loadoutLock"];
+  var CONFIG_BOOL_KEYS = ["randomSpawn", "loadoutLock", "grenadeFriendlyFire", "grenadeSelfDamage"];
   var num = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : null;

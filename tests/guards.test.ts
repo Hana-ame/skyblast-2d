@@ -6,6 +6,7 @@ import { World } from '../src/core/sim/world.ts'
 import { SPAWN_POINTS } from '../src/core/sim/world.ts'
 import { allViolations, layoutViolations, weaponViolations } from '../src/core/invariants.ts'
 import { defaultMapData } from '../src/core/map.ts'
+import { WEAPONS, DEFAULT_CONFIG } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
@@ -231,5 +232,73 @@ test('护栏·高斯枪跨世界接缝：光束连续（不中断）且屏幕不
   for (const sc of screens) {
     const sl = Math.hypot(sc.x2 - sc.x1, sc.y2 - sc.y1)
     assert.ok(Math.abs(sl - len) < 1e-6, `screen segment length ${sl.toFixed(1)} != world length ${len.toFixed(1)}`)
+  }
+})
+
+
+test('护栏·友伤/自伤为可选项：默认只允许手雷/高斯/引力/火箭，其余关闭', () => {
+  // 需要的武器开启
+  for (const idx of [3, 4, 6]) {   // 火箭筒 / 高斯枪 / 引力枪
+    assert.equal(WEAPONS[idx].friendlyFire, true, `${WEAPONS[idx].name} friendlyFire on`)
+    assert.equal(WEAPONS[idx].selfDamage, true, `${WEAPONS[idx].name} selfDamage on`)
+  }
+  // 其余枪械关闭
+  for (const idx of [0, 1, 2, 5, 7, 8]) {
+    assert.ok(!WEAPONS[idx].friendlyFire, `${WEAPONS[idx].name} friendlyFire off by default`)
+    assert.ok(!WEAPONS[idx].selfDamage, `${WEAPONS[idx].name} selfDamage off by default`)
+  }
+  // 手雷走全局配置且默认开启
+  const cfg = { ...DEFAULT_CONFIG }
+  assert.equal(cfg.grenadeFriendlyFire, true, 'grenade friendly fire on by default')
+  assert.equal(cfg.grenadeSelfDamage, true, 'grenade self damage on by default')
+})
+
+test('护栏·友伤开关行为：关闭后队友不掉血，开启后掉血', () => {
+  const mk = (weaponIdx: number) => {
+    const w = new World(33000 + weaponIdx)
+    w.config.randomSpawn = false
+    const shooter = w.addPlayer('S', 'red')
+    const mate = w.addPlayer('M', 'red')       // 同队
+    shooter.weaponIndex = weaponIdx
+    shooter.pos = { x: 3000, y: 2784 }
+    mate.pos = { x: 3200, y: 2784 }
+    return { w, shooter, mate }
+  }
+  // 突击步枪（默认关闭友伤）：队友 100 血
+  {
+    const { w, shooter, mate } = mk(1)
+    for (let i = 0; i < 30; i++) {
+      w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })], [mate.id, input()]]))
+      w.drainEvents()
+    }
+    assert.equal(mate.hp, 100, `rifle must not hurt teammate, hp=${mate.hp}`)
+  }
+  // 高斯枪（开启友伤）：队友掉血
+  {
+    const { w, shooter, mate } = mk(4)
+    shooter.ammo[4] = 12
+    shooter.reserveAmmo[4] = 48
+    for (let i = 0; i < 30; i++) {
+      w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })], [mate.id, input()]]))
+      w.drainEvents()
+    }
+    assert.ok(mate.hp < 100, `gauss must hurt teammate, hp=${mate.hp}`)
+  }
+  // 开关可运行时关闭：把高斯 friendlyFire 临时设回 false → 队友不掉血
+  {
+    const { w, shooter, mate } = mk(4)
+    const prev = WEAPONS[4].friendlyFire
+    WEAPONS[4].friendlyFire = false
+    try {
+      shooter.ammo[4] = 12
+      shooter.reserveAmmo[4] = 48
+      for (let i = 0; i < 30; i++) {
+        w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })], [mate.id, input()]]))
+        w.drainEvents()
+      }
+      assert.equal(mate.hp, 100, 'friendlyFire toggle is a runtime option')
+    } finally {
+      WEAPONS[4].friendlyFire = prev
+    }
   }
 })
