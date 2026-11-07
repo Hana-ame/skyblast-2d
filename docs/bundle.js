@@ -101,19 +101,8 @@
   function ARCH_BLOCKS() {
     const SIDE = 160;
     const xs = [5700, 6e3, 6300, 6600, 6900, 7200, 7500];
-    const rowMidTops = [2231, 1678, 1125, 572];
-    const out = [];
-    for (const mid of rowMidTops) {
-      const tops = xs.map((_, i) => {
-        const distFromMid = Math.abs(i - 3);
-        const arch = mid + distFromMid * 160;
-        return arch + (i % 2 === 0 ? 0 : 0);
-      });
-      for (let i = 0; i < xs.length; i++) {
-        out.push({ x: xs[i] - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" });
-      }
-    }
-    return out;
+    const tops = [2700, 2500, 2620, 2400, 2620, 2500, 2700];
+    return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" }));
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -1579,18 +1568,12 @@
           pr.vel.y *= k;
         }
         if (!pr.isGravityOrb && !pr.beam) {
-          let absorbed = false;
           for (const orb of this.projectiles) {
             if (!orb.isGravityOrb || orb.life <= 0) continue;
             const dx2 = wrapDeltaX(pr.pos.x, orb.pos.x);
             const dy2 = wrapDeltaY(pr.pos.y, orb.pos.y);
             const d = Math.hypot(dx2, dy2);
             const FIELD = 360;
-            const ABSORB = 46;
-            if (d <= ABSORB) {
-              absorbed = true;
-              break;
-            }
             if (d > FIELD) continue;
             const falloff = 1 - d / FIELD;
             const cur = Math.atan2(pr.vel.y, pr.vel.x);
@@ -1598,16 +1581,13 @@
             let delta = want - cur;
             while (delta > Math.PI) delta -= Math.PI * 2;
             while (delta < -Math.PI) delta += Math.PI * 2;
-            const bend = Math.sign(delta) * Math.min(Math.abs(delta), 7 * falloff * dt);
+            const bend = Math.sign(delta) * Math.min(Math.abs(delta), (0.5 + 8.5 * falloff) * dt);
             const cosB = Math.cos(bend);
             const sinB = Math.sin(bend);
             const vx = pr.vel.x;
-            pr.vel.x = vx * cosB - pr.vel.y * sinB;
-            pr.vel.y = vx * sinB + pr.vel.y * cosB;
-          }
-          if (absorbed) {
-            pr.life = 0;
-            continue;
+            const vy = pr.vel.y;
+            pr.vel.x = vx * cosB - vy * sinB;
+            pr.vel.y = vx * sinB + vy * cosB;
           }
         }
         pr.vel.y += g * pr.gravityScale * dt;

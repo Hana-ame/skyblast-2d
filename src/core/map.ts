@@ -41,28 +41,15 @@ export function defaultMapData(): MapData {
   return { name: '天花板竞技场', solids }
 }
 
-/** 拱形方块（垂直梯子）：空口 x 5600~7600 内 4 排 × 7 个正方形（边长 160），中心 x 5700..7500 步长 300。
- *  每排顶面 y 呈拱形（中高侧低）、相邻一高一低交错；排距 553（喷气单段可达），
- *  从近地面（排 1 中块顶 2231）逐排升到板顶（280）附近，玩家喷气+落块逐排上到天花板。
- *  排 1..4 中块顶 y：2231 / 1678 / 1125 / 572。 */
+/** 拱形方块（落脚点，非梯子）：空口 x 5600~7600 内一排 7 个正方形（边长 160），中心 x 5700..7500 步长 300。
+ *  顶面 y 从两侧 2700 升到中间 2400（拱形），相邻方块一高一低交错（间隔放置）。
+ *  玩家从地面喷气可跳上方块（落脚），但**上不去天花板**（用户：天花板纯上限，不让玩家爬上去）。
+ *  方块贴近地面、位于空口内，玩家跳方块落脚观赏，不构成通往天花板（板顶 280）的梯子。 */
 function ARCH_BLOCKS(): MapSolid[] {
   const SIDE = 160
   const xs = [5700, 6000, 6300, 6600, 6900, 7200, 7500]
-  // 每排中块顶（最高）y；侧块比中块低 320（拱形），相邻一高一低
-  const rowMidTops = [2231, 1678, 1125, 572]
-  const out: MapSolid[] = []
-  for (const mid of rowMidTops) {
-    // 拱形：中块（index 3）最高，向两侧降低；相邻一高一低（±160 交错）
-    const tops = xs.map((_, i) => {
-      const distFromMid = Math.abs(i - 3)
-      const arch = mid + distFromMid * 160      // 中高侧低：距中越远越低（y 越大）
-      return arch + (i % 2 === 0 ? 0 : 0)       // 相邻一高一低由步长 160 自然交错
-    })
-    for (let i = 0; i < xs.length; i++) {
-      out.push({ x: xs[i] - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: 'block' as const })
-    }
-  }
-  return out
+  const tops = [2700, 2500, 2620, 2400, 2620, 2500, 2700]
+  return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: 'block' as const }))
 }
 
 /** 校验/清洗外部地图 JSON（编辑器导入、localStorage） */

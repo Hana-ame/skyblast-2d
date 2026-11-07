@@ -24,19 +24,8 @@
   function ARCH_BLOCKS() {
     const SIDE = 160;
     const xs = [5700, 6e3, 6300, 6600, 6900, 7200, 7500];
-    const rowMidTops = [2231, 1678, 1125, 572];
-    const out = [];
-    for (const mid of rowMidTops) {
-      const tops = xs.map((_, i) => {
-        const distFromMid = Math.abs(i - 3);
-        const arch = mid + distFromMid * 160;
-        return arch + (i % 2 === 0 ? 0 : 0);
-      });
-      for (let i = 0; i < xs.length; i++) {
-        out.push({ x: xs[i] - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" });
-      }
-    }
-    return out;
+    const tops = [2700, 2500, 2620, 2400, 2620, 2500, 2700];
+    return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" }));
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;

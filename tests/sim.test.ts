@@ -984,7 +984,7 @@ test('手榴弹不黏：落地后仍有明显反弹与滚动', () => {
 })
 
 
-test('引力枪防御：引力场近距吸收其他枪的子弹', () => {
+test('引力枪防御：引力场只弯曲子弹方向，不消弹', () => {
   const w = new World(211)
   w.terrain.addSolidBlock(2000, 1000, 2400, 20, '#334155', '#334155', 'platform', 'field')
   const shooter = w.addPlayer('S', 'red')
@@ -992,34 +992,69 @@ test('引力枪防御：引力场近距吸收其他枪的子弹', () => {
   shooter.weaponIndex = 1   // 突击步枪
   shooter.pos = { x: 2300, y: 984 }
   victim.pos = { x: 3300, y: 984 }
-  // 引力弹放在弹道正前方（源与目标之间，距飞来的子弹路径 <46px）
+  // 引力弹放在弹道旁（偏离弹道 80px，处于 360px 场内）
   w.projectiles.push({
-    id: 900010, owner: victim.id, pos: { x: 2750, y: 972 }, vel: { x: 0, y: 0 }, life: 8, r: 8.5,
+    id: 900010, owner: victim.id, pos: { x: 2750, y: 892 }, vel: { x: 0, y: 0 }, life: 8, r: 8.5,
     damage: 1, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
     pierceOnHeadshot: false, pierceAll: false, isGravityOrb: true, passWalls: false,
     beam: false, rocket: false, bounces: 0, dragPerSecond: 0.7, weaponId: 6, curveRate: 0,
     weaponLabel: '引力枪', color: '#a855f7', hitTargets: [],
   } as never)
   w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
-  assert.ok(w.projectiles.some(p => p.weaponId === 1), 'bullet spawned')
-  for (let i = 0; i < 30; i++) w.step(DT, new Map([[shooter.id, input()]]))
-  assert.ok(!w.projectiles.some(p => p.weaponId === 1), 'bullet absorbed by gravity field')
-  assert.ok(victim.hp >= 100, `victim protected by gravity field, hp=${victim.hp}`)
+  const bullet = w.projectiles.find(p => p.weaponId === 1)
+  assert.ok(bullet, 'bullet spawned')
+  const vy0 = bullet!.vel.y
+  for (let i = 0; i < 20; i++) w.step(DT, new Map([[shooter.id, input()]]))
+  const still = w.projectiles.find(p => p.id === bullet!.id)
+  assert.ok(still, 'bullet is NOT absorbed by gravity field')
+  assert.ok(Math.abs(still!.vel.y - vy0) > 1, `bullet direction changed by gravity field, vy ${vy0.toFixed(1)} -> ${still!.vel.y.toFixed(1)}`)
+  assert.ok(still!.life > 0, 'bullet still alive')
 })
 
+test('引力枪防御：引力场让子弹明显偏转（不吞弹）', () => {
+  // 对照组（无引力弹）与实验组（引力弹在弹道上方 160px）比较弹道偏移
+  const run = (withOrb: boolean): { vy: number; alive: boolean } => {
+    const w = new World(212)
+    w.terrain.addSolidBlock(2000, 1000, 2400, 20, '#334155', '#334155', 'platform', 'field')
+    const shooter = w.addPlayer('S', 'red')
+    const orbOwner = w.addPlayer('O', 'blue')
+    shooter.weaponIndex = 1   // 突击步枪（1500px/s，横向平射）
+    shooter.pos = { x: 2300, y: 984 }
+    orbOwner.pos = { x: 3000, y: 984 }
+    if (withOrb) {
+      w.projectiles.push({
+        id: 900011, owner: orbOwner.id, pos: { x: 2650, y: 812 }, vel: { x: 0, y: 0 }, life: 8, r: 8.5,
+        damage: 1, headshotMult: 1, explosive: false, terrainRadius: 0, gravityScale: 0,
+        pierceOnHeadshot: false, pierceAll: false, isGravityOrb: true, passWalls: false,
+        beam: false, rocket: false, bounces: 0, dragPerSecond: 0.7, weaponId: 6, curveRate: 0,
+        weaponLabel: '引力枪', color: '#a855f7', hitTargets: [],
+      } as never)
+    }
+    w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
+    const bullet = w.projectiles.find(p => p.weaponId === 1)!
+    for (let i = 0; i < 16; i++) w.step(DT, new Map([[shooter.id, input()]]))
+    const still = w.projectiles.find(p => p.id === bullet.id)
+    return { vy: still?.vel.y ?? NaN, alive: !!still }
+  }
+  const control = run(false)
+  const bent = run(true)
+  assert.ok(bent.alive, 'bullet survives the gravity field (not absorbed)')
+  assert.ok(Math.abs(control.vy) < 20, `control bullet flies (nearly) straight, vy=${control.vy.toFixed(1)}`)
+  assert.ok(Math.abs(bent.vy - control.vy) > 60, `gravity field bends the bullet (control vy=${control.vy.toFixed(1)}, bent vy=${bent.vy.toFixed(1)})`)
+})
 
 test('地图编辑器数据：默认地图/清洗/自定义地图可被 World 使用', () => {
   const def = defaultMapData()
-  assert.ok(def.solids.length === 30, `default map = 2 ceiling slabs + 4x7 arch blocks, got ${def.solids.length}`)
+  assert.ok(def.solids.length === 9, `default map = 2 ceiling slabs + 7 arch blocks, got ${def.solids.length}`)
   // 天花板：左右两块实心板，正中 x 5600~7600 留空
   const w0 = new World(310, def)
   assert.ok(w0.terrain.isSolidAt(1000, 320), 'left ceiling slab solid')
   assert.ok(w0.terrain.isSolidAt(10000, 320), 'right ceiling slab solid')
   assert.ok(!w0.terrain.isSolidAt(6600, 320), 'ceiling hole open at center (above middle block)')
-  // 拱形方块（垂直梯子 4 排）：中块 6600 排 1 顶 2231（最高），侧块 5700 顶 2711（最低），方块间空隙可通行
-  assert.ok(w0.terrain.isSolidAt(6600, 2291), 'arch middle block solid (top 2231)')
-  assert.ok(w0.terrain.isSolidAt(5700, 2771), 'arch side block solid (top 2711)')
-  assert.ok(!w0.terrain.isSolidAt(6450, 2291), 'arch gap between blocks is open')
+  // 拱形方块：中块 6600 顶面 2400（最高），侧块 5700 顶面 2700（最低），方块间空隙可通行
+  assert.ok(w0.terrain.isSolidAt(6600, 2460), 'arch middle block solid (top 2400)')
+  assert.ok(w0.terrain.isSolidAt(5700, 2760), 'arch side block solid (top 2700)')
+  assert.ok(!w0.terrain.isSolidAt(6450, 2460), 'arch gap between blocks is open')
   // 清洗：非法项丢弃、kind 回退
   const clean = sanitizeMapData({ name: 't', solids: [
     { x: 100, y: 2500, w: 60, h: 20, kind: 'platform' },

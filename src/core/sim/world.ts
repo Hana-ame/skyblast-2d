@@ -1074,39 +1074,30 @@ export class World {
         pr.vel.x *= k
         pr.vel.y *= k
       }
-      // 引力场（防御）：弯曲**其他枪射出的子弹**，并在近距直接吸收掉这些子弹
+      // 引力场（防御）：只**改变其他枪子弹的方向**（弯曲弹道）——不吞弹、不消弹、不减速。
+      // 子弹仍会继续飞行并保留原伤害；体贴着引力弹掠过会被强烈弯折（可用来拨开子弹）。
       if (!pr.isGravityOrb && !pr.beam) {
-        let absorbed = false
         for (const orb of this.projectiles) {
           if (!orb.isGravityOrb || orb.life <= 0) continue
           const dx = wrapDeltaX(pr.pos.x, orb.pos.x)
           const dy = wrapDeltaY(pr.pos.y, orb.pos.y)
           const d = Math.hypot(dx, dy)
           const FIELD = 360
-          const ABSORB = 46
-          if (d <= ABSORB) {
-            // 近距离把敌方弹丸吸进引力弹（防御核心）
-            absorbed = true
-            break
-          }
           if (d > FIELD) continue
           const falloff = 1 - d / FIELD
-          // 期望方向 = 朝引力弹；速度方向绕该方向旋转（越近弯得越狠）
+          // 越近弯折越强：0.5 rad/s（边缘）→ 9 rad/s（贴身）
           const cur = Math.atan2(pr.vel.y, pr.vel.x)
           const want = Math.atan2(dy, dx)
           let delta = want - cur
           while (delta > Math.PI) delta -= Math.PI * 2
           while (delta < -Math.PI) delta += Math.PI * 2
-          const bend = Math.sign(delta) * Math.min(Math.abs(delta), 7.0 * falloff * dt)  // 最大 7 rad/s
+          const bend = Math.sign(delta) * Math.min(Math.abs(delta), (0.5 + 8.5 * falloff) * dt)
           const cosB = Math.cos(bend)
           const sinB = Math.sin(bend)
           const vx = pr.vel.x
-          pr.vel.x = vx * cosB - pr.vel.y * sinB
-          pr.vel.y = vx * sinB + pr.vel.y * cosB
-        }
-        if (absorbed) {
-          pr.life = 0
-          continue
+          const vy = pr.vel.y
+          pr.vel.x = vx * cosB - vy * sinB
+          pr.vel.y = vx * sinB + vy * cosB
         }
       }
       pr.vel.y += g * pr.gravityScale * dt
