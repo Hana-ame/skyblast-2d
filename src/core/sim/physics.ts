@@ -95,3 +95,13 @@ export function substep(dt: number, maxStep = 1 / 120): number[] {
   for (let i = 0; i < n; i++) out.push(step)
   return out
 }
+
+
+/**
+ * 射击后坐力：沿瞄准反方向、**各向同性**（水平/垂直/斜向使用同一系数）。
+ * 旧实现水平 ×0.56、垂直 ×0.65，导致霰弹上下后坐明显大于左右；这里统一为同一系数。
+ */
+export const RECOIL_SCALE = 0.56
+export function recoilDelta(recoil: number, aim: number): { x: number; y: number } {
+  return { x: -Math.cos(aim) * recoil * RECOIL_SCALE, y: -Math.sin(aim) * recoil * RECOIL_SCALE }
+}

@@ -3,7 +3,7 @@
 //   环形地图碰撞 / 7 主武器+8 副武器 / 爆头穿透 / 有限备弹换弹 / 替身人偶回溯 /
 //   受重力地雷(直击+瞬发) / 空袭 / 可破坏障碍物 / 占领点 / 弹药经济 / 补给箱 / 迫击炮
 // 单位制：秒制（v2 px/frame@60 → px/s：速度×60）。随机量全部走注入的 Rng。
-import { applyGravity, jetpack, jump, move, updateJetpackFuel, getPhysicsParams } from './physics.ts'
+import { applyGravity, jetpack, jump, move, updateJetpackFuel, getPhysicsParams, recoilDelta } from './physics.ts'
 import { Terrain, OBSTACLE_PRESETS, TILE_SIZE } from '../terrain.ts'
 import type { MapData } from '../map.ts'
 import { Rng } from '../rng.ts'
@@ -438,10 +438,11 @@ export class World {
     p.fireCooldown = wep.fireDelay
     if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
-    // 后坐力（v2 recoil×0.56/0.65）
+    // 后坐力：各向同性（水平/垂直同一系数，修复霰弹上下>左右的问题）
     if (wep.recoil > 0) {
-      p.vel.x -= Math.cos(p.aim) * wep.recoil * 0.56
-      p.vel.y -= Math.sin(p.aim) * wep.recoil * 0.65
+      const rk = recoilDelta(wep.recoil, p.aim)
+      p.vel.x += rk.x
+      p.vel.y += rk.y
     }
 
     const mx = wrapX(p.pos.x + Math.cos(p.aim) * 24)

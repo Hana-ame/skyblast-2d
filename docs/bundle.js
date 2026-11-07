@@ -48,6 +48,10 @@
     const next = active ? fuel - P.jetpackDrain * dt : onGround ? fuel + P.jetpackRecharge * dt : fuel;
     return Math.min(maxFuel, Math.max(0, next));
   }
+  var RECOIL_SCALE = 0.56;
+  function recoilDelta(recoil, aim) {
+    return { x: -Math.cos(aim) * recoil * RECOIL_SCALE, y: -Math.sin(aim) * recoil * RECOIL_SCALE };
+  }
 
   // src/core/wrap.ts
   var WORLD_W = 13200;
@@ -976,8 +980,9 @@
       p.fireCooldown = wep.fireDelay;
       if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
       if (wep.recoil > 0) {
-        p.vel.x -= Math.cos(p.aim) * wep.recoil * 0.56;
-        p.vel.y -= Math.sin(p.aim) * wep.recoil * 0.65;
+        const rk = recoilDelta(wep.recoil, p.aim);
+        p.vel.x += rk.x;
+        p.vel.y += rk.y;
       }
       const mx = wrapX(p.pos.x + Math.cos(p.aim) * 24);
       const my = p.pos.y - 12 + Math.sin(p.aim) * 24;

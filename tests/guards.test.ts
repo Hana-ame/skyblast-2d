@@ -9,6 +9,7 @@ import { defaultMapData } from '../src/core/map.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
+import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
 
 test('护栏·武器约定：跨武器规则/数值范围全部满足', () => {
   const vs = weaponViolations()
@@ -73,4 +74,18 @@ test('护栏·地图数据：默认 solids 均在边界内且 kind 合法', () =
     assert.ok(s.w > 0 && s.h > 0, `solid size invalid: ${JSON.stringify(s)}`)
     assert.ok(kinds.has(s.kind), `unknown kind ${s.kind}`)
   }
+})
+
+
+test('护栏·后坐力各向同性：水平/垂直/斜向使用同一系数', () => {
+  const r = 1560
+  const right = recoilDelta(r, 0)
+  const up = recoilDelta(r, -Math.PI / 2)
+  const down = recoilDelta(r, Math.PI / 2)
+  const diag = recoilDelta(r, Math.PI / 4)
+  const mag = (v: { x: number; y: number }) => Math.hypot(v.x, v.y)
+  assert.ok(Math.abs(Math.abs(right.x) - Math.abs(up.y)) < 1e-9, 'horizontal vs vertical magnitude equal')
+  assert.ok(Math.abs(mag(up) - mag(right)) < 1e-9, 'magnitudes identical in all directions')
+  assert.ok(Math.abs(mag(diag) - r * RECOIL_SCALE) < 1e-9, 'diagonal magnitude same as axial')
+  assert.ok(Math.abs(right.y) < 1e-9 && Math.abs(up.x) < 1e-9, 'no cross-axis components')
 })
