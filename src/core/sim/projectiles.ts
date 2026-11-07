@@ -236,21 +236,16 @@ export function updateContinuousBeam(
     const maxSegLen = segCapFor(dirX, dirY)
     while (travelled < maxSegLen) {
       let nx = x + stepX
-      let wrappedX = false
-      if (nx >= WORLD_W) { nx -= WORLD_W; wrappedX = true }
-      else if (nx < 0) { nx += WORLD_W; wrappedX = true }
+      if (nx >= WORLD_W) nx -= WORLD_W
+      else if (nx < 0) nx += WORLD_W
       let ny = y + stepY
-      let wrappedY = false
-      if (ny >= WORLD_H) { ny -= WORLD_H; wrappedY = true }
-      else if (ny < 0) { ny += WORLD_H; wrappedY = true }
+      if (ny >= WORLD_H) ny -= WORLD_H
+      else if (ny < 0) ny += WORLD_H
 
       const gx = (nx / 20) | 0
       const gy = (ny / 20) | 0
       if (tGrid[gy * GRID_W + gx] !== 0) {
         hitWall = true
-        // 穿过世界接缝后撞进实体（如向上射到顶接缝、对面是底部基岩）：
-        // 这是"钻进接缝对面的地形"，不是可反射的墙面 → 直接终止本段，不产生反射。
-        if (wrappedX || wrappedY) { hitWall = false; break }
         // 反射点必须退回到「最后一个空点」（x,y 当前就是），绝不能让下一段从墙体内部出发，
         // 否则下一段的真实位移会算成"从墙内穿出"（实测会得到 dx≈±13176 这类荒谬值），
         // 进而让反射光束打到墙背面的目标。

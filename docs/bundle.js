@@ -1141,31 +1141,15 @@
       const maxSegLen = segCapFor(dirX, dirY);
       while (travelled < maxSegLen) {
         let nx = x + stepX;
-        let wrappedX = false;
-        if (nx >= WORLD_W) {
-          nx -= WORLD_W;
-          wrappedX = true;
-        } else if (nx < 0) {
-          nx += WORLD_W;
-          wrappedX = true;
-        }
+        if (nx >= WORLD_W) nx -= WORLD_W;
+        else if (nx < 0) nx += WORLD_W;
         let ny = y + stepY;
-        let wrappedY = false;
-        if (ny >= WORLD_H) {
-          ny -= WORLD_H;
-          wrappedY = true;
-        } else if (ny < 0) {
-          ny += WORLD_H;
-          wrappedY = true;
-        }
+        if (ny >= WORLD_H) ny -= WORLD_H;
+        else if (ny < 0) ny += WORLD_H;
         const gx = nx / 20 | 0;
         const gy = ny / 20 | 0;
         if (tGrid[gy * GRID_W + gx] !== 0) {
           hitWall = true;
-          if (wrappedX || wrappedY) {
-            hitWall = false;
-            break;
-          }
           const prevGx = x / 20 | 0;
           const prevGy = y / 20 | 0;
           const hitX = tGrid[prevGy * GRID_W + gx] !== 0;

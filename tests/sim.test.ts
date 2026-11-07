@@ -2,6 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { World } from '../src/core/sim/world.ts'
+import type { MapSolid } from '../src/core/map.ts'
 import { defaultWorldInput } from '../src/core/types.ts'
 import type { WorldInput, SecondaryIntent } from '../src/core/types.ts'
 import { ServerSim } from '../src/net/ServerSim.ts'
@@ -1094,29 +1095,46 @@ test('地图编辑器数据：默认地图/清洗/自定义地图可被 World �
 })
 
 
-test('高斯枪自伤：反射回来的光束会伤到自己（枪口第一段不自伤）', () => {
-  // ① 正前方开火：不自伤（站在天花板空口内、方块间隙 x=6450 下方朝上，上方无遮挡）
-  const w = new World(221)
-  const p = w.addPlayer('P', 'ffa')
-  p.weaponIndex = 4
-  p.pos = { x: 6450, y: 2784 }   // 方块间空隙，上方无方块/天花板
-  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
-  assert.equal(p.hp, 100, 'forward beam does not hurt the shooter')
-
-  // ② 朝脚边地面开火：光束撞地反射回来 → 打到自己
-  const w2 = new World(222)
-  const q = w2.addPlayer('Q', 'ffa')
-  q.weaponIndex = 4
-  q.pos = { x: 6450, y: 2784 }
-  let damaged = false
-  for (let i = 0; i < 60; i++) {
-    w2.step(DT, new Map([[q.id, input({ fire: true, aim: Math.PI / 2 })]]))
-    w2.drainEvents()
-    if (q.hp < 100) { damaged = true; break }
+test('高斯枪自伤：只有枪口第一小段不自伤，其余反射都会伤到自己', () => {
+  // 设计意图：枪口第一段（b=0）不伤自己，否则玩家一开火就自杀；
+  // 但**任何反射回来的段**都必须自伤（包括绕世界接缝撞基岩再弹回来的情况）。
+  const probe = (label: string, solids: MapSolid[], aim: number, frames = 90) => {
+    const w = new World(41000 + solids.length, { name: label, solids })
+    w.config.randomSpawn = false
+    const p = w.addPlayer('P', 'ffa')
+    p.weaponIndex = 4
+    p.ammo[4] = 24
+    p.reserveAmmo[4] = 48
+    p.pos = { x: 6450, y: 2784 }
+    let segCount = -1
+    for (let i = 0; i < frames; i++) {
+      w.step(DT, new Map([[p.id, input({ fire: true, aim })]]))
+      for (const e of w.drainEvents()) if (e.kind === 'laser' && segCount < 0) segCount = e.segments!.length
+    }
+    return { p, segCount }
   }
-  assert.ok(damaged, `reflected beam should damage the shooter, hp=${q.hp}`)
-})
 
+  // ① 枪口第一段不自伤：空旷处水平开火，光束不撞任何东西 → 1 段、不掉血
+  const open = probe('open', [], 0)
+  assert.equal(open.segCount, 1, `open shot has a single forward segment, got ${open.segCount}`)
+  assert.equal(open.p.hp, 100, 'the first (muzzle) segment must not damage the shooter')
+
+  // ② 朝脚下地面开火：撞地反射 → 自伤
+  const ground = probe('ground', [], Math.PI / 2)
+  assert.ok(ground.segCount >= 2, `ground shot reflects, got ${ground.segCount} segments`)
+  assert.ok(ground.p.hp < 100, `reflected beam damages the shooter, hp=${ground.p.hp}`)
+
+  // ③ 眼前一堵墙：撞墙反射 → 自伤
+  const wall = probe('wall', [{ x: 6520, y: 2500, w: 40, h: 400, kind: 'cover' }], 0)
+  assert.ok(wall.segCount >= 2, `wall shot reflects, got ${wall.segCount} segments`)
+  assert.ok(wall.p.hp < 100, `reflected beam damages the shooter, hp=${wall.p.hp}`)
+
+  // ④ 向上穿过天花板空口 → 绕世界上下接缝撞到底部基岩 → 反射回来 → 自伤
+  //    （这条最容易被误判成"接缝穿模"而错误地终止反射，必须显式锁住）
+  const seam = probe('seam', [], -Math.PI / 2)
+  assert.ok(seam.segCount >= 2, `upward shot crossing the world seam reflects, got ${seam.segCount} segments`)
+  assert.ok(seam.p.hp < 100, `reflection back across the seam damages the shooter, hp=${seam.p.hp}`)
+})
 
 test('数值后台覆盖：清洗/夹取/应用武器与全局参数', () => {
   const raw = sanitizeOverrides({
