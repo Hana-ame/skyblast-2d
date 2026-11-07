@@ -59,9 +59,13 @@ function buildLocalInput(): WorldInput {
 }
 
 function onLocalDeath(): void {
-  // 阵亡：打开死亡界面（唯一可换枪处），当前配装作为默认选中
-  pendingLoadout.weaponIndex = WEAPONS[localPlayer.weaponIndex] && !WEAPONS[localPlayer.weaponIndex].isSupplyOnly
-    ? localPlayer.weaponIndex : 0
+  // 阵亡：打开死亡界面（唯一可换枪处），默认选中「上次的常规主武器」
+  // （拿着补给特武时不能把选择回落到 0，否则玩家会莫名丢掉原本的主武器）
+  const cur = WEAPONS[localPlayer.weaponIndex]
+  const last = WEAPONS[localPlayer.lastPrimaryIndex]
+  pendingLoadout.weaponIndex = cur && !cur.isSupplyOnly
+    ? localPlayer.weaponIndex
+    : (last && !last.isSupplyOnly ? localPlayer.lastPrimaryIndex : 0)
   pendingLoadout.secondaryType = localPlayer.secondary === 'doll' ? 'frag' : localPlayer.secondary
   updateHudWeaponButtons()
   const ds = document.getElementById('deathScreen')
@@ -72,7 +76,9 @@ function onLocalDeath(): void {
 function onLocalRespawn(): void {
   // 出生位置已由权威端决定（死斗=随机安全点）；这里只把待定配装套到已重生的玩家上
   const wantW = Number(pendingLoadout.weaponIndex)
-  localPlayer.weaponIndex = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0
+  const next = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0
+  localPlayer.weaponIndex = next
+  localPlayer.lastPrimaryIndex = next
   localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : 'frag'
   updateHudWeaponButtons()
   showToast(world.config.randomSpawn ? '🔄 已在随机安全点重生' : '🔄 已在队伍基地重生')

@@ -19,6 +19,8 @@ export interface PlayerState {
   deployed: boolean      // false = 待机整备（未部署/等待重生）
   // 武器经济（有限弹匣 + 有限备弹，v2 核心）
   weaponIndex: number
+  /** 上次使用的常规主武器（补给特武是临时的；重生时回退到它，避免复活后还卡着超级武器） */
+  lastPrimaryIndex: number
   ammo: number[]         // 每把武器当前弹匣
   reserveAmmo: number[]  // 每把武器备弹
   reloading: boolean

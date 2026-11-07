@@ -71,6 +71,7 @@ export function tryChangePrimaryWeapon(slotIdx: number): void {
   }
   pendingLoadout.weaponIndex = slotIdx
   localPlayer.weaponIndex = slotIdx
+  localPlayer.lastPrimaryIndex = slotIdx
   updateHudWeaponButtons()
 }
 

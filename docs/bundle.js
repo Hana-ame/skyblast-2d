@@ -743,6 +743,7 @@
         deployed: true,
         onGround: true,
         weaponIndex: 1,
+        lastPrimaryIndex: 1,
         ammo: WEAPONS.map((w) => w.magSize),
         reserveAmmo: WEAPONS.map((w) => w.maxReserve),
         reloading: false,
@@ -776,6 +777,14 @@
     }
     /** 出生点：按队伍；优先已占领点（占点重生机制） */
     respawnAt(p, team) {
+      const cur = WEAPONS[p.weaponIndex];
+      if (!cur || cur.isSupplyOnly) {
+        const fallback = WEAPONS[p.lastPrimaryIndex] && !WEAPONS[p.lastPrimaryIndex].isSupplyOnly ? p.lastPrimaryIndex : 0;
+        p.weaponIndex = fallback;
+        p.lastPrimaryIndex = fallback;
+      } else {
+        p.lastPrimaryIndex = p.weaponIndex;
+      }
       let sx, sy;
       if (this.config.randomSpawn) {
         const spot = RANDOM_SPAWN_CANDIDATES[this.rng.int(RANDOM_SPAWN_CANDIDATES.length)];
@@ -871,6 +880,7 @@
         const canSwitch = !this.config.loadoutLock || p.respawnTimer > 0 || !p.deployed;
         if (wep && !wep.isSupplyOnly && canSwitch) {
           p.weaponIndex = wep.id;
+          p.lastPrimaryIndex = wep.id;
           p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1));
           p.reloading = false;
           p.fireCooldown = Math.max(p.fireCooldown, 0.3);
@@ -1264,6 +1274,7 @@
       p.shieldHp = d.shieldHp;
       p.fuel = d.fuel;
       p.weaponIndex = d.weaponIndex;
+      if (WEAPONS[d.weaponIndex] && !WEAPONS[d.weaponIndex].isSupplyOnly) p.lastPrimaryIndex = d.weaponIndex;
       p.ammo = [...d.ammo];
       p.reserveAmmo = [...d.reserveAmmo];
       p.respawnTimer = 0;
@@ -2561,6 +2572,7 @@
     }
     pendingLoadout.weaponIndex = slotIdx;
     localPlayer.weaponIndex = slotIdx;
+    localPlayer.lastPrimaryIndex = slotIdx;
     updateHudWeaponButtons();
   }
   function tryChangeSecondaryWeapon(secType) {
@@ -2820,6 +2832,7 @@
       }
       const b = world.addPlayer(botNames[idx % botNames.length], team);
       b.weaponIndex = idx % 4;
+      b.lastPrimaryIndex = idx % 4;
       b.secondary = botSecs[idx % botSecs.length];
       const cp = world.capturePoints[idx % world.capturePoints.length];
       b.pos = { x: wrapX(cp.x + (idx - 4) * 47), y: cp.y - 50 };
@@ -2868,6 +2881,7 @@
     const want = Number(pendingLoadout.weaponIndex);
     const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0;
     localPlayer.weaponIndex = wIdx;
+    localPlayer.lastPrimaryIndex = wIdx;
     localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : "frag";
     localPlayer.deployed = true;
     localPlayer.alive = true;
@@ -4908,7 +4922,9 @@
     return w;
   }
   function onLocalDeath() {
-    pendingLoadout.weaponIndex = WEAPONS[localPlayer.weaponIndex] && !WEAPONS[localPlayer.weaponIndex].isSupplyOnly ? localPlayer.weaponIndex : 0;
+    const cur = WEAPONS[localPlayer.weaponIndex];
+    const last = WEAPONS[localPlayer.lastPrimaryIndex];
+    pendingLoadout.weaponIndex = cur && !cur.isSupplyOnly ? localPlayer.weaponIndex : last && !last.isSupplyOnly ? localPlayer.lastPrimaryIndex : 0;
     pendingLoadout.secondaryType = localPlayer.secondary === "doll" ? "frag" : localPlayer.secondary;
     updateHudWeaponButtons();
     const ds = document.getElementById("deathScreen");
@@ -4917,7 +4933,9 @@
   }
   function onLocalRespawn() {
     const wantW = Number(pendingLoadout.weaponIndex);
-    localPlayer.weaponIndex = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0;
+    const next = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0;
+    localPlayer.weaponIndex = next;
+    localPlayer.lastPrimaryIndex = next;
     localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : "frag";
     updateHudWeaponButtons();
     showToast(world.config.randomSpawn ? "\u{1F504} \u5DF2\u5728\u968F\u673A\u5B89\u5168\u70B9\u91CD\u751F" : "\u{1F504} \u5DF2\u5728\u961F\u4F0D\u57FA\u5730\u91CD\u751F");

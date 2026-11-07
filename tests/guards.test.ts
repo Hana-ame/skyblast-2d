@@ -302,3 +302,53 @@ test('护栏·友伤开关行为：关闭后队友不掉血，开启后掉血', 
     }
   }
 })
+
+
+test('护栏·复活记住上次武器：拿着补给特武阵亡后重生回到上次常规主武器', () => {
+  const w = new World(34000)
+  w.config.randomSpawn = false
+  const p = w.addPlayer('P', 'ffa')
+  const killer = w.addPlayer('K', 'blue')
+  // 先选霰弹（常规主武器）
+  p.weaponIndex = 0
+  p.lastPrimaryIndex = 0
+  // 拾取补给特武（高斯枪），lastPrimaryIndex 不应被改写
+  p.weaponIndex = 4
+  assert.equal(p.lastPrimaryIndex, 0, 'picking up a supply weapon must not overwrite last primary')
+  // 阵亡 → 重生
+  ;(w as unknown as { explode: (...a: unknown[]) => void }).explode(p.pos.x, p.pos.y, 200, 999, 0, undefined, killer.id, killer.team, '测试')
+  assert.ok(p.respawnTimer > 0, 'player died')
+  for (let i = 0; i < 400; i++) w.step(DT, new Map([[p.id, input()], [killer.id, input()]]))
+  assert.ok(p.alive, 'player respawned')
+  assert.equal(p.weaponIndex, 0, `respawn restores the last primary (shotgun), got ${WEAPONS[p.weaponIndex].name}`)
+  assert.equal(p.lastPrimaryIndex, 0, 'last primary stays the shotgun')
+
+  // 换主武器后再次带特武复活 → 回到新选的主武器
+  p.weaponIndex = 8
+  p.lastPrimaryIndex = 8
+  p.weaponIndex = 6                     // 引力枪（补给）
+  ;(w as unknown as { explode: (...a: unknown[]) => void }).explode(p.pos.x, p.pos.y, 200, 999, 0, undefined, killer.id, killer.team, '测试')
+  for (let i = 0; i < 400; i++) w.step(DT, new Map([[p.id, input()], [killer.id, input()]]))
+  assert.equal(p.weaponIndex, 8, `respawn restores SMG, got ${WEAPONS[p.weaponIndex].name}`)
+})
+
+test('护栏·补给特武不写进 lastPrimaryIndex（多轮拾取/重生不串味）', () => {
+  const w = new World(34100)
+  w.config.randomSpawn = false
+  const p = w.addPlayer('P', 'ffa')
+  assert.equal(p.weaponIndex, 1, 'starts with assault rifle')
+  assert.equal(p.lastPrimaryIndex, 1)
+  // 反复拾取特武：lastPrimaryIndex 一直是突击步枪
+  for (const supplyId of [4, 5, 6]) {
+    p.weaponIndex = supplyId
+    assert.equal(p.lastPrimaryIndex, 1, `supply pickup ${WEAPONS[supplyId].name} keeps last primary`)
+  }
+  // 重生逻辑本身不把特武当主武器：连续两次死亡重生都回到突击步枪
+  const killer2 = w.addPlayer('K2', 'blue')
+  for (let round = 0; round < 2; round++) {
+    p.weaponIndex = round === 0 ? 4 : 6
+    ;(w as unknown as { explode: (...a: unknown[]) => void }).explode(p.pos.x, p.pos.y, 200, 999, 0, undefined, killer2.id, killer2.team, '测试')
+    for (let i = 0; i < 400; i++) w.step(DT, new Map([[p.id, input()], [killer2.id, input()]]))
+    assert.equal(p.weaponIndex, 1, `round ${round}: respawn back to assault rifle, got ${WEAPONS[p.weaponIndex].name}`)
+  }
+})

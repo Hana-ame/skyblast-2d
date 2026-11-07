@@ -196,6 +196,7 @@ export class World {
       hp: this.config.maxHp, maxHp: this.config.maxHp,
       alive: true, deployed: true, onGround: true,
       weaponIndex: 1,
+      lastPrimaryIndex: 1,
       ammo: WEAPONS.map(w => w.magSize),
       reserveAmmo: WEAPONS.map(w => w.maxReserve),
       reloading: false, reloadTimer: 0, fireCooldown: 0, chargeTimer: 0,
@@ -218,6 +219,15 @@ export class World {
 
   /** 出生点：按队伍；优先已占领点（占点重生机制） */
   private respawnAt(p: PlayerState, team: TeamId): void {
+    // 记住上次武器：常规主武器沿用到重生；补给特武是临时武器，重生时回退到上次的常规主武器
+    const cur = WEAPONS[p.weaponIndex]
+    if (!cur || cur.isSupplyOnly) {
+      const fallback = WEAPONS[p.lastPrimaryIndex] && !WEAPONS[p.lastPrimaryIndex].isSupplyOnly ? p.lastPrimaryIndex : 0
+      p.weaponIndex = fallback
+      p.lastPrimaryIndex = fallback
+    } else {
+      p.lastPrimaryIndex = p.weaponIndex
+    }
     let sx: number, sy: number
     if (this.config.randomSpawn) {
       // 死亡竞赛：全图随机安全点出生
@@ -323,6 +333,7 @@ export class World {
       const canSwitch = !this.config.loadoutLock || p.respawnTimer > 0 || !p.deployed
       if (wep && !wep.isSupplyOnly && canSwitch) {
         p.weaponIndex = wep.id
+        p.lastPrimaryIndex = wep.id
         p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
         p.reloading = false
         p.fireCooldown = Math.max(p.fireCooldown, 0.3)
@@ -728,6 +739,7 @@ export class World {
     p.shieldHp = d.shieldHp
     p.fuel = d.fuel
     p.weaponIndex = d.weaponIndex
+    if (WEAPONS[d.weaponIndex] && !WEAPONS[d.weaponIndex].isSupplyOnly) p.lastPrimaryIndex = d.weaponIndex
     p.ammo = [...d.ammo]
     p.reserveAmmo = [...d.reserveAmmo]
     p.respawnTimer = 0
@@ -1515,6 +1527,7 @@ export class World {
           if (crate.kind === 'doll') {
             p.dollCharges = Math.min(this.config.dollMaxCharges, p.dollCharges + 1)
           } else {
+            // 补给特武是临时武器：只换当前手持，不改 lastPrimaryIndex（重生时回退到上次常规主武器）
             p.weaponIndex = crate.weaponId
             p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (WEAPONS[crate.weaponId].fuelMult ?? 1))
             p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize

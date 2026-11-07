@@ -15,6 +15,7 @@ export function applyPendingLoadoutAndSpawn(): void {
   const want = Number(pendingLoadout.weaponIndex)
   const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0
   localPlayer.weaponIndex = wIdx
+  localPlayer.lastPrimaryIndex = wIdx
   localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : 'frag'
   localPlayer.deployed = true
   localPlayer.alive = true

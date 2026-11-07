@@ -24,6 +24,7 @@ export function syncBotsCount(target: number): void {
     }
     const b = world.addPlayer(botNames[idx % botNames.length], team)
     b.weaponIndex = idx % 4
+    b.lastPrimaryIndex = idx % 4
     b.secondary = botSecs[idx % botSecs.length]
     const cp = world.capturePoints[idx % world.capturePoints.length]
     b.pos = { x: wrapX(cp.x + (idx - 4) * 47), y: cp.y - 50 }
