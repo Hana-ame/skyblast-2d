@@ -91,15 +91,15 @@ export class Terrain {
   }
 }
 
-/** 预设可破坏障碍物（贴地的方形掩体箱） */
+/** 预设可破坏障碍物：全部搬到天花板顶面（中心 y=1880，高 80 → 底=1920 贴顶面；空口 5600~7600 内不放） */
 export interface ObstacleInit { id: string; x: number; y: number; w: number; h: number; hp: number; label: string; color: string; borderColor: string }
 
 export const OBSTACLE_PRESETS: ObstacleInit[] = [
-  { id: 'obs_1', x: 1600, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
-  { id: 'obs_2', x: 3400, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
-  { id: 'obs_3', x: 4600, y: 2720, w: 60, h: 80, hp: 240, label: '方形掩体', color: '#78350f', borderColor: '#f59e0b' },
-  { id: 'obs_box_1', x: 6420, y: 2730, w: 68, h: 70, hp: 170, label: '重装掩体箱', color: '#365314', borderColor: '#84cc16' },
-  { id: 'obs_5', x: 9200, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#7c2d12', borderColor: '#fb923c' },
-  { id: 'obs_6', x: 11200, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
-  { id: 'obs_7', x: 12500, y: 2720, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
+  { id: 'obs_1', x: 1600, y: 1880, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
+  { id: 'obs_2', x: 3400, y: 1880, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
+  { id: 'obs_3', x: 4600, y: 1880, w: 60, h: 80, hp: 240, label: '方形掩体', color: '#78350f', borderColor: '#f59e0b' },
+  { id: 'obs_box_1', x: 5400, y: 1878, w: 68, h: 70, hp: 170, label: '重装掩体箱', color: '#365314', borderColor: '#84cc16' },
+  { id: 'obs_5', x: 7800, y: 1880, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#7c2d12', borderColor: '#fb923c' },
+  { id: 'obs_6', x: 11200, y: 1880, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
+  { id: 'obs_7', x: 12500, y: 1880, w: 60, h: 80, hp: 260, label: '方形掩体', color: '#9a3412', borderColor: '#f97316' },
 ]

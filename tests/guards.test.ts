@@ -24,8 +24,8 @@ test('护栏·默认地图布局：地标全部在空地/世界范围内，跳�
 })
 
 test('护栏·布局校验能抓到“建筑盖住地标”的回归', () => {
-  // 故意用掩体压住据点 A（1720,2740）
-  const bad: MapData = { name: 'bad', solids: [{ x: 1700, y: 2700, w: 200, h: 100, kind: 'cover' }] }
+  // 故意用掩体压住据点 A（1720,1860，天花板顶面站立）
+  const bad: MapData = { name: 'bad', solids: [{ x: 1700, y: 1800, w: 200, h: 100, kind: 'cover' }] }
   const w = new World(2, bad)
   const vs = layoutViolations(w)
   assert.ok(vs.some(v => v.code === 'layout.solid' && v.message.includes('cp:cp_a')), '应当报据点被覆盖')
@@ -55,7 +55,8 @@ test('护栏·随机出生：randomSpawn 开启时连续出生均安全', () => 
 test('护栏·小地图兼容：空地形世界能正常生成/战斗（不依赖默认布局）', () => {
   const w = emptyWorld(5)
   assert.equal(w.terrain.rects.length, 1, 'empty map = only earth')
-  assert.deepEqual(layoutViolations(w), [], 'empty map landmarks must be valid')
+  // 空地形没有天花板 → 跳台（天花板专属）悬空属预期，跳过 pad 判定
+  assert.deepEqual(layoutViolations(w, { skipPads: true }), [], 'empty map landmarks must be valid')
   const a = w.addPlayer('A', 'red')
   const b = w.addPlayer('B', 'blue')
   a.weaponIndex = 1

@@ -83,42 +83,18 @@
   }
 
   // src/core/map.ts
+  var CEILING_TOP = 1920;
+  var CEILING_THICK = 80;
+  var CEILING_HOLE_X0 = 5600;
+  var CEILING_HOLE_X1 = 7600;
   function defaultMapData() {
     const solids = [
-      // 地面层街区（x 4840~9840）
-      { x: 4840, y: 2680, w: 240, h: 120, kind: "cover" },
-      { x: 5280, y: 2620, w: 240, h: 160, kind: "cover" },
-      { x: 5660, y: 2720, w: 160, h: 80, kind: "cover" },
-      { x: 6200, y: 2680, w: 180, h: 120, kind: "cover" },
-      { x: 6680, y: 2720, w: 240, h: 80, kind: "cover" },
-      { x: 7380, y: 2700, w: 240, h: 100, kind: "cover" },
-      { x: 7820, y: 2660, w: 220, h: 140, kind: "cover" },
-      { x: 8340, y: 2660, w: 220, h: 140, kind: "cover" },
-      { x: 8860, y: 2660, w: 300, h: 140, kind: "cover" },
-      { x: 9480, y: 2620, w: 360, h: 180, kind: "cover" },
-      // 中层建筑（截断处按街区节奏补全 x 5600~8000）
-      { x: 5600, y: 1980, w: 220, h: 140, kind: "cover" },
-      { x: 5900, y: 2080, w: 260, h: 120, kind: "cover" },
-      { x: 6200, y: 1900, w: 180, h: 160, kind: "cover" },
-      { x: 6500, y: 2e3, w: 240, h: 120, kind: "cover" },
-      { x: 6820, y: 1880, w: 200, h: 140, kind: "cover" },
-      { x: 7100, y: 2020, w: 260, h: 140, kind: "cover" },
-      { x: 7420, y: 1900, w: 240, h: 140, kind: "cover" },
-      { x: 7720, y: 2060, w: 220, h: 120, kind: "cover" },
-      // 中层建筑（用户提供，x 8060~9800）
-      { x: 8260, y: 1940, w: 260, h: 140, kind: "cover" },
-      { x: 8060, y: 1840, w: 140, h: 180, kind: "cover" },
-      { x: 8700, y: 1960, w: 220, h: 160, kind: "cover" },
-      { x: 9140, y: 1860, w: 140, h: 180, kind: "cover" },
-      { x: 8980, y: 2080, w: 120, h: 140, kind: "cover" },
-      { x: 9400, y: 1980, w: 140, h: 140, kind: "cover" },
-      { x: 9200, y: 2180, w: 220, h: 160, kind: "cover" },
-      { x: 9620, y: 2100, w: 180, h: 100, kind: "cover" },
-      // 高空长桥
-      { x: 3240, y: 1340, w: 1920, h: 80, kind: "cover" },
-      { x: 5200, y: 1320, w: 4800, h: 80, kind: "cover" }
+      // 天花板左板（环形 x 0~5600）
+      { x: 0, y: CEILING_TOP, w: CEILING_HOLE_X0, h: CEILING_THICK, kind: "platform" },
+      // 天花板右板（环形 x 7600~13200）
+      { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: "platform" }
     ];
-    return { name: "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
+    return { name: "\u5929\u82B1\u677F\u7ADE\u6280\u573A", solids };
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -202,13 +178,13 @@
     }
   };
   var OBSTACLE_PRESETS = [
-    { id: "obs_1", x: 1600, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_2", x: 3400, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_3", x: 4600, y: 2720, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
-    { id: "obs_box_1", x: 6420, y: 2730, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_5", x: 9200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_6", x: 11200, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_7", x: 12500, y: 2720, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
+    { id: "obs_1", x: 1600, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_2", x: 3400, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_3", x: 4600, y: 1880, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
+    { id: "obs_box_1", x: 5400, y: 1878, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
+    { id: "obs_5", x: 7800, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
+    { id: "obs_6", x: 11200, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_7", x: 12500, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
   ];
 
   // src/core/rng.ts
@@ -554,83 +530,93 @@
   var BODY_HALF_W = 10;
   var BODY_TOP = 26;
   var BODY_BOTTOM = 16;
+  var CEILING_STAND = 1860;
+  var GROUND_STAND = 2740;
+  var HOLE_X0 = 5600;
+  var HOLE_X1 = 7600;
   var SPAWN_POINTS = [
-    { x: 1100, y: 2740, team: "red" },
-    { x: 12100, y: 2740, team: "blue" },
-    { x: 6600, y: 1460, team: "green" },
-    { x: 6600, y: 2380, team: "ffa" }
+    { x: 1100, y: GROUND_STAND, team: "red" },
+    // 左出生点留地面
+    { x: 12100, y: GROUND_STAND, team: "blue" },
+    // 右出生点留地面
+    { x: 4300, y: CEILING_STAND, team: "green" },
+    // 绿出生→天花板左侧（空口左外侧）
+    { x: 8800, y: CEILING_STAND, team: "ffa" }
+    // FFA出生→天花板右侧（空口右外侧）
   ];
   var AMMO_SPOTS = [
-    { x: 1300, y: 2760, area: "\u897F\u533A\u5E73\u5730" },
-    { x: 2100, y: 2760, area: "\u897F\u533A\u5E73\u53F0\u4E0B" },
-    { x: 2900, y: 2760, area: "\u4E2D\u897F\u5E73\u5730" },
-    { x: 4600, y: 2760, area: "\u4E2D\u592E\u897F\u5E73\u5730" },
-    { x: 6500, y: 2760, area: "\u4E2D\u592E\u5E73\u5730" },
-    { x: 8100, y: 2760, area: "\u4E2D\u4E1C\u5E73\u5730" },
-    { x: 10200, y: 2760, area: "\u4E1C\u533A\u5E73\u5730" }
+    { x: 1300, y: GROUND_STAND, area: "\u897F\u533A\u5E73\u5730" },
+    { x: 2100, y: GROUND_STAND, area: "\u897F\u533A\u5E73\u53F0\u4E0B" },
+    { x: 2900, y: GROUND_STAND, area: "\u4E2D\u897F\u5E73\u5730" },
+    { x: 4600, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F" },
+    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u5DE6" },
+    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u53F3" },
+    { x: 10200, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A" }
   ];
   var SUPPLY_SPOTS = [
-    { x: 1500, y: 2760, area: "\u897F\u533A\u8865\u7ED9\u70B9" },
-    { x: 3100, y: 2760, area: "\u4E2D\u897F\u8865\u7ED9\u70B9" },
-    { x: 4300, y: 2760, area: "\u4E2D\u592E\u897F\u8865\u7ED9\u70B9" },
-    { x: 5100, y: 2760, area: "\u4E2D\u592E\u8865\u7ED9\u70B9" },
-    { x: 8300, y: 2760, area: "\u4E2D\u4E1C\u8865\u7ED9\u70B9" },
-    { x: 10300, y: 2760, area: "\u4E1C\u533A\u8865\u7ED9\u70B9" }
+    { x: 1500, y: GROUND_STAND, area: "\u897F\u533A\u8865\u7ED9\u70B9" },
+    { x: 3100, y: GROUND_STAND, area: "\u4E2D\u897F\u8865\u7ED9\u70B9" },
+    { x: 4300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F\u8865\u7ED9\u70B9" },
+    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u5DE6\u8865\u7ED9\u70B9" },
+    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u53F3\u8865\u7ED9\u70B9" },
+    { x: 10300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A\u8865\u7ED9\u70B9" }
   ];
   var DOLL_SUPPLY_SPOTS = [
-    { x: 4600, y: 2760, area: "\u4E2D\u592E\u897F\u7279\u6B8A\u8865\u7ED9\u70B9" },
-    { x: 8560, y: 2760, area: "\u4E1C\u533A\u7279\u6B8A\u8865\u7ED9\u70B9" }
+    { x: 4600, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F\u7279\u6B8A\u8865\u7ED9\u70B9" },
+    { x: 8560, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A\u7279\u6B8A\u8865\u7ED9\u70B9" }
   ];
   var MORTARS_INIT = [
-    { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: 2740, angle: -Math.PI * 0.28, power: 24 },
-    { id: "mortar_mid_w", name: "\u4E2D\u592E\u897F\u8FEB\u51FB\u70AE", x: 3300, y: 2740, angle: -Math.PI * 0.3, power: 23 },
-    { id: "mortar_center", name: "\u4E2D\u592E\u8FEB\u51FB\u70AE", x: 6e3, y: 2740, angle: -Math.PI * 0.35, power: 24.5 },
-    { id: "mortar_mid_e", name: "\u4E2D\u592E\u4E1C\u8FEB\u51FB\u70AE", x: 8620, y: 2740, angle: -Math.PI * 0.7, power: 23 },
-    { id: "mortar_right", name: "\u4E1C\u533A\u8FEB\u51FB\u70AE", x: 12260, y: 2740, angle: -Math.PI * 0.72, power: 24 }
+    { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: CEILING_STAND, angle: -Math.PI * 0.28, power: 24 },
+    { id: "mortar_mid_w", name: "\u4E2D\u592E\u897F\u8FEB\u51FB\u70AE", x: 3300, y: CEILING_STAND, angle: -Math.PI * 0.3, power: 23 },
+    { id: "mortar_center", name: "\u4E2D\u592E\u8FEB\u51FB\u70AE", x: 5400, y: CEILING_STAND, angle: -Math.PI * 0.35, power: 24.5 },
+    { id: "mortar_mid_e", name: "\u4E2D\u592E\u4E1C\u8FEB\u51FB\u70AE", x: 7800, y: CEILING_STAND, angle: -Math.PI * 0.7, power: 23 },
+    { id: "mortar_right", name: "\u4E1C\u533A\u8FEB\u51FB\u70AE", x: 12260, y: CEILING_STAND, angle: -Math.PI * 0.72, power: 24 }
   ];
   var MINE_PRESETS = [
-    { x: 1720, y: 2760 },
-    { x: 4150, y: 2760 },
-    { x: 6600, y: 2760 },
-    { x: 10200, y: 2760 },
-    { x: 11420, y: 2760 },
-    { x: 3900, y: 2760 }
+    { x: 1720, y: CEILING_STAND },
+    { x: 3900, y: CEILING_STAND },
+    { x: 5400, y: CEILING_STAND },
+    { x: 7800, y: CEILING_STAND },
+    { x: 10200, y: CEILING_STAND },
+    { x: 11420, y: CEILING_STAND }
   ];
   var WATCHTOWERS = [
-    { id: "tower_1", name: "\u897F\u90E8\u77AD\u671B\u5854", x: 3700, y: 2760, operatorId: null },
-    { id: "tower_2", name: "\u4E2D\u897F\u77AD\u671B\u5854", x: 7e3, y: 2760, operatorId: null },
-    { id: "tower_3", name: "\u4E2D\u592E\u4E1C\u77AD\u671B\u5854", x: 8800, y: 2760, operatorId: null },
-    { id: "tower_4", name: "\u4E1C\u90E8\u77AD\u671B\u5854", x: 11900, y: 2760, operatorId: null }
+    { id: "tower_1", name: "\u897F\u90E8\u77AD\u671B\u5854", x: 3700, y: CEILING_STAND, operatorId: null },
+    { id: "tower_2", name: "\u4E2D\u897F\u77AD\u671B\u5854", x: 5400, y: CEILING_STAND, operatorId: null },
+    { id: "tower_3", name: "\u4E2D\u592E\u4E1C\u77AD\u671B\u5854", x: 7800, y: CEILING_STAND, operatorId: null },
+    { id: "tower_4", name: "\u4E1C\u90E8\u77AD\u671B\u5854", x: 11900, y: CEILING_STAND, operatorId: null }
   ];
   var WARP_PORTALS = [
-    { id: "warp_1", name: "W1 \u897F\u533A\u4F20\u9001\u95E8", x: 880, y: 2740, targetId: "warp_2", color: "#06b6d4" },
-    { id: "warp_2", name: "W2 \u4E2D\u897F\u4F20\u9001\u95E8", x: 3150, y: 2740, targetId: "warp_1", color: "#06b6d4" },
-    { id: "warp_3", name: "W3 \u4E2D\u592E\u4F20\u9001\u95E8", x: 4700, y: 2740, targetId: "warp_4", color: "#a855f7" },
-    { id: "warp_4", name: "W4 \u4E2D\u4E1C\u4F20\u9001\u95E8", x: 1e4, y: 2740, targetId: "warp_3", color: "#a855f7" },
-    { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 7e3, y: 2740, targetId: "warp_6", color: "#10b981" },
-    { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: 2740, targetId: "warp_5", color: "#10b981" }
+    { id: "warp_1", name: "W1 \u897F\u533A\u4F20\u9001\u95E8", x: 880, y: CEILING_STAND, targetId: "warp_2", color: "#06b6d4" },
+    { id: "warp_2", name: "W2 \u4E2D\u897F\u4F20\u9001\u95E8", x: 3150, y: CEILING_STAND, targetId: "warp_1", color: "#06b6d4" },
+    { id: "warp_3", name: "W3 \u4E2D\u592E\u4F20\u9001\u95E8", x: 4700, y: CEILING_STAND, targetId: "warp_4", color: "#a855f7" },
+    { id: "warp_4", name: "W4 \u4E2D\u4E1C\u4F20\u9001\u95E8", x: 1e4, y: CEILING_STAND, targetId: "warp_3", color: "#a855f7" },
+    { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 5400, y: CEILING_STAND, targetId: "warp_6", color: "#10b981" },
+    { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: CEILING_STAND, targetId: "warp_5", color: "#10b981" }
   ];
   var RANDOM_SPAWN_CANDIDATES = (() => {
     const out = [];
+    for (let x = 400; x < WORLD_W; x += 620) {
+      if (x >= HOLE_X0 && x < HOLE_X1) continue;
+      out.push({ x, y: CEILING_STAND });
+    }
     for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 });
-    for (const px of [2200, 3800, 5400, 7600, 9600, 11800]) out.push({ x: px + 150, y: SURFACE_Y - 300 });
     for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 });
-    for (const cx of [1720, 4150, 6600, 9e3, 11420]) out.push({ x: cx, y: 2740 });
     return out;
   })();
   var JUMP_PADS = [
-    // 全部位于可站立地表：远离竖井洞、台地内部与出生点（此前 2 个在竖井里、1 个埋在台地内，且完全没渲染 → "莫名弹起"）
-    { x: 1e3, y: 2800, vx: 210, vy: -810 },
-    { x: 4300, y: 2800, vx: 180, vy: -870 },
-    { x: 10400, y: 2800, vx: -180, vy: -870 },
-    { x: 13050, y: 2800, vx: -210, vy: -810 }
+    // 全部搬到天花板顶面（y=1920 站立面）：跳远道具，与迫击炮/瞭望塔一起上屋顶
+    { x: 1e3, y: 1920, vx: 210, vy: -810 },
+    { x: 4300, y: 1920, vx: 180, vy: -870 },
+    { x: 10400, y: 1920, vx: -180, vy: -870 },
+    { x: 13050, y: 1920, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
-    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: 2740, ownerTeam: "red" },
-    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 4150, y: 2740, ownerTeam: null },
-    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E", x: 6600, y: 2740, ownerTeam: "green" },
-    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 10200, y: 2740, ownerTeam: null },
-    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: 2740, ownerTeam: "blue" }
+    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: CEILING_STAND, ownerTeam: "red" },
+    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 3900, y: CEILING_STAND, ownerTeam: null },
+    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E", x: 5400, y: CEILING_STAND, ownerTeam: "green" },
+    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 7800, y: CEILING_STAND, ownerTeam: null },
+    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: CEILING_STAND, ownerTeam: "blue" }
   ];
   var World = class {
     terrain = new Terrain();
@@ -1038,19 +1024,24 @@
       const segments = [];
       const hitPlayer = /* @__PURE__ */ new Set();
       const hitObstacle = /* @__PURE__ */ new Set();
-      let x = wrapX(p.pos.x + Math.cos(p.aim) * 24);
-      let y = p.pos.y - 12 + Math.sin(p.aim) * 24;
       let dx = Math.cos(p.aim);
       let dy = Math.sin(p.aim);
-      for (let i = 0; i < 6 && this.terrain.isSolidAt(x, y); i++) {
-        x = wrapX(x + dx * 10);
-        y = wrapY(y + dy * 10);
+      let x = 0;
+      let y = 0;
+      let originOk = false;
+      for (let ahead = 4; ahead <= 24; ahead += 4) {
+        const cx = wrapX(p.pos.x + dx * ahead);
+        const cy = wrapY(p.pos.y - 12 + dy * ahead);
+        if (this.terrain.isSolidAt(cx, cy)) break;
+        x = cx;
+        y = cy;
+        originOk = true;
       }
-      if (this.terrain.isSolidAt(x, y)) {
-        return;
-      }
+      if (!originOk) return;
+      const originX = x;
+      const originY = y;
       const maxSegLen = 1800;
-      const step = 10;
+      const step = 6;
       const bounces = wep.bounces ?? 0;
       for (let b = 0; b <= bounces; b++) {
         let travelled = 0;
@@ -1107,8 +1098,8 @@
           seg.x1 = prev.x2;
           seg.y1 = prev.y2;
         } else {
-          seg.x1 = wrapX(p.pos.x + Math.cos(p.aim) * 24);
-          seg.y1 = p.pos.y - 12 + Math.sin(p.aim) * 24;
+          seg.x1 = originX;
+          seg.y1 = originY;
         }
         segments.push(seg);
         if (blockedByObstacle || !hitWall) break;

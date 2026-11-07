@@ -1,42 +1,23 @@
 "use strict";
 (() => {
+  // src/core/wrap.ts
+  var WORLD_W = 13200;
+  var WORLD_H = 4400;
+  var SURFACE_Y = 2800;
+
   // src/core/map.ts
+  var CEILING_TOP = 1920;
+  var CEILING_THICK = 80;
+  var CEILING_HOLE_X0 = 5600;
+  var CEILING_HOLE_X1 = 7600;
   function defaultMapData() {
     const solids = [
-      // 地面层街区（x 4840~9840）
-      { x: 4840, y: 2680, w: 240, h: 120, kind: "cover" },
-      { x: 5280, y: 2620, w: 240, h: 160, kind: "cover" },
-      { x: 5660, y: 2720, w: 160, h: 80, kind: "cover" },
-      { x: 6200, y: 2680, w: 180, h: 120, kind: "cover" },
-      { x: 6680, y: 2720, w: 240, h: 80, kind: "cover" },
-      { x: 7380, y: 2700, w: 240, h: 100, kind: "cover" },
-      { x: 7820, y: 2660, w: 220, h: 140, kind: "cover" },
-      { x: 8340, y: 2660, w: 220, h: 140, kind: "cover" },
-      { x: 8860, y: 2660, w: 300, h: 140, kind: "cover" },
-      { x: 9480, y: 2620, w: 360, h: 180, kind: "cover" },
-      // 中层建筑（截断处按街区节奏补全 x 5600~8000）
-      { x: 5600, y: 1980, w: 220, h: 140, kind: "cover" },
-      { x: 5900, y: 2080, w: 260, h: 120, kind: "cover" },
-      { x: 6200, y: 1900, w: 180, h: 160, kind: "cover" },
-      { x: 6500, y: 2e3, w: 240, h: 120, kind: "cover" },
-      { x: 6820, y: 1880, w: 200, h: 140, kind: "cover" },
-      { x: 7100, y: 2020, w: 260, h: 140, kind: "cover" },
-      { x: 7420, y: 1900, w: 240, h: 140, kind: "cover" },
-      { x: 7720, y: 2060, w: 220, h: 120, kind: "cover" },
-      // 中层建筑（用户提供，x 8060~9800）
-      { x: 8260, y: 1940, w: 260, h: 140, kind: "cover" },
-      { x: 8060, y: 1840, w: 140, h: 180, kind: "cover" },
-      { x: 8700, y: 1960, w: 220, h: 160, kind: "cover" },
-      { x: 9140, y: 1860, w: 140, h: 180, kind: "cover" },
-      { x: 8980, y: 2080, w: 120, h: 140, kind: "cover" },
-      { x: 9400, y: 1980, w: 140, h: 140, kind: "cover" },
-      { x: 9200, y: 2180, w: 220, h: 160, kind: "cover" },
-      { x: 9620, y: 2100, w: 180, h: 100, kind: "cover" },
-      // 高空长桥
-      { x: 3240, y: 1340, w: 1920, h: 80, kind: "cover" },
-      { x: 5200, y: 1320, w: 4800, h: 80, kind: "cover" }
+      // 天花板左板（环形 x 0~5600）
+      { x: 0, y: CEILING_TOP, w: CEILING_HOLE_X0, h: CEILING_THICK, kind: "platform" },
+      // 天花板右板（环形 x 7600~13200）
+      { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: "platform" }
     ];
-    return { name: "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
+    return { name: "\u5929\u82B1\u677F\u7ADE\u6280\u573A", solids };
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -56,11 +37,6 @@
     if (solids.length === 0) return null;
     return { name: typeof o.name === "string" ? o.name : "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
   }
-
-  // src/core/wrap.ts
-  var WORLD_W = 13200;
-  var WORLD_H = 4400;
-  var SURFACE_Y = 2800;
 
   // src/core/sim/physics.ts
   var defaults = {
@@ -91,25 +67,35 @@
   var GRID_H = Math.floor(WORLD_H / TILE_SIZE);
 
   // src/core/sim/world.ts
+  var CEILING_STAND = 1860;
+  var GROUND_STAND = 2740;
+  var HOLE_X0 = 5600;
+  var HOLE_X1 = 7600;
   var SPAWN_POINTS = [
-    { x: 1100, y: 2740, team: "red" },
-    { x: 12100, y: 2740, team: "blue" },
-    { x: 6600, y: 1460, team: "green" },
-    { x: 6600, y: 2380, team: "ffa" }
+    { x: 1100, y: GROUND_STAND, team: "red" },
+    // 左出生点留地面
+    { x: 12100, y: GROUND_STAND, team: "blue" },
+    // 右出生点留地面
+    { x: 4300, y: CEILING_STAND, team: "green" },
+    // 绿出生→天花板左侧（空口左外侧）
+    { x: 8800, y: CEILING_STAND, team: "ffa" }
+    // FFA出生→天花板右侧（空口右外侧）
   ];
   var MORTARS_INIT = [
-    { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: 2740, angle: -Math.PI * 0.28, power: 24 },
-    { id: "mortar_mid_w", name: "\u4E2D\u592E\u897F\u8FEB\u51FB\u70AE", x: 3300, y: 2740, angle: -Math.PI * 0.3, power: 23 },
-    { id: "mortar_center", name: "\u4E2D\u592E\u8FEB\u51FB\u70AE", x: 6e3, y: 2740, angle: -Math.PI * 0.35, power: 24.5 },
-    { id: "mortar_mid_e", name: "\u4E2D\u592E\u4E1C\u8FEB\u51FB\u70AE", x: 8620, y: 2740, angle: -Math.PI * 0.7, power: 23 },
-    { id: "mortar_right", name: "\u4E1C\u533A\u8FEB\u51FB\u70AE", x: 12260, y: 2740, angle: -Math.PI * 0.72, power: 24 }
+    { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: CEILING_STAND, angle: -Math.PI * 0.28, power: 24 },
+    { id: "mortar_mid_w", name: "\u4E2D\u592E\u897F\u8FEB\u51FB\u70AE", x: 3300, y: CEILING_STAND, angle: -Math.PI * 0.3, power: 23 },
+    { id: "mortar_center", name: "\u4E2D\u592E\u8FEB\u51FB\u70AE", x: 5400, y: CEILING_STAND, angle: -Math.PI * 0.35, power: 24.5 },
+    { id: "mortar_mid_e", name: "\u4E2D\u592E\u4E1C\u8FEB\u51FB\u70AE", x: 7800, y: CEILING_STAND, angle: -Math.PI * 0.7, power: 23 },
+    { id: "mortar_right", name: "\u4E1C\u533A\u8FEB\u51FB\u70AE", x: 12260, y: CEILING_STAND, angle: -Math.PI * 0.72, power: 24 }
   ];
   var RANDOM_SPAWN_CANDIDATES = (() => {
     const out = [];
+    for (let x = 400; x < WORLD_W; x += 620) {
+      if (x >= HOLE_X0 && x < HOLE_X1) continue;
+      out.push({ x, y: CEILING_STAND });
+    }
     for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 });
-    for (const px of [2200, 3800, 5400, 7600, 9600, 11800]) out.push({ x: px + 150, y: SURFACE_Y - 300 });
     for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 });
-    for (const cx of [1720, 4150, 6600, 9e3, 11420]) out.push({ x: cx, y: 2740 });
     return out;
   })();
 

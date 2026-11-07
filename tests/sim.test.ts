@@ -59,16 +59,15 @@ test('环形世界（垂直）：wrapY/wrapDeltaY 上下跨缝语义正确', () 
 test('全环面：向上飞出顶部（y<0）从底部回入，不撞任何边界', () => {
   const w = new World(31)
   const p = w.addPlayer('P', 'ffa')
-  p.pos = { x: 6600, y: 100 }   // 高空
-  // 持续喷射向上（Teeworlds 喷射），穿越 y=0 缝
-  let crossed = false
+  p.pos = { x: 6600, y: 100 }   // 高空（天花板空口内，可向上）
+  // 持续喷射向上：玩家应能升到世界顶部缝附近（y≈26，身体贴 y=0）
+  let minY = p.pos.y
   for (let i = 0; i < 400; i++) {
     w.step(DT, new Map([[p.id, input({ jetpack: true })]]))
     w.drainEvents()
-    if (wrapDeltaY(p.pos.y, 300) > 0 && p.pos.y > 4400 - 800) crossed = true   // 已绕到底部
-    if (crossed) break
+    minY = Math.min(minY, p.pos.y)
   }
-  assert.ok(crossed || wrapDeltaY(p.pos.y, 100) < -800, `expected vertical wrap, y=${p.pos.y}`)
+  assert.ok(minY < 100, `expected to reach top seam (y≈0), minY=${minY.toFixed(1)}`)
 })
 
 test('重力：空中出生者下落到地表', () => {
@@ -268,7 +267,7 @@ test('激光：按住持续输出（射速无限），一梭子可打 8 秒；�
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4   // 激光炮
-  p.pos = { x: 2100, y: 2784 }   // 朝上打（该列上方无遮挡，避免反射自伤）
+  p.pos = { x: 6600, y: 2784 }   // 天花板空口内朝上打（上方无遮挡，避免反射自伤）
   const ammo0 = p.ammo[4]
   // 按住 1 秒：应连续产生激光事件（不是单发）
   let beamEvents = 0
@@ -1011,7 +1010,12 @@ test('引力枪防御：引力场近距吸收其他枪的子弹', () => {
 
 test('地图编辑器数据：默认地图/清洗/自定义地图可被 World 使用', () => {
   const def = defaultMapData()
-  assert.ok(def.solids.length === 28, `default map has 28 solids, got ${def.solids.length}`)
+  assert.ok(def.solids.length === 2, `default map = 2 ceiling slabs, got ${def.solids.length}`)
+  // 天花板：左右两块实心板，正中 x 5600~7600 留空
+  const w0 = new World(310, def)
+  assert.ok(w0.terrain.isSolidAt(1000, 1960), 'left ceiling slab solid')
+  assert.ok(w0.terrain.isSolidAt(10000, 1960), 'right ceiling slab solid')
+  assert.ok(!w0.terrain.isSolidAt(6600, 1960), 'ceiling hole open at center')
   // 清洗：非法项丢弃、kind 回退
   const clean = sanitizeMapData({ name: 't', solids: [
     { x: 100, y: 2500, w: 60, h: 20, kind: 'platform' },
@@ -1033,11 +1037,11 @@ test('地图编辑器数据：默认地图/清洗/自定义地图可被 World �
 
 
 test('激光自伤：反射回来的光束会伤到自己（枪口第一段不自伤）', () => {
-  // ① 正前方开火：不自伤
+  // ① 正前方开火：不自伤（站在天花板空口 x=6600 下方朝上，上方无遮挡）
   const w = new World(221)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4
-  p.pos = { x: 2100, y: 2784 }   // 无遮挡列
+  p.pos = { x: 6600, y: 2784 }   // 空口内，上方无天花板
   for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
   assert.equal(p.hp, 100, 'forward beam does not hurt the shooter')
 
@@ -1045,7 +1049,7 @@ test('激光自伤：反射回来的光束会伤到自己（枪口第一段不�
   const w2 = new World(222)
   const q = w2.addPlayer('Q', 'ffa')
   q.weaponIndex = 4
-  q.pos = { x: 2100, y: 2784 }
+  q.pos = { x: 6600, y: 2784 }
   let damaged = false
   for (let i = 0; i < 60; i++) {
     w2.step(DT, new Map([[q.id, input({ fire: true, aim: Math.PI / 2 })]]))
@@ -1096,10 +1100,10 @@ test('激光被可破坏掩体挡住（不再穿过去）', () => {
   const a = w.addPlayer('A', 'red')
   const b = w.addPlayer('B', 'blue')
   a.weaponIndex = 4
-  // 可破坏障碍 obs_2 位于 (3400,2720,60,80)；假人躲在它后面（避开 6600 地雷）
+  // 可破坏障碍 obs_2 已搬到天花板顶面 (3400,1880,60,80)；玩家/假人站天花板顶面（pos.y=1904，脚底贴板面 1920）
   const ob = w.obstacles.find(o => o.id === 'obs_2')!
-  a.pos = { x: 3280, y: 2784 }
-  b.pos = { x: 3600, y: 2784 }
+  a.pos = { x: 3340, y: 1904 }
+  b.pos = { x: 3460, y: 1904 }
   const hpOb = ob.hp
   for (let i = 0; i < 30; i++) {
     w.step(DT, new Map([

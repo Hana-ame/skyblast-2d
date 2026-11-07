@@ -1,5 +1,8 @@
 // core/map.ts —— 地图数据（编辑器与游戏共用）：平台/掩体/方块 的矩形列表
 // 地形=一张平地 + 这些矩形；双轴环形世界坐标（13200×4400，地表 y=2800）。
+// 上下限设定：下限=地板（世界内置整块平地 y>=2800），上限=天花板（用户指定完整平面、正中留空）。
+import { WORLD_W } from './wrap.ts'
+
 export type MapSolidKind = 'cover' | 'platform' | 'block'
 
 export interface MapSolid {
@@ -15,43 +18,23 @@ export interface MapData {
   solids: MapSolid[]
 }
 
-/** 默认地图：城市街区（用户 2026-11-07 通过编辑器提供；中段被截断处已按对称补全） */
+/** 天花板（上限）：完整实心平面，顶面 y=1920、厚 80（底面 2000）；只在正中留一个空口供上下通行。
+ *  空口 x 5600~7600（宽 2000，中心 6600）。 */
+export const CEILING_TOP = 1920
+export const CEILING_THICK = 80
+export const CEILING_HOLE_X0 = 5600
+export const CEILING_HOLE_X1 = 7600
+
+/** 默认地图：纯平地（地板，世界内置）+ 一整块天花板（上限，正中留空）。
+ *  所有道具（跳台/迫击炮/瞭望塔/旗帜/地雷等）都搬到了天花板顶面（见 sim/world.ts 的坐标）。 */
 export function defaultMapData(): MapData {
   const solids: MapSolid[] = [
-    // 地面层街区（x 4840~9840）
-    { x: 4840, y: 2680, w: 240, h: 120, kind: 'cover' },
-    { x: 5280, y: 2620, w: 240, h: 160, kind: 'cover' },
-    { x: 5660, y: 2720, w: 160, h: 80, kind: 'cover' },
-    { x: 6200, y: 2680, w: 180, h: 120, kind: 'cover' },
-    { x: 6680, y: 2720, w: 240, h: 80, kind: 'cover' },
-    { x: 7380, y: 2700, w: 240, h: 100, kind: 'cover' },
-    { x: 7820, y: 2660, w: 220, h: 140, kind: 'cover' },
-    { x: 8340, y: 2660, w: 220, h: 140, kind: 'cover' },
-    { x: 8860, y: 2660, w: 300, h: 140, kind: 'cover' },
-    { x: 9480, y: 2620, w: 360, h: 180, kind: 'cover' },
-    // 中层建筑（截断处按街区节奏补全 x 5600~8000）
-    { x: 5600, y: 1980, w: 220, h: 140, kind: 'cover' },
-    { x: 5900, y: 2080, w: 260, h: 120, kind: 'cover' },
-    { x: 6200, y: 1900, w: 180, h: 160, kind: 'cover' },
-    { x: 6500, y: 2000, w: 240, h: 120, kind: 'cover' },
-    { x: 6820, y: 1880, w: 200, h: 140, kind: 'cover' },
-    { x: 7100, y: 2020, w: 260, h: 140, kind: 'cover' },
-    { x: 7420, y: 1900, w: 240, h: 140, kind: 'cover' },
-    { x: 7720, y: 2060, w: 220, h: 120, kind: 'cover' },
-    // 中层建筑（用户提供，x 8060~9800）
-    { x: 8260, y: 1940, w: 260, h: 140, kind: 'cover' },
-    { x: 8060, y: 1840, w: 140, h: 180, kind: 'cover' },
-    { x: 8700, y: 1960, w: 220, h: 160, kind: 'cover' },
-    { x: 9140, y: 1860, w: 140, h: 180, kind: 'cover' },
-    { x: 8980, y: 2080, w: 120, h: 140, kind: 'cover' },
-    { x: 9400, y: 1980, w: 140, h: 140, kind: 'cover' },
-    { x: 9200, y: 2180, w: 220, h: 160, kind: 'cover' },
-    { x: 9620, y: 2100, w: 180, h: 100, kind: 'cover' },
-    // 高空长桥
-    { x: 3240, y: 1340, w: 1920, h: 80, kind: 'cover' },
-    { x: 5200, y: 1320, w: 4800, h: 80, kind: 'cover' },
+    // 天花板左板（环形 x 0~5600）
+    { x: 0, y: CEILING_TOP, w: CEILING_HOLE_X0, h: CEILING_THICK, kind: 'platform' },
+    // 天花板右板（环形 x 7600~13200）
+    { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: 'platform' },
   ]
-  return { name: '自定义地图', solids }
+  return { name: '天花板竞技场', solids }
 }
 
 /** 校验/清洗外部地图 JSON（编辑器导入、localStorage） */

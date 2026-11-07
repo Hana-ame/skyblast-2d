@@ -76,7 +76,7 @@ export function weaponViolations(): Violation[] {
 }
 
 /** 布局约定：默认地图下，所有地标都必须在空地上、在世界范围内；跳台必须贴地且上方无遮挡 */
-export function layoutViolations(world: World): Violation[] {
+export function layoutViolations(world: World, opts: { skipPads?: boolean } = {}): Violation[] {
   const out: Violation[] = []
   const add = (code: string, message: string): void => { out.push({ code, message }) }
   const inBounds = (x: number, y: number): boolean => x >= 0 && x < WORLD_W && y >= 0 && y < WORLD_H
@@ -99,9 +99,12 @@ export function layoutViolations(world: World): Violation[] {
     if (!pt.skipSolid && world.terrain.isSolidAt(pt.x, pt.y)) add('layout.solid', `${pt.label} is inside solid terrain (${pt.x},${pt.y})`)
   }
   // 跳台：脚下有地、上方无遮挡（站在上面不会卡进平台）
-  for (const p of JUMP_PADS) {
-    if (!world.terrain.isSolidAt(p.x, p.y + 12)) add('layout.pad.ground', `jumpPad ${p.x} has no ground below`)
-    if (world.terrain.isSolidAt(p.x, p.y - 8)) add('layout.pad.air', `jumpPad ${p.x} has solid above`)
+  // skipPads：用于空地形/无天花板的自定义地图 —— 跳台是天花板地图专属道具，无天花板时不做此判定
+  if (!opts.skipPads) {
+    for (const p of JUMP_PADS) {
+      if (!world.terrain.isSolidAt(p.x, p.y + 12)) add('layout.pad.ground', `jumpPad ${p.x} has no ground below`)
+      if (world.terrain.isSolidAt(p.x, p.y - 8)) add('layout.pad.air', `jumpPad ${p.x} has solid above`)
+    }
   }
   // 据点 id 唯一
   const cpIds = world.capturePoints.map(c => c.id)

@@ -19,91 +19,101 @@ const BODY_HALF_W = 10
 const BODY_TOP = 26   // 眼位（p.y 是脚底基准）
 const BODY_BOTTOM = 16
 
+// ── 地标全部搬到天花板顶面（上限 y=1920，站立 y=1860；空口 x 5600~7600，空口内地标挪到两侧）──
+// 地板=地面（世界内置平地 y=2800）；红/蓝出生点按用户要求留在地面左右。
+const CEILING_STAND = 1860   // 天花板顶面（1920）上方的站立 y
+const GROUND_STAND = 2740    // 地面（2800）上方的站立 y
+const HOLE_X0 = 5600         // 空口左
+const HOLE_X1 = 7600         // 空口右
+
 export const SPAWN_POINTS: { x: number; y: number; team: TeamId }[] = [
-  { x: 1100, y: 2740, team: 'red' },
-  { x: 12100, y: 2740, team: 'blue' },
-  { x: 6600, y: 1460, team: 'green' },
-  { x: 6600, y: 2380, team: 'ffa' },
+  { x: 1100, y: GROUND_STAND, team: 'red' },     // 左出生点留地面
+  { x: 12100, y: GROUND_STAND, team: 'blue' },   // 右出生点留地面
+  { x: 4300, y: CEILING_STAND, team: 'green' },  // 绿出生→天花板左侧（空口左外侧）
+  { x: 8800, y: CEILING_STAND, team: 'ffa' },    // FFA出生→天花板右侧（空口右外侧）
 ]
 
 export const AMMO_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 1300, y: 2760, area: '西区平地' },
-  { x: 2100, y: 2760, area: '西区平台下' },
-  { x: 2900, y: 2760, area: '中西平地' },
-  { x: 4600, y: 2760, area: '中央西平地' },
-  { x: 6500, y: 2760, area: '中央平地' },
-  { x: 8100, y: 2760, area: '中东平地' },
-  { x: 10200, y: 2760, area: '东区平地' },
+  { x: 1300, y: GROUND_STAND, area: '西区平地' },
+  { x: 2100, y: GROUND_STAND, area: '西区平台下' },
+  { x: 2900, y: GROUND_STAND, area: '中西平地' },
+  { x: 4600, y: CEILING_STAND, area: '天花板·中央西' },
+  { x: 5400, y: CEILING_STAND, area: '天花板·空口左' },
+  { x: 7800, y: CEILING_STAND, area: '天花板·空口右' },
+  { x: 10200, y: CEILING_STAND, area: '天花板·东区' },
 ]
 
 const SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 1500, y: 2760, area: '西区补给点' },
-  { x: 3100, y: 2760, area: '中西补给点' },
-  { x: 4300, y: 2760, area: '中央西补给点' },
-  { x: 5100, y: 2760, area: '中央补给点' },
-  { x: 8300, y: 2760, area: '中东补给点' },
-  { x: 10300, y: 2760, area: '东区补给点' },
+  { x: 1500, y: GROUND_STAND, area: '西区补给点' },
+  { x: 3100, y: GROUND_STAND, area: '中西补给点' },
+  { x: 4300, y: CEILING_STAND, area: '天花板·中央西补给点' },
+  { x: 5400, y: CEILING_STAND, area: '天花板·空口左补给点' },
+  { x: 7800, y: CEILING_STAND, area: '天花板·空口右补给点' },
+  { x: 10300, y: CEILING_STAND, area: '天花板·东区补给点' },
 ]
 
 /** 特殊补给位：只出「替身人偶」（不在常规配装里） */
 const DOLL_SUPPLY_SPOTS: { x: number; y: number; area: string }[] = [
-  { x: 4600, y: 2760, area: '中央西特殊补给点' },
-  { x: 8560, y: 2760, area: '东区特殊补给点' },
+  { x: 4600, y: CEILING_STAND, area: '天花板·中央西特殊补给点' },
+  { x: 8560, y: CEILING_STAND, area: '天花板·东区特殊补给点' },
 ]
 
 const MORTARS_INIT: Omit<Mortar, 'cooldown' | 'operatorId'>[] = [
-  { id: 'mortar_left', name: '西区迫击炮', x: 920, y: 2740, angle: -Math.PI * 0.28, power: 24.0 },
-  { id: 'mortar_mid_w', name: '中央西迫击炮', x: 3300, y: 2740, angle: -Math.PI * 0.30, power: 23.0 },
-  { id: 'mortar_center', name: '中央迫击炮', x: 6000, y: 2740, angle: -Math.PI * 0.35, power: 24.5 },
-  { id: 'mortar_mid_e', name: '中央东迫击炮', x: 8620, y: 2740, angle: -Math.PI * 0.70, power: 23.0 },
-  { id: 'mortar_right', name: '东区迫击炮', x: 12260, y: 2740, angle: -Math.PI * 0.72, power: 24.0 },
+  { id: 'mortar_left', name: '西区迫击炮', x: 920, y: CEILING_STAND, angle: -Math.PI * 0.28, power: 24.0 },
+  { id: 'mortar_mid_w', name: '中央西迫击炮', x: 3300, y: CEILING_STAND, angle: -Math.PI * 0.30, power: 23.0 },
+  { id: 'mortar_center', name: '中央迫击炮', x: 5400, y: CEILING_STAND, angle: -Math.PI * 0.35, power: 24.5 },
+  { id: 'mortar_mid_e', name: '中央东迫击炮', x: 7800, y: CEILING_STAND, angle: -Math.PI * 0.70, power: 23.0 },
+  { id: 'mortar_right', name: '东区迫击炮', x: 12260, y: CEILING_STAND, angle: -Math.PI * 0.72, power: 24.0 },
 ]
 
 const MINE_PRESETS: { x: number; y: number }[] = [
-  { x: 1720, y: 2760 }, { x: 4150, y: 2760 }, { x: 6600, y: 2760 },
-  { x: 10200, y: 2760 }, { x: 11420, y: 2760 }, { x: 3900, y: 2760 },
+  { x: 1720, y: CEILING_STAND }, { x: 3900, y: CEILING_STAND }, { x: 5400, y: CEILING_STAND },
+  { x: 7800, y: CEILING_STAND }, { x: 10200, y: CEILING_STAND }, { x: 11420, y: CEILING_STAND },
 ]
 
 const WATCHTOWERS: Watchtower[] = [
-  { id: 'tower_1', name: '西部瞭望塔', x: 3700, y: 2760, operatorId: null },
-  { id: 'tower_2', name: '中西瞭望塔', x: 7000, y: 2760, operatorId: null },
-  { id: 'tower_3', name: '中央东瞭望塔', x: 8800, y: 2760, operatorId: null },
-  { id: 'tower_4', name: '东部瞭望塔', x: 11900, y: 2760, operatorId: null },
+  { id: 'tower_1', name: '西部瞭望塔', x: 3700, y: CEILING_STAND, operatorId: null },
+  { id: 'tower_2', name: '中西瞭望塔', x: 5400, y: CEILING_STAND, operatorId: null },
+  { id: 'tower_3', name: '中央东瞭望塔', x: 7800, y: CEILING_STAND, operatorId: null },
+  { id: 'tower_4', name: '东部瞭望塔', x: 11900, y: CEILING_STAND, operatorId: null },
 ]
 
 const WARP_PORTALS: WarpPortal[] = [
-  { id: 'warp_1', name: 'W1 西区传送门', x: 880, y: 2740, targetId: 'warp_2', color: '#06b6d4' },
-  { id: 'warp_2', name: 'W2 中西传送门', x: 3150, y: 2740, targetId: 'warp_1', color: '#06b6d4' },
-  { id: 'warp_3', name: 'W3 中央传送门', x: 4700, y: 2740, targetId: 'warp_4', color: '#a855f7' },
-  { id: 'warp_4', name: 'W4 中东传送门', x: 10000, y: 2740, targetId: 'warp_3', color: '#a855f7' },
-  { id: 'warp_5', name: 'W5 中央东传送门', x: 7000, y: 2740, targetId: 'warp_6', color: '#10b981' },
-  { id: 'warp_6', name: 'W6 东区传送门', x: 12280, y: 2740, targetId: 'warp_5', color: '#10b981' },
+  { id: 'warp_1', name: 'W1 西区传送门', x: 880, y: CEILING_STAND, targetId: 'warp_2', color: '#06b6d4' },
+  { id: 'warp_2', name: 'W2 中西传送门', x: 3150, y: CEILING_STAND, targetId: 'warp_1', color: '#06b6d4' },
+  { id: 'warp_3', name: 'W3 中央传送门', x: 4700, y: CEILING_STAND, targetId: 'warp_4', color: '#a855f7' },
+  { id: 'warp_4', name: 'W4 中东传送门', x: 10000, y: CEILING_STAND, targetId: 'warp_3', color: '#a855f7' },
+  { id: 'warp_5', name: 'W5 中央东传送门', x: 5400, y: CEILING_STAND, targetId: 'warp_6', color: '#10b981' },
+  { id: 'warp_6', name: 'W6 东区传送门', x: 12280, y: CEILING_STAND, targetId: 'warp_5', color: '#10b981' },
 ]
 
-/** 平地地图的随机出生候选点（地面沿线 + 平台 + 据点/基地） */
+/** 平地地图的随机出生候选点：天花板顶面一排 + 地面一排（都避开空口与实体） */
 const RANDOM_SPAWN_CANDIDATES: { x: number; y: number }[] = (() => {
   const out: { x: number; y: number }[] = []
+  for (let x = 400; x < WORLD_W; x += 620) {
+    // 天花板顶面候选（空口 5600~7600 内不放，改放板面）
+    if (x >= HOLE_X0 && x < HOLE_X1) continue
+    out.push({ x, y: CEILING_STAND })
+  }
   for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 })
-  for (const px of [2200, 3800, 5400, 7600, 9600, 11800]) out.push({ x: px + 150, y: SURFACE_Y - 300 })
   for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 })
-  for (const cx of [1720, 4150, 6600, 9000, 11420]) out.push({ x: cx, y: 2740 })
   return out
 })()
 
 export const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
-  // 全部位于可站立地表：远离竖井洞、台地内部与出生点（此前 2 个在竖井里、1 个埋在台地内，且完全没渲染 → "莫名弹起"）
-  { x: 1000, y: 2800, vx: 210, vy: -810 },
-  { x: 4300, y: 2800, vx: 180, vy: -870 },
-  { x: 10400, y: 2800, vx: -180, vy: -870 },
-  { x: 13050, y: 2800, vx: -210, vy: -810 },
+  // 全部搬到天花板顶面（y=1920 站立面）：跳远道具，与迫击炮/瞭望塔一起上屋顶
+  { x: 1000, y: 1920, vx: 210, vy: -810 },
+  { x: 4300, y: 1920, vx: 180, vy: -870 },
+  { x: 10400, y: 1920, vx: -180, vy: -870 },
+  { x: 13050, y: 1920, vx: -210, vy: -810 },
 ]
 
 const CP_INITS: { id: string; code: string; name: string; x: number; y: number; ownerTeam: TeamId | null }[] = [
-  { id: 'cp_a', code: 'A', name: '据点A·西区', x: 1720, y: 2740, ownerTeam: 'red' },
-  { id: 'cp_b', code: 'B', name: '据点B·中央西', x: 4150, y: 2740, ownerTeam: null },
-  { id: 'cp_c', code: 'C', name: '据点C·中央', x: 6600, y: 2740, ownerTeam: 'green' },
-  { id: 'cp_d', code: 'D', name: '据点D·中东', x: 10200, y: 2740, ownerTeam: null },
-  { id: 'cp_e', code: 'E', name: '据点E·东区', x: 11420, y: 2740, ownerTeam: 'blue' },
+  { id: 'cp_a', code: 'A', name: '据点A·西区', x: 1720, y: CEILING_STAND, ownerTeam: 'red' },
+  { id: 'cp_b', code: 'B', name: '据点B·中央西', x: 3900, y: CEILING_STAND, ownerTeam: null },
+  { id: 'cp_c', code: 'C', name: '据点C·中央', x: 5400, y: CEILING_STAND, ownerTeam: 'green' },
+  { id: 'cp_d', code: 'D', name: '据点D·中东', x: 7800, y: CEILING_STAND, ownerTeam: null },
+  { id: 'cp_e', code: 'E', name: '据点E·东区', x: 11420, y: CEILING_STAND, ownerTeam: 'blue' },
 ]
 
 export class World {
@@ -491,21 +501,27 @@ export class World {
     const segments: { x1: number; y1: number; x2: number; y2: number }[] = []
     const hitPlayer = new Set<number>()   // 激光有自伤：反射后的光束可以打到自己
     const hitObstacle = new Set<string>()
-    let x = wrapX(p.pos.x + Math.cos(p.aim) * 24)
-    let y = (p.pos.y - 12) + Math.sin(p.aim) * 24
     let dx = Math.cos(p.aim)
     let dy = Math.sin(p.aim)
-    // 枪口贴墙时避免从墙体内部生成本段光束（那会造成视觉上的“穿墙”）
-    for (let i = 0; i < 6 && this.terrain.isSolidAt(x, y); i++) {
-      x = wrapX(x + dx * 10)
-      y = wrapY(y + dy * 10)
+    // 枪口起点：沿瞄准方向从 4px 起按 4px 步进走到 24px，取「第一个实体之前」的最远空点。
+    // 必须由近及远逐点检查：若直接取 24px，薄墙（<24px）会被整个跨过去，从墙后射出（真正的“穿墙激光”）。
+    // 连 4px 处都在实体内（贴墙/卡角）→ 本帧不出光束（表现为顶住墙）。
+    let x = 0
+    let y = 0
+    let originOk = false
+    for (let ahead = 4; ahead <= 24; ahead += 4) {
+      const cx = wrapX(p.pos.x + dx * ahead)
+      const cy = wrapY((p.pos.y - 12) + dy * ahead)
+      if (this.terrain.isSolidAt(cx, cy)) break
+      x = cx
+      y = cy
+      originOk = true
     }
-    if (this.terrain.isSolidAt(x, y)) {
-      // 枪口仍在实体内（极端贴墙/卡角）→ 这一帧不出光束
-      return
-    }
+    if (!originOk) return
+    const originX = x
+    const originY = y
     const maxSegLen = 1800
-    const step = 10
+    const step = 6
     const bounces = wep.bounces ?? 0
 
     for (let b = 0; b <= bounces; b++) {
@@ -561,8 +577,8 @@ export class World {
         const prev = segments[segments.length - 1]
         seg.x1 = prev.x2; seg.y1 = prev.y2
       } else {
-        seg.x1 = wrapX(p.pos.x + Math.cos(p.aim) * 24)
-        seg.y1 = (p.pos.y - 12) + Math.sin(p.aim) * 24
+        seg.x1 = originX
+        seg.y1 = originY
       }
       segments.push(seg)
       if (blockedByObstacle || !hitWall) break
