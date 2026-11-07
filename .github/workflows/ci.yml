@@ -24,7 +24,8 @@ jobs:
         run: npm run build:web
       - name: Build replay site
         run: npm run build:site
-        npm run build:editor
+      - name: Build map editor
+        run: npm run build:editor
       - name: Lobby server smoke
         run: |
           node server/server.js &
