@@ -17,8 +17,7 @@ await build({
 const hash = createHash('sha256').update(readFileSync(outfile)).digest('hex').slice(0, 10)
 const htmlPath = resolve(root, 'docs/index.html')
 let html = readFileSync(htmlPath, 'utf8')
-const next = html.replace(/bundle\.js\?v=[^"'#]*/g, `bundle.js?v=${hash}`)
-if (next === html) throw new Error('index.html 未找到 bundle.js?v= 缓存版本引用')
-html = next
+if (!/bundle\.js\?v=/.test(html)) throw new Error('index.html 未找到 bundle.js?v= 缓存版本引用')
+html = html.replace(/bundle\.js\?v=[^"'#]*/g, `bundle.js?v=${hash}`)
 writeFileSync(htmlPath, html)
 console.log(`⚡ bundle 已构建；index.html 缓存版本 ${hash}`)
