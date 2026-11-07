@@ -400,7 +400,7 @@ export class World {
     // 副武器（瞬时意图）
     if (w.secondary) this.useSecondary(p, w.secondary, dt)
 
-    // 开火：激光类持续光束；蓄力武器先蓄力再出膛；其余直接弹丸
+    // 开火：光束类（高斯枪）持续输出；蓄力武器先蓄力再出膛；其余直接弹丸
     const wepNow = WEAPONS[p.weaponIndex]
     if (wepNow?.beam) {
       if (w.fire) this.updateContinuousBeam(p, wepNow, dt)
@@ -481,7 +481,7 @@ export class World {
     return weaponFalloff(wep, dist)
   }
 
-  /** 两点之间是否被「原始地形 或 可破坏掩体」挡住（激光视线判定；4px 采样、端点不计） */
+  /** 两点之间是否被「原始地形 或 可破坏掩体」挡住（光束视线判定；4px 采样、端点不计） */
   private lineBlockedByTerrain(x1: number, y1: number, x2: number, y2: number): boolean {
     const dx = wrapDeltaX(x1, x2)
     const dy = wrapDeltaY(y1, y2)
@@ -516,7 +516,7 @@ export class World {
     return { x: x2, y: y2, shortened: false }
   }
 
-  /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
+  /** 持续光束（高斯枪）：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
   private updateContinuousBeam(p: PlayerState, wep: typeof WEAPONS[number], dt: number): void {
     if (p.respawnTimer > 0 || !p.alive) return
     const wi = p.weaponIndex
@@ -531,12 +531,12 @@ export class World {
     if (p.ammo[wi] <= 0 && (p.reserveAmmo[wi] || 0) > 0) this.startReload(p)
 
     const segments: { x1: number; y1: number; x2: number; y2: number }[] = []
-    const hitPlayer = new Set<number>()   // 激光有自伤：反射后的光束可以打到自己
+    const hitPlayer = new Set<number>()   // 高斯枪有自伤：反射后的光束可以打到自己
     const hitObstacle = new Set<string>()
     let dx = Math.cos(p.aim)
     let dy = Math.sin(p.aim)
     // 枪口起点：沿瞄准方向从 4px 起按 4px 步进走到 24px，取「第一个实体之前」的最远空点。
-    // 必须由近及远逐点检查：若直接取 24px，薄墙（<24px）会被整个跨过去，从墙后射出（真正的“穿墙激光”）。
+    // 必须由近及远逐点检查：若直接取 24px，薄墙（<24px）会被整个跨过去，从墙后射出（真正的“穿墙光束”）。
     // 连 4px 处都在实体内（贴墙/卡角）→ 本帧不出光束（表现为顶住墙）。
     let x = 0
     let y = 0
@@ -567,7 +567,7 @@ export class World {
       const segStartX = x
       const segStartY = y
       while (travelled < maxSegLen && totalTravelled < MAX_TOTAL) {
-        // 世界是环形的：激光正常跨越接缝继续飞行（最终由地形/掩体/射程兜底终止）。
+        // 世界是环形的：光束正常跨越接缝继续飞行（最终由地形/掩体/射程兜底终止）。
         // 接缝只影响「渲染」——scene.ts 按段起点累加最长位移来画，不会画出横穿全图的长线。
         const nx = wrapX(x + dx * step)
         const ny = wrapY(y + dy * step)
@@ -584,7 +584,7 @@ export class World {
         }
         const ob = this.obstacleAt(nx, ny)
         if (ob) {
-          // 可破坏掩体挡住激光（枪口贴掩体时也不会从掩体内部/背面射出）
+          // 可破坏掩体挡住光束（枪口贴掩体时也不会从掩体内部/背面射出）
           if (!hitObstacle.has(ob.id)) {
             hitObstacle.add(ob.id)
             this.damageObstacle(ob, dps * dt, undefined)
@@ -1049,8 +1049,8 @@ export class World {
   }
 
   // ── 弹道 ──────────────────────────────────────────────
-  // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
-  // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
+  // 子步进（≤8px/步）：高速弹（高斯枪 3000px/s=50px/帧）不会穿过 20px 墙砖；
+  // 引力弹 passWalls=true 忽略原始地形；光束撞墙反弹（bounces 次，每次反弹重置命中列表）。
   private stepProjectiles(dt: number): void {
     // 伤害为 0 的弹丸没有任何战斗作用 → 直接删除（不推进、不参与碰撞/牵引/渲染）
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
@@ -1175,7 +1175,7 @@ export class World {
           if (dead) break
         }
 
-        // C. 原始地形：引力弹穿墙；激光反弹；其余湮灭
+        // C. 原始地形：引力弹穿墙；光束反弹；其余湮灭
         if (this.terrain.isSolidAt(pr.pos.x, pr.pos.y)) {
           if (pr.passWalls) continue
           if (pr.explosive) {

@@ -115,8 +115,8 @@
     },
     {
       id: 4,
-      name: "\u6FC0\u5149",
-      shortName: "\u6FC0\u5149",
+      name: "\u9AD8\u65AF\u67AA",
+      shortName: "\u9AD8\u65AF\u67AA",
       isSupplyOnly: true,
       damage: 50,
       headshotMult: 2,

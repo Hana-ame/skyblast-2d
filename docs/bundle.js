@@ -1011,7 +1011,7 @@
       const dist = wrapDist(owner.pos.x, owner.pos.y - 12, hx, hy);
       return weaponFalloff(wep, dist);
     }
-    /** 两点之间是否被「原始地形 或 可破坏掩体」挡住（激光视线判定；4px 采样、端点不计） */
+    /** 两点之间是否被「原始地形 或 可破坏掩体」挡住（光束视线判定；4px 采样、端点不计） */
     lineBlockedByTerrain(x1, y1, x2, y2) {
       const dx = wrapDeltaX(x1, x2);
       const dy = wrapDeltaY(y1, y2);
@@ -1043,7 +1043,7 @@
       }
       return { x: x2, y: y2, shortened: false };
     }
-    /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
+    /** 持续光束（高斯枪）：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
     updateContinuousBeam(p, wep, dt) {
       if (p.respawnTimer > 0 || !p.alive) return;
       const wi = p.weaponIndex;
@@ -1544,8 +1544,8 @@
       return moved;
     }
     // ── 弹道 ──────────────────────────────────────────────
-    // 子步进（≤8px/步）：高速弹（激光 3000px/s=50px/帧）不会穿过 20px 墙砖；
-    // 引力弹 passWalls=true 忽略原始地形；激光撞墙反弹（bounces 次，每次反弹重置命中列表）。
+    // 子步进（≤8px/步）：高速弹（高斯枪 3000px/s=50px/帧）不会穿过 20px 墙砖；
+    // 引力弹 passWalls=true 忽略原始地形；光束撞墙反弹（bounces 次，每次反弹重置命中列表）。
     stepProjectiles(dt) {
       for (let i = this.projectiles.length - 1; i >= 0; i--) {
         if (this.projectiles[i].damage <= 0) this.projectiles.splice(i, 1);

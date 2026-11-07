@@ -80,9 +80,9 @@ export interface Projectile {
   weaponLabel: string
   color: string
   hitTargets: number[]     // 穿透弹已命中目标（防同目标重复结算）
-  bounces: number          // 剩余撞墙反弹次数（激光枪 2 次）
+  bounces: number          // 剩余撞墙反弹次数（高斯枪 3 次）
   passWalls: boolean       // 穿透原始地形（引力弹）
-  beam: boolean            // 光束渲染（激光）
+  beam: boolean            // 光束渲染（高斯枪）
   rocket: boolean          // 火箭弹渲染（直线爆炸弹）
   dragPerSecond: number    // 每秒速度保留比例（1=不减速；引力弹 <1）
 }
@@ -165,7 +165,7 @@ export interface SupplyCrate {
   x: number
   y: number
   area: string
-  kind: 'weapon' | 'doll'   // weapon=空投特武（激光/加特林/引力枪）；doll=替身人偶（特殊补给）
+  kind: 'weapon' | 'doll'   // weapon=空投特武（高斯枪/加特林/引力枪）；doll=替身人偶（特殊补给）
   weaponId: number
   weaponName: string
   color: string
@@ -208,7 +208,7 @@ export function defaultWorldInput(): WorldInput {
 
 // 触发事件（瞬态、不进快照；由 World 产出、net/ui 层订阅 → killfeed/音效/粒子）
 export interface WorldEvent {
-  /** 激光束分段（kind='laser' 时） */
+  /** 高斯枪光束分段（kind='laser' 时） */
   segments?: { x1: number; y1: number; x2: number; y2: number }[]
   duration?: number
   color?: string
