@@ -89,3 +89,31 @@ test('护栏·后坐力各向同性：水平/垂直/斜向使用同一系数', (
   assert.ok(Math.abs(mag(diag) - r * RECOIL_SCALE) < 1e-9, 'diagonal magnitude same as axial')
   assert.ok(Math.abs(right.y) < 1e-9 && Math.abs(up.x) < 1e-9, 'no cross-axis components')
 })
+
+
+test('护栏·后坐力各向同性（行为级）：扣除重力后四方向踢力一致', () => {
+  const measure = (aim: number): number => {
+    // 同一 tick 的「开火」与「不开火」两次模拟相减 → 精确隔离后坐力增量（排除重力/上限）
+    const run = (fire: boolean): { x: number; y: number } => {
+      const w = emptyWorld(77)
+      w.config.randomSpawn = false
+      const p = w.addPlayer('P', 'ffa')
+      p.weaponIndex = 0        // 霰弹（recoil 最大，最容易看出各向差异）
+      p.pos = { x: 6200, y: 2000 }
+      p.vel = { x: 0, y: 0 }
+      p.onGround = false
+      w.step(DT, new Map([[p.id, input({ fire, aim })]]))
+      return { x: p.vel.x, y: p.vel.y }
+    }
+    const a = run(true)
+    const b = run(false)
+    return Math.hypot(a.x - b.x, a.y - b.y)
+  }
+  const dirs = [0, Math.PI, -Math.PI / 2, Math.PI / 2, Math.PI / 4, -Math.PI * 0.75]
+  const kicks = dirs.map(measure)
+  const expected = kicks[0]
+  for (const k of kicks) {
+    assert.ok(Math.abs(k - expected) < 1e-6, `recoil kick differs by direction: ${kicks.map(v => v.toFixed(2)).join(', ')}`)
+  }
+  assert.ok(expected > 500, 'shotgun recoil is significant')
+})
