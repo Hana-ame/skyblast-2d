@@ -494,6 +494,15 @@ export class World {
     let y = (p.pos.y - 12) + Math.sin(p.aim) * 24
     let dx = Math.cos(p.aim)
     let dy = Math.sin(p.aim)
+    // 枪口贴墙时避免从墙体内部生成本段光束（那会造成视觉上的“穿墙”）
+    for (let i = 0; i < 6 && this.terrain.isSolidAt(x, y); i++) {
+      x = wrapX(x + dx * 10)
+      y = wrapY(y + dy * 10)
+    }
+    if (this.terrain.isSolidAt(x, y)) {
+      // 枪口仍在实体内（极端贴墙/卡角）→ 这一帧不出光束
+      return
+    }
     const maxSegLen = 1800
     const step = 10
     const bounces = wep.bounces ?? 0
@@ -501,6 +510,7 @@ export class World {
     for (let b = 0; b <= bounces; b++) {
       let travelled = 0
       let hitWall = false
+      let blockedByObstacle = false
       while (travelled < maxSegLen) {
         const nx = wrapX(x + dx * step)
         const ny = wrapY(y + dy * step)
@@ -521,9 +531,16 @@ export class World {
           }
         }
         const ob = this.obstacleAt(nx, ny)
-        if (ob && !hitObstacle.has(ob.id)) {
-          hitObstacle.add(ob.id)
-          this.damageObstacle(ob, dps * dt, undefined)
+        if (ob) {
+          // 可破坏掩体也应挡住激光（不再穿过去继续打人）
+          if (!hitObstacle.has(ob.id)) {
+            hitObstacle.add(ob.id)
+            this.damageObstacle(ob, dps * dt, undefined)
+          }
+          x = nx
+          y = ny
+          blockedByObstacle = true
+          break
         }
         if (this.terrain.isSolidAt(nx, ny)) {
           hitWall = true
@@ -547,7 +564,7 @@ export class World {
         seg.y1 = (p.pos.y - 12) + Math.sin(p.aim) * 24
       }
       segments.push(seg)
-      if (!hitWall) break
+      if (blockedByObstacle || !hitWall) break
     }
 
     this.events.push({

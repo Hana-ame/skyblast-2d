@@ -1088,3 +1088,26 @@ test('数值后台覆盖：清洗/夹取/应用武器与全局参数', () => {
   assert.equal(cfg.maxHp, 120, 'config override applied')
   assert.equal(cfg.randomSpawn, true)
 })
+
+
+test('激光被可破坏掩体挡住（不再穿过去）', () => {
+  const w = new World(231)
+  w.config.randomSpawn = false
+  const a = w.addPlayer('A', 'red')
+  const b = w.addPlayer('B', 'blue')
+  a.weaponIndex = 4
+  // 可破坏障碍 obs_2 位于 (3400,2720,60,80)；假人躲在它后面（避开 6600 地雷）
+  const ob = w.obstacles.find(o => o.id === 'obs_2')!
+  a.pos = { x: 3280, y: 2784 }
+  b.pos = { x: 3600, y: 2784 }
+  const hpOb = ob.hp
+  for (let i = 0; i < 30; i++) {
+    w.step(DT, new Map([
+      [a.id, input({ fire: true, aim: 0 })],
+      [b.id, input()],
+    ]))
+    w.drainEvents()
+  }
+  assert.ok(ob.hp < hpOb, `obstacle takes laser damage, hp=${ob.hp}`)
+  assert.equal(b.hp, 100, 'target behind destructible cover is protected from laser')
+})
