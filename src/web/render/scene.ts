@@ -361,7 +361,7 @@ export function renderScene(): void {
     drawAirstrikeSprite(ctx, st, ax, ay, world.tick)
   }
 
-  // 12.5 高斯枪光束（分段折线，按秒淡出；反射 3 次由权威端算好）
+  // 12.5 高斯枪光束（分段折线，按秒淡出；反射 2 次由权威端算好）
   // 世界是环形的：**每段从起点画到「起点 + 段向量」**（用最短环形位移），
   // 绝不能分别 sx(x1)/sx(x2) —— 那样一段跨接缝时光束会朝反方向横穿整张地图（看起来像穿墙）。
   for (const b of beams) {

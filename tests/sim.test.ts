@@ -277,7 +277,7 @@ test('高斯枪：按住持续输出（射速无限），一梭子可打 8 秒�
     const laser = evs.find(e => e.kind === 'laser')
     if (laser) {
       beamEvents++
-      assert.ok((laser.segments?.length ?? 0) >= 1 && (laser.segments?.length ?? 1) <= 4, 'reflections <= 3')
+      assert.ok((laser.segments?.length ?? 0) >= 1 && (laser.segments?.length ?? 1) <= 3, 'reflections <= 2')
     }
   }
   assert.ok(beamEvents >= 55, `continuous output each tick, got ${beamEvents} beam events`)
@@ -373,7 +373,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[3].gravityScale, 0, 'bazooka flies straight')
   assert.equal(WEAPONS[3].speed, 520, 'bazooka slow')
   assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
-  assert.equal(WEAPONS[4].bounces, 3, 'laser bounces 3 times')
+  assert.equal(WEAPONS[4].bounces, 2, 'gauss bounces 2 times')
   assert.equal(WEAPONS[4].damagePerSecond, 180, 'laser dps reduced (240 -> 180)')
   assert.equal(WEAPONS[4].magSize, 12, 'laser magazine 12')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')

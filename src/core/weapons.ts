@@ -21,7 +21,7 @@ export interface WeaponDef {
   pierceOnHeadshot?: boolean
   pierceAll?: boolean
   gravityScale?: number    // 弹道重力缩放（0=直线）
-  bounces?: number         // 撞墙反弹次数（高斯枪 3 次）
+  bounces?: number         // 撞墙反弹次数（高斯枪 2 次）
   passWalls?: boolean      // 穿透原始地形（引力弹）
   dragPerSecond?: number   // 每秒速度保留比例（<1 表示逐渐减速；引力弹）
   beam?: boolean           // 渲染为光束（高斯枪）
@@ -94,7 +94,7 @@ export const WEAPONS: WeaponDef[] = [
     damage: 50, headshotMult: 2.0, pellets: 1, spread: 0.0,
     speed: 3000, recoil: 0, magSize: 12, maxReserve: 48,   // 12 / 6每秒 = 连续 2 秒
     reloadTime: 4.0, fireDelay: 0, terrainRadius: 18,   // 换弹时间 ×2
-    explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 3, beam: true,
+    explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 2, beam: true,
     friendlyFire: true, selfDamage: true,   // 高斯：反射光束可打到友军/自己
     damagePerSecond: 180, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',   // 伤害下调（240→180）；视野正常
   },

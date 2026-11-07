@@ -69,6 +69,7 @@ export function weaponViolations(): Violation[] {
     if (Math.abs(dur - 2) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 2 秒')
     if ((laser.fovMult ?? 1) !== 1) add('rule.laserfov', '高斯枪视野必须正常（1.0）')
     if (!laser.beam) add('rule.laserbeam', '高斯枪必须是持续光束')
+    if (laser.bounces !== 2) add('rule.laserbounces', '高斯枪必须反射 2 次')
   }
   if (smg && Math.abs((smg.fireDelay ?? 0) - 0.05) > 1e-9) add('rule.smgfire', '冲锋枪射击间隔必须 0.05s')
   if (pistol && pistol.moveSpeedMult !== 1.5) add('rule.pistolmove', '手枪移速必须 1.5x')

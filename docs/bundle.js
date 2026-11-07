@@ -361,7 +361,7 @@
       laser: true,
       pierceAll: true,
       pierceOnHeadshot: true,
-      bounces: 3,
+      bounces: 2,
       beam: true,
       friendlyFire: true,
       selfDamage: true,

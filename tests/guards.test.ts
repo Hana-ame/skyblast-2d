@@ -352,3 +352,26 @@ test('护栏·补给特武不写进 lastPrimaryIndex（多轮拾取/重生不串
     assert.equal(p.weaponIndex, 1, `round ${round}: respawn back to assault rifle, got ${WEAPONS[p.weaponIndex].name}`)
   }
 })
+
+
+test('护栏·高斯枪反射次数=2（段数最多 3）', () => {
+  assert.equal(WEAPONS[4].bounces, 2, 'gauss bounces twice')
+  const w = new World(35000, { name: 'box', solids: [
+    { x: 3000, y: 2000, w: 20, h: 800, kind: 'cover' },
+    { x: 3800, y: 2000, w: 20, h: 800, kind: 'cover' },
+    { x: 3000, y: 2000, w: 820, h: 20, kind: 'cover' },
+    { x: 3000, y: 2780, w: 820, h: 20, kind: 'cover' },
+  ] })
+  w.config.randomSpawn = false
+  const a = w.addPlayer('A', 'ffa')
+  a.weaponIndex = 4
+  a.ammo[4] = 12
+  a.reserveAmmo[4] = 48
+  a.pos = { x: 3400, y: 2700 }
+  let maxSegs = 0
+  for (let i = 0; i < 20; i++) {
+    w.step(DT, new Map([[a.id, input({ fire: true, aim: 0 })]]))
+    for (const e of w.drainEvents()) if (e.kind === 'laser') maxSegs = Math.max(maxSegs, e.segments?.length ?? 0)
+  }
+  assert.equal(maxSegs, 3, `2 reflections => at most 3 segments, got ${maxSegs}`)
+})
