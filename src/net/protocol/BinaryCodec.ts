@@ -1225,10 +1225,14 @@ function decodeProjectile(r: ByteReader): Projectile {
   }
 }
 
+// 索引表必须覆盖 core 实际发出的每个 kind：未知 kind 走 (?? 0) 会退化成 'kill'
+// （曾因缺少 'hit' 导致二进制联机下"每次受击都变成一次击杀"）。
 const EVENT_KINDS: WorldEvent['kind'][] = [
-  'kill', 'headshot', 'pierce', 'explosion', 'obstacle_destroy',
-  'capture', 'supply_pickup', 'ammo_pickup', 'warp', 'shield_break',
-  'doll_recall', 'mortar_fire', 'airstrike_drop', 'laser',
+  'hit', 'kill', 'explosion', 'obstacle_destroy',
+  'capture', 'supply_pickup', 'ammo_pickup', 'warp',
+  'shield', 'shield_break', 'doll_recall', 'mortar_fire',
+  'airstrike', 'airstrike_drop', 'laser', 'watchtower',
+  'headshot', 'pierce',
   'projectile_spawn', 'projectile_bounce', 'projectile_destroy',
 ]
 const EVENT_KIND_TO_IDX: Record<string, number> = Object.fromEntries(EVENT_KINDS.map((k, i) => [k, i]))

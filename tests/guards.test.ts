@@ -1,6 +1,7 @@
 // tests/guards.test.ts —— 防回归护栏：数值约定 / 布局合法性 / 出生安全 / 小地图兼容
 // 任何“改了这个坏那个”的问题，应当在 npm test 阶段直接变红。
 import test from 'node:test'
+import { readFileSync, readdirSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { World } from '../src/core/sim/world.ts'
 import { SPAWN_POINTS } from '../src/core/sim/world.ts'
@@ -9,6 +10,7 @@ import { defaultMapData } from '../src/core/map.ts'
 import { WEAPONS, DEFAULT_CONFIG } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
 import type { WorldEvent } from '../src/core/types.ts'
+import { encodeServerMsgBinary, decodeServerMsgBinary } from '../src/net/protocol/BinaryCodec.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
@@ -471,4 +473,57 @@ test('护栏·复活保护：重生后 2 秒隐身/无敌/无实体/不能开枪
   const hp1 = a.hp
   for (let i = 0; i < 40; i++) w.step(DT, new Map([[a.id, input()], [b.id, input({ fire: true, aim: Math.PI })]]))
   assert.ok(a.hp < hp1, 'damage resumes after protection ends')
+})
+
+
+test('护栏·二进制事件通道：所有 kind 往返保真（未知 kind 不得退化成 kill）', () => {
+  const w = new World(38000)
+  w.config.randomSpawn = false
+  const a = w.addPlayer('Alice', 'red')
+  const b = w.addPlayer('Bob', 'blue')
+  a.weaponIndex = 1
+  a.ammo[1] = 30
+  a.pos = { x: 3000, y: 2740 }
+  b.pos = { x: 3060, y: 2740 }
+  b.hp = 3
+  const evs: WorldEvent[] = []
+  for (let i = 0; i < 60; i++) {
+    w.step(DT, new Map([[a.id, input({ fire: true })], [b.id, input()]]))
+    evs.push(...w.drainEvents())
+  }
+  assert.ok(evs.some(e => e.kind === 'hit'), 'hit event produced')
+  const back = decodeServerMsgBinary(encodeServerMsgBinary({ snap: w.snapshot(), events: evs }))
+  const kindsAfter: Record<string, number> = {}
+  for (const e of back!.events ?? []) kindsAfter[e.kind] = (kindsAfter[e.kind] ?? 0) + 1
+  assert.ok((kindsAfter['hit'] ?? 0) > 0, `hit must survive the codec (was decoded as kill before), got ${JSON.stringify(kindsAfter)}`)
+  // kill 数量必须与编码前一致（不能因索引错位被放大）
+  const killsBefore = evs.filter(e => e.kind === 'kill').length
+  assert.equal(kindsAfter['kill'] ?? 0, killsBefore, 'kill count preserved through codec')
+  // 名字字段保留（kill 走 JSON 兜底路径）
+  const k = (back!.events ?? []).find(e => e.kind === 'kill')
+  assert.ok(k, 'kill survives codec')
+  assert.equal(k!.killerName, 'Alice', 'killer name preserved over the wire')
+  assert.equal(k!.victimName, 'Bob', 'victim name preserved over the wire')
+})
+
+
+test('护栏·codec kind 表必须覆盖 core 实际发出的每个事件 kind（漏项会退化成 kill）', () => {
+  const simDir = new URL('../src/core/sim/', import.meta.url)
+  const emitted = new Set<string>()
+  for (const f of readdirSync(simDir)) {
+    if (!f.endsWith('.ts')) continue
+    const src = readFileSync(new URL(f, simDir), 'utf8')
+    for (const m of src.matchAll(/kind: '([a-z_]+)'/g)) emitted.add(m[1])
+  }
+  emitted.delete('weapon'); emitted.delete('doll')   // 不是 WorldEvent（补给箱/人偶 kind）
+  assert.ok(emitted.size >= 10, `sanity: found ${emitted.size} emitted kinds`)
+
+  const codec = readFileSync(new URL('../src/net/protocol/BinaryCodec.ts', import.meta.url), 'utf8')
+  const start = codec.indexOf('const EVENT_KINDS')
+  const arrStart = codec.indexOf('= [', start)
+  const block = codec.slice(arrStart, codec.indexOf('\n]', arrStart))
+  const table = new Set([...block.matchAll(/'([a-z_]+)'/g)].map(m => m[1]))
+
+  const missing = [...emitted].filter(k => !table.has(k))
+  assert.deepEqual(missing, [], `这些 kind 不在 EVENT_KINDS 里，二进制联机会被解码成 'kill'：${missing.join(', ')}`)
 })

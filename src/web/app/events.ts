@@ -1,7 +1,7 @@
 // web/app/events.ts —— 权威世界事件 → 表现层（killfeed/特效/震颤/光束/死亡信息）
 import type { WorldEvent } from '../../core/types.ts'
 import {
-  screenFx, localPlayer, effects, beams,
+  screenFx, localPlayer, effects, beams, world,
 } from './context.ts'
 import { TEAM_PALETTE } from '../sprites.ts'
 import { addKillFeed, showToast } from './toast.ts'
@@ -12,9 +12,17 @@ export const death = { info: null as { killer: string; weapon: string } | null }
 export function handleEvents(evs: WorldEvent[]): void {
   for (const e of evs) {
     if (e.kind === 'kill') {
-      addKillFeed(e.killerName ?? '?', e.killerTeam ?? 'ffa', e.victimName ?? '?', e.victimTeam ?? 'ffa', e.weaponLabel ?? '', e.isHeadshot, e.isPierced)
-      if (e.victimId === localPlayer.id) death.info = { killer: e.killerName ?? '战场环境', weapon: e.weaponLabel ?? '' }
-      if (e.x !== undefined && e.y !== undefined) effects.killBurst(e.x, e.y, TEAM_PALETTE[e.victimTeam ?? 'red']?.light ?? '#fda4af')
+      // 联机二进制协议为省流可能只带 id → 名字/队伍按 id 反查本地快照兜底
+      const killer = e.killerId ?? e.attackerId
+      const killerP = killer !== undefined ? world.players.find(p => p.id === killer) : undefined
+      const victimP = e.victimId !== undefined ? world.players.find(p => p.id === e.victimId) : undefined
+      const kName = e.killerName ?? killerP?.name ?? '战场环境'
+      const kTeam = e.killerTeam ?? killerP?.team ?? 'ffa'
+      const vName = e.victimName ?? victimP?.name ?? '?'
+      const vTeam = e.victimTeam ?? victimP?.team ?? 'ffa'
+      addKillFeed(kName, kTeam, vName, vTeam, e.weaponLabel ?? '', e.isHeadshot ?? e.headshot, e.isPierced)
+      if (e.victimId === localPlayer.id) death.info = { killer: kName, weapon: e.weaponLabel ?? '' }
+      if (e.x !== undefined && e.y !== undefined) effects.killBurst(e.x, e.y, TEAM_PALETTE[vTeam]?.light ?? '#fda4af')
     } else if (e.kind === 'explosion') {
       screenFx.shake = Math.max(screenFx.shake, Math.min(14, (e.radius ?? 60) * 0.15))
       if (e.x !== undefined && e.y !== undefined) effects.explosion(e.x, e.y, e.radius ?? 60)

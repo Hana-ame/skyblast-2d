@@ -4872,9 +4872,16 @@
   function handleEvents(evs) {
     for (const e of evs) {
       if (e.kind === "kill") {
-        addKillFeed(e.killerName ?? "?", e.killerTeam ?? "ffa", e.victimName ?? "?", e.victimTeam ?? "ffa", e.weaponLabel ?? "", e.isHeadshot, e.isPierced);
-        if (e.victimId === localPlayer.id) death.info = { killer: e.killerName ?? "\u6218\u573A\u73AF\u5883", weapon: e.weaponLabel ?? "" };
-        if (e.x !== void 0 && e.y !== void 0) effects.killBurst(e.x, e.y, TEAM_PALETTE[e.victimTeam ?? "red"]?.light ?? "#fda4af");
+        const killer = e.killerId ?? e.attackerId;
+        const killerP = killer !== void 0 ? world.players.find((p) => p.id === killer) : void 0;
+        const victimP = e.victimId !== void 0 ? world.players.find((p) => p.id === e.victimId) : void 0;
+        const kName = e.killerName ?? killerP?.name ?? "\u6218\u573A\u73AF\u5883";
+        const kTeam = e.killerTeam ?? killerP?.team ?? "ffa";
+        const vName = e.victimName ?? victimP?.name ?? "?";
+        const vTeam = e.victimTeam ?? victimP?.team ?? "ffa";
+        addKillFeed(kName, kTeam, vName, vTeam, e.weaponLabel ?? "", e.isHeadshot ?? e.headshot, e.isPierced);
+        if (e.victimId === localPlayer.id) death.info = { killer: kName, weapon: e.weaponLabel ?? "" };
+        if (e.x !== void 0 && e.y !== void 0) effects.killBurst(e.x, e.y, TEAM_PALETTE[vTeam]?.light ?? "#fda4af");
       } else if (e.kind === "explosion") {
         screenFx.shake = Math.max(screenFx.shake, Math.min(14, (e.radius ?? 60) * 0.15));
         if (e.x !== void 0 && e.y !== void 0) effects.explosion(e.x, e.y, e.radius ?? 60);
