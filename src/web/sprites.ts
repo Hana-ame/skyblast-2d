@@ -173,7 +173,7 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.strokeStyle = 'rgba(34,211,238,0.55)'
         ctx.stroke()
         break
-      case 5: // 加特林（多管）
+      case 5: // M249（多管轻机枪）
         ctx.fillStyle = metal
         roundRect(ctx, 6, -12, 22, 13, 4); ctx.fill()
         ctx.fillStyle = '#64748b'

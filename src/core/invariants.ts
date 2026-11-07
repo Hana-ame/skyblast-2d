@@ -44,6 +44,14 @@ export function weaponViolations(): Violation[] {
   const rocket = byName('火箭筒')
   const smg = byName('冲锋枪')
 
+  // 武器名必须与当前命名一致（防止 UI/文档里再出现旧名「激光」「加特林」）
+  const EXPECTED_NAMES = ['霰弹枪', '突击步枪', '狙击步枪', '火箭筒', '高斯枪', 'M249', '引力枪', '手枪', '冲锋枪']
+  EXPECTED_NAMES.forEach((name, idx) => {
+    const w = WEAPONS[idx]
+    if (!w) { add('rule.name', `missing weapon #${idx} (${name})`); return }
+    if (w.name !== name) add('rule.name', `weapon #${idx} name "${w.name}" should be "${name}"`)
+  })
+
   // 用户明确要求的跨武器规则
   if (rifle && m249 && m249.damage !== rifle.damage) add('rule.m249dmg', 'M249 伤害必须等于突击步枪')
   if (pistol && gravity && gravity.damage !== pistol.damage) add('rule.gravitydmg', '引力枪伤害必须等于手枪')

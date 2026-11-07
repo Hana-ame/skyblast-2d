@@ -165,7 +165,7 @@ export interface SupplyCrate {
   x: number
   y: number
   area: string
-  kind: 'weapon' | 'doll'   // weapon=空投特武（高斯枪/加特林/引力枪）；doll=替身人偶（特殊补给）
+  kind: 'weapon' | 'doll'   // weapon=空投特武（高斯枪/M249/引力枪）；doll=替身人偶（特殊补给）
   weaponId: number
   weaponName: string
   color: string

@@ -338,7 +338,7 @@ test('喷射燃料：槽已加倍（默认 1.0s 续航），断续点按仍不�
   assert.ok(q.fuel > 0.2, `doubled gauge keeps flying at 1.5s, fuel=${q.fuel.toFixed(2)}`)
 })
 
-test('特武（高斯枪/加特林/引力枪）只能从补给箱获得，常规换枪被拒', () => {
+test('特武（高斯枪/M249/引力枪）只能从补给箱获得，常规换枪被拒', () => {
   const w = new World(43)
   const p = w.addPlayer('P', 'red')
   const start = p.weaponIndex
