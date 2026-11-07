@@ -6,7 +6,7 @@
   var SURFACE_Y = 2800;
 
   // src/core/map.ts
-  var CEILING_TOP = 1920;
+  var CEILING_TOP = 280;
   var CEILING_THICK = 80;
   var CEILING_HOLE_X0 = 5600;
   var CEILING_HOLE_X1 = 7600;
@@ -24,8 +24,19 @@
   function ARCH_BLOCKS() {
     const SIDE = 160;
     const xs = [5700, 6e3, 6300, 6600, 6900, 7200, 7500];
-    const tops = [2320, 2100, 2260, 2e3, 2260, 2100, 2320];
-    return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" }));
+    const rowMidTops = [2231, 1678, 1125, 572];
+    const out = [];
+    for (const mid of rowMidTops) {
+      const tops = xs.map((_, i) => {
+        const distFromMid = Math.abs(i - 3);
+        const arch = mid + distFromMid * 160;
+        return arch + (i % 2 === 0 ? 0 : 0);
+      });
+      for (let i = 0; i < xs.length; i++) {
+        out.push({ x: xs[i] - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" });
+      }
+    }
+    return out;
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -75,7 +86,7 @@
   var GRID_H = Math.floor(WORLD_H / TILE_SIZE);
 
   // src/core/sim/world.ts
-  var CEILING_STAND = 1860;
+  var CEILING_STAND = 264;
   var GROUND_STAND = 2740;
   var HOLE_X0 = 5600;
   var HOLE_X1 = 7600;

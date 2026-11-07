@@ -316,7 +316,7 @@ test('喷射燃料：槽已加倍（默认 1.0s 续航），断续点按仍不�
   assert.equal(getPhysicsParams().jetpackFuel, 1.0, 'fuel gauge doubled')
   const w = new World(47)
   const p = w.addPlayer('P', 'ffa')
-  p.pos = { x: 6600, y: 2790 }
+  p.pos = { x: 6450, y: 2790 }   // 拱形方块间隙（空口内无遮挡），纯测燃料
   p.onGround = true
   const y0 = p.pos.y
   let maxRise = 0
@@ -333,7 +333,7 @@ test('喷射燃料：槽已加倍（默认 1.0s 续航），断续点按仍不�
   // 连续按住 1.5s 仍有余量（加倍前 1.0s 就用尽）
   const w2 = new World(49)
   const q = w2.addPlayer('Q', 'ffa')
-  q.pos = { x: 6600, y: 2000 }
+  q.pos = { x: 6450, y: 1384 }   // 拱形方块间隙（空口内无遮挡），喷气向上测燃料
   for (let i = 0; i < 90; i++) w2.step(DT, new Map([[q.id, input({ jetpack: true })]]))
   assert.ok(q.fuel > 0.2, `doubled gauge keeps flying at 1.5s, fuel=${q.fuel.toFixed(2)}`)
 })
@@ -550,7 +550,7 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
   // 上升加速：连续喷射的前 0.2s 是加速梯度（speed 逐帧增加）
   const w = new World(71)
   const a = w.addPlayer('A', 'ffa')
-  a.pos = { x: 6600, y: 2500 }
+  a.pos = { x: 6450, y: 2500 }
   const speeds: number[] = []
   for (let i = 0; i < 24; i++) {
     w.step(DT, new Map([[a.id, input({ jetpack: true })]]))
@@ -562,12 +562,12 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
   // 下降加速：同高度自由落体 vs 按住下键，俯冲 0.5s 后更快
   const w2 = new World(72)
   const b = w2.addPlayer('B', 'ffa')
-  b.pos = { x: 6600, y: 2200 }
+  b.pos = { x: 6450, y: 2200 }
   for (let i = 0; i < 30; i++) w2.step(DT, new Map([[b.id, input({ dive: true })]]))
   const diveSpeed = b.vel.y
   const w3 = new World(73)
   const c = w3.addPlayer('C', 'ffa')
-  c.pos = { x: 6600, y: 2200 }
+  c.pos = { x: 6450, y: 2200 }
   for (let i = 0; i < 30; i++) w3.step(DT, new Map([[c.id, input()]]))
   const fallSpeed = c.vel.y
   assert.ok(diveSpeed > fallSpeed * 1.35, `dive accelerates downward: dive=${diveSpeed.toFixed(0)} fall=${fallSpeed.toFixed(0)}`)
@@ -883,7 +883,7 @@ test('升空速度：手枪 1.25×（喷气上升极速更快），步枪正常'
     const w = new World(171)
     const p = w.addPlayer('P', 'ffa')
     p.weaponIndex = wepIdx
-    p.pos = { x: 6600, y: 2400 }
+    p.pos = { x: 6450, y: 2400 }
     for (let i = 0; i < 40; i++) w.step(DT, new Map([[p.id, input({ jetpack: true })]]))
     return -p.vel.y
   }
@@ -1010,16 +1010,16 @@ test('引力枪防御：引力场近距吸收其他枪的子弹', () => {
 
 test('地图编辑器数据：默认地图/清洗/自定义地图可被 World 使用', () => {
   const def = defaultMapData()
-  assert.ok(def.solids.length === 9, `default map = 2 ceiling slabs + 7 arch blocks, got ${def.solids.length}`)
+  assert.ok(def.solids.length === 30, `default map = 2 ceiling slabs + 4x7 arch blocks, got ${def.solids.length}`)
   // 天花板：左右两块实心板，正中 x 5600~7600 留空
   const w0 = new World(310, def)
-  assert.ok(w0.terrain.isSolidAt(1000, 1960), 'left ceiling slab solid')
-  assert.ok(w0.terrain.isSolidAt(10000, 1960), 'right ceiling slab solid')
-  assert.ok(!w0.terrain.isSolidAt(6600, 1960), 'ceiling hole open at center (above middle block)')
-  // 拱形方块：中间 6600 顶面 2000（最高），两侧 5700 顶面 2320（最低），方块间空隙可通行
-  assert.ok(w0.terrain.isSolidAt(6600, 2080), 'arch middle block solid (top 2000)')
-  assert.ok(w0.terrain.isSolidAt(5700, 2400), 'arch side block solid (top 2320)')
-  assert.ok(!w0.terrain.isSolidAt(6450, 2080), 'arch gap between blocks is open')
+  assert.ok(w0.terrain.isSolidAt(1000, 320), 'left ceiling slab solid')
+  assert.ok(w0.terrain.isSolidAt(10000, 320), 'right ceiling slab solid')
+  assert.ok(!w0.terrain.isSolidAt(6600, 320), 'ceiling hole open at center (above middle block)')
+  // 拱形方块（垂直梯子 4 排）：中块 6600 排 1 顶 2231（最高），侧块 5700 顶 2711（最低），方块间空隙可通行
+  assert.ok(w0.terrain.isSolidAt(6600, 2291), 'arch middle block solid (top 2231)')
+  assert.ok(w0.terrain.isSolidAt(5700, 2771), 'arch side block solid (top 2711)')
+  assert.ok(!w0.terrain.isSolidAt(6450, 2291), 'arch gap between blocks is open')
   // 清洗：非法项丢弃、kind 回退
   const clean = sanitizeMapData({ name: 't', solids: [
     { x: 100, y: 2500, w: 60, h: 20, kind: 'platform' },
@@ -1104,10 +1104,10 @@ test('激光被可破坏掩体挡住（不再穿过去）', () => {
   const a = w.addPlayer('A', 'red')
   const b = w.addPlayer('B', 'blue')
   a.weaponIndex = 4
-  // 可破坏障碍 obs_2 已搬到天花板顶面 (3400,1880,60,80)；玩家/假人站天花板顶面（pos.y=1904，脚底贴板面 1920）
+  // 可破坏障碍 obs_2 已搬到天花板顶面 (3400,240,60,80)；玩家/假人站天花板顶面（pos.y=264，脚底贴板面 280）
   const ob = w.obstacles.find(o => o.id === 'obs_2')!
-  a.pos = { x: 3340, y: 1904 }
-  b.pos = { x: 3460, y: 1904 }
+  a.pos = { x: 3340, y: 264 }
+  b.pos = { x: 3460, y: 264 }
   const hpOb = ob.hp
   for (let i = 0; i < 30; i++) {
     w.step(DT, new Map([

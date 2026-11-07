@@ -10,6 +10,7 @@ import type { MapData, MapSolid } from '../src/core/map.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
+import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../src/core/wrap.ts'
 
 test('护栏·武器约定：跨武器规则/数值范围全部满足', () => {
   const vs = weaponViolations()
@@ -24,8 +25,8 @@ test('护栏·默认地图布局：地标全部在空地/世界范围内，跳�
 })
 
 test('护栏·布局校验能抓到“建筑盖住地标”的回归', () => {
-  // 故意用掩体压住据点 A（1720,1860，天花板顶面站立）
-  const bad: MapData = { name: 'bad', solids: [{ x: 1700, y: 1800, w: 200, h: 100, kind: 'cover' }] }
+  // 故意用掩体压住据点 A（1720,264，天花板顶面站立）：掩体底 280 ≥ cp_a 站立 264
+  const bad: MapData = { name: 'bad', solids: [{ x: 1700, y: 160, w: 200, h: 120, kind: 'cover' }] }
   const w = new World(2, bad)
   const vs = layoutViolations(w)
   assert.ok(vs.some(v => v.code === 'layout.solid' && v.message.includes('cp:cp_a')), '应当报据点被覆盖')
@@ -117,4 +118,87 @@ test('护栏·后坐力各向同性（行为级）：扣除重力后四方向踢
     assert.ok(Math.abs(k - expected) < 1e-6, `recoil kick differs by direction: ${kicks.map(v => v.toFixed(2)).join(', ')}`)
   }
   assert.ok(expected > 500, 'shotgun recoil is significant')
+})
+
+
+test('护栏·激光不穿墙：端点不在实体内、段不跨实体、屏幕长度一致、薄墙后不受伤害', () => {
+  // ① 随机角度：每段端点不在实体内、段内不穿实体、渲染侧最短位移长度≡世界长度（不会画横穿全图直线）
+  let segs = 0
+  for (let s = 0; s < 40; s++) {
+    const w = new World(21000 + s, defaultMapData())
+    w.config.randomSpawn = false
+    const a = w.addPlayer('A', 'ffa')
+    const ax = 400 + ((s * 211) % 12400)
+    const ay = 1800 + ((s * 97) % 900)
+    // 玩家需在开阔处（不在实体、不在空口拱形方块区 5600~7600），避免方块网格边界干扰激光段断言
+    if (w.terrain.isSolidAt(ax, ay)) continue
+    if (ax > 5500 && ax < 7700) continue
+    a.pos = { x: ax, y: ay }
+    a.weaponIndex = 4
+    a.ammo[4] = 12
+    a.reserveAmmo[4] = 48
+    const aim = (s / 40) * Math.PI * 2
+    for (let i = 0; i < 4; i++) {
+      w.step(DT, new Map([[a.id, input({ fire: true, aim })]]))
+      for (const e of w.drainEvents()) {
+        if (e.kind !== 'laser') continue
+        for (const seg of e.segments!) {
+          segs++
+          assert.equal(w.terrain.isSolidAt(seg.x1, seg.y1), false, `segment origin inside solid @(${seg.x1},${seg.y1})`)
+          assert.equal(w.terrain.isSolidAt(seg.x2, seg.y2), false, `segment end inside solid @(${seg.x2},${seg.y2})`)
+          const ddx = wrapDeltaX(seg.x1, seg.x2)
+          const ddy = wrapDeltaY(seg.y1, seg.y2)
+          const len = Math.hypot(ddx, ddy)
+          const steps = Math.max(1, Math.ceil(len / 4))
+          for (let k = 1; k < steps; k++) {
+            const px = wrapX(seg.x1 + (ddx * k) / steps)
+            const py = wrapY(seg.y1 + (ddy * k) / steps)
+            assert.equal(w.terrain.isSolidAt(px, py), false, `segment crosses solid at (${Math.round(px)},${Math.round(py)})`)
+          }
+          // 渲染端按「相机→点」分别取最短位移；本段两端的屏幕距离必须与世界距离一致
+          const sr = Math.hypot(wrapDeltaX(6600, seg.x2) - wrapDeltaX(6600, seg.x1), wrapDeltaY(2200, seg.y2) - wrapDeltaY(2200, seg.y1))
+          assert.ok(Math.abs(sr - len) < 1.5, `segment render length differs (world ${len.toFixed(0)} vs screen ${sr.toFixed(0)})`)
+        }
+      }
+    }
+  }
+  assert.ok(segs > 50, `collected laser segments: ${segs}`)
+
+  // ② 薄墙（12px）+ 目标紧贴墙背面：不能被激光打到
+  for (const thick of [12, 20, 40]) {
+    const w = new World(22000 + thick, { name: 'thin', solids: [{ x: 6620, y: 2400, w: thick, h: 400, kind: 'cover' }] })
+    w.config.randomSpawn = false
+    const shooter = w.addPlayer('S', 'red')
+    const target = w.addPlayer('T', 'blue')
+    shooter.weaponIndex = 4
+    shooter.ammo[4] = 12
+    shooter.reserveAmmo[4] = 48
+    shooter.pos = { x: 6600, y: 2700 }
+    target.pos = { x: 6622 + thick + 8, y: 2700 }
+    for (let i = 0; i < 25; i++) {
+      w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })], [target.id, input()]]))
+      w.drainEvents()
+    }
+    assert.equal(target.hp, 100, `target behind ${thick}px wall must not be hit, hp=${target.hp}`)
+  }
+})
+
+test('护栏·激光被可破坏掩体挡住（贴掩体开火也不穿）', () => {
+  const w = new World(23000)
+  w.config.randomSpawn = false
+  const shooter = w.addPlayer('S', 'red')
+  const target = w.addPlayer('T', 'blue')
+  const ob = w.obstacles.find(o => o.id === 'obs_1')!
+  shooter.weaponIndex = 4
+  shooter.ammo[4] = 12
+  shooter.reserveAmmo[4] = 48
+  shooter.pos = { x: ob.x - 30, y: ob.y + ob.h + 4 }   // 紧贴掩体左侧
+  target.pos = { x: ob.x + ob.w + 60, y: ob.y + ob.h + 4 }
+  const hp0 = ob.hp
+  for (let i = 0; i < 25; i++) {
+    w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })], [target.id, input()]]))
+    w.drainEvents()
+  }
+  assert.ok(ob.hp < hp0, `destructible cover takes damage, hp=${ob.hp}`)
+  assert.equal(target.hp, 100, `target behind destructible cover protected, hp=${target.hp}`)
 })

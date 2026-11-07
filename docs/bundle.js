@@ -83,7 +83,7 @@
   }
 
   // src/core/map.ts
-  var CEILING_TOP = 1920;
+  var CEILING_TOP = 280;
   var CEILING_THICK = 80;
   var CEILING_HOLE_X0 = 5600;
   var CEILING_HOLE_X1 = 7600;
@@ -101,8 +101,19 @@
   function ARCH_BLOCKS() {
     const SIDE = 160;
     const xs = [5700, 6e3, 6300, 6600, 6900, 7200, 7500];
-    const tops = [2320, 2100, 2260, 2e3, 2260, 2100, 2320];
-    return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" }));
+    const rowMidTops = [2231, 1678, 1125, 572];
+    const out = [];
+    for (const mid of rowMidTops) {
+      const tops = xs.map((_, i) => {
+        const distFromMid = Math.abs(i - 3);
+        const arch = mid + distFromMid * 160;
+        return arch + (i % 2 === 0 ? 0 : 0);
+      });
+      for (let i = 0; i < xs.length; i++) {
+        out.push({ x: xs[i] - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" });
+      }
+    }
+    return out;
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -186,13 +197,13 @@
     }
   };
   var OBSTACLE_PRESETS = [
-    { id: "obs_1", x: 1600, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_2", x: 3400, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_3", x: 4600, y: 1880, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
-    { id: "obs_box_1", x: 5400, y: 1878, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_5", x: 7800, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_6", x: 11200, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_7", x: 12500, y: 1880, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
+    { id: "obs_1", x: 1600, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_2", x: 3400, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_3", x: 4600, y: 240, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
+    { id: "obs_box_1", x: 5400, y: 238, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
+    { id: "obs_5", x: 7800, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
+    { id: "obs_6", x: 11200, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
+    { id: "obs_7", x: 12500, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
   ];
 
   // src/core/rng.ts
@@ -538,7 +549,7 @@
   var BODY_HALF_W = 10;
   var BODY_TOP = 26;
   var BODY_BOTTOM = 16;
-  var CEILING_STAND = 1860;
+  var CEILING_STAND = 264;
   var GROUND_STAND = 2740;
   var HOLE_X0 = 5600;
   var HOLE_X1 = 7600;
@@ -613,11 +624,11 @@
     return out;
   })();
   var JUMP_PADS = [
-    // 全部搬到天花板顶面（y=1920 站立面）：跳远道具，与迫击炮/瞭望塔一起上屋顶
-    { x: 1e3, y: 1920, vx: 210, vy: -810 },
-    { x: 4300, y: 1920, vx: 180, vy: -870 },
-    { x: 10400, y: 1920, vx: -180, vy: -870 },
-    { x: 13050, y: 1920, vx: -210, vy: -810 }
+    // 全部搬到天花板顶面（y=280 站立面）：跳远道具，与迫击炮/瞭望塔一起上屋顶
+    { x: 1e3, y: 280, vx: 210, vy: -810 },
+    { x: 4300, y: 280, vx: 180, vy: -870 },
+    { x: 10400, y: 280, vx: -180, vy: -870 },
+    { x: 13050, y: 280, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
     { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: CEILING_STAND, ownerTeam: "red" },
@@ -1016,6 +1027,38 @@
       const dist = wrapDist(owner.pos.x, owner.pos.y - 12, hx, hy);
       return weaponFalloff(wep, dist);
     }
+    /** 两点之间是否被「原始地形 或 可破坏掩体」挡住（激光视线判定；4px 采样、端点不计） */
+    lineBlockedByTerrain(x1, y1, x2, y2) {
+      const dx = wrapDeltaX(x1, x2);
+      const dy = wrapDeltaY(y1, y2);
+      const dist = Math.hypot(dx, dy);
+      if (dist <= 1) return false;
+      const steps = Math.max(1, Math.ceil(dist / 4));
+      for (let k = 1; k < steps; k++) {
+        const px = wrapX(x1 + dx * k / steps);
+        const py = wrapY(y1 + dy * k / steps);
+        if (this.terrain.isSolidAt(px, py)) return true;
+        if (this.obstacleAt(px, py)) return true;
+      }
+      return false;
+    }
+    /** 把一段光束截断到「最后一个空点」：保证任何被绘制/判定使用的线段都不穿过实体。
+     *  反射在墙角/贴墙时可能把端点算到墙体另一侧，这里统一兜底（4px 采样）。 */
+    truncateSegmentToFree(x1, y1, x2, y2) {
+      const dx = wrapDeltaX(x1, x2);
+      const dy = wrapDeltaY(y1, y2);
+      const len = Math.hypot(dx, dy);
+      if (len <= 1e-6) return { x: x1, y: y1, shortened: false };
+      const steps = Math.max(1, Math.ceil(len / 3));
+      let lastFree = { x: x1, y: y1 };
+      for (let k = 1; k <= steps; k++) {
+        const px = wrapX(x1 + dx * k / steps);
+        const py = wrapY(y1 + dy * k / steps);
+        if (this.terrain.isSolidAt(px, py)) return { ...lastFree, shortened: true };
+        lastFree = { x: px, y: py };
+      }
+      return { x: x2, y: y2, shortened: false };
+    }
     /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
     updateContinuousBeam(p, wep, dt) {
       if (p.respawnTimer > 0 || !p.alive) return;
@@ -1040,7 +1083,7 @@
       for (let ahead = 4; ahead <= 24; ahead += 4) {
         const cx = wrapX(p.pos.x + dx * ahead);
         const cy = wrapY(p.pos.y - 12 + dy * ahead);
-        if (this.terrain.isSolidAt(cx, cy)) break;
+        if (this.terrain.isSolidAt(cx, cy) || this.obstacleAt(cx, cy)) break;
         x = cx;
         y = cy;
         originOk = true;
@@ -1048,42 +1091,24 @@
       if (!originOk) return;
       const originX = x;
       const originY = y;
-      const maxSegLen = 1800;
-      const step = 6;
+      const maxSegLen = 2e3;
+      const step = 4;
       const bounces = wep.bounces ?? 0;
       for (let b = 0; b <= bounces; b++) {
         let travelled = 0;
         let hitWall = false;
         let blockedByObstacle = false;
+        const segStartX = x;
+        const segStartY = y;
         while (travelled < maxSegLen) {
-          const nx = wrapX(x + dx * step);
-          const ny = wrapY(y + dy * step);
-          for (const t of this.players) {
-            if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
-            if (t.id === p.id && b === 0) continue;
-            if (t.id !== p.id && t.team === p.team && p.team !== "ffa") continue;
-            const hx = wrapDeltaX(t.pos.x, nx);
-            const hy = wrapDeltaY(t.pos.y - 24, ny);
-            const isHead = Math.hypot(hx, hy) <= this.config.headRadius + 3;
-            const bx = Math.abs(wrapDeltaX(t.pos.x, nx));
-            const by = wrapDeltaY(t.pos.y, ny);
-            if (isHead || bx <= 14 && by >= -12 && by <= 18) {
-              hitPlayer.add(t.id);
-              const mult = isHead ? wep.headshotMult : 1;
-              this.damage(t, dps * mult * dt, void 0, isHead, false, p.id, p.team, wep.shortName);
-            }
-          }
-          const ob = this.obstacleAt(nx, ny);
-          if (ob) {
-            if (!hitObstacle.has(ob.id)) {
-              hitObstacle.add(ob.id);
-              this.damageObstacle(ob, dps * dt, void 0);
-            }
-            x = nx;
-            y = ny;
-            blockedByObstacle = true;
+          const rawX = x + dx * step;
+          const rawY = y + dy * step;
+          if (rawX < 0 || rawX >= WORLD_W || rawY < 0 || rawY >= WORLD_H) {
+            hitWall = false;
             break;
           }
+          const nx = rawX;
+          const ny = rawY;
           if (this.terrain.isSolidAt(nx, ny)) {
             hitWall = true;
             const hitX = this.terrain.isSolidAt(nx, y);
@@ -1096,9 +1121,39 @@
             }
             break;
           }
+          const ob = this.obstacleAt(nx, ny);
+          if (ob) {
+            if (!hitObstacle.has(ob.id)) {
+              hitObstacle.add(ob.id);
+              this.damageObstacle(ob, dps * dt, void 0);
+            }
+            x = nx;
+            y = ny;
+            blockedByObstacle = true;
+            break;
+          }
+          for (const t of this.players) {
+            if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
+            if (t.id === p.id && b === 0) continue;
+            if (t.id !== p.id && t.team === p.team && p.team !== "ffa") continue;
+            const hx = wrapDeltaX(t.pos.x, nx);
+            const hy = wrapDeltaY(t.pos.y - 24, ny);
+            const isHead = Math.hypot(hx, hy) <= this.config.headRadius + 3;
+            const bx = Math.abs(wrapDeltaX(t.pos.x, nx));
+            const by = wrapDeltaY(t.pos.y, ny);
+            if (isHead || bx <= 14 && by >= -12 && by <= 18) {
+              if (this.lineBlockedByTerrain(segStartX, segStartY, t.pos.x, t.pos.y - 12)) continue;
+              hitPlayer.add(t.id);
+              const mult = isHead ? wep.headshotMult : 1;
+              this.damage(t, dps * mult * dt, void 0, isHead, false, p.id, p.team, wep.shortName);
+            }
+          }
           x = nx;
           y = ny;
           travelled += step;
+        }
+        if (hitWall && this.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
+          hitWall = false;
         }
         const seg = { x1: 0, y1: 0, x2: x, y2: y };
         if (segments.length > 0) {
@@ -1109,7 +1164,11 @@
           seg.x1 = originX;
           seg.y1 = originY;
         }
+        const cut = this.truncateSegmentToFree(seg.x1, seg.y1, seg.x2, seg.y2);
+        seg.x2 = cut.x;
+        seg.y2 = cut.y;
         segments.push(seg);
+        if (cut.shortened) break;
         if (blockedByObstacle || !hitWall) break;
       }
       this.events.push({

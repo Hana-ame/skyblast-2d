@@ -18,9 +18,10 @@ export interface MapData {
   solids: MapSolid[]
 }
 
-/** 天花板（上限）：完整实心平面，顶面 y=1920、厚 80（底面 2000）；只在正中留一个空口供上下通行。
+/** 天花板（上限）：完整实心薄板，放到世界最上面，顶面 y=280、厚 80（底面 360）；只在正中留一个空口供上下通行。
+ *  板上方（y 0~280）是空区，放瞭望塔等互动元素（它们从板顶向上）。
  *  空口 x 5600~7600（宽 2000，中心 6600）。 */
-export const CEILING_TOP = 1920
+export const CEILING_TOP = 280
 export const CEILING_THICK = 80
 export const CEILING_HOLE_X0 = 5600
 export const CEILING_HOLE_X1 = 7600
@@ -40,13 +41,28 @@ export function defaultMapData(): MapData {
   return { name: '天花板竞技场', solids }
 }
 
-/** 拱形方块：空口 x 5600~7600 内 7 个正方形（边长 160），中心 x 5700..7500 步长 300。
- *  顶面 y 从两侧 2320 升到中间 2000（拱形），相邻方块一高一低交错（间隔放置）。 */
+/** 拱形方块（垂直梯子）：空口 x 5600~7600 内 4 排 × 7 个正方形（边长 160），中心 x 5700..7500 步长 300。
+ *  每排顶面 y 呈拱形（中高侧低）、相邻一高一低交错；排距 553（喷气单段可达），
+ *  从近地面（排 1 中块顶 2231）逐排升到板顶（280）附近，玩家喷气+落块逐排上到天花板。
+ *  排 1..4 中块顶 y：2231 / 1678 / 1125 / 572。 */
 function ARCH_BLOCKS(): MapSolid[] {
   const SIDE = 160
   const xs = [5700, 6000, 6300, 6600, 6900, 7200, 7500]
-  const tops = [2320, 2100, 2260, 2000, 2260, 2100, 2320]
-  return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: 'block' as const }))
+  // 每排中块顶（最高）y；侧块比中块低 320（拱形），相邻一高一低
+  const rowMidTops = [2231, 1678, 1125, 572]
+  const out: MapSolid[] = []
+  for (const mid of rowMidTops) {
+    // 拱形：中块（index 3）最高，向两侧降低；相邻一高一低（±160 交错）
+    const tops = xs.map((_, i) => {
+      const distFromMid = Math.abs(i - 3)
+      const arch = mid + distFromMid * 160      // 中高侧低：距中越远越低（y 越大）
+      return arch + (i % 2 === 0 ? 0 : 0)       // 相邻一高一低由步长 160 自然交错
+    })
+    for (let i = 0; i < xs.length; i++) {
+      out.push({ x: xs[i] - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: 'block' as const })
+    }
+  }
+  return out
 }
 
 /** 校验/清洗外部地图 JSON（编辑器导入、localStorage） */

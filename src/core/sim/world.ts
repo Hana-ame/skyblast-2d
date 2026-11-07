@@ -19,9 +19,9 @@ const BODY_HALF_W = 10
 const BODY_TOP = 26   // 眼位（p.y 是脚底基准）
 const BODY_BOTTOM = 16
 
-// ── 地标全部搬到天花板顶面（上限 y=1920，站立 y=1860；空口 x 5600~7600，空口内地标挪到两侧）──
+// ── 地标全部搬到天花板顶面（上限 y=280，站立 y=264；空口 x 5600~7600，空口内地标挪到两侧）──
 // 地板=地面（世界内置平地 y=2800）；红/蓝出生点按用户要求留在地面左右。
-const CEILING_STAND = 1860   // 天花板顶面（1920）上方的站立 y
+const CEILING_STAND = 264    // 天花板顶面（280）上方的站立 y
 const GROUND_STAND = 2740    // 地面（2800）上方的站立 y
 const HOLE_X0 = 5600         // 空口左
 const HOLE_X1 = 7600         // 空口右
@@ -101,11 +101,11 @@ const RANDOM_SPAWN_CANDIDATES: { x: number; y: number }[] = (() => {
 })()
 
 export const JUMP_PADS: { x: number; y: number; vx: number; vy: number }[] = [
-  // 全部搬到天花板顶面（y=1920 站立面）：跳远道具，与迫击炮/瞭望塔一起上屋顶
-  { x: 1000, y: 1920, vx: 210, vy: -810 },
-  { x: 4300, y: 1920, vx: 180, vy: -870 },
-  { x: 10400, y: 1920, vx: -180, vy: -870 },
-  { x: 13050, y: 1920, vx: -210, vy: -810 },
+  // 全部搬到天花板顶面（y=280 站立面）：跳远道具，与迫击炮/瞭望塔一起上屋顶
+  { x: 1000, y: 280, vx: 210, vy: -810 },
+  { x: 4300, y: 280, vx: 180, vy: -870 },
+  { x: 10400, y: 280, vx: -180, vy: -870 },
+  { x: 13050, y: 280, vx: -210, vy: -810 },
 ]
 
 const CP_INITS: { id: string; code: string; name: string; x: number; y: number; ownerTeam: TeamId | null }[] = [
@@ -484,6 +484,41 @@ export class World {
     return weaponFalloff(wep, dist)
   }
 
+  /** 两点之间是否被「原始地形 或 可破坏掩体」挡住（激光视线判定；4px 采样、端点不计） */
+  private lineBlockedByTerrain(x1: number, y1: number, x2: number, y2: number): boolean {
+    const dx = wrapDeltaX(x1, x2)
+    const dy = wrapDeltaY(y1, y2)
+    const dist = Math.hypot(dx, dy)
+    if (dist <= 1) return false
+    const steps = Math.max(1, Math.ceil(dist / 4))
+    for (let k = 1; k < steps; k++) {
+      const px = wrapX(x1 + (dx * k) / steps)
+      const py = wrapY(y1 + (dy * k) / steps)
+      if (this.terrain.isSolidAt(px, py)) return true
+      if (this.obstacleAt(px, py)) return true
+    }
+    return false
+  }
+
+  /** 把一段光束截断到「最后一个空点」：保证任何被绘制/判定使用的线段都不穿过实体。
+   *  反射在墙角/贴墙时可能把端点算到墙体另一侧，这里统一兜底（4px 采样）。 */
+  private truncateSegmentToFree(x1: number, y1: number, x2: number, y2: number): { x: number; y: number; shortened: boolean } {
+    const dx = wrapDeltaX(x1, x2)
+    const dy = wrapDeltaY(y1, y2)
+    const len = Math.hypot(dx, dy)
+    if (len <= 1e-6) return { x: x1, y: y1, shortened: false }
+    const steps = Math.max(1, Math.ceil(len / 3))
+    let lastFree = { x: x1, y: y1 }
+    for (let k = 1; k <= steps; k++) {
+      const px = wrapX(x1 + (dx * k) / steps)
+      const py = wrapY(y1 + (dy * k) / steps)
+      if (this.terrain.isSolidAt(px, py)) return { ...lastFree, shortened: true }
+      // 可破坏掩体同样不允许线段穿过（掩体会在该点被扣血并让光束停止，绘制也不该继续）
+      lastFree = { x: px, y: py }
+    }
+    return { x: x2, y: y2, shortened: false }
+  }
+
   /** 持续光束：按住开火时每 tick 沿准星射线结算（反射 bounces 次），按 DPS 扣血、按 ammoPerSecond 耗弹 */
   private updateContinuousBeam(p: PlayerState, wep: typeof WEAPONS[number], dt: number): void {
     if (p.respawnTimer > 0 || !p.alive) return
@@ -512,7 +547,7 @@ export class World {
     for (let ahead = 4; ahead <= 24; ahead += 4) {
       const cx = wrapX(p.pos.x + dx * ahead)
       const cy = wrapY((p.pos.y - 12) + dy * ahead)
-      if (this.terrain.isSolidAt(cx, cy)) break
+      if (this.terrain.isSolidAt(cx, cy) || this.obstacleAt(cx, cy)) break
       x = cx
       y = cy
       originOk = true
@@ -520,17 +555,53 @@ export class World {
     if (!originOk) return
     const originX = x
     const originY = y
-    const maxSegLen = 1800
-    const step = 6
+    // 单段射程必须 < 世界半宽/半高（6600/2200）：渲染端 sx()/sy() 取「相机→点」的环形最短位移，
+    // 一段超过半图时首尾屏幕坐标会走向相反方向，画出一条横穿全图（看起来穿墙）的直线。
+    // 2000px × (bounces+1) 已达 8000px 总射程，足够战斗使用；接缝处另行终止。
+    const maxSegLen = 2000
+    const step = 4
     const bounces = wep.bounces ?? 0
 
     for (let b = 0; b <= bounces; b++) {
       let travelled = 0
       let hitWall = false
       let blockedByObstacle = false
+      const segStartX = x
+      const segStartY = y
       while (travelled < maxSegLen) {
-        const nx = wrapX(x + dx * step)
-        const ny = wrapY(y + dy * step)
+        // 不跨世界接缝：接缝两侧的点在屏幕上相距半张地图，直线绘制会横穿所有墙体（视觉“穿墙”）。
+        // 到接缝处直接终止本段（世界仍是环形，只是激光不绕圈）。
+        const rawX = x + dx * step
+        const rawY = y + dy * step
+        if (rawX < 0 || rawX >= WORLD_W || rawY < 0 || rawY >= WORLD_H) {
+          hitWall = false
+          break
+        }
+        const nx = rawX
+        const ny = rawY
+        // 顺序很重要：先判地形/可破坏障碍，命中判定点若在实体内则本段到此为止，
+        // 绝不能先前面的「玩家容差盒」判定（那会让紧贴墙背面的目标被“穿墙”打中）。
+        if (this.terrain.isSolidAt(nx, ny)) {
+          hitWall = true
+          const hitX = this.terrain.isSolidAt(nx, y)
+          const hitY = this.terrain.isSolidAt(x, ny)
+          if (hitX) dx = -dx
+          if (hitY) dy = -dy
+          if (!hitX && !hitY) { dx = -dx; dy = -dy }
+          break
+        }
+        const ob = this.obstacleAt(nx, ny)
+        if (ob) {
+          // 可破坏掩体挡住激光（枪口贴掩体时也不会从掩体内部/背面射出）
+          if (!hitObstacle.has(ob.id)) {
+            hitObstacle.add(ob.id)
+            this.damageObstacle(ob, dps * dt, undefined)
+          }
+          x = nx
+          y = ny
+          blockedByObstacle = true
+          break
+        }
         for (const t of this.players) {
           if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
           // 自伤：第一段（枪口出发）不伤自己，只有反射回来的光束才会打到自己
@@ -542,45 +613,36 @@ export class World {
           const bx = Math.abs(wrapDeltaX(t.pos.x, nx))
           const by = wrapDeltaY(t.pos.y, ny)
           if (isHead || (bx <= 14 && by >= -12 && by <= 18)) {
+            // 二次校验：从本段起点到目标躯干必须无地形/掩体遮挡（薄墙、墙角、贴墙都不再误判）
+            if (this.lineBlockedByTerrain(segStartX, segStartY, t.pos.x, t.pos.y - 12)) continue
             hitPlayer.add(t.id)
             const mult = isHead ? wep.headshotMult : 1
             this.damage(t, dps * mult * dt, undefined, isHead, false, p.id, p.team, wep.shortName)
           }
         }
-        const ob = this.obstacleAt(nx, ny)
-        if (ob) {
-          // 可破坏掩体也应挡住激光（不再穿过去继续打人）
-          if (!hitObstacle.has(ob.id)) {
-            hitObstacle.add(ob.id)
-            this.damageObstacle(ob, dps * dt, undefined)
-          }
-          x = nx
-          y = ny
-          blockedByObstacle = true
-          break
-        }
-        if (this.terrain.isSolidAt(nx, ny)) {
-          hitWall = true
-          const hitX = this.terrain.isSolidAt(nx, y)
-          const hitY = this.terrain.isSolidAt(x, ny)
-          if (hitX) dx = -dx
-          if (hitY) dy = -dy
-          if (!hitX && !hitY) { dx = -dx; dy = -dy }
-          break
-        }
         x = nx
         y = ny
         travelled += step
       }
+      // 反射后若下一探点仍在实体内（外角/贴墙极端情形）→ 终止，不再继续反弹钻进墙里
+      if (hitWall && this.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
+        hitWall = false
+      }
       const seg = { x1: 0, y1: 0, x2: x, y2: y }
       if (segments.length > 0) {
         const prev = segments[segments.length - 1]
-        seg.x1 = prev.x2; seg.y1 = prev.y2
+        seg.x1 = prev.x2
+        seg.y1 = prev.y2
       } else {
         seg.x1 = originX
         seg.y1 = originY
       }
+      // 兜底：任何线段都不允许穿过实体/掩体（反射在外角可能算出墙内端点）
+      const cut = this.truncateSegmentToFree(seg.x1, seg.y1, seg.x2, seg.y2)
+      seg.x2 = cut.x
+      seg.y2 = cut.y
       segments.push(seg)
+      if (cut.shortened) break
       if (blockedByObstacle || !hitWall) break
     }
 
