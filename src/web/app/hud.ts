@@ -153,7 +153,7 @@ export function updateHudUI(): void {
       : `💣 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
   }
   const ammoEl = document.getElementById('currentAmmoText')
-  if (ammoEl) ammoEl.textContent = mounted ? '∞' : `${localPlayer.ammo[localPlayer.weaponIndex] ?? 0} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`
+  if (ammoEl) ammoEl.textContent = mounted ? '∞' : `${Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`
 
   const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag
   const gOverlay = document.getElementById('grenadeCdOverlay')

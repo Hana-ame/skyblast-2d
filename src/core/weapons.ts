@@ -89,10 +89,10 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 4, name: '激光', shortName: '激光', isSupplyOnly: true,
     damage: 50, headshotMult: 2.0, pellets: 1, spread: 0.0,
-    speed: 3000, recoil: 0, magSize: 48, maxReserve: 96,   // 48 / 6每秒 = 连续 8 秒
+    speed: 3000, recoil: 0, magSize: 24, maxReserve: 48,   // 24 / 6每秒 = 连续 4 秒（弹量/2）
     reloadTime: 2.0, fireDelay: 0, terrainRadius: 18,
     explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 3, beam: true,
-    damagePerSecond: 120, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.30, color: '#22d3ee',
+    damagePerSecond: 240, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.30, color: '#22d3ee',   // 伤害 ×2
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,

@@ -609,9 +609,9 @@
       spread: 0,
       speed: 3e3,
       recoil: 0,
-      magSize: 48,
-      maxReserve: 96,
-      // 48 / 6每秒 = 连续 8 秒
+      magSize: 24,
+      maxReserve: 48,
+      // 24 / 6每秒 = 连续 4 秒（弹量/2）
       reloadTime: 2,
       fireDelay: 0,
       terrainRadius: 18,
@@ -621,12 +621,13 @@
       pierceOnHeadshot: true,
       bounces: 3,
       beam: true,
-      damagePerSecond: 120,
+      damagePerSecond: 240,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1.3,
       color: "#22d3ee"
+      // 伤害 ×2
     },
     {
       id: 5,
@@ -2684,7 +2685,7 @@
       secChipEl.textContent = localPlayer.secondary === "doll" ? `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]` : `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
     }
     const ammoEl = document.getElementById("currentAmmoText");
-    if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : `${localPlayer.ammo[localPlayer.weaponIndex] ?? 0} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`;
+    if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : `${Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`;
     const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag;
     const gOverlay = document.getElementById("grenadeCdOverlay");
     const gLabel = document.getElementById("hudGrenadeLabel");
