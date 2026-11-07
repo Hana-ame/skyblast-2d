@@ -57,6 +57,9 @@ export interface SecondaryDef {
 
 // v2 speed: 16→960, 20→1200, 34→2040, 15.5→930, 44→2640, 22→1320, 13.5→810
 // recoil×60：13.5→810, 1.4→84, 6.5→390, 8.5→510, 2.5→150, 1.1→66, 4.0→240
+/** UI 展示顺序（与内部 id 解耦）：手枪 霰弹 冲锋 突击步枪 狙击 火箭筒 M249 高斯 引力 */
+export const WEAPON_DISPLAY_ORDER: number[] = [7, 0, 8, 1, 2, 3, 5, 4, 6]
+
 export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,

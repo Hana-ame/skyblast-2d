@@ -1,6 +1,7 @@
 "use strict";
 (() => {
   // src/core/weapons.ts
+  var WEAPON_DISPLAY_ORDER = [7, 0, 8, 1, 2, 3, 5, 4, 6];
   var WEAPONS = [
     {
       id: 0,
@@ -493,11 +494,12 @@
   weaponsSection.append(h2w);
   var grid = document.createElement("div");
   grid.className = "wep-grid";
-  WEAPONS.forEach((wep, idx) => {
+  var orderedForUI = WEAPON_DISPLAY_ORDER.map((id) => WEAPONS[id]).filter(Boolean);
+  orderedForUI.forEach((wep, idx) => {
     const card = document.createElement("div");
     card.className = "card";
     const title = document.createElement("h3");
-    title.textContent = `${wep.id}. ${wep.name}${wep.isSupplyOnly ? "\uFF08\u8865\u7ED9\uFF09" : ""}`;
+    title.textContent = `${idx + 1}. ${wep.name}${wep.isSupplyOnly ? "\uFF08\u8865\u7ED9\uFF09" : ""}`;
     card.append(title);
     const fields = document.createElement("div");
     fields.className = "fields";
