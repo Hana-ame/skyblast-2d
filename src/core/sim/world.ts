@@ -513,9 +513,14 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {
+      // 后坐力写入独立通道（不与 vel 混算）：
+      // 覆盖式赋值 → 连发/单发每发的击退量恒定；阻尼通道保证各向同性、且不被移动覆写/重力/喷气上限吞掉。
       const rk = recoilDelta(wep.recoil, p.aim)
-      p.vel.x += rk.x
-      p.vel.y += rk.y
+      if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
+      p.recoilVel.x = rk.x
+      p.recoilVel.y = rk.y
+      // 注意：不要在这里修改 p.vel 去"抵消下坠"——那会让后坐力位移随玩家当时的下坠速度变化，
+      // 破坏"各向相同"。后坐力完全由独立通道结算，玩家相对"没有这一枪"的位置永远位移同样多。
     }
 
     const mx = wrapX(p.pos.x + Math.cos(p.aim) * 24)

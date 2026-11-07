@@ -58,6 +58,9 @@ export interface PlayerState {
   dollCharges: number
   // 重生倒计时（>0 表示死亡等待重生）
   respawnTimer: number
+  /** 独立后坐力速度通道：与 vel 分离（不受移动覆写/重力/速度上限影响），指数阻尼衰减。
+   *  这样上下左右斜向、静止/移动/下落/喷气时的击退位移完全一致。 */
+  recoilVel?: Vec2
   /** 复活保护/隐身剩余秒数（>0 时：不可见、无实体、不可开枪、不受伤害，但可以移动） */
   spawnProtectTimer?: number
   kills: number

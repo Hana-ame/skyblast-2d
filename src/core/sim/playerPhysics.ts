@@ -1,6 +1,6 @@
 // core/sim/playerPhysics.ts —— 玩家运动学、6 采样点碰撞、穿模解算与重叠分离
 // 同时导出纯函数 `predictLocalPlayerStep` 供客户端 StateSync 本地预测与服务器回滚重放（Reconciliation）直接复用！
-import { applyGravity, jetpack, jump, updateJetpackFuel, getPhysicsParams } from './physics.ts'
+import { applyGravity, jetpack, jump, updateJetpackFuel, getPhysicsParams, stepRecoilVel, RECOIL_DISPLACEMENT_FACTOR } from './physics.ts'
 import { TILE_SIZE, GRID_W } from '../terrain.ts'
 import type { Terrain } from '../terrain.ts'
 import { WEAPONS } from '../weapons.ts'
@@ -272,7 +272,11 @@ export function stepPlayerKinematic(
   }
 
   const tGrid = terrain.grid
-  const nx = wrapX(p.pos.x + p.vel.x * dt)
+  // 位移 = 常规速度 + 独立后坐力速度（后者不受移动覆写/重力/速度上限影响 → 各向同性）
+  if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
+  const rv = p.recoilVel
+  // 后坐力位移按解析积分系数结算（帧首速度直接乘 dt 会系统性少 ~4%）
+  const nx = wrapX(p.pos.x + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR)
   if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y)) {
     p.pos.x = nx
   } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y - 10)) {
@@ -286,19 +290,24 @@ export function stepPlayerKinematic(
       }
     }
     p.vel.x = 0
+    rv.x = 0            // 撞墙：该轴后坐力被墙吸收
   }
 
-  const nyRaw = p.pos.y + p.vel.y * dt
+  const vyTotal = p.vel.y + rv.y
+  const nyRaw = p.pos.y + p.vel.y * dt + rv.y * RECOIL_DISPLACEMENT_FACTOR
   const ny = wrapY(nyRaw)
   if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny)) {
     p.pos.y = ny
     p.onGround = false
   } else {
-    p.onGround = p.vel.y > 0
+    p.onGround = vyTotal > 0
     p.vel.y = 0
+    rv.y = 0            // 落地：垂直后坐力被地面吸收
   }
   p.pos.x = wrapX(p.pos.x)
   p.pos.y = wrapY(p.pos.y)
+  // 指数阻尼衰减（各向同性）
+  stepRecoilVel(rv, dt)
 }
 
 /** 玩家重叠分离：利用宽相空间桶只检查同桶内距离 <20px 的玩家对，复杂度 O(N) */

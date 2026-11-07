@@ -70,10 +70,13 @@ export function jump(v: Vec2): void {
   v.y = -P.jumpImpulse
 }
 
-/** 喷射器（升空）：推力>重力，vy 朝升空极速渐变（~1s 预热），封顶后受力平衡匀速 */
+/** 喷射器（升空）：推力>重力，vy 朝升空极速渐变（~1s 预热），封顶后受力平衡匀速。
+ *  注意：若当前向上速度已经比喷射上限更快（例如向上开枪/冲击带来的后坐），
+ *  不能把速度"拉回"上限——那会一帧吞掉整段后坐力（旧实现 `Math.max` 即如此）。 */
 export function jetpack(v: Vec2, dt: number, ascendMult = 1): void {
-  // ascendMult：武器对「升空速度」的倍率（手枪 1.25，其余 1）
-  v.y = Math.max(-P.jetpackMaxUp * ascendMult, v.y - (P.jetpackAccel * ascendMult / P.mass) * dt)
+  const cap = -P.jetpackMaxUp * ascendMult
+  if (v.y <= cap) return
+  v.y = Math.max(cap, v.y - (P.jetpackAccel * ascendMult / P.mass) * dt)
 }
 
 /** 喷射器燃料更新：active 时按 drain 消耗；**仅在落地时**按 recharge 回充；
@@ -102,6 +105,29 @@ export function substep(dt: number, maxStep = 1 / 120): number[] {
  * 旧实现水平 ×0.56、垂直 ×0.65，导致霰弹上下后坐明显大于左右；这里统一为同一系数。
  */
 export const RECOIL_SCALE = 0.56
+/** 后坐力速度的指数阻尼系数（1/s）：
+ *  独立通道的总位移 Δd = v0 / RECOIL_DECAY，且与重力/移动覆写/速度上限完全解耦，
+ *  因此上下左右斜向在静止/移动/下落/喷气时击退量完全一致。 */
+export const RECOIL_DECAY = 7.0
+/** 后坐力通道速度低于该值时归零，避免长尾抖动 */
+const RECOIL_EPSILON = 4
+
 export function recoilDelta(recoil: number, aim: number): { x: number; y: number } {
   return { x: -Math.cos(aim) * recoil * RECOIL_SCALE, y: -Math.sin(aim) * recoil * RECOIL_SCALE }
+}
+
+/** 指数阻尼的离散积分系数：把「本帧位移」按解析解结算，而不是用帧首速度 ×dt（那会系统性少 ~4%） */
+const RECOIL_INTEGRAL = (1 - Math.exp(-RECOIL_DECAY * (1 / 60))) / RECOIL_DECAY
+/** 每帧位移用的等效系数（单位：秒）：Δp = rv * RECOIL_DISPLACEMENT_FACTOR */
+export const RECOIL_DISPLACEMENT_FACTOR = RECOIL_INTEGRAL
+
+/** 每帧指数衰减后坐力速度（各向同性：水平与垂直共用同一阻尼） */
+export function stepRecoilVel(rv: Vec2, dt: number): void {
+  const k = Math.exp(-RECOIL_DECAY * dt)
+  rv.x *= k
+  rv.y *= k
+  if (Math.hypot(rv.x, rv.y) < RECOIL_EPSILON) {
+    rv.x = 0
+    rv.y = 0
+  }
 }

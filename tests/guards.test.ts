@@ -13,6 +13,7 @@ import type { WorldEvent } from '../src/core/types.ts'
 import { encodeServerMsgBinary, decodeServerMsgBinary } from '../src/net/protocol/BinaryCodec.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
+import type { WorldInput } from '../src/core/types.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../src/core/wrap.ts'
 import { expandBeamSegments } from '../src/web/render/beamGeometry.ts'
@@ -98,33 +99,76 @@ test('护栏·后坐力各向同性：水平/垂直/斜向使用同一系数', (
 })
 
 
-test('护栏·后坐力各向同性（行为级）：扣除重力后四方向踢力一致', () => {
-  const measure = (aim: number): number => {
-    // 同一 tick 的「开火」与「不开火」两次模拟相减 → 精确隔离后坐力增量（排除重力/上限）
-    const run = (fire: boolean): { x: number; y: number } => {
-      const w = emptyWorld(77)
+test('护栏·后坐力各向同性（多帧净位移）：8 方向 + 喷气/移动/下坠 全部一致', () => {
+  // 测量：同一 tick 序列下「开火」与「不开火」的位移差 = 纯后坐力净位移。
+  // 空中测量可排除地面吸收垂直分量（斜向压向地面时垂直分量被地面吃掉是正确的物理）。
+  const netRecoil = (aimDeg: number, extra: Partial<WorldInput> = {}, air = true): number => {
+    const run = (fire: boolean) => {
+      const w = new World(38100, { name: 'recoil-arena', solids: [] })
       w.config.randomSpawn = false
       const p = w.addPlayer('P', 'ffa')
-      p.weaponIndex = 0        // 霰弹（recoil 最大，最容易看出各向差异）
-      p.pos = { x: 6200, y: 2000 }
+      p.weaponIndex = 0                     // 霰弹：recoil 1560，最容易暴露差异
+      p.pos = air ? { x: 6600, y: 1000 } : { x: 6600, y: 2740 }
       p.vel = { x: 0, y: 0 }
-      p.onGround = false
-      w.step(DT, new Map([[p.id, input({ fire, aim })]]))
-      return { x: p.vel.x, y: p.vel.y }
+      p.onGround = !air
+      const aim = (aimDeg * Math.PI) / 180
+      const x0 = p.pos.x
+      const y0 = p.pos.y
+      for (let i = 0; i < 20; i++) {
+        w.step(DT, new Map([[p.id, input({ aim, fire: fire && i === 0, ...extra })]]))
+      }
+      return { dx: p.pos.x - x0, dy: p.pos.y - y0 }
     }
     const a = run(true)
     const b = run(false)
-    return Math.hypot(a.x - b.x, a.y - b.y)
+    return Math.hypot(a.dx - b.dx, a.dy - b.dy)
   }
-  const dirs = [0, Math.PI, -Math.PI / 2, Math.PI / 2, Math.PI / 4, -Math.PI * 0.75]
-  const kicks = dirs.map(measure)
-  const expected = kicks[0]
-  for (const k of kicks) {
-    assert.ok(Math.abs(k - expected) < 1e-6, `recoil kick differs by direction: ${kicks.map(v => v.toFixed(2)).join(', ')}`)
-  }
-  assert.ok(expected > 500, 'shotgun recoil is significant')
-})
 
+  // ① 空中 8 方向（含斜向）：净位移必须一致
+  const dirs = [0, 180, -90, 90, 45, -135, 30, 150]
+  const mags = dirs.map(d => netRecoil(d))
+  const spread = Math.max(...mags) - Math.min(...mags)
+  assert.ok(spread < 1, `recoil must be isotropic in every direction, spread=${spread.toFixed(2)}px (${mags.map(m => m.toFixed(1)).join(', ')})`)
+  assert.ok(mags[0] > 80, `shotgun recoil is significant, got ${mags[0].toFixed(1)}px`)
+
+  // ② 水平与垂直必须相等（这正是旧实现的病根：水平被移动覆写、垂直被重力放大）
+  const horizontal = netRecoil(0)
+  const vertical = netRecoil(-90)
+  assert.ok(Math.abs(horizontal - vertical) < 1, `horizontal (${horizontal.toFixed(1)}) must equal vertical (${vertical.toFixed(1)})`)
+
+  // ③ 按住喷气时向下开枪，后坐力不能被喷射上限截断吞掉
+  const jetOff = netRecoil(90)
+  const jetOn = netRecoil(90, { jetpack: true })
+  assert.ok(Math.abs(jetOn - jetOff) < 1, `jetpack must not swallow recoil: off=${jetOff.toFixed(1)} on=${jetOn.toFixed(1)}`)
+
+  // ④ 移动中开火，水平后坐力不能被「每帧覆写 vel.x」吃掉
+  for (const mv of [-1, 0, 1] as const) {
+    const m = netRecoil(0, { move: mv }, false)
+    assert.ok(Math.abs(m - horizontal) < 1, `move=${mv} must not change horizontal recoil, got ${m.toFixed(1)} vs ${horizontal.toFixed(1)}`)
+  }
+
+  // ⑤ 不同下落速度下，向上开枪的净位移必须一致
+  const fallMags: number[] = []
+  for (const vy0 of [0, 300, 900, 1100]) {
+    const run = (fire: boolean) => {
+      const w = new World(38200, { name: 'recoil-fall', solids: [] })
+      w.config.randomSpawn = false
+      const p = w.addPlayer('P', 'ffa')
+      p.weaponIndex = 0
+      p.pos = { x: 6600, y: 1000 }
+      p.vel = { x: 0, y: vy0 }
+      p.onGround = false
+      const y0 = p.pos.y
+      for (let i = 0; i < 20; i++) {
+        w.step(DT, new Map([[p.id, input({ aim: -Math.PI / 2, fire: fire && i === 0 })]]))
+      }
+      return p.pos.y - y0
+    }
+    fallMags.push(Math.abs(run(true) - run(false)))
+  }
+  const fallSpread = Math.max(...fallMags) - Math.min(...fallMags)
+  assert.ok(fallSpread < 1, `fall speed must not change recoil, spread=${fallSpread.toFixed(2)}px (${fallMags.map(m => m.toFixed(1)).join(', ')})`)
+})
 
 test('护栏·高斯枪不穿墙：端点不在实体内、段不跨实体、屏幕长度一致、薄墙后不受伤害', () => {
   // ① 随机角度：每段端点不在实体内、段内不穿实体、渲染侧最短位移长度≡世界长度（不会画横穿全图直线）

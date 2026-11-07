@@ -42,15 +42,30 @@
     v.y = -P.jumpImpulse;
   }
   function jetpack(v, dt, ascendMult = 1) {
-    v.y = Math.max(-P.jetpackMaxUp * ascendMult, v.y - P.jetpackAccel * ascendMult / P.mass * dt);
+    const cap = -P.jetpackMaxUp * ascendMult;
+    if (v.y <= cap) return;
+    v.y = Math.max(cap, v.y - P.jetpackAccel * ascendMult / P.mass * dt);
   }
   function updateJetpackFuel(fuel, active, onGround, dt, maxFuel = P.jetpackFuel) {
     const next = active ? fuel - P.jetpackDrain * dt : onGround ? fuel + P.jetpackRecharge * dt : fuel;
     return Math.min(maxFuel, Math.max(0, next));
   }
   var RECOIL_SCALE = 0.56;
+  var RECOIL_DECAY = 7;
+  var RECOIL_EPSILON = 4;
   function recoilDelta(recoil, aim) {
     return { x: -Math.cos(aim) * recoil * RECOIL_SCALE, y: -Math.sin(aim) * recoil * RECOIL_SCALE };
+  }
+  var RECOIL_INTEGRAL = (1 - Math.exp(-RECOIL_DECAY * (1 / 60))) / RECOIL_DECAY;
+  var RECOIL_DISPLACEMENT_FACTOR = RECOIL_INTEGRAL;
+  function stepRecoilVel(rv, dt) {
+    const k = Math.exp(-RECOIL_DECAY * dt);
+    rv.x *= k;
+    rv.y *= k;
+    if (Math.hypot(rv.x, rv.y) < RECOIL_EPSILON) {
+      rv.x = 0;
+      rv.y = 0;
+    }
   }
 
   // src/core/wrap.ts
@@ -935,7 +950,9 @@
       }
     }
     const tGrid = terrain.grid;
-    const nx = wrapX(p.pos.x + p.vel.x * dt);
+    if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };
+    const rv = p.recoilVel;
+    const nx = wrapX(p.pos.x + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR);
     if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y)) {
       p.pos.x = nx;
     } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y - 10)) {
@@ -949,18 +966,22 @@
         }
       }
       p.vel.x = 0;
+      rv.x = 0;
     }
-    const nyRaw = p.pos.y + p.vel.y * dt;
+    const vyTotal = p.vel.y + rv.y;
+    const nyRaw = p.pos.y + p.vel.y * dt + rv.y * RECOIL_DISPLACEMENT_FACTOR;
     const ny = wrapY(nyRaw);
     if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny)) {
       p.pos.y = ny;
       p.onGround = false;
     } else {
-      p.onGround = p.vel.y > 0;
+      p.onGround = vyTotal > 0;
       p.vel.y = 0;
+      rv.y = 0;
     }
     p.pos.x = wrapX(p.pos.x);
     p.pos.y = wrapY(p.pos.y);
+    stepRecoilVel(rv, dt);
   }
   function separateOverlappingPlayers(players, playerBroadBuckets, terrain, obstacles, obstacleBroadBuckets) {
     for (let i = 0; i < players.length; i++) {
@@ -2351,8 +2372,9 @@
       if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
       if (wep.recoil > 0) {
         const rk = recoilDelta(wep.recoil, p.aim);
-        p.vel.x += rk.x;
-        p.vel.y += rk.y;
+        if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };
+        p.recoilVel.x = rk.x;
+        p.recoilVel.y = rk.y;
       }
       const mx = wrapX(p.pos.x + Math.cos(p.aim) * 24);
       const my = p.pos.y - 12 + Math.sin(p.aim) * 24;

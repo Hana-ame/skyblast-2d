@@ -333,6 +333,8 @@
     P = { ...P, ...overrides };
     return { ...P };
   }
+  var RECOIL_DECAY = 7;
+  var RECOIL_INTEGRAL = (1 - Math.exp(-RECOIL_DECAY * (1 / 60))) / RECOIL_DECAY;
 
   // src/core/balanceOverrides.ts
   var OVERRIDES_STORAGE_KEY = "skyblast_balance_overrides_v1";
