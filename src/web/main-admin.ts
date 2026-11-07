@@ -1,5 +1,5 @@
 // web/main-admin.ts —— 数值调整后台：编辑武器/全局/物理参数，保存覆盖并应用到游戏
-import { WEAPONS, DEFAULT_CONFIG, WEAPON_DISPLAY_ORDER } from '../core/weapons.ts'
+import { WEAPONS, DEFAULT_CONFIG } from '../core/weapons.ts'
 import type { WeaponDef, GameConfig } from '../core/weapons.ts'
 import { getPhysicsParams, setPhysicsParams } from '../core/sim/physics.ts'
 import {
@@ -56,13 +56,11 @@ h2w.textContent = `武器数值（${WEAPONS.length} 把）`
 weaponsSection.append(h2w)
 const grid = document.createElement('div')
 grid.className = 'wep-grid'
-const orderedForUI = WEAPON_DISPLAY_ORDER.map(id => WEAPONS[id]).filter(Boolean)
-orderedForUI.forEach((wep, idx) => {
+WEAPONS.forEach((wep, idx) => {
   const card = document.createElement('div')
   card.className = 'card'
   const title = document.createElement('h3')
-  // 标题显示展示序号（1..9）+ 名称，避免与内部 id 混淆
-  title.textContent = `${idx + 1}. ${wep.name}${wep.isSupplyOnly ? '（补给）' : ''}`
+  title.textContent = `${wep.id}. ${wep.name}${wep.isSupplyOnly ? '（补给）' : ''}`
   card.append(title)
   const fields = document.createElement('div')
   fields.className = 'fields'

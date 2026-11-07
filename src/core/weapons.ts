@@ -30,8 +30,9 @@ export interface WeaponDef {
   falloffEnd?: number       // 距离衰减终点（px，之后为 falloffMin）
   falloffMin?: number       // 距离衰减最小倍率
   curveRate?: number       // 弹道弯曲速率 rad/s（引力枪的弯曲弹道）
-  farRange?: number        // 远距阈值：超过该距离命中按 farDamage 结算（狙击）
-  farDamage?: number       // 超过 farRange 时的伤害（狙击 99，非爆头留 1 血）
+  farRange?: number        // 远距阈值（可选）
+  farDamage?: number       // 超过 farRange 时的伤害（可选）
+  edgeDamage?: number      // 命中身体碰撞箱边缘（擦边）时的伤害（狙击 = 99，正常命中身体与远距身体均为 100）
   chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
   friendlyFire?: boolean   // 是否对友军造成伤害（默认 false=关闭；手雷/高斯/引力/火箭开启）
   selfDamage?: boolean     // 是否会对使用者自己造成伤害（默认 false；高斯反射光束等开启）
@@ -55,11 +56,6 @@ export interface SecondaryDef {
   supplyOnly?: boolean
 }
 
-// v2 speed: 16→960, 20→1200, 34→2040, 15.5→930, 44→2640, 22→1320, 13.5→810
-// recoil×60：13.5→810, 1.4→84, 6.5→390, 8.5→510, 2.5→150, 1.1→66, 4.0→240
-/** UI 展示顺序（与内部 id 解耦）：手枪 霰弹 冲锋 突击步枪 狙击 火箭筒 M249 高斯 引力 */
-export const WEAPON_DISPLAY_ORDER: number[] = [7, 0, 8, 1, 2, 3, 5, 4, 6]
-
 export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
@@ -72,8 +68,8 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
     damage: 33, headshotMult: 2.2, pellets: 1, spread: 0.045,
-    speed: 1500, recoil: 84, magSize: 28, maxReserve: 140,
-    reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,   // 伤害 46（用户要求 ×2），射速保持原值
+    speed: 1500, recoil: 84, magSize: 30, maxReserve: 90,    // 30/90
+    reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
   },
   {
@@ -82,7 +78,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 4000, recoil: 390, magSize: 3, maxReserve: 15,
     reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.60, terrainRadius: 16,
     explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.6, fuelMult: 0.6, fovMult: 1.30, color: '#c084fc',
-    farRange: 800, farDamage: 99,   // 超过视距的非爆头命中只造成 99（留 1 血）
+    edgeDamage: 99,   // 远距离命中身体依然 100 伤害；打中身体碰撞箱边缘才造成 99 伤害（留 1 血）
   },
   {
     id: 3, name: '火箭筒', shortName: '火箭筒', isSupplyOnly: false,
@@ -94,12 +90,12 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 4, name: '高斯枪', shortName: '高斯枪', isSupplyOnly: true,
-    damage: 50, headshotMult: 2.0, pellets: 1, spread: 0.0,
-    speed: 3000, recoil: 0, magSize: 12, maxReserve: 48,   // 12 / 6每秒 = 连续 2 秒
-    reloadTime: 4.0, fireDelay: 0, terrainRadius: 18,   // 换弹时间 ×2
+    damage: 25, headshotMult: 2.0, pellets: 1, spread: 0.0,
+    speed: 3000, recoil: 0, magSize: 24, maxReserve: 48,   // 24 / 6每秒 = 连续 4 秒
+    reloadTime: 6.0, fireDelay: 0, terrainRadius: 18,      // 换弹 6s
     explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 2, beam: true,
     friendlyFire: true, selfDamage: true,   // 高斯：反射光束可打到友军/自己
-    damagePerSecond: 180, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',   // 伤害下调（240→180）；视野正常
+    damagePerSecond: 90, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',   // 伤害减半（180→90）；单匣 4s；换弹 6s
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,
@@ -129,23 +125,23 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
     damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
-    speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,
+    speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,     // 30/150
     reloadTime: 2.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
     moveSpeedMult: 1.25, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',
   },
 ]
 
-// 战术副武器：只保留手榴弹（2 充能、自然回复）；替身人偶为特殊补给专属（不占配装槽）
+// 战术副武器：只保留手榴弹（自然回复）；替身人偶为特殊补给专属（不占配装槽）
 /** 距离衰减倍率：dist ≤ start 满伤；start~end 线性降到 min；≥end 维持 min */
-export function weaponFalloff(wep: WeaponDef, dist: number): number {
+export function weaponFalloff(wep: WeaponDef, dist: number, exponent = 1): number {
   const start = wep.falloffStart ?? 0
   const end = wep.falloffEnd ?? 0
   const min = wep.falloffMin ?? 1
   if (end <= start) return 1
   if (dist <= start) return 1
   if (dist >= end) return min
-  const t = (dist - start) / (end - start)
+  const t = Math.pow((dist - start) / (end - start), exponent)
   return 1 - (1 - min) * t
 }
 
@@ -189,7 +185,8 @@ export interface GameConfig {
   grenadeSelfDamage: boolean     // 手雷是否伤自己
   fragMaxCharges: number   // 手雷最大充能数（自然回复）
   fragRechargeSeconds: number  // 每充能回复秒数
-  dollMaxCharges: number    // 替身人偶最多可囤几个（只从补给箱获得）        // v2 规则：部署后锁定配装，仅重生前可换
+  dollMaxCharges: number    // 替身人偶最多可囤几个（只从补给箱获得）
+  falloffExponent?: number
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

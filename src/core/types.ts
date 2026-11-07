@@ -1,55 +1,9 @@
-// core/types.ts —— 领域类型（零 IO 依赖，可在服务端复用）
-// 合并扩展：v2 玩法实体（障碍物/手雷/地雷/空袭/占点/弹药包/补给箱/替身人偶）全部进领域类型
-import type { WorldSnapshot } from './snap.ts'
-
+// core/types.ts —— 纯数据契约（零逻辑、可 JSON 序列化 = 天然快照格式）
+// 覆盖 SkyBlast 全部玩法实体：玩家/弹丸/手雷/地雷/空袭/可破坏障碍物/占领点/弹药点/补给箱/迫击炮/瞭望塔/传送门/替身人偶/事件
 export interface Vec2 { x: number; y: number }
 
 export type TeamId = 'red' | 'blue' | 'green' | 'ffa'
 
-export interface PlayerState {
-  id: number
-  pos: Vec2
-  vel: Vec2
-  aim: number        // 弧度，屏幕坐标系：0=右, π/2=下, π=左
-  team: TeamId
-  name: string
-  hp: number
-  maxHp: number
-  alive: boolean
-  deployed: boolean      // false = 待机整备（未部署/等待重生）
-  // 武器经济（有限弹匣 + 有限备弹，v2 核心）
-  weaponIndex: number
-  /** 上次使用的常规主武器（补给特武是临时的；重生时回退到它，避免复活后还卡着超级武器） */
-  lastPrimaryIndex: number
-  ammo: number[]         // 每把武器当前弹匣
-  reserveAmmo: number[]  // 每把武器备弹
-  reloading: boolean
-  reloadTimer: number
-  fireCooldown: number
-  chargeTimer: number      // 开火蓄力计时（chargeSeconds 武器）
-  // 副武器
-  secondary: string      // SECONDARIES key（frag / doll）
-  secondaryCooldown: number
-  fragCharges: number    // 手雷充能数（上限 fragMaxCharges）
-  fragRechargeTimer: number
-  // 喷射器
-  jetpack: boolean
-  fuel: number
-  onGround: boolean
-  // 战术状态
-  shieldHp: number
-  shieldTimer: number
-  watchtowerTimer: number      // 旧 20s 加成（已废弃，保留下兼容）
-  mountedTowerId: string | null  // 正在操控的瞭望塔（上塔锁定，视野 200%，下塔即失效）
-  warpCooldown: number
-  doll: DollSnapshot | null   // 替身人偶锚（10s 生死回溯）
-  dollCharges: number         // 替身人偶持有数（只从特殊补给箱获得）
-  respawnTimer: number
-  kills: number
-  deaths: number
-}
-
-/** 替身人偶快照：使用瞬间的位置与状态（v2 dollState；多端一致性靠服务器权威） */
 export interface DollSnapshot {
   pos: Vec2
   hp: number
@@ -58,7 +12,54 @@ export interface DollSnapshot {
   weaponIndex: number
   ammo: number[]
   reserveAmmo: number[]
-  timer: number
+  timer: number          // 剩余回溯秒数
+}
+
+export interface PlayerState {
+  id: number
+  pos: Vec2
+  vel: Vec2
+  aim: number            // 弧度
+  team: TeamId
+  name: string
+  hp: number
+  maxHp: number
+  alive: boolean
+  onGround: boolean
+  deployed: boolean      // false = 待机整备（未部署/等待重生）
+  // 武器经济（有限弹匣 + 有限备弹，v2 核心）
+  weaponIndex: number
+  /** 上次使用的常规主武器（补给特武是临时的；重生时回退到它）。旧协议解码可能缺失 → 视为当前武器 */
+  lastPrimaryIndex?: number
+  ammo: number[]         // 每把武器当前弹匣
+  reserveAmmo: number[]  // 每把武器备弹
+  reloading: boolean
+  reloadTimer: number    // 秒
+  fireCooldown: number   // 秒
+  chargeTimer: number    // 蓄力已持续秒数（狙击等蓄力武器；松手清零，满 chargeSeconds 发射）
+  // 副武器
+  secondary: string      // 'frag'|'Flash'|'mine'|'airstrike'|'shield'|'doll'|'impact'
+  secondaryCooldown: number
+  fragCharges: number        // 手雷当前可用充能（上限 fragMaxCharges，自然回复）
+  fragRechargeTimer: number  // 当前充能已累计回复秒数
+  // 喷气背包（燃料槽）
+  jetpack: boolean
+  fuel: number           // 0..jetpackFuel（秒）
+  // 能量护盾
+  shieldHp: number
+  shieldTimer: number
+  // 瞭望塔视野加成 / 传送门冷却
+  watchtowerTimer: number
+  /** 当前登上的瞭望塔 id（非 null 时玩家位置锁定在塔顶、不能移动，享 200% 视野；再按 E 下塔） */
+  mountedTowerId: string | null
+  warpCooldown: number
+  // 替身人偶锚点（激活期间非 null）+ 可用充能数（只能从特殊补给箱获得）
+  doll: DollSnapshot | null
+  dollCharges: number
+  // 重生倒计时（>0 表示死亡等待重生）
+  respawnTimer: number
+  kills: number
+  deaths: number
 }
 
 export interface Projectile {
@@ -66,23 +67,27 @@ export interface Projectile {
   owner: number
   pos: Vec2
   vel: Vec2
-  life: number       // 剩余寿命（秒）
-  r: number          // 半径
-  // v2 弹道属性
+  /** 发射点（用于按飞行距离计算伤害衰减；网络反序列化弹丸可能缺失，回退到当前位置） */
+  spawnX?: number
+  spawnY?: number
+  /** 武器槽位索引（用于查衰减曲线；迫击炮等非武器置 -1） */
+  weaponId: number
+  /** 弹道弯曲角速度 rad/s（0 = 不弯曲；引力枪 >0） */
+  curveRate: number
+  life: number
+  r: number
   damage: number
   headshotMult: number
   explosive: boolean
-  terrainRadius: number    // 爆炸半径
+  terrainRadius: number
   gravityScale: number
   pierceOnHeadshot: boolean
   pierceAll: boolean
   isGravityOrb: boolean
-  weaponId: number          // 发射武器 id（狙击远距衰减用）
-  curveRate: number         // 弹道弯曲速率 rad/s（引力枪）
   weaponLabel: string
   color: string
   hitTargets: number[]     // 穿透弹已命中目标（防同目标重复结算）
-  bounces: number          // 剩余撞墙反弹次数（高斯枪 3 次）
+  bounces: number          // 剩余撞墙反弹次数（高斯枪 2 次）
   passWalls: boolean       // 穿透原始地形（引力弹）
   beam: boolean            // 光束渲染（高斯枪）
   rocket: boolean          // 火箭弹渲染（直线爆炸弹）
@@ -94,34 +99,36 @@ export interface Grenade {
   owner: number
   pos: Vec2
   vel: Vec2
-  fuse: number
+  fuse: number            // 秒
   bounces: number
 }
 
 export interface Landmine {
   id: number
-  owner: number         // 0 = 公共预设雷
+  owner: number           // -1 = 关卡预设地雷
   pos: Vec2
   vel: Vec2
   armed: boolean
-  armTimer: number
+  armTimer: number        // 秒
   triggered: boolean
-  fuse: number
-  instant: boolean      // 瞬发地雷
-  directHit: boolean    // 副武器投掷雷支持直击触发
-  preset: boolean       // 地图预设（爆炸后定时重生）
-  respawnTimer: number
+  fuse: number            // 秒
+  instant: boolean        // 瞬爆雷（触发即炸）
+  directHit: boolean      // 落点直接踩中玩家 → 瞬爆
+  preset: boolean
+  presetIndex?: number
+  respawnTimer: number    // >0 表示预设雷已炸、等待重生
 }
 
 export interface Airstrike {
   id: number
   owner: number
   pos: Vec2
-  timer: number
-  dropped: boolean
+  timer: number           // 秒（倒计时结束投放 3 枚航弹）
+  WarningRadius?: number
+  /** 是否已完成投放（消费端/二进制协议仍在用；new 核心以 timer 判定） */
+  dropped?: boolean
 }
 
-/** 可破坏障碍物（预设 + 玩家 barricade 副武器生成） */
 export interface Obstacle {
   id: string
   x: number
@@ -130,29 +137,22 @@ export interface Obstacle {
   h: number
   hp: number
   maxHp: number
-  label: string
+  kind?: 'wall' | 'box' | 'sandbag'
   color: string
   borderColor: string
+  label: string
 }
 
 export interface CapturePoint {
   id: string
-  code: string
+  code: string            // 'A'..'E'
   name: string
   x: number
   y: number
+  radius?: number
   ownerTeam: TeamId | null
-  progress: number
   capturingTeam: TeamId | null
-}
-
-export interface WarpPortal {
-  id: string
-  name: string
-  x: number
-  y: number
-  targetId: string
-  color: string
+  progress: number        // 0..100
 }
 
 export interface AmmoPack {
@@ -172,64 +172,109 @@ export interface SupplyCrate {
   weaponName: string
   color: string
   active: boolean
-  respawnTimer: number
+  respawnTimer: number    // 秒
 }
 
-export interface Watchtower { id: string; name: string; x: number; y: number; operatorId: number | null }
-export interface Mortar { id: string; name: string; x: number; y: number; angle: number; power: number; cooldown: number; operatorId: number | null }
-export interface JumpPad { x: number; y: number; vx: number; vy: number }
-export interface WarpUse { x: number; y: number }   // 传送门特效事件（瞬态）
-
-export type WorldSnapshotT = WorldSnapshot
-
-// 服务器权威每 tick 的解析后动作（core 不依赖 input 层，由联机层把 Intent 合并到此）
-export interface WorldInput {
-  move: -1 | 0 | 1
-  jump: boolean
-  jetpack: boolean
-  dive: boolean        // 下降加速（按住下键）
-  aim: number
-  fire: boolean
-  reload: boolean
-  // v2 新增意图
-  secondary: SecondaryIntent | null   // 触发一次即消费（瞬时意图）
-  interact: boolean                   // E 键：瞭望塔/传送门/迫击炮/补给站（瞬时意图）
-  switchWeapon: number | null         // 换主武器（-1 = 无操作）
+export interface Mortar {
+  id: string
+  name: string
+  x: number
+  y: number
+  angle: number           // 弧度
+  power: number
+  operatorId: number | null
+  cooldown: number        // 秒
 }
 
-/** 副武器使用意图：null = 不用；带准星世界坐标（空袭/工事用） */
+export interface Watchtower {
+  id: string
+  name: string
+  x: number
+  y: number
+  operatorId: number | null
+}
+
+export interface WarpPortal {
+  id: string
+  name: string
+  x: number
+  y: number
+  targetId: string
+  color: string
+}
+
+// 模拟层只认这个归一化输入（由 InputMapper 从 Intent[] 翻译而来）
 export interface SecondaryIntent {
-  type: string          // SECONDARIES key
+  type: string
   targetX: number
   targetY: number
 }
 
-export function defaultWorldInput(): WorldInput {
-  return { move: 0, jump: false, jetpack: false, dive: false, aim: 0, fire: false, reload: false, secondary: null, interact: false, switchWeapon: null }
+export interface WorldInput {
+  move: -1 | 0 | 1
+  jump: boolean
+  jetpack: boolean
+  dive: boolean          // 按下键
+  aim: number
+  fire: boolean
+  reload: boolean
+  switchWeapon: number | null
+  interact: boolean
+  secondary: SecondaryIntent | null
 }
 
 // 触发事件（瞬态、不进快照；由 World 产出、net/ui 层订阅 → killfeed/音效/粒子）
+// 说明：核心（core/sim/*）已切换为 attackerId/victimId/headshot/projectile 这套新字段，
+// 而表现层/联机层仍有按旧字段（killerName/isHeadshot/obstacle_destroy…）读取的代码。
+// 为保证两边都能工作，这里取「并集」：新字段 + 旧字段 + 两套 kind 都保留。
 export interface WorldEvent {
   /** 高斯枪光束分段（kind='laser' 时） */
   segments?: { x1: number; y1: number; x2: number; y2: number }[]
   duration?: number
   color?: string
-  kind: 'kill' | 'headshot' | 'pierce' | 'explosion' | 'obstacle_destroy' | 'capture' | 'supply_pickup' | 'ammo_pickup' | 'warp' | 'shield_break' | 'doll_recall' | 'mortar_fire' | 'airstrike_drop' | 'laser'
+  kind:
+    | 'explosion' | 'hit' | 'kill' | 'capture' | 'supply_pickup' | 'ammo_pickup'
+    | 'warp' | 'watchtower' | 'shield' | 'doll_recall' | 'airstrike' | 'mortar_fire' | 'laser'
+    | 'projectile_spawn' | 'projectile_bounce' | 'projectile_destroy'
+    // 旧版 kind（表现层/协议仍在处理）
+    | 'headshot' | 'pierce' | 'obstacle_destroy' | 'shield_break' | 'airstrike_drop'
   x?: number
   y?: number
   radius?: number
-  killerId?: number
+  // 新版字段
+  attackerId?: number
   victimId?: number
+  headshot?: boolean
+  playerId?: number
+  weaponLabel?: string
+  weaponName?: string
+  pointCode?: string
+  team?: TeamId
+  damage?: number
+  projectile?: Projectile
+  projectileId?: number
+  // 旧版字段（表现层/协议仍读）
+  killerId?: number
   killerName?: string
   victimName?: string
   killerTeam?: TeamId
   victimTeam?: TeamId
-  weaponLabel?: string
   isHeadshot?: boolean
   isPierced?: boolean
   obstacleId?: string
-  pointCode?: string
-  team?: TeamId
-  playerId?: number
-  weaponName?: string
+  weaponId?: number
+  vx?: number
+  vy?: number
+  bounces?: number
+  /** 弹丸剩余寿命（projectile_bounce 事件同步用） */
+  life?: number
+  spawnX?: number
+  spawnY?: number
+}
+
+export function defaultWorldInput(): WorldInput {
+  return {
+    move: 0, jump: false, jetpack: false, dive: false, aim: 0,
+    fire: false, reload: false, switchWeapon: null, interact: false, secondary: null,
+  }
 }

@@ -214,7 +214,10 @@ test('Loopback 集成：两客户端对局跑通，服务器权威产生命中�
 test('三层分离：core 源码不 import input/ui/net', async () => {
   const { readFile } = await import('node:fs/promises')
   const files = [
-    'src/core/sim/world.ts', 'src/core/types.ts', 'src/core/snap.ts',
+    'src/core/sim/world.ts', 'src/core/sim/landmarks.ts', 'src/core/sim/spatial.ts',
+    'src/core/sim/playerPhysics.ts', 'src/core/sim/projectiles.ts',
+    'src/core/sim/throwables.ts', 'src/core/sim/interactables.ts',
+    'src/core/types.ts', 'src/core/snap.ts',
     'src/core/weapons.ts', 'src/core/terrain.ts', 'src/core/wrap.ts', 'src/core/rng.ts',
   ]
   for (const f of files) {
@@ -284,7 +287,8 @@ test('高斯枪：按住持续输出（射速无限），一梭子可打 8 秒�
   const drainedPerSec = ammo0 - p.ammo[4]
   assert.ok(drainedPerSec > 5 && drainedPerSec < 7, `ammo drains ~6/s, got ${drainedPerSec.toFixed(2)}`)
   // 弹量/2 后：24 / 6 = 4 秒
-  assert.equal(WEAPONS[4].magSize / (WEAPONS[4].ammoPerSecond ?? 1), 2, 'one magazine = 2s')
+  assert.equal(WEAPONS[4].magSize / (WEAPONS[4].ammoPerSecond ?? 1), 4, 'one magazine = 4s')
+  assert.equal(WEAPONS[4].reloadTime, 6.0, 'gauss reloadTime = 6s')
   // 松手即停
   w.drainEvents()
   w.step(DT, new Map([[p.id, input({ fire: false, aim: -Math.PI / 2 })]]))
@@ -356,7 +360,11 @@ test('特武（高斯枪/M249/引力枪）只能从补给箱获得，常规换�
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 520, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 33, 100, 115, 50, 33, 24, 24, 24])   // 霰弹=手枪弹 24；M249=突击(33)；引力枪/手枪/冲锋枪 24
+  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 33, 100, 115, 25, 33, 24, 24, 24])
+  assert.equal(WEAPONS[1].magSize, 30, 'assault rifle mag 30')
+  assert.equal(WEAPONS[1].maxReserve, 90, 'assault rifle reserve 90')
+  assert.equal(WEAPONS[8].magSize, 30, 'SMG mag 30')
+  assert.equal(WEAPONS[8].maxReserve, 150, 'SMG reserve 150')   // 霰弹=手枪弹 24；M249=突击(33)；引力枪/手枪/冲锋枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：8 弹丸 ×19 伤害；弹匣 8/72；无爆头加成
@@ -374,8 +382,9 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[3].speed, 520, 'bazooka slow')
   assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
   assert.equal(WEAPONS[4].bounces, 2, 'gauss bounces 2 times')
-  assert.equal(WEAPONS[4].damagePerSecond, 180, 'laser dps reduced (240 -> 180)')
-  assert.equal(WEAPONS[4].magSize, 12, 'laser magazine 12')
+  assert.equal(WEAPONS[4].damagePerSecond, 90, 'gauss dps halved (180 -> 90)')
+  assert.equal(WEAPONS[4].magSize, 24, 'gauss magazine 24 (4s)')
+  assert.equal(WEAPONS[4].reloadTime, 6.0, 'gauss reload 6s')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
   assert.ok(WEAPONS[5].fireDelay <= 0.1, 'M249 high fire rate (damage-synced with rifle, DPS preserved)')
@@ -403,8 +412,8 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[3].fuelMult, 0.7, 'bazooka flight 0.7')
   assert.equal(WEAPONS[3].ascendMult, 0.7, 'bazooka ascend 0.7')
   // 狙击：超过视距(800) 非爆头只有 99 伤害
-  assert.equal(WEAPONS[2].farRange, 800, 'sniper far range')
-  assert.equal(WEAPONS[2].farDamage, 99, 'sniper far body damage 99')
+  assert.equal(WEAPONS[2].edgeDamage, 99, 'sniper hitbox edge damage 99')
+  assert.equal(WEAPONS[2].farRange, undefined, 'sniper has no farRange penalty on body')
   assert.deepEqual(Object.keys(SECONDARIES).sort(), ['doll', 'frag'], 'only frag + doll secondaries')
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
   assert.ok(!SECONDARIES.frag.supplyOnly, 'frag selectable')
@@ -493,13 +502,13 @@ test('防卡死：出生/传送进实体内部后会自动推出', () => {
   assert.ok(!w.terrain.isSolidAt(wx, p.pos.y - 6), `pushed out of solid, pos=(${Math.round(p.pos.x)},${Math.round(p.pos.y)})`)
 })
 
-test('狙击：视距内身体一击必杀；超过视距(800)非爆头只造成 99（留 1 血）', () => {
+test('狙击：近距离与远距离(900px)命中身体依然 100 一击必杀；打中碰撞箱边缘才造成 99（留 1 血）', () => {
   const arena = (): World => {
     const w = new World(65)
     w.terrain.addSolidBlock(2100, 1000, 1400, 20, '#334155', '#334155', 'platform', 'test-floor')
     return w
   }
-  const shoot = (dist: number, aimY = -12): number => {
+  const shoot = (dist: number): number => {
     const w = arena()
     const shooter = w.addPlayer('S', 'red')
     shooter.weaponIndex = 2
@@ -509,11 +518,21 @@ test('狙击：视距内身体一击必杀；超过视距(800)非爆头只造成
     for (let i = 0; i < 90; i++) w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
     return victim.hp
   }
-  // 视距内 600px：身体命中 100 → 死
-  assert.ok(shoot(600) <= 0, 'within view range body shot is lethal')
-  // 超过视距 900px：非爆头 99 → 剩 1 血
-  const farHp = shoot(900)
-  assert.ok(Math.abs(farHp - 1) < 1e-6, `beyond view body shot leaves 1 hp, hp=${farHp}`)
+  // 近距 600px 与远距 900px 命中身体中心均为 100 伤害 → 一击必杀
+  assert.ok(shoot(600) <= 0, 'within view range body shot is lethal (100 dmg)')
+  assert.ok(shoot(900) <= 0, 'far range (900px) body shot is still lethal (100 dmg)')
+
+  // 打中身体碰撞箱边缘（水平擦过下沿碰撞箱边缘 dyBody≈16，以及竖直向上擦过侧边碰撞箱边缘 dxBody=13）：均造成 99 伤害（留 1 血）
+  const wEdge = arena()
+  const sEdge = wEdge.addPlayer('S', 'red')
+  sEdge.weaponIndex = 2
+  const vEdge = wEdge.addPlayer('V', 'blue')
+  sEdge.pos = { x: 2200, y: 984 }
+  vEdge.pos = { x: 2500, y: 984 }
+  // 瞄准目标脚底碰撞箱下沿（dy ≈ +27.5，使出膛点 y-12 落在目标 pos.y + 15.8 的碰撞箱边缘）
+  const edgeAim = Math.atan2(27.5, 300)
+  for (let i = 0; i < 60; i++) wEdge.step(DT, new Map([[sEdge.id, input({ fire: true, aim: edgeAim })]]))
+  assert.ok(Math.abs(vEdge.hp - 1) < 1e-6, `hitbox bottom-edge graze deals 99 dmg (leaves 1 hp), hp=${vEdge.hp}`)
 })
 
 test('火箭筒：直线飞行（不落）+ 慢速 + 无限射程 + 命中爆炸', () => {
@@ -570,7 +589,7 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
   c.pos = { x: 6450, y: 2200 }
   for (let i = 0; i < 30; i++) w3.step(DT, new Map([[c.id, input()]]))
   const fallSpeed = c.vel.y
-  assert.ok(diveSpeed > fallSpeed * 1.35, `dive accelerates downward: dive=${diveSpeed.toFixed(0)} fall=${fallSpeed.toFixed(0)}`)
+  assert.ok(Math.abs(diveSpeed - fallSpeed) < 1e-6, `dive acceleration cancelled: dive=${diveSpeed.toFixed(1)} fall=${fallSpeed.toFixed(1)}`)
 
   // 水平零滑步：俯冲中松开方向键 → 水平速度立即为 0
   const w4 = new World(74)
@@ -1153,4 +1172,285 @@ test('高斯枪被可破坏掩体挡住（不再穿过去）', () => {
   }
   assert.ok(ob.hp < hpOb, `obstacle takes laser damage, hp=${ob.hp}`)
   assert.equal(b.hp, 100, 'target behind destructible cover is protected from laser')
+})
+
+// ── 私有二进制协议 (SB2B/SB2C) 与百人 PeerJS 房间压测 ──
+import {
+  encodeServerMsgBinary, decodeServerMsgBinary,
+  encodeClientMsgBinary, decodeClientMsgBinary,
+  filterSnapshotAOI,
+} from '../src/net/protocol/BinaryCodec.ts'
+
+test('私有二进制协议：百人快照 + 弹幕 + 事件 + 欢迎包 编解码无损且体积压缩 >90%', () => {
+  const w = new World(888)
+  for (let i = 0; i < 100; i++) {
+    const p = w.addPlayer(`Agent_${i}`, i % 2 === 0 ? 'red' : 'blue')
+    p.weaponIndex = i % 7
+  }
+  const inputs = new Map<number, WorldInput>()
+  for (const p of w.players) {
+    inputs.set(p.id, input({
+      move: p.id % 2 === 0 ? 1 : -1,
+      jetpack: p.id % 3 === 0,
+      aim: (p.id * 0.17) % 3.14,
+      fire: true,
+      secondary: p.id % 15 === 0 ? sec('frag', p.pos.x + 120, p.pos.y) : null,
+    }))
+  }
+  for (let t = 0; t < 6; t++) w.step(DT, inputs)
+  const events = w.drainEvents()
+  const snap = w.snapshot()
+
+  const origMsg = {
+    snap,
+    events,
+    welcome: { playerId: 42, name: 'Agent_41', team: 'blue' },
+  }
+  const jsonBytes = Buffer.byteLength(JSON.stringify(origMsg))
+  const bin = encodeServerMsgBinary(origMsg)
+  const decoded = decodeServerMsgBinary(bin)
+
+  assert.ok(decoded, 'binary ServerMsg decoded')
+  assert.equal(decoded!.snap.tick, snap.tick)
+  assert.equal(decoded!.snap.seed, snap.seed)
+  assert.equal(decoded!.snap.players.length, 100)
+  assert.equal(decoded!.snap.projectiles.length, snap.projectiles.length)
+  assert.equal(decoded!.snap.grenades.length, snap.grenades.length)
+  assert.equal(decoded!.snap.obstacles.length, snap.obstacles.length)
+  assert.equal(decoded!.snap.capturePoints.length, 5)
+  assert.equal(decoded!.welcome?.playerId, 42)
+  assert.ok(Math.abs(decoded!.snap.players[0].pos.x - snap.players[0].pos.x) <= 0.25)
+  assert.ok(Math.abs(decoded!.snap.players[0].hp - snap.players[0].hp) <= 0.1)
+
+  const ratio = 1 - bin.byteLength / jsonBytes
+  assert.ok(ratio > 0.90, `expected >90% compression, got ${(ratio * 100).toFixed(1)}% (bin=${bin.byteLength}B vs json=${jsonBytes}B)`)
+
+  // ClientMsg 编解码校验
+  const cMsg = {
+    seq: 123,
+    ts: 1700000000000,
+    intents: [
+      { t: 'move' as const, dir: -1 as const },
+      { t: 'aim' as const, angle: -0.75 },
+      { t: 'fire' as const, on: true },
+      { t: 'secondary' as const, kind: 'frag', targetX: 3200, targetY: 2400 },
+    ],
+  }
+  const cBin = encodeClientMsgBinary(cMsg)
+  const cDec = decodeClientMsgBinary(cBin)
+  assert.ok(cDec, 'binary ClientMsg decoded')
+  assert.equal(cDec!.seq, 123)
+  assert.equal(cDec!.intents.length, 4)
+  assert.equal(cDec!.intents[0].t, 'move')
+  assert.ok(cBin.byteLength <= 45, `compact ClientMsg (${cBin.byteLength}B)`)
+})
+
+test('AOI 视野裁剪：过滤远端无关弹丸，保留视野内与自身发射的弹丸', () => {
+  const w = new World(889)
+  const p1 = w.addPlayer('Viewer', 'red')
+  const p2 = w.addPlayer('Near', 'blue')
+  const p3 = w.addPlayer('Far', 'blue')
+  p1.pos = { x: 2000, y: 2740 }
+  p2.pos = { x: 2400, y: 2740 }
+  p3.pos = { x: 9000, y: 2740 }
+  w.step(DT, new Map([
+    [p1.id, input({ fire: true, aim: 0 })],
+    [p2.id, input({ fire: true, aim: 0 })],
+    [p3.id, input({ fire: true, aim: 0 })],
+  ]))
+  const snap = w.snapshot()
+  const aoiSnap = filterSnapshotAOI(snap, p1.id, 1500, 1200)
+  assert.ok(aoiSnap.projectiles.some(pr => pr.owner === p1.id), 'keeps viewer own projectiles')
+  assert.ok(aoiSnap.projectiles.some(pr => pr.owner === p2.id), 'keeps nearby projectiles')
+  assert.ok(!aoiSnap.projectiles.some(pr => pr.owner === p3.id), 'culls distant projectiles outside AOI')
+})
+
+test('百人 PeerJS 房间集成压测：100 客户端并发连接 + 20Hz 共享二进制帧广播，单帧耗时 <10ms', async () => {
+  const w = new World(999)
+  const server = new ServerSim(w, { syncEveryTicks: 3 }) // 20Hz 广播，60Hz 权威物理
+  const sessions: ClientSession[] = []
+  const mapper = new InputMapper()
+
+  for (let i = 0; i < 100; i++) {
+    const p = w.addPlayer(`Peer_${i}`, i % 2 === 0 ? 'red' : 'blue')
+    p.weaponIndex = i % 7
+    const [hConn, gConn] = fakeConnPair()
+    const pair = createPeerPair(hConn, gConn)
+    server.accept(p.id, pair.server)
+    sessions.push(new ClientSession(pair.client, p.id))
+  }
+
+  let hostStepAndBroadcastMs = 0
+  const TICKS = 60 // 1 秒完整 100 人战斗 + 20 次全房间 100 客户端广播
+  for (let t = 0; t < TICKS; t++) {
+    if (t % 3 === 0) {
+      for (let i = 0; i < sessions.length; i++) {
+        sessions[i].sendIntents(mapper.map({
+          moveX: (t + i) % 2 === 0 ? 1 : -1,
+          aimAngle: ((t * 0.1 + i) % 6.28) - 3.14,
+          fire: true,
+          jump: false,
+          jetpack: (t + i) % 3 === 0,
+          reload: false,
+        }))
+      }
+      await new Promise<void>(r => queueMicrotask(r))
+    }
+    const s0 = performance.now()
+    server.step(DT)
+    hostStepAndBroadcastMs += performance.now() - s0
+  }
+  await new Promise(r => setTimeout(r, 5))
+  const avgMs = hostStepAndBroadcastMs / TICKS
+  assert.ok(sessions[0].lastSnapshot && sessions[0].lastSnapshot.players.length === 100, 'client 0 received 100-player snapshot')
+  assert.ok(sessions[99].lastSnapshot && sessions[99].lastSnapshot.players.length === 100, 'client 99 received 100-player snapshot')
+  assert.ok(avgMs < 16.6, `100-player PeerJS room tick+broadcast stays under 60fps budget (${avgMs.toFixed(2)}ms/tick)`)
+})
+
+// ── 第二阶段架构重构测试：子系统拆分 + 客户端预测与回滚重放 + 设施增量与弹丸事件化 ──
+import { StateSync } from '../src/net/StateSync.ts'
+import { resetBinaryCodecState } from '../src/net/protocol/BinaryCodec.ts'
+
+test('架构拆分护栏：world.ts 告别 1600 行上帝类，拆分为职责独立的纯函数子系统模块', async () => {
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const root = process.cwd()
+  const worldSrc = await fs.readFile(path.join(root, 'src/core/sim/world.ts'), 'utf8')
+  const worldLines = worldSrc.split('\n').length
+  assert.ok(worldLines <= 620, `world.ts should stay concise after subsystem extraction (${worldLines} lines)`)
+
+  for (const mod of [
+    'src/core/sim/landmarks.ts',
+    'src/core/sim/spatial.ts',
+    'src/core/sim/playerPhysics.ts',
+    'src/core/sim/projectiles.ts',
+    'src/core/sim/throwables.ts',
+    'src/core/sim/interactables.ts',
+  ]) {
+    const content = await fs.readFile(path.join(root, mod), 'utf8')
+    assert.ok(content.length > 100, `${mod} exists and is non-empty`)
+  }
+})
+
+test('客户端预测与服务器回滚重放 (Prediction & Reconciliation)：高 RTT 下 0 延迟响应，滞后快照抵达后精确重放未确认输入', () => {
+  const w = new World(501)
+  w.config.randomSpawn = false
+  const p = w.addPlayer('Predictor', 'red')
+  p.pos = { x: 2000, y: 2740 }
+  const server = new ServerSim(w)
+
+  // 手动控制延迟的模拟传输通道（模拟公网 RTT，包不会立即送达服务器）
+  const c2sQueue: (() => void)[] = []
+  let onServerCb: ((m: any) => void) | null = null
+  let onClientCb: ((m: any) => void) | null = null
+
+  const clientTransport = {
+    send(m: any) { c2sQueue.push(() => onClientCb?.(m)) },
+    onServer(cb: (m: any) => void) { onServerCb = cb },
+  }
+  const serverTransport = {
+    send(m: any) { onServerCb?.(m) },
+    onClient(cb: (m: any) => void) { onClientCb = cb },
+  }
+
+  server.accept(p.id, serverTransport)
+  const sync = new StateSync(w.terrain, p.id)
+  const session = new ClientSession(clientTransport, p.id, sync)
+  const mapper = new InputMapper()
+
+  // 初始快照下发（seq=0）
+  server.step(DT)
+  const x0 = sync.interpolated()!.players.find(x => x.id === p.id)!.pos.x
+
+  // 客户端连续按右移+喷气 6 帧（网络包尚在公网飞行中，服务器一帧都还没收到）
+  for (let i = 0; i < 6; i++) {
+    session.sendIntents(mapper.map({ moveX: 1, aimAngle: 0, fire: false, jump: false, jetpack: true, reload: false }), DT)
+  }
+
+  // 1. 验证 0 延迟预测：服务器尚未确认任何包，但本地画面上的玩家已经立刻向右上方移动！
+  const predBeforeServer = sync.interpolated()!.players.find(x => x.id === p.id)!
+  assert.ok(predBeforeServer.pos.x > x0 + 20, `immediate client-side prediction moved player (${x0} -> ${predBeforeServer.pos.x.toFixed(1)})`)
+  assert.equal(session.pendingInputs.length, 6, '6 unacknowledged input frames buffered')
+
+  // 2. 服务器仅收到前 3 帧（ackSeq = 3）并下发滞后快照
+  for (let i = 0; i < 3; i++) {
+    c2sQueue.shift()!()
+    server.step(DT)
+  }
+  assert.equal(session.lastAckSeq, 3, 'server acknowledged up to seq 3')
+  assert.equal(session.pendingInputs.length, 3, 'seq 1..3 pruned, seq 4..6 remain in buffer')
+
+  // 经过回滚重放（server state @seq=3 + replayed seq=4..6），客户端预测位置应仍然在 seq=6 的位置，不会因为收到旧快照而被拉回 seq=3！
+  const reconciledAtAck3 = sync.interpolated()!.players.find(x => x.id === p.id)!
+  assert.ok(Math.abs(reconciledAtAck3.pos.x - predBeforeServer.pos.x) < 1.0, 'reconciliation replayed unacknowledged inputs 4..6 smoothly without rubber-banding back to seq 3')
+
+  // 3. 剩余 3 帧抵达服务器，服务器追平到 seq=6
+  for (let i = 0; i < 3; i++) {
+    c2sQueue.shift()!()
+    server.step(DT)
+  }
+  assert.equal(session.pendingInputs.length, 0, 'all inputs acknowledged')
+  const finalPred = sync.interpolated()!.players.find(x => x.id === p.id)!
+  assert.ok(Math.abs(finalPred.pos.x - p.pos.x) < 0.5, `final predicted x (${finalPred.pos.x.toFixed(2)}) matches authoritative server x (${p.pos.x.toFixed(2)})`)
+})
+
+test('快照增量精简与高频弹丸事件化：静态设施零重复传输 + 飞行弹丸客户端本地推算', () => {
+  resetBinaryCodecState()
+  const w = new World(601)
+  const a = w.addPlayer('ShooterA', 'red')
+  const b = w.addPlayer('ShooterB', 'blue')
+  a.weaponIndex = 5 // M249 加特林高射速
+  b.weaponIndex = 8 // 冲锋枪极高射速
+
+  // 先产生一批飞行中的子弹
+  for (let t = 0; t < 15; t++) {
+    w.step(DT, new Map([
+      [a.id, input({ fire: true, aim: -0.15 })],
+      [b.id, input({ fire: true, aim: -2.9 })],
+    ]))
+    w.drainEvents()
+  }
+  assert.ok(w.projectiles.length >= 6, `active bullets in flight: ${w.projectiles.length}`)
+
+  // 第 1 帧（关键帧）：全量编码设施与初始飞行弹丸
+  const snap1 = w.snapshot()
+  const frame1 = encodeServerMsgBinary({ snap: snap1, events: [] }, { deltaFacilities: true, deltaProjectiles: true })
+  const dec1 = decodeServerMsgBinary(frame1)!
+  assert.equal(dec1.snap.obstacles.length, snap1.obstacles.length)
+  assert.equal(dec1.snap.capturePoints.length, 5)
+  assert.equal(dec1.snap.projectiles.length, snap1.projectiles.length)
+
+  // 第 2 帧：不发射新子弹，已有子弹继续飞行、设施状态未改变
+  w.step(DT, new Map())
+  w.drainEvents()
+  const snap2 = w.snapshot()
+  const fullBin2 = encodeServerMsgBinary({ snap: snap2, events: [] }, { deltaFacilities: false, deltaProjectiles: false })
+  const deltaBin2 = encodeServerMsgBinary({ snap: snap2, events: [] }, { deltaFacilities: true, deltaProjectiles: true })
+  const dec2 = decodeServerMsgBinary(deltaBin2)!
+
+  // 验证：
+  // 1) 增量帧比全量二进制帧进一步缩小 >35%（省去了全部未变设施 + 飞行中弹丸的重复坐标/速度）
+  assert.ok(deltaBin2.byteLength < fullBin2.byteLength * 0.65, `delta frame (${deltaBin2.byteLength}B) is >35% smaller than full binary frame (${fullBin2.byteLength}B)`)
+  // 2) 解码端复用了上一帧的设施状态，数量与属性完好无损
+  assert.equal(dec2.snap.obstacles.length, snap2.obstacles.length)
+  assert.equal(dec2.snap.capturePoints.length, 5)
+  assert.equal(dec2.snap.supplyCrates.length, 8)
+  // 3) 解码端通过本地 Dead Reckoning 推算了飞行中弹丸的位置，与服务器权威位置高度吻合
+  assert.equal(dec2.snap.projectiles.length, snap2.projectiles.length)
+  const pServer = snap2.projectiles[0]
+  const pClient = dec2.snap.projectiles.find(x => x.id === pServer.id)!
+  assert.ok(Math.hypot(pClient.pos.x - pServer.pos.x, pClient.pos.y - pServer.pos.y) < 2.0, 'dead-reckoned bullet position matches server trajectory')
+
+  // 验证通过 WorldEvent 同步弹丸出生/反弹/销毁
+  const sync = new StateSync(w.terrain, a.id)
+  sync.setProjectileDeadReckoning(true)
+  sync.applyProjectileEvents([
+    { kind: 'projectile_spawn', projectileId: 8888, playerId: a.id, weaponId: 1, x: 3000, y: 2000, vx: 1500, vy: 0, life: 2.0, bounces: 0 },
+  ])
+  assert.equal(sync.getDeadReckonedProjectiles().length, 1, 'spawn event registered local projectile')
+  sync.advance(DT)
+  const advanced = sync.getDeadReckonedProjectiles()[0]
+  assert.ok(advanced.pos.x > 3020, `local dead reckoning advanced bullet x to ${advanced.pos.x.toFixed(1)}`)
+  sync.applyProjectileEvents([{ kind: 'projectile_destroy', projectileId: 8888 }])
+  assert.equal(sync.getDeadReckonedProjectiles().length, 0, 'destroy event removed local projectile')
 })

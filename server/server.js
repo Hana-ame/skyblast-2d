@@ -111,7 +111,7 @@ const server = http.createServer(async (req, res) => {
       hostPeerId: String(hostPeerId),
       hostName: String(hostName || 'Host').slice(0, 24),
       playerCount: Number(playerCount || 1),
-      maxPlayers: Number(maxPlayers || 8),
+      maxPlayers: Number(maxPlayers || 100),
       status: status || 'waiting',
       updatedAt: Date.now()
     });
@@ -155,7 +155,7 @@ const server = http.createServer(async (req, res) => {
           hostPeerId: otherPeerId,
           hostName: otherPlayer.name,
           playerCount: 2,
-          maxPlayers: 8,
+          maxPlayers: 100,
           status: 'waiting',
           updatedAt: Date.now()
         });

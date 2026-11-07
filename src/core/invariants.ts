@@ -3,7 +3,7 @@
 import { WEAPONS } from './weapons.ts'
 import { SPAWN_POINTS, JUMP_PADS, AMMO_SPOTS } from './sim/world.ts'
 import type { World } from './sim/world.ts'
-import { WORLD_W, WORLD_H, SURFACE_Y } from './wrap.ts'
+import { WORLD_W, WORLD_H } from './wrap.ts'
 
 export interface Violation { code: string; message: string }
 
@@ -54,19 +54,25 @@ export function weaponViolations(): Violation[] {
 
   // 用户明确要求的跨武器规则
   if (rifle && m249 && m249.damage !== rifle.damage) add('rule.m249dmg', 'M249 伤害必须等于突击步枪')
+  if (rifle && (rifle.magSize !== 30 || rifle.maxReserve !== 90)) add('rule.riflemag', '突击步枪弹药必须为 30/90')
   if (pistol && gravity && gravity.damage !== pistol.damage) add('rule.gravitydmg', '引力枪伤害必须等于手枪')
   if (pistol && smg && smg.damage !== pistol.damage) add('rule.smgdmg', '冲锋枪伤害必须等于手枪')
+  if (smg && (smg.magSize !== 30 || smg.maxReserve !== 150)) add('rule.smgmag', '冲锋枪弹药必须为 30/150')
   if (pistol && pistol.magSize !== 12) add('rule.pistolmag', '手枪弹匣必须 12')
   if (pistol && pistol.maxReserve !== 60) add('rule.pistolreserve', '手枪备弹必须 60')
   if (rifle && Math.abs((rifle.fireDelay ?? 0) - 0.12) > 1e-9) add('rule.riflefire', '突击步枪射击间隔必须 0.12s')
   if (rocket && (rocket.magSize !== 1 || rocket.maxReserve !== 20)) add('rule.rocketmag', '火箭筒必须 1/20 弹匣')
   if (rocket && rocket.fireDelay !== 0) add('rule.rocketfire', '火箭筒射击间隔必须 0')
-  if (sniper && (sniper.farRange !== 800 || sniper.farDamage !== 99)) add('rule.sniperfar', '狙击 >800px 非爆头必须 99')
+  if (sniper && (sniper.damage !== 100 || sniper.edgeDamage !== 99 || sniper.farRange !== undefined)) {
+    add('rule.sniperedge', '狙击命中身体必须 100（含远距），打中碰撞箱边缘必须 99')
+  }
   if (shotgun && shotgun.pellets !== 8) add('rule.shotgunpellets', '霰弹必须 8 弹丸')
   if (shotgun && shotgun.headshotMult !== 1) add('rule.shotgunhead', '霰弹无爆头加成')
   if (laser) {
     const dur = laser.magSize / (laser.ammoPerSecond ?? 1)
-    if (Math.abs(dur - 2) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 2 秒')
+    if (Math.abs(dur - 4) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 4 秒')
+    if (laser.reloadTime !== 6) add('rule.laserreload', '高斯枪换弹必须 6 秒')
+    if (laser.damagePerSecond !== 90) add('rule.laserdps', '高斯枪 DPS 必须为 90（减半）')
     if ((laser.fovMult ?? 1) !== 1) add('rule.laserfov', '高斯枪视野必须正常（1.0）')
     if (!laser.beam) add('rule.laserbeam', '高斯枪必须是持续光束')
     if (laser.bounces !== 2) add('rule.laserbounces', '高斯枪必须反射 2 次')
@@ -107,15 +113,12 @@ export function layoutViolations(world: World, opts: { skipPads?: boolean } = {}
     if (!inBounds(pt.x, pt.y)) add('layout.bounds', `${pt.label} out of world bounds (${pt.x},${pt.y})`)
     if (!pt.skipSolid && world.terrain.isSolidAt(pt.x, pt.y)) add('layout.solid', `${pt.label} is inside solid terrain (${pt.x},${pt.y})`)
   }
-  // 跳台：脚下有地、上方无遮挡（站在上面不会卡进平台）
-  // skipPads：用于空地形/无天花板的自定义地图 —— 跳台是天花板地图专属道具，无天花板时不做此判定
   if (!opts.skipPads) {
     for (const p of JUMP_PADS) {
       if (!world.terrain.isSolidAt(p.x, p.y + 12)) add('layout.pad.ground', `jumpPad ${p.x} has no ground below`)
       if (world.terrain.isSolidAt(p.x, p.y - 8)) add('layout.pad.air', `jumpPad ${p.x} has solid above`)
     }
   }
-  // 据点 id 唯一
   const cpIds = world.capturePoints.map(c => c.id)
   if (new Set(cpIds).size !== cpIds.length) add('layout.cpid', 'capture point ids duplicated')
   return out

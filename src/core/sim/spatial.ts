@@ -1,0 +1,151 @@
+// core/sim/spatial.ts —— 一维环形空间哈希桶（Broadphase）与地形/掩体几何查询纯函数
+import { TILE_SIZE, GRID_W, GRID_H } from '../terrain.ts'
+import type { Terrain } from '../terrain.ts'
+import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../wrap.ts'
+import type { Obstacle } from '../types.ts'
+
+export const BUCKET_SIZE = 200
+export const INV_BUCKET_SIZE = 1 / BUCKET_SIZE
+export const NUM_BUCKETS = Math.ceil(WORLD_W / BUCKET_SIZE) // 66
+export const PLAYER_BROAD_PAD = 48
+export const OBSTACLE_BROAD_PAD = 16
+
+export function bucketIdx(wx: number): number {
+  const b = (wx * INV_BUCKET_SIZE) | 0
+  return b >= 0 && b < NUM_BUCKETS ? b : ((b % NUM_BUCKETS) + NUM_BUCKETS) % NUM_BUCKETS
+}
+
+export function obstacleAtBucket(list: Obstacle[], wx: number, y: number, pad = 0): Obstacle | null {
+  for (let i = 0; i < list.length; i++) {
+    const ob = list[i]
+    if (ob.hp <= 0) continue
+    if (wx >= ob.x - pad && wx <= ob.x + ob.w + pad) {
+      const dy = wrapDeltaY(ob.y, y)
+      if (dy >= -pad && dy <= ob.h + pad) return ob
+    }
+  }
+  return null
+}
+
+export function findObstacleAt(
+  obstacles: Obstacle[],
+  obstacleBroadBuckets: Obstacle[][] | undefined,
+  x: number,
+  y: number,
+  pad = 0,
+): Obstacle | null {
+  const wx = wrapX(x)
+  if (obstacleBroadBuckets && pad <= OBSTACLE_BROAD_PAD) {
+    const list = obstacleBroadBuckets[bucketIdx(wx)]
+    return list ? obstacleAtBucket(list, wx, y, pad) : null
+  }
+  for (let i = 0; i < obstacles.length; i++) {
+    const ob = obstacles[i]
+    if (ob.hp <= 0) continue
+    const dy = wrapDeltaY(ob.y, y)
+    if (wx >= ob.x - pad && wx <= ob.x + ob.w + pad && dy >= -pad && dy <= ob.h + pad) return ob
+  }
+  return null
+}
+
+/** 两点之间是否被「原始地形 或 可破坏掩体」挡住（4px 采样、端点不计） */
+export function lineBlockedByTerrain(
+  terrain: Terrain,
+  obstacles: Obstacle[],
+  obstacleBroadBuckets: Obstacle[][] | undefined,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): boolean {
+  const dx = wrapDeltaX(x1, x2)
+  const dy = wrapDeltaY(y1, y2)
+  const dist = Math.hypot(dx, dy)
+  if (dist <= 1) return false
+  const steps = Math.max(1, Math.ceil(dist / 4))
+  const tGrid = terrain.grid
+  const invSteps = 1 / steps
+  for (let k = 1; k < steps; k++) {
+    const f = k * invSteps
+    const px = wrapX(x1 + dx * f)
+    const py = wrapY(y1 + dy * f)
+    if (tGrid[((py / 20) | 0) * GRID_W + ((px / 20) | 0)] !== 0) return true
+    if (findObstacleAt(obstacles, obstacleBroadBuckets, px, py)) return true
+  }
+  return false
+}
+
+/** 把一段光束截断到「最后一个空点」：保证任何被绘制/判定使用的线段都不穿过实体 */
+export function truncateSegmentToFree(
+  terrain: Terrain,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): { x: number; y: number; shortened: boolean } {
+  const dx = wrapDeltaX(x1, x2)
+  const dy = wrapDeltaY(y1, y2)
+  const len = Math.hypot(dx, dy)
+  if (len <= 1e-6) return { x: x1, y: y1, shortened: false }
+  const steps = Math.max(1, Math.ceil(len / 3))
+  let lastX = x1
+  let lastY = y1
+  for (let k = 1; k <= steps; k++) {
+    const px = wrapX(x1 + (dx * k) / steps)
+    const py = wrapY(y1 + (dy * k) / steps)
+    if (terrain.isSolidAt(px, py)) {
+      return { x: lastX, y: lastY, shortened: true }
+    }
+    lastX = px
+    lastY = py
+  }
+  return { x: x2, y: y2, shortened: false }
+}
+
+/** 扫描覆盖身体 AABB 的地形格与障碍物，判断玩家躯干是否发生穿模 */
+export function checkBodyOverlapsAt(
+  terrain: Terrain,
+  obstacles: Obstacle[],
+  x: number,
+  y: number,
+  obstacleBroadBuckets?: Obstacle[][],
+): boolean {
+  const wx = wrapX(x)
+  const halfW = 10
+  const tGrid = terrain.grid
+  const gx0 = Math.floor((wx - halfW) / TILE_SIZE)
+  const gx1 = Math.floor((wx + halfW) / TILE_SIZE)
+  const gy0 = Math.floor(wrapY(y - 30) / TILE_SIZE)
+  const gy1 = Math.floor(wrapY(y + 16) / TILE_SIZE)
+  for (let gx = gx0; gx <= gx1; gx++) {
+    const gxx = gx >= 0 && gx < GRID_W ? gx : ((gx % GRID_W) + GRID_W) % GRID_W
+    for (let gy = gy0; gy <= gy1; gy++) {
+      const gyy = gy >= 0 && gy < GRID_H ? gy : ((gy % GRID_H) + GRID_H) % GRID_H
+      if (tGrid[gyy * GRID_W + gxx] === 0) continue
+      const cellX = gxx * TILE_SIZE + TILE_SIZE / 2
+      const cellY = gyy * TILE_SIZE + TILE_SIZE / 2
+      const lx = wrapDeltaX(wx, cellX)
+      const ly = wrapDeltaY(y, cellY)
+      const tileL = lx - TILE_SIZE / 2
+      const tileR = lx + TILE_SIZE / 2
+      const tileT = ly - TILE_SIZE / 2
+      const tileB = ly + TILE_SIZE / 2
+      if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true
+    }
+  }
+  const obList = obstacleBroadBuckets ? obstacleBroadBuckets[bucketIdx(wx)] : obstacles
+  if (obList) {
+    for (let i = 0; i < obList.length; i++) {
+      const ob = obList[i]
+      if (ob.hp <= 0) continue
+      const dx = wrapDeltaX(wx, ob.x + ob.w / 2)
+      const dy = wrapDeltaY(y, ob.y + ob.h / 2)
+      const tileL = dx - ob.w / 2
+      const tileR = dx + ob.w / 2
+      const tileT = dy - ob.h / 2
+      const tileB = dy + ob.h / 2
+      if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true
+    }
+  }
+  return false
+}

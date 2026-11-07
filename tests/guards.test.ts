@@ -6,8 +6,7 @@ import { World } from '../src/core/sim/world.ts'
 import { SPAWN_POINTS } from '../src/core/sim/world.ts'
 import { allViolations, layoutViolations, weaponViolations } from '../src/core/invariants.ts'
 import { defaultMapData } from '../src/core/map.ts'
-import { WEAPONS, DEFAULT_CONFIG, WEAPON_DISPLAY_ORDER } from '../src/core/weapons.ts'
-import { readFileSync } from 'node:fs'
+import { WEAPONS, DEFAULT_CONFIG } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
@@ -375,31 +374,4 @@ test('护栏·高斯枪反射次数=2（段数最多 3）', () => {
     for (const e of w.drainEvents()) if (e.kind === 'laser') maxSegs = Math.max(maxSegs, e.segments?.length ?? 0)
   }
   assert.equal(maxSegs, 3, `2 reflections => at most 3 segments, got ${maxSegs}`)
-})
-
-
-test('护栏·武器展示顺序：手枪 霰弹 冲锋 突击步枪 狙击 火箭筒 M249 高斯 引力', () => {
-  assert.deepEqual(WEAPON_DISPLAY_ORDER, [7, 0, 8, 1, 2, 3, 5, 4, 6], 'display order ids')
-  const names = WEAPON_DISPLAY_ORDER.map(id => WEAPONS[id].name)
-  assert.deepEqual(names, ['手枪', '霰弹枪', '冲锋枪', '突击步枪', '狙击步枪', '火箭筒', 'M249', '高斯枪', '引力枪'])
-  // 每个 id 恰好出现一次（不重不漏）
-  assert.equal(new Set(WEAPON_DISPLAY_ORDER).size, WEAPONS.length, 'display order covers every weapon once')
-})
-
-
-test('护栏·UI 网格顺序与 WEAPON_DISPLAY_ORDER 一致（大厅/死亡界面/旧调参台）', () => {
-  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
-  const gridOrder = (gridId: string): number[] => {
-    const start = html.indexOf(`id="${gridId}"`)
-    const slice = html.slice(start, start + 8000)
-    return [...slice.matchAll(/data-wep="(\d+)"/g)].map(m => Number(m[1]))
-  }
-  const primaryOrder = WEAPON_DISPLAY_ORDER.filter(id => !WEAPONS[id].isSupplyOnly)
-  assert.deepEqual(gridOrder('lobbyWeaponGrid').length ? gridOrder('lobbyWeaponGrid') : gridOrder('lobbyWeaponSelect'), primaryOrder,
-    'lobby grid order')
-  assert.deepEqual(gridOrder('deathWeaponGrid'), primaryOrder, 'death screen grid order')
-
-  const start = html.indexOf('id="paramWeaponPicker"')
-  const paramOrder = [...html.slice(start, start + 4000).matchAll(/data-pwep="(\d+)"/g)].map(m => Number(m[1]))
-  assert.deepEqual(paramOrder, WEAPON_DISPLAY_ORDER, 'legacy tuner tabs follow display order')
 })

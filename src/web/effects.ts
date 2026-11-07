@@ -1,4 +1,5 @@
 // web/effects.ts —— 客户端粒子特效（纯表现层，不参与权威模拟）
+// 百人同场优化：环形覆盖替代 shift()、O(1) Swap-and-Pop 替代 splice(i, 1)，消除高频弹幕下的数组搬移
 export interface Particle {
   x: number
   y: number
@@ -12,13 +13,20 @@ export interface Particle {
   fade: boolean
 }
 
+const MAX_PARTICLES = 400
+
 export class Effects {
   particles: Particle[] = []
+  private overwriteCursor = 0
   private rnd(): number { return Math.random() }
 
   private push(p: Particle): void {
-    if (this.particles.length > 400) this.particles.shift()
-    this.particles.push(p)
+    if (this.particles.length >= MAX_PARTICLES) {
+      this.particles[this.overwriteCursor] = p
+      this.overwriteCursor = (this.overwriteCursor + 1) % MAX_PARTICLES
+    } else {
+      this.particles.push(p)
+    }
   }
 
   /** 爆炸：火球 + 火花 + 烟 */
@@ -110,7 +118,14 @@ export class Effects {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i]
       p.life -= k
-      if (p.life <= 0) { this.particles.splice(i, 1); continue }
+      if (p.life <= 0) {
+        // O(1) Swap-and-Pop 替代 splice(i, 1)
+        const last = this.particles.length - 1
+        if (i !== last) this.particles[i] = this.particles[last]
+        this.particles.pop()
+        if (this.overwriteCursor >= this.particles.length) this.overwriteCursor = 0
+        continue
+      }
       p.x += p.vx * k
       p.y += p.vy * k
       p.vy += p.gravity * k
@@ -120,7 +135,8 @@ export class Effects {
 
   /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
   render(ctx: CanvasRenderingContext2D, screenOf: (x: number, y: number) => { x: number; y: number }, inView: (x: number, y: number) => boolean): void {
-    for (const p of this.particles) {
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i]
       const s = screenOf(p.x, p.y)
       if (!inView(s.x, s.y)) continue
       const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1
@@ -135,5 +151,6 @@ export class Effects {
 
   clear(): void {
     this.particles.length = 0
+    this.overwriteCursor = 0
   }
 }

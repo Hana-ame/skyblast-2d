@@ -62,10 +62,11 @@ function onLocalDeath(): void {
   // 阵亡：打开死亡界面（唯一可换枪处），默认选中「上次的常规主武器」
   // （拿着补给特武时不能把选择回落到 0，否则玩家会莫名丢掉原本的主武器）
   const cur = WEAPONS[localPlayer.weaponIndex]
-  const last = WEAPONS[localPlayer.lastPrimaryIndex]
+  const lastIdx = localPlayer.lastPrimaryIndex ?? localPlayer.weaponIndex
+  const last = WEAPONS[lastIdx]
   pendingLoadout.weaponIndex = cur && !cur.isSupplyOnly
     ? localPlayer.weaponIndex
-    : (last && !last.isSupplyOnly ? localPlayer.lastPrimaryIndex : 0)
+    : (last && !last.isSupplyOnly ? lastIdx : 0)
   pendingLoadout.secondaryType = localPlayer.secondary === 'doll' ? 'frag' : localPlayer.secondary
   updateHudWeaponButtons()
   const ds = document.getElementById('deathScreen')

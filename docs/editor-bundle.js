@@ -74,19 +74,14 @@
   var GRID_W = Math.floor(WORLD_W / TILE_SIZE);
   var GRID_H = Math.floor(WORLD_H / TILE_SIZE);
 
-  // src/core/sim/world.ts
+  // src/core/sim/landmarks.ts
   var CEILING_STAND = 264;
   var GROUND_STAND = 2740;
   var SPAWN_POINTS = [
     { x: 1100, y: GROUND_STAND, team: "red" },
-    // 左出生点留地面
     { x: 12100, y: GROUND_STAND, team: "blue" },
-    // 右出生点留地面
-    // 用户：天花板上方**不准放重生点**（FFA 和 TEAM 都不许）→ green/ffa 出生点也放地面
     { x: 3300, y: GROUND_STAND, team: "green" },
-    // 绿出生→地面（西侧平地，空口方块区外）
     { x: 9900, y: GROUND_STAND, team: "ffa" }
-    // FFA出生→地面（东侧平地，空口方块区外）
   ];
   var MORTARS_INIT = [
     { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: CEILING_STAND, angle: -Math.PI * 0.28, power: 24 },
@@ -101,6 +96,11 @@
     for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 });
     return out;
   })();
+
+  // src/core/sim/spatial.ts
+  var BUCKET_SIZE = 200;
+  var INV_BUCKET_SIZE = 1 / BUCKET_SIZE;
+  var NUM_BUCKETS = Math.ceil(WORLD_W / BUCKET_SIZE);
 
   // src/web/main-editor.ts
   var SNAP = 20;

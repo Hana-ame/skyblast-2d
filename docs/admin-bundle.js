@@ -1,7 +1,6 @@
 "use strict";
 (() => {
   // src/core/weapons.ts
-  var WEAPON_DISPLAY_ORDER = [7, 0, 8, 1, 2, 3, 5, 4, 6];
   var WEAPONS = [
     {
       id: 0,
@@ -43,12 +42,12 @@
       spread: 0.045,
       speed: 1500,
       recoil: 84,
-      magSize: 28,
-      maxReserve: 140,
+      magSize: 30,
+      maxReserve: 90,
+      // 30/90
       reloadTime: 1.7,
       fireDelay: 0.12,
       terrainRadius: 8,
-      // 伤害 46（用户要求 ×2），射速保持原值
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1,
@@ -81,9 +80,8 @@
       fuelMult: 0.6,
       fovMult: 1.3,
       color: "#c084fc",
-      farRange: 800,
-      farDamage: 99
-      // 超过视距的非爆头命中只造成 99（留 1 血）
+      edgeDamage: 99
+      // 远距离命中身体依然 100 伤害；打中身体碰撞箱边缘才造成 99 伤害（留 1 血）
     },
     {
       id: 3,
@@ -122,19 +120,19 @@
       name: "\u9AD8\u65AF\u67AA",
       shortName: "\u9AD8\u65AF\u67AA",
       isSupplyOnly: true,
-      damage: 50,
+      damage: 25,
       headshotMult: 2,
       pellets: 1,
       spread: 0,
       speed: 3e3,
       recoil: 0,
-      magSize: 12,
+      magSize: 24,
       maxReserve: 48,
-      // 12 / 6每秒 = 连续 2 秒
-      reloadTime: 4,
+      // 24 / 6每秒 = 连续 4 秒
+      reloadTime: 6,
       fireDelay: 0,
       terrainRadius: 18,
-      // 换弹时间 ×2
+      // 换弹 6s
       explosive: false,
       laser: true,
       pierceAll: true,
@@ -144,13 +142,13 @@
       friendlyFire: true,
       selfDamage: true,
       // 高斯：反射光束可打到友军/自己
-      damagePerSecond: 180,
+      damagePerSecond: 90,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1,
       color: "#22d3ee"
-      // 伤害下调（240→180）；视野正常
+      // 伤害减半（180→90）；单匣 4s；换弹 6s
     },
     {
       id: 5,
@@ -253,6 +251,7 @@
       recoil: 48,
       magSize: 30,
       maxReserve: 150,
+      // 30/150
       reloadTime: 2.2,
       fireDelay: 0.05,
       terrainRadius: 8,
@@ -335,7 +334,8 @@
   }
 
   // src/core/balanceOverrides.ts
-  var BALANCE_KEY = "pvp-balance-overrides-v1";
+  var OVERRIDES_STORAGE_KEY = "skyblast_balance_overrides_v1";
+  var BALANCE_KEY = OVERRIDES_STORAGE_KEY;
   var WEAPON_NUMERIC_KEYS = [
     "damage",
     "headshotMult",
@@ -349,6 +349,8 @@
     "fireDelay",
     "terrainRadius",
     "gravityScale",
+    "bounces",
+    "dragPerSecond",
     "chargeSeconds",
     "damagePerSecond",
     "ammoPerSecond",
@@ -361,7 +363,8 @@
     "falloffMin",
     "lifeSeconds",
     "farRange",
-    "farDamage"
+    "farDamage",
+    "edgeDamage"
   ];
   var WEAPON_BOOL_KEYS = ["explosive", "pierceOnHeadshot", "pierceAll", "passWalls", "friendlyFire", "selfDamage"];
   var CONFIG_NUMERIC_KEYS = [
@@ -385,72 +388,105 @@
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   };
+  var clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+  var WEAPON_BOUNDS = {
+    damage: [0, 2e3],
+    headshotMult: [0.5, 10],
+    pellets: [1, 32],
+    spread: [0, 1.5],
+    speed: [50, 1e4],
+    recoil: [0, 5e3],
+    magSize: [1, 500],
+    maxReserve: [0, 2e3],
+    reloadTime: [0.05, 30],
+    fireDelay: [0, 10],
+    terrainRadius: [0, 400],
+    gravityScale: [0, 5],
+    bounces: [0, 16],
+    dragPerSecond: [0.05, 1],
+    chargeSeconds: [0, 5],
+    damagePerSecond: [0, 5e3],
+    ammoPerSecond: [0.1, 200],
+    moveSpeedMult: [0.1, 5],
+    fuelMult: [0.1, 5],
+    ascendMult: [0.1, 5],
+    fovMult: [1, 2],
+    falloffStart: [0, 5e3],
+    falloffEnd: [1, 1e4],
+    falloffMin: [0, 1],
+    lifeSeconds: [0.05, 9999],
+    farRange: [50, 1e4],
+    farDamage: [0, 2e3],
+    edgeDamage: [0, 2e3]
+  };
   function sanitizeOverrides(raw) {
     if (!raw || typeof raw !== "object") return null;
-    const o = raw;
+    const r = raw;
     const out = {};
-    if (o.weapons && typeof o.weapons === "object") {
-      const weapons = {};
-      for (const [k, v] of Object.entries(o.weapons)) {
-        const id = Number(k);
+    if (r.weapons && typeof r.weapons === "object") {
+      const wOut = {};
+      for (const [idStr, patch] of Object.entries(r.weapons)) {
+        const id = Number(idStr);
         if (!Number.isInteger(id) || id < 0 || id >= WEAPONS.length) continue;
-        if (!v || typeof v !== "object") continue;
-        const patch = {};
-        for (const key of WEAPON_NUMERIC_KEYS) {
-          const n = num(v[key]);
-          if (n === null) continue;
-          if (key === "damage" || key === "damagePerSecond") patch[key] = Math.max(0, Math.min(5e3, n));
-          else if (key === "magSize") patch[key] = Math.max(1, Math.min(500, Math.round(n)));
-          else if (key === "maxReserve") patch[key] = Math.max(0, Math.min(2e3, Math.round(n)));
-          else if (key === "pellets") patch[key] = Math.max(1, Math.min(30, Math.round(n)));
-          else if (key === "reloadTime" || key === "fireDelay" || key === "chargeSeconds") patch[key] = Math.max(0, Math.min(20, n));
-          else if (key === "moveSpeedMult" || key === "fuelMult" || key === "ascendMult" || key === "fovMult") patch[key] = Math.max(0, Math.min(5, n));
-          else patch[key] = n;
+        if (!patch || typeof patch !== "object") continue;
+        const p = patch;
+        const clean = {};
+        for (const k of WEAPON_NUMERIC_KEYS) {
+          if (k in p) {
+            const n = num(p[k]);
+            if (n !== null) {
+              const b = WEAPON_BOUNDS[k] ?? [-1e6, 1e6];
+              clean[k] = clamp(n, b[0], b[1]);
+            }
+          }
         }
-        for (const key of WEAPON_BOOL_KEYS) {
-          const b = v[key];
-          if (typeof b === "boolean") patch[key] = b;
+        for (const k of WEAPON_BOOL_KEYS) {
+          if (typeof p[k] === "boolean") clean[k] = p[k];
         }
-        if (Object.keys(patch).length > 0) weapons[String(id)] = patch;
+        if (Object.keys(clean).length > 0) wOut[String(id)] = clean;
       }
-      if (Object.keys(weapons).length > 0) out.weapons = weapons;
+      if (Object.keys(wOut).length > 0) out.weapons = wOut;
     }
-    if (o.config && typeof o.config === "object") {
-      const config = {};
-      for (const key of CONFIG_NUMERIC_KEYS) {
-        const n = num(o.config[key]);
-        if (n !== null) config[key] = n;
+    if (r.config && typeof r.config === "object") {
+      const c = r.config;
+      const clean = {};
+      for (const k of CONFIG_NUMERIC_KEYS) {
+        if (k in c) {
+          const n = num(c[k]);
+          if (n !== null) clean[k] = clamp(n, 0, 1e4);
+        }
       }
-      for (const key of CONFIG_BOOL_KEYS) {
-        const b = o.config[key];
-        if (typeof b === "boolean") config[key] = b;
+      for (const k of CONFIG_BOOL_KEYS) {
+        if (typeof c[k] === "boolean") clean[k] = c[k];
       }
-      if (Object.keys(config).length > 0) out.config = config;
+      if (Object.keys(clean).length > 0) out.config = clean;
     }
-    if (o.physics && typeof o.physics === "object") {
-      const physics = {};
-      for (const [k, v] of Object.entries(o.physics)) {
-        const n = num(v);
-        if (n !== null) physics[k] = n;
+    if (r.physics && typeof r.physics === "object") {
+      const ph = r.physics;
+      const clean = {};
+      for (const k of ["gravity", "moveSpeed", "jumpVelocity", "jetpackThrust", "jetpackMaxUp", "jetpackFuel"]) {
+        if (k in ph) {
+          const n = num(ph[k]);
+          if (n !== null) clean[k] = clamp(n, -5e3, 1e4);
+        }
       }
-      if (Object.keys(physics).length > 0) out.physics = physics;
+      if (Object.keys(clean).length > 0) out.physics = clean;
     }
-    if (!out.weapons && !out.config && !out.physics) return null;
-    return out;
+    return Object.keys(out).length > 0 ? out : null;
   }
-  function applyWeaponOverrides(ov) {
-    if (!ov) return;
-    for (const [k, patch] of Object.entries(ov)) {
-      const id = Number(k);
-      const wep = WEAPONS[id];
-      if (!wep || !patch) continue;
-      Object.assign(wep, patch);
+  function applyWeaponOverrides(patches) {
+    if (!patches) return;
+    for (const [idStr, p] of Object.entries(patches)) {
+      const w = WEAPONS[Number(idStr)];
+      if (w && p) Object.assign(w, p);
     }
   }
-  function applyConfigOverrides(config, ov) {
-    if (!ov) return;
-    Object.assign(config, ov);
+  function applyConfigOverrides(target, patch) {
+    if (!patch) return;
+    Object.assign(target, patch);
   }
+  var DEFAULT_WEAPONS_SNAPSHOT = WEAPONS.map((w) => ({ ...w }));
+  var DEFAULT_CONFIG_SNAPSHOT = { ...DEFAULT_CONFIG };
 
   // src/web/main-admin.ts
   var app = document.getElementById("app");
@@ -494,12 +530,11 @@
   weaponsSection.append(h2w);
   var grid = document.createElement("div");
   grid.className = "wep-grid";
-  var orderedForUI = WEAPON_DISPLAY_ORDER.map((id) => WEAPONS[id]).filter(Boolean);
-  orderedForUI.forEach((wep, idx) => {
+  WEAPONS.forEach((wep, idx) => {
     const card = document.createElement("div");
     card.className = "card";
     const title = document.createElement("h3");
-    title.textContent = `${idx + 1}. ${wep.name}${wep.isSupplyOnly ? "\uFF08\u8865\u7ED9\uFF09" : ""}`;
+    title.textContent = `${wep.id}. ${wep.name}${wep.isSupplyOnly ? "\uFF08\u8865\u7ED9\uFF09" : ""}`;
     card.append(title);
     const fields = document.createElement("div");
     fields.className = "fields";
