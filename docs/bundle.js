@@ -990,7 +990,7 @@
       p.ammo[wi] = Math.max(0, p.ammo[wi] - aps * dt);
       if (p.ammo[wi] <= 0 && (p.reserveAmmo[wi] || 0) > 0) this.startReload(p);
       const segments = [];
-      const hitPlayer = /* @__PURE__ */ new Set([p.id]);
+      const hitPlayer = /* @__PURE__ */ new Set();
       const hitObstacle = /* @__PURE__ */ new Set();
       let x = wrapX(p.pos.x + Math.cos(p.aim) * 24);
       let y = p.pos.y - 12 + Math.sin(p.aim) * 24;
@@ -1007,6 +1007,7 @@
           const ny = wrapY(y + dy * step);
           for (const t of this.players) {
             if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
+            if (t.id === p.id && b === 0) continue;
             if (t.id !== p.id && t.team === p.team && p.team !== "ffa") continue;
             const hx = wrapDeltaX(t.pos.x, nx);
             const hy = wrapDeltaY(t.pos.y - 24, ny);

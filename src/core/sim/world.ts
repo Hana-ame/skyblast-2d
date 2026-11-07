@@ -488,7 +488,7 @@ export class World {
     if (p.ammo[wi] <= 0 && (p.reserveAmmo[wi] || 0) > 0) this.startReload(p)
 
     const segments: { x1: number; y1: number; x2: number; y2: number }[] = []
-    const hitPlayer = new Set<number>([p.id])
+    const hitPlayer = new Set<number>()   // 激光有自伤：反射后的光束可以打到自己
     const hitObstacle = new Set<string>()
     let x = wrapX(p.pos.x + Math.cos(p.aim) * 24)
     let y = (p.pos.y - 12) + Math.sin(p.aim) * 24
@@ -506,6 +506,8 @@ export class World {
         const ny = wrapY(y + dy * step)
         for (const t of this.players) {
           if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
+          // 自伤：第一段（枪口出发）不伤自己，只有反射回来的光束才会打到自己
+          if (t.id === p.id && b === 0) continue
           if (t.id !== p.id && t.team === p.team && p.team !== 'ffa') continue
           const hx = wrapDeltaX(t.pos.x, nx)
           const hy = wrapDeltaY(t.pos.y - 24, ny)

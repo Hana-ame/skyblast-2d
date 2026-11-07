@@ -96,7 +96,7 @@ test('弹药经济：连发射空弹匣后自动换弹，备弹递减', () => {
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 1   // 突击 28 发
   const mag0 = p.ammo[1]
-  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
   assert.ok(p.ammo[1] < mag0, `mag should be partially consumed, ammo=${p.ammo[1]}`)
   // 射空弹匣 → 自动换弹 → 备弹转移
   for (let i = 0; i < 900; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
@@ -267,12 +267,12 @@ test('激光：按住持续输出（射速无限），一梭子可打 8 秒；�
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4   // 激光炮
-  p.pos = { x: 6600, y: 2660 }
+  p.pos = { x: 7300, y: 2784 }   // 朝上打（无遮挡，避免反射自伤）
   const ammo0 = p.ammo[4]
   // 按住 1 秒：应连续产生激光事件（不是单发）
   let beamEvents = 0
   for (let i = 0; i < 60; i++) {
-    w.step(DT, new Map([[p.id, input({ fire: true, aim: Math.PI / 2 })]]))
+    w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
     const evs = w.drainEvents()
     const laser = evs.find(e => e.kind === 'laser')
     if (laser) {
@@ -287,7 +287,7 @@ test('激光：按住持续输出（射速无限），一梭子可打 8 秒；�
   assert.equal(WEAPONS[4].magSize / (WEAPONS[4].ammoPerSecond ?? 1), 4, 'one magazine = 4s')
   // 松手即停
   w.drainEvents()
-  w.step(DT, new Map([[p.id, input({ fire: false, aim: Math.PI / 2 })]]))
+  w.step(DT, new Map([[p.id, input({ fire: false, aim: -Math.PI / 2 })]]))
   const afterRelease = w.drainEvents().filter(e => e.kind === 'laser').length
   assert.equal(afterRelease, 0, 'no beam after release')
 })
@@ -1027,4 +1027,28 @@ test('地图编辑器数据：默认地图/清洗/自定义地图可被 World �
   assert.ok(w.terrain.isSolidAt(110, 2510), 'custom platform solid in world')
   assert.ok(w.terrain.isSolidAt(210, 2510), 'custom cover solid in world')
   assert.ok(!w.terrain.isSolidAt(500, 2510), 'no solid where not placed')
+})
+
+
+test('激光自伤：反射回来的光束会伤到自己（枪口第一段不自伤）', () => {
+  // ① 正前方开火：不自伤
+  const w = new World(221)
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 4
+  p.pos = { x: 7300, y: 2784 }   // 远离地雷
+  for (let i = 0; i < 30; i++) w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
+  assert.equal(p.hp, 100, 'forward beam does not hurt the shooter')
+
+  // ② 朝脚边地面开火：光束撞地反射回来 → 打到自己
+  const w2 = new World(222)
+  const q = w2.addPlayer('Q', 'ffa')
+  q.weaponIndex = 4
+  q.pos = { x: 7300, y: 2784 }
+  let damaged = false
+  for (let i = 0; i < 60; i++) {
+    w2.step(DT, new Map([[q.id, input({ fire: true, aim: Math.PI / 2 })]]))
+    w2.drainEvents()
+    if (q.hp < 100) { damaged = true; break }
+  }
+  assert.ok(damaged, `reflected beam should damage the shooter, hp=${q.hp}`)
 })
