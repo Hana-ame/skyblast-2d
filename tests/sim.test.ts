@@ -271,12 +271,14 @@ test('高斯枪：按住持续输出（射速无限），一梭子可打 8 秒�
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4   // 高斯枪
-  p.pos = { x: 6450, y: 2784 }   // 天花板空口内、方块之间空隙朝上打（上方无遮挡，避免反射自伤）
+  // 空旷处水平开火：只有枪口第一段，不会反射自伤，才能测"按住即持续输出"
+  p.pos = { x: 6600, y: 2400 }
+  p.aim = 0
   const ammo0 = p.ammo[4]
   // 按住 1 秒：应连续产生光束事件（不是单发）
   let beamEvents = 0
   for (let i = 0; i < 60; i++) {
-    w.step(DT, new Map([[p.id, input({ fire: true, aim: -Math.PI / 2 })]]))
+    w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
     const evs = w.drainEvents()
     const laser = evs.find(e => e.kind === 'laser')
     if (laser) {

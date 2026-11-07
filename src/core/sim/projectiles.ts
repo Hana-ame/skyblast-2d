@@ -223,7 +223,11 @@ export function updateContinuousBeam(
   const playerBroadBuckets = ctx.playerBroadBuckets
   const obstacles = ctx.obstacles
 
-  for (let b = 0; b <= bounces; b++) {
+  // 反射预算：真实镜面反射与「接缝穿透式反射」共享。每次穿越世界接缝消耗一次，
+  // 因此激光不可能绕环面世界转很多周；但穿接缝时**方向不变、线段不拆**，视觉仍连续。
+  let budget = bounces
+  let b = 0
+  while (b <= bounces) {
     let travelled = 0
     let hitWall = false
     let blockedByObstacle = false
@@ -236,11 +240,18 @@ export function updateContinuousBeam(
     const maxSegLen = segCapFor(dirX, dirY)
     while (travelled < maxSegLen) {
       let nx = x + stepX
-      if (nx >= WORLD_W) nx -= WORLD_W
-      else if (nx < 0) nx += WORLD_W
+      let crossedSeam = false
+      if (nx >= WORLD_W) { nx -= WORLD_W; crossedSeam = true }
+      else if (nx < 0) { nx += WORLD_W; crossedSeam = true }
       let ny = y + stepY
-      if (ny >= WORLD_H) ny -= WORLD_H
-      else if (ny < 0) ny += WORLD_H
+      if (ny >= WORLD_H) { ny -= WORLD_H; crossedSeam = true }
+      else if (ny < 0) { ny += WORLD_H; crossedSeam = true }
+
+      // 接缝 → 一次「穿透式反射」：不改变方向、不拆线段（保持连续），只扣反射预算。
+      if (crossedSeam) {
+        if (budget <= 0) { hitWall = false; break }   // 预算耗尽：射程尽头自然终止
+        budget--
+      }
 
       const gx = (nx / 20) | 0
       const gy = (ny / 20) | 0
@@ -294,7 +305,12 @@ export function updateContinuousBeam(
           const bx = Math.abs(hx)
           const by = wrapDeltaY(t.pos.y, ny)
           if (isHead || (bx <= 14 && by >= -12 && by <= 18)) {
-            if (lineBlockedByTerrain(ctx.terrain, obstacles, obstacleBroadBuckets, segStartX, segStartY, t.pos.x, t.pos.y - 12)) continue
+            // 用「本步真实方向 × 到枪口的距离」做遮挡判定：跨接缝时 wrapDelta 会反向
+            if (lineBlockedByTerrain(
+              ctx.terrain, obstacles, obstacleBroadBuckets,
+              segStartX, segStartY, t.pos.x, t.pos.y - 12,
+              dirX * travelled, dirY * travelled,
+            )) continue
             hitPlayer.add(t.id)
             const mult = isHead ? wep.headshotMult : 1
             ctx.damagePlayer(t, dps * mult * dt, undefined, isHead, false, p.id, p.team, wep.shortName)
@@ -325,6 +341,9 @@ export function updateContinuousBeam(
     segments.push(seg)
     if (cut.shortened) break
     if (blockedByObstacle || !hitWall) break
+    if (budget <= 0) break
+    budget--
+    b++
   }
 
   ctx.events.push({

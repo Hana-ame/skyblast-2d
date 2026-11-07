@@ -689,9 +689,9 @@
     }
     return null;
   }
-  function lineBlockedByTerrain(terrain, obstacles, obstacleBroadBuckets, x1, y1, x2, y2) {
-    const dx = wrapDeltaX(x1, x2);
-    const dy = wrapDeltaY(y1, y2);
+  function lineBlockedByTerrain(terrain, obstacles, obstacleBroadBuckets, x1, y1, x2, y2, rawDx, rawDy) {
+    const dx = rawDx ?? wrapDeltaX(x1, x2);
+    const dy = rawDy ?? wrapDeltaY(y1, y2);
     const dist = Math.hypot(dx, dy);
     if (dist <= 1) return false;
     const steps = Math.max(1, Math.ceil(dist / 4));
@@ -1128,7 +1128,9 @@
     const obstacleBroadBuckets = ctx2.obstacleBroadBuckets;
     const playerBroadBuckets = ctx2.playerBroadBuckets;
     const obstacles = ctx2.obstacles;
-    for (let b = 0; b <= bounces; b++) {
+    let budget = bounces;
+    let b = 0;
+    while (b <= bounces) {
       let travelled = 0;
       let hitWall = false;
       let blockedByObstacle = false;
@@ -1141,11 +1143,29 @@
       const maxSegLen = segCapFor(dirX, dirY);
       while (travelled < maxSegLen) {
         let nx = x + stepX;
-        if (nx >= WORLD_W) nx -= WORLD_W;
-        else if (nx < 0) nx += WORLD_W;
+        let crossedSeam = false;
+        if (nx >= WORLD_W) {
+          nx -= WORLD_W;
+          crossedSeam = true;
+        } else if (nx < 0) {
+          nx += WORLD_W;
+          crossedSeam = true;
+        }
         let ny = y + stepY;
-        if (ny >= WORLD_H) ny -= WORLD_H;
-        else if (ny < 0) ny += WORLD_H;
+        if (ny >= WORLD_H) {
+          ny -= WORLD_H;
+          crossedSeam = true;
+        } else if (ny < 0) {
+          ny += WORLD_H;
+          crossedSeam = true;
+        }
+        if (crossedSeam) {
+          if (budget <= 0) {
+            hitWall = false;
+            break;
+          }
+          budget--;
+        }
         const gx = nx / 20 | 0;
         const gy = ny / 20 | 0;
         if (tGrid[gy * GRID_W + gx] !== 0) {
@@ -1195,7 +1215,17 @@
             const bx = Math.abs(hx);
             const by = wrapDeltaY(t.pos.y, ny);
             if (isHead || bx <= 14 && by >= -12 && by <= 18) {
-              if (lineBlockedByTerrain(ctx2.terrain, obstacles, obstacleBroadBuckets, segStartX, segStartY, t.pos.x, t.pos.y - 12)) continue;
+              if (lineBlockedByTerrain(
+                ctx2.terrain,
+                obstacles,
+                obstacleBroadBuckets,
+                segStartX,
+                segStartY,
+                t.pos.x,
+                t.pos.y - 12,
+                dirX * travelled,
+                dirY * travelled
+              )) continue;
               hitPlayer.add(t.id);
               const mult = isHead ? wep.headshotMult : 1;
               ctx2.damagePlayer(t, dps * mult * dt, void 0, isHead, false, p.id, p.team, wep.shortName);
@@ -1220,6 +1250,9 @@
       segments.push(seg);
       if (cut.shortened) break;
       if (blockedByObstacle || !hitWall) break;
+      if (budget <= 0) break;
+      budget--;
+      b++;
     }
     ctx2.events.push({
       kind: "laser",

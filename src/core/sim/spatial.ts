@@ -57,9 +57,12 @@ export function lineBlockedByTerrain(
   y1: number,
   x2: number,
   y2: number,
+  /** 真实未 wrap 位移（光束段跨接缝时必传，否则 wrapDelta 会走反方向误判遮挡） */
+  rawDx?: number,
+  rawDy?: number,
 ): boolean {
-  const dx = wrapDeltaX(x1, x2)
-  const dy = wrapDeltaY(y1, y2)
+  const dx = rawDx ?? wrapDeltaX(x1, x2)
+  const dy = rawDy ?? wrapDeltaY(y1, y2)
   const dist = Math.hypot(dx, dy)
   if (dist <= 1) return false
   const steps = Math.max(1, Math.ceil(dist / 4))
