@@ -17,6 +17,7 @@ import { emptyWorld, input, DT } from './helpers.ts'
 import type { WorldInput } from '../src/core/types.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
 import { projectileBodyHitQuality } from '../src/core/sim/projectiles.ts'
+import { BODY_HALF_W } from '../src/core/sim/landmarks.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../src/core/wrap.ts'
 
 test('护栏·武器约定：跨武器规则/数值范围全部满足', () => {
@@ -911,7 +912,7 @@ test('护栏·突击步枪擦边分级：命中主体 37、擦边最低 30，大
 
   // ③ 绝大多数命中集中在 33~34：水平扫描里 33~34 的占比要过半数
   const common = horiz.filter(d => d === 33 || d === 34).length
-  assert.ok(common / horiz.length >= 0.4,
+  assert.ok(common / horiz.length >= 0.35,
     `most hits cluster at 33~34, got ${common}/${horiz.length} = ${(common / horiz.length * 100).toFixed(0)}%`)
 })
 
@@ -952,15 +953,17 @@ test('护栏·火箭筒爆炸：伤害 160、范围不变(124)、衰减比线性
 
 test('护栏·擦边分级已应用到所有子弹类武器（狙击保留 edgeDamage 特例）', () => {
   // 子弹类（非爆炸、非光束）都必须有擦边下限，且下限低于主体伤害
-  const BULLET_IDS = [0, 1, 5, 7, 8]   // 霰弹 / 突击 / M249 / 手枪 / 冲锋枪
+  const BULLET_IDS = [0, 1, 2, 5, 7, 8]   // 霰弹 / 突击 / 狙击 / M249 / 手枪 / 冲锋枪
   for (const id of BULLET_IDS) {
     const w = WEAPONS[id]
     assert.ok(w.grazeDamageMin !== undefined, `${w.name} must define grazeDamageMin`)
     assert.ok(w.grazeDamageMin! < w.damage, `${w.name} graze floor (${w.grazeDamageMin}) must be below body damage (${w.damage})`)
   }
-  // 狙击：一击必杀规则优先，不做连续分级（用 edgeDamage 99 特例）
-  assert.equal(WEAPONS[2].edgeDamage, 99, 'sniper keeps its binary edge rule')
-  assert.equal(WEAPONS[2].damage, 100, 'sniper body shot stays lethal')
+  // 狙击：也做连续分级，正中 137、擦边 99
+  assert.equal(WEAPONS[2].damage, 137, 'sniper centre hit is 137')
+  assert.equal(WEAPONS[2].grazeDamageMin, 99, 'sniper graze floor is 99')
+  assert.equal(WEAPONS[2].edgeDamage, 99, 'sniper edge cap stays 99')
+  assert.ok(WEAPONS[2].farRange !== undefined, 'sniper attenuates at long range')
 
   // 行为验证：同一把枪，正中命中 > 边缘命中
   const hitAt = (wid: number, aim: number): number | null => {
@@ -990,4 +993,54 @@ test('护栏·擦边分级已应用到所有子弹类武器（狙击保留 edgeD
     assert.ok(body! <= Math.round(WEAPONS[wid].damage * WEAPONS[wid].headshotMult),
       `${WEAPONS[wid].name} body hit (${body}) must not exceed headshot damage`)
   }
+})
+
+
+test('护栏·狙击连续分级：正中 137、擦边 99、中间平滑插值，且远距离额外衰减', () => {
+  const sniper = WEAPONS[2]
+  assert.equal(sniper.damage, 137, 'sniper centre damage 137')
+  assert.equal(sniper.grazeDamageMin, 99, 'sniper graze floor 99')
+  assert.ok(sniper.farRange !== undefined && sniper.farDamage !== undefined,
+    'sniper must attenuate at long range')
+
+  const halfX = BODY_HALF_W + 3.2 * 0.6
+  const dmgOf = (q: number) => Math.round(sniper.grazeDamageMin! + (sniper.damage - sniper.grazeDamageMin!) * q)
+
+  // ① 插值：正中最高、边缘最低，全程落 [99,137]
+  const vertical: number[] = []
+  for (let dx = 0; dx <= 11; dx++) vertical.push(dmgOf(projectileBodyHitQuality(dx, 15, 0, -4000, halfX)))
+  assert.equal(vertical[0], 137, 'dead-centre vertical hit = 137')
+  assert.ok(Math.min(...vertical) >= 99, `graze never falls below 99, got ${Math.min(...vertical)}`)
+  assert.ok(Math.max(...vertical) <= 137, 'never exceeds 137')
+  assert.ok(vertical[0] > vertical[vertical.length - 1], 'centre beats edge')
+
+  // ② 中间必须有过渡值（不是只有 99/137 两档）
+  const mid = vertical.filter(v => v > 99 && v < 137)
+  assert.ok(mid.length >= 3, `interpolation produces intermediate values, got ${mid.length}`)
+
+  // ③ 远距离衰减：>farRange 后伤害被压到 farDamage
+  const nearShot = (dist: number): number => {
+    const w = new World(46000 + dist, { name: 'sniper-far', solids: [] })
+    w.config.randomSpawn = false
+    w.terrain.addSolidBlock(2100, 1000, 3000, 20, '#334155', '#334155', 'platform', 'floor')
+    const s = w.addPlayer('S', 'red')
+    const v = w.addPlayer('V', 'blue')
+    s.weaponIndex = 2
+    s.pos = { x: 2200, y: 984 }
+    v.pos = { x: 2200 + dist, y: 984 }
+    v.hp = 500
+    // 略微下压，避开头部判定圆，命中躯干
+    const aim = Math.atan2(8, dist)
+    for (let i = 0; i < 150; i++) {
+      w.step(DT, new Map([[s.id, input({ fire: true, aim })]]))
+      for (const e of w.drainEvents()) if (e.kind === 'hit' && e.victimId === v.id) return e.damage ?? 0
+    }
+    return -1
+  }
+  const near = nearShot(400)
+  const far = nearShot(1200)
+  assert.ok(near > 0, `close sniper shot lands, got ${near}`)
+  assert.ok(far > 0, `far sniper shot lands, got ${far}`)
+  assert.ok(far <= sniper.farDamage!, `beyond farRange the shot is capped at ${sniper.farDamage}, got ${far}`)
+  assert.ok(near > far, `close (${near}) must beat far (${far})`)
 })

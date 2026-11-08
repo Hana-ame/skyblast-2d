@@ -66,7 +66,7 @@
       name: "\u72D9\u51FB\u6B65\u67AA",
       shortName: "\u72D9",
       isSupplyOnly: false,
-      damage: 100,
+      damage: 137,
       headshotMult: 2.5,
       pellets: 1,
       spread: 3e-3,
@@ -86,8 +86,13 @@
       fuelMult: 0.6,
       fovMult: 1.3,
       color: "#c084fc",
+      // 狙击擦边分级：正中（穿心）= 137，越靠碰撞箱边缘越低，最低 99。
+      // edgeDamage 保留=99，作为「边缘命中上限」（连续分级的最低档即 99）。
       edgeDamage: 99,
-      // 狙击特例：命中身体主体 100（一击必杀）；只有打中碰撞箱边缘才 99（留 1 血）。不做连续分级。
+      grazeDamageMin: 99,
+      farRange: 900,
+      farDamage: 99,
+      // 超过 900px 额外衰减到 99（远距离不再必杀）
       traitDesc: "\u65E0\u9650\u5C04\u7A0B \xB7 \u547D\u4E2D\u5373\u6B7B"
     },
     {

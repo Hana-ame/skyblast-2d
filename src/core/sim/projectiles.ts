@@ -3,6 +3,7 @@
 import { getPhysicsParams } from './physics.ts'
 import { GRID_W } from '../terrain.ts'
 import type { Terrain } from '../terrain.ts'
+import { BODY_HALF_W, BODY_BOTTOM } from './landmarks.ts'
 import { WEAPONS, weaponFalloff } from '../weapons.ts'
 import type { WeaponDef, GameConfig } from '../weapons.ts'
 import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist } from '../wrap.ts'
@@ -214,30 +215,24 @@ export function projectileBodyHitQuality(
   if (chord <= 0) return 0
   // 弦长饱满度（0..1）：穿过长度达到「躯干高度」视为满
   const fullness = Math.min(1, chord / (halfY * 2))
-  // 穿点的居中程度：同时看纵向（靠肩/脚）和横向（靠身侧）
+  // 穿点居中程度：同时看纵向（靠肩/脚）和横向（靠身侧）
   const midAlong = (sMin + sMax) * 0.5
   const midY = dyToFeet + midAlong * uy
   const midX = dxToCenter + midAlong * ux
   const offY = Math.min(1, Math.abs(midY - centerY) / halfY)
   const offX = Math.min(1, Math.abs(midX) / Math.max(1e-6, bodyHalfX))
-  // 取较差的一维：垂直弹看横向偏移，水平弹看纵向高度
-  const off = Math.max(offY, offX)
-  const centered = 1 - off * 0.5
-  // 主体：弦长为主（70%），居中度占 30%
-  const raw = fullness * 0.7 + centered * 0.3
-  // 分段映射（raw: 0=擦边, 1=完美穿心）→ 质量：
-  //   raw 0.00~0.55 → 质量 0.00~0.42（30~33，真正的擦边惩罚）
-  //   raw 0.55~0.85 → 质量 0.42~0.62（33~34，绝大多数命中落这里）
-  //   raw 0.85~1.00 → 质量 0.62~1.00（35~37，只有正中穿心才满伤）
-  // 目标分布：擦边 30~32 占少数，绝大多数命中落在 33~34，只有极正中的穿心才到 36~37。
-  // raw 0.00~0.60 → 质量 0.00~0.30（30~32）
-  // raw 0.60~0.90 → 质量 0.30~0.50（32~33.5，主群体）
-  // raw 0.90~1.00 → 质量 0.50~1.00（33.5~37，只有穿心）
-  let q: number
-  if (raw <= 0.60) q = (raw / 0.60) * 0.30
-  else if (raw <= 0.90) q = 0.30 + ((raw - 0.60) / 0.30) * 0.20
-  else q = 0.50 + ((raw - 0.90) / 0.10) * 0.50
-  return Math.max(0, Math.min(1, q))
+
+  // 质量由「穿点离躯干中心多远」主导（这是"打得正不正"的直接度量）：
+  //   水平平射穿过躯干中部 → 两轴都接近中心 → 接近满伤
+  //   擦肩/擦脚/从侧面掠过 → off 接近 1 → 最低伤
+  // 弦长只作为辅助修正（避免"只在边缘蹭到一点"也被当正中）。
+  const off = Math.hypot(offX, offY) / Math.SQRT2   // 0=正中心, 1=角落
+  const response = Math.pow(1 - off, 0.85)
+  // 弦长很短（只擦到边角）时额外打折
+  const chordFactor = 0.55 + 0.45 * fullness
+  const raw = response * chordFactor
+  // 归一到 0..1（raw 最大约 1.0）
+  return Math.max(0, Math.min(1, raw))
 }
 
 /** 判定光束采样点 (px, py) 是否命中玩家 t（含护盾开启时稍微扩大的碰撞箱） */
@@ -258,7 +253,7 @@ function isPointInPlayerBeamHitbox(
   const isHead = (hx * hx + hy * hy) <= effHeadR * effHeadR
   const bx = Math.abs(hx)
   const by = wrapDeltaY(t.pos.y, py)
-  if (isHead || (bx <= 14 + shieldPad && by >= -12 - shieldPad && by <= 18 + shieldPad)) {
+  if (isHead || (bx <= BODY_HALF_W + 1 + shieldPad && by >= -12 - shieldPad && by <= BODY_BOTTOM - 1 + shieldPad)) {
     return { isHead }
   }
   return null
@@ -621,7 +616,9 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
     const allowFF = !!wep?.friendlyFire
     const allowSelf = !!wep?.selfDamage
     const headHitR = ctx.config.headRadius + pr.r
-    const bodyHalfX = 13 + pr.r
+    // 命中框半宽：贴近视觉躯干（物理半宽 10、视觉约 11），不再用 13+r 那种比角色看起来更宽的值。
+    // 弹丸半径按 60% 计入，避免小弹丸判定过宽。
+    const bodyHalfX = BODY_HALF_W + pr.r * 0.6
 
     for (let step = 0; step < steps; step++) {
       const prevX = pr.pos.x
@@ -676,7 +673,9 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
           }
           const dyBody = wrapDeltaY(t.pos.y, ny)
           const hitShieldHead = shieldPad > 0 && (dxHead * dxHead + dyHead * dyHead <= tHeadHitRSq)
-          const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= (-12 - shieldPad) && dyBody <= (18 + shieldPad)
+          // 身体命中框：横向贴近视觉躯干（BODY_HALF_W + 弹丸半径×0.6），纵向收窄到躯干视觉范围。
+          // 旧实现 13+r 横向过宽（实测能打到视觉外 19px），且下沿 18 低于脚底 → "起飞后打脚也算命中"。
+          const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= (-12 - shieldPad) && dyBody <= (BODY_BOTTOM - 1 + shieldPad)
           if (hitShieldHead || hitBodyBox) {
             pr.hitTargets.push(t.id)
             if (pr.explosive) {
@@ -685,15 +684,16 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
             } else {
               let dmg = Math.round(pr.damage)
               // 统一擦边分级（所有子弹类武器共用同一套规则）：
-              //   命中主体 = damage，越靠碰撞箱边缘越低，最低 grazeDamageMin。
-              //   狙击保留原有 edgeDamage(99) 作为额外上限（边缘命中不会超过 99）。
+              //   正中穿心 = damage，越靠碰撞箱边缘越低，最低 grazeDamageMin（两者之间线性插值）。
+              //   狙击：正中 137、擦边 99，中间平滑过渡。
               if (wep?.grazeDamageMin !== undefined) {
                 const q = projectileBodyHitQuality(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)
                 dmg = Math.round(wep.grazeDamageMin + (pr.damage - wep.grazeDamageMin) * q)
-                if (wep.edgeDamage !== undefined) dmg = Math.min(dmg, wep.edgeDamage)
               } else if (wep?.edgeDamage !== undefined && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
                 dmg = Math.min(dmg, wep.edgeDamage)
-              } else if (wep?.farRange && pr.weaponId === 2) {
+              }
+              // 远距离额外衰减（狙击 >900px 降到 farDamage），独立于擦边分级
+              if (wep?.farRange !== undefined) {
                 const owner = ctx.playerById.get(pr.owner) ?? ctx.players.find(x => x.id === pr.owner)
                 if (owner) {
                   const dShot = wrapDist(owner.pos.x, owner.pos.y - 12, t.pos.x, t.pos.y - 12)

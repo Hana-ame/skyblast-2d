@@ -88,8 +88,11 @@ export function weaponViolations(): Violation[] {
   if (rocket && rocket.damage !== 160) add('rule.rocketdmg', '火箭筒爆炸伤害必须 160')
   if (rocket && rocket.terrainRadius !== 124) add('rule.rocketradius', '火箭筒爆炸范围必须保持 124（本次只改伤害与衰减）')
   if (rocket && (rocket.blastFalloffExponent ?? 1) <= 1) add('rule.rocketblast', '火箭筒爆炸衰减必须比线性更陡（blastFalloffExponent > 1）')
-  if (sniper && (sniper.damage !== 100 || sniper.edgeDamage !== 99 || sniper.farRange !== undefined)) {
-    add('rule.sniperedge', '狙击命中身体必须 100（含远距），打中碰撞箱边缘必须 99')
+  if (sniper && (sniper.damage !== 137 || sniper.grazeDamageMin !== 99)) {
+    add('rule.sniperedge', '狙击必须做连续分级：正中 137、擦边 99（中间插值）')
+  }
+  if (sniper && sniper.farRange === undefined) {
+    add('rule.sniperfar', '狙击必须有远距离衰减（farRange/farDamage）')
   }
   if (shotgun && shotgun.pellets !== 8) add('rule.shotgunpellets', '霰弹必须 8 弹丸')
   if (shotgun && shotgun.headshotMult !== 1) add('rule.shotgunhead', '霰弹无爆头加成')

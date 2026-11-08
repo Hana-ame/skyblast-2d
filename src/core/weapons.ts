@@ -88,11 +88,14 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 2, name: '狙击步枪', shortName: '狙', isSupplyOnly: false,
-    damage: 100, headshotMult: 2.5, pellets: 1, spread: 0.003,
+    damage: 137, headshotMult: 2.5, pellets: 1, spread: 0.003,
     speed: 4000, recoil: 390, magSize: 3, maxReserve: 15,
     reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.60, terrainRadius: 16,
     explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.6, fuelMult: 0.6, fovMult: 1.30, color: '#c084fc',
-    edgeDamage: 99,   // 狙击特例：命中身体主体 100（一击必杀）；只有打中碰撞箱边缘才 99（留 1 血）。不做连续分级。
+    // 狙击擦边分级：正中（穿心）= 137，越靠碰撞箱边缘越低，最低 99。
+    // edgeDamage 保留=99，作为「边缘命中上限」（连续分级的最低档即 99）。
+    edgeDamage: 99, grazeDamageMin: 99,
+    farRange: 900, farDamage: 99,   // 超过 900px 额外衰减到 99（远距离不再必杀）
     traitDesc: '无限射程 · 命中即死',
   },
   {

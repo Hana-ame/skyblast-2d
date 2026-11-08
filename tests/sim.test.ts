@@ -271,9 +271,12 @@ test('高斯枪：按住持续输出（射速无限），一梭子可打 8 秒�
   const w = new World(41)
   const p = w.addPlayer('P', 'ffa')
   p.weaponIndex = 4   // 高斯枪
-  // 空旷处水平开火：只有枪口第一段，不会反射自伤，才能测"按住即持续输出"
+  // 空旷处水平开火：测"按住即持续输出"本身。
+  // 注意：光束绕世界一圈从背面打回自己会自伤（设计如此），这里给足血量以免中途死亡影响计数。
   p.pos = { x: 6600, y: 2400 }
   p.aim = 0
+  p.hp = 100000
+  p.maxHp = 100000
   const ammo0 = p.ammo[4]
   // 按住 1 秒：应连续产生光束事件（不是单发）
   let beamEvents = 0
@@ -363,7 +366,7 @@ test('特武（高斯枪/M249/引力枪）只能从补给箱获得，常规换�
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 780, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 37, 100, 160, 25, 37, 24, 24, 24])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 37, 137, 160, 25, 37, 24, 24, 24])
   assert.equal(WEAPONS[1].magSize, 30, 'assault rifle mag 30')
   assert.equal(WEAPONS[1].maxReserve, 90, 'assault rifle reserve 90')
   assert.equal(WEAPONS[8].magSize, 30, 'SMG mag 30')
@@ -416,7 +419,9 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[3].ascendMult, 0.7, 'bazooka ascend 0.7')
   // 狙击：超过视距(800) 非爆头只有 99 伤害
   assert.equal(WEAPONS[2].edgeDamage, 99, 'sniper hitbox edge damage 99')
-  assert.equal(WEAPONS[2].farRange, undefined, 'sniper has no farRange penalty on body')
+  assert.equal(WEAPONS[2].grazeDamageMin, 99, 'sniper graze floor 99')
+  assert.equal(WEAPONS[2].farRange, 900, 'sniper has far-range attenuation')
+  assert.equal(WEAPONS[2].farDamage, 99, 'sniper far damage 99')
   assert.deepEqual(SECONDARY_UNLOCK_ORDER, ['frag', 'obstacle', 'shield', 'teleport', 'doll'], 'secondary unlock order matches balance progression')
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
   assert.ok(!SECONDARIES.frag.supplyOnly, 'frag selectable')
@@ -505,7 +510,7 @@ test('防卡死：出生/传送进实体内部后会自动推出', () => {
   assert.ok(!w.terrain.isSolidAt(wx, p.pos.y - 6), `pushed out of solid, pos=(${Math.round(p.pos.x)},${Math.round(p.pos.y)})`)
 })
 
-test('狙击：近距离与远距离(900px)命中身体依然 100 一击必杀；打中碰撞箱边缘才造成 99（留 1 血）', () => {
+test('狙击：正中 137（一击必杀）、擦边 99、远距离(>900px)衰减到 99', () => {
   const arena = (): World => {
     const w = new World(65)
     w.terrain.addSolidBlock(2100, 1000, 1400, 20, '#334155', '#334155', 'platform', 'test-floor')
@@ -521,9 +526,11 @@ test('狙击：近距离与远距离(900px)命中身体依然 100 一击必杀�
     for (let i = 0; i < 90; i++) w.step(DT, new Map([[shooter.id, input({ fire: true, aim: 0 })]]))
     return victim.hp
   }
-  // 近距 600px 与远距 900px 命中身体中心均为 100 伤害 → 一击必杀
-  assert.ok(shoot(600) <= 0, 'within view range body shot is lethal (100 dmg)')
-  assert.ok(shoot(900) <= 0, 'far range (900px) body shot is still lethal (100 dmg)')
+  // 近距 600px 正中命中 137 → 一击必杀
+  assert.ok(shoot(600) <= 0, 'within view range body shot is lethal (137 dmg)')
+  // 远距（>farRange 900px）衰减到 99 → 不再一击必杀（留 1 血）
+  const farHp = shoot(1200)
+  assert.ok(farHp > 0 && farHp <= 100, `far range (>900px) body shot attenuated to 99, leaves hp=${farHp}`)
 
   // 打中身体碰撞箱边缘（水平擦过下沿碰撞箱边缘 dyBody≈16，以及竖直向上擦过侧边碰撞箱边缘 dxBody=13）：均造成 99 伤害（留 1 血）
   const wEdge = arena()
@@ -532,10 +539,13 @@ test('狙击：近距离与远距离(900px)命中身体依然 100 一击必杀�
   const vEdge = wEdge.addPlayer('V', 'blue')
   sEdge.pos = { x: 2200, y: 984 }
   vEdge.pos = { x: 2500, y: 984 }
-  // 瞄准目标脚底碰撞箱下沿（dy ≈ +27.5，使出膛点 y-12 落在目标 pos.y + 15.8 的碰撞箱边缘）
-  const edgeAim = Math.atan2(27.5, 300)
+  // 瞄准目标碰撞箱下沿附近（BODY_BOTTOM-1=15，出膛点 y-12 → 下压 27 让弹道落在下沿）
+  const edgeAim = Math.atan2(27, 300)
   for (let i = 0; i < 60; i++) wEdge.step(DT, new Map([[sEdge.id, input({ fire: true, aim: edgeAim })]]))
-  assert.ok(Math.abs(vEdge.hp - 1) < 1e-6, `hitbox bottom-edge graze deals 99 dmg (leaves 1 hp), hp=${vEdge.hp}`)
+  const edgeDealt = 100 - vEdge.hp
+  // 边缘命中必须明显低于正中 137，且不低于擦边下限 99
+  assert.ok(edgeDealt >= 99 && edgeDealt < 130,
+    `bottom-edge graze deals an interpolated 99..130 dmg, got ${edgeDealt}`)
 })
 
 test('火箭筒：直线飞行（不落）+ 慢速 + 无限射程 + 命中爆炸', () => {
@@ -1562,7 +1572,7 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
     const s = wHitbox.addPlayer('Shooter', 'red')
     const t = wHitbox.addPlayer('Target', 'blue')
     s.pos = { x: 2000, y: 1500 }
-    t.pos = { x: 2020, y: 1200 } // 水平偏移 20px（常规身体碰撞半宽 13+3.2=16.2px，开盾后 +8=24.2px）
+    t.pos = { x: 2016, y: 1200 } // 水平偏移 16px（常规身体半宽 10+r*0.6≈11.9px，开盾后 +8≈19.9px；16 只有开盾才够得着）
     // 未开护盾：竖直向上发射单发步枪弹（x=2000）从 t 左侧 20px 掠过，不命中
     wHitbox.projectiles.push({
       id: 910001, owner: s.id, pos: { x: 2000, y: 1240 }, vel: { x: 0, y: -1200 },
@@ -1572,11 +1582,11 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
       beam: false, rocket: false, dragPerSecond: 1, weaponLabel: '突击步枪', color: '#38bdf8', hitTargets: [s.id],
     })
     wHitbox.step(DT, new Map())
-    assert.equal(t.hp, 100, 'unshielded player is missed at dx=20px')
+    assert.equal(t.hp, 100, 'unshielded player is missed at dx=16px')
 
     // 开启护盾后：清空旧弹丸，发射完全相同的弹道 x=2000 命中扩大的护盾碰撞箱！
     wHitbox.projectiles.length = 0
-    t.pos = { x: 2020, y: 1200 }
+    t.pos = { x: 2016, y: 1200 }
     t.shieldHp = 100
     t.shieldTimer = 5.0
     wHitbox.projectiles.push({

@@ -304,7 +304,7 @@
       name: "\u72D9\u51FB\u6B65\u67AA",
       shortName: "\u72D9",
       isSupplyOnly: false,
-      damage: 100,
+      damage: 137,
       headshotMult: 2.5,
       pellets: 1,
       spread: 3e-3,
@@ -324,8 +324,13 @@
       fuelMult: 0.6,
       fovMult: 1.3,
       color: "#c084fc",
+      // 狙击擦边分级：正中（穿心）= 137，越靠碰撞箱边缘越低，最低 99。
+      // edgeDamage 保留=99，作为「边缘命中上限」（连续分级的最低档即 99）。
       edgeDamage: 99,
-      // 狙击特例：命中身体主体 100（一击必杀）；只有打中碰撞箱边缘才 99（留 1 血）。不做连续分级。
+      grazeDamageMin: 99,
+      farRange: 900,
+      farDamage: 99,
+      // 超过 900px 额外衰减到 99（远距离不再必杀）
       traitDesc: "\u65E0\u9650\u5C04\u7A0B \xB7 \u547D\u4E2D\u5373\u6B7B"
     },
     {
@@ -1215,14 +1220,11 @@
     const midX = dxToCenter + midAlong * ux;
     const offY = Math.min(1, Math.abs(midY - centerY) / halfY);
     const offX = Math.min(1, Math.abs(midX) / Math.max(1e-6, bodyHalfX));
-    const off = Math.max(offY, offX);
-    const centered = 1 - off * 0.5;
-    const raw = fullness * 0.7 + centered * 0.3;
-    let q;
-    if (raw <= 0.6) q = raw / 0.6 * 0.3;
-    else if (raw <= 0.9) q = 0.3 + (raw - 0.6) / 0.3 * 0.2;
-    else q = 0.5 + (raw - 0.9) / 0.1 * 0.5;
-    return Math.max(0, Math.min(1, q));
+    const off = Math.hypot(offX, offY) / Math.SQRT2;
+    const response = Math.pow(1 - off, 0.85);
+    const chordFactor = 0.55 + 0.45 * fullness;
+    const raw = response * chordFactor;
+    return Math.max(0, Math.min(1, raw));
   }
   function isPointInPlayerBeamHitbox(t, px, py, baseHeadR) {
     const shieldPad = t.shieldTimer > 0 && t.shieldHp > 0 ? SHIELD_HITBOX_PAD : 0;
@@ -1236,7 +1238,7 @@
     const isHead = hx * hx + hy * hy <= effHeadR * effHeadR;
     const bx = Math.abs(hx);
     const by = wrapDeltaY(t.pos.y, py);
-    if (isHead || bx <= 14 + shieldPad && by >= -12 - shieldPad && by <= 18 + shieldPad) {
+    if (isHead || bx <= BODY_HALF_W + 1 + shieldPad && by >= -12 - shieldPad && by <= BODY_BOTTOM - 1 + shieldPad) {
       return { isHead };
     }
     return null;
@@ -1545,7 +1547,7 @@
       const allowFF = !!wep?.friendlyFire;
       const allowSelf = !!wep?.selfDamage;
       const headHitR = ctx2.config.headRadius + pr.r;
-      const bodyHalfX = 13 + pr.r;
+      const bodyHalfX = BODY_HALF_W + pr.r * 0.6;
       for (let step = 0; step < steps; step++) {
         const prevX = pr.pos.x;
         const prevY = pr.pos.y;
@@ -1595,7 +1597,7 @@
             }
             const dyBody = wrapDeltaY(t.pos.y, ny);
             const hitShieldHead = shieldPad > 0 && dxHead * dxHead + dyHead * dyHead <= tHeadHitRSq;
-            const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= -12 - shieldPad && dyBody <= 18 + shieldPad;
+            const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= -12 - shieldPad && dyBody <= BODY_BOTTOM - 1 + shieldPad;
             if (hitShieldHead || hitBodyBox) {
               pr.hitTargets.push(t.id);
               if (pr.explosive) {
@@ -1606,10 +1608,10 @@
                 if (wep?.grazeDamageMin !== void 0) {
                   const q = projectileBodyHitQuality(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX);
                   dmg = Math.round(wep.grazeDamageMin + (pr.damage - wep.grazeDamageMin) * q);
-                  if (wep.edgeDamage !== void 0) dmg = Math.min(dmg, wep.edgeDamage);
                 } else if (wep?.edgeDamage !== void 0 && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
                   dmg = Math.min(dmg, wep.edgeDamage);
-                } else if (wep?.farRange && pr.weaponId === 2) {
+                }
+                if (wep?.farRange !== void 0) {
                   const owner = ctx2.playerById.get(pr.owner) ?? ctx2.players.find((x) => x.id === pr.owner);
                   if (owner) {
                     const dShot = wrapDist(owner.pos.x, owner.pos.y - 12, t.pos.x, t.pos.y - 12);
