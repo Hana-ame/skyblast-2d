@@ -71,7 +71,7 @@ export interface SecondaryDef {
 export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
-    damage: 24, headshotMult: 1.0, pellets: 8, spread: 0.24,   // 伤害=手枪弹
+    damage: 24, headshotMult: 1.0, pellets: 8, spread: 0.24, grazeDamageMin: 20,   // 伤害=手枪弹；每颗弹丸独立擦边分级（24→20）
     speed: 1000, recoil: 1560, magSize: 8, maxReserve: 72,   // 后坐力 ×2
     reloadTime: 1.5, fireDelay: 0.58, terrainRadius: 12,     // 射速略微提升（0.72 -> 0.58s）
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
@@ -92,7 +92,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 4000, recoil: 390, magSize: 3, maxReserve: 15,
     reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.60, terrainRadius: 16,
     explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.6, fuelMult: 0.6, fovMult: 1.30, color: '#c084fc',
-    edgeDamage: 99,   // 远距离命中身体依然 100 伤害；打中身体碰撞箱边缘才造成 99 伤害（留 1 血）
+    edgeDamage: 99,   // 狙击特例：命中身体主体 100（一击必杀）；只有打中碰撞箱边缘才 99（留 1 血）。不做连续分级。
     traitDesc: '无限射程 · 命中即死',
   },
   {
@@ -135,7 +135,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 7, name: '手枪', shortName: '手枪', isSupplyOnly: false,
-    damage: 24, headshotMult: 2.0, pellets: 1, spread: 0.090,
+    damage: 24, headshotMult: 2.0, pellets: 1, spread: 0.090, grazeDamageMin: 20,
     speed: 1000, recoil: 60, magSize: 12, maxReserve: 60,
     reloadTime: 0.9, fireDelay: 0.17, terrainRadius: 6,
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
@@ -144,7 +144,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
-    damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
+    damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24, grazeDamageMin: 20,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
     speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,     // 30/150
     reloadTime: 2.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,

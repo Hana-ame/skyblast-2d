@@ -948,3 +948,46 @@ test('护栏·火箭筒爆炸：伤害 160、范围不变(124)、衰减比线性
   const linear115 = Math.round(115 * Math.max(0.2, 1 - 100 / hitR))
   assert.ok(blastAt(100) > linear115, `new 160-damage curve still hits harder than the old 115 linear at mid range`)
 })
+
+
+test('护栏·擦边分级已应用到所有子弹类武器（狙击保留 edgeDamage 特例）', () => {
+  // 子弹类（非爆炸、非光束）都必须有擦边下限，且下限低于主体伤害
+  const BULLET_IDS = [0, 1, 5, 7, 8]   // 霰弹 / 突击 / M249 / 手枪 / 冲锋枪
+  for (const id of BULLET_IDS) {
+    const w = WEAPONS[id]
+    assert.ok(w.grazeDamageMin !== undefined, `${w.name} must define grazeDamageMin`)
+    assert.ok(w.grazeDamageMin! < w.damage, `${w.name} graze floor (${w.grazeDamageMin}) must be below body damage (${w.damage})`)
+  }
+  // 狙击：一击必杀规则优先，不做连续分级（用 edgeDamage 99 特例）
+  assert.equal(WEAPONS[2].edgeDamage, 99, 'sniper keeps its binary edge rule')
+  assert.equal(WEAPONS[2].damage, 100, 'sniper body shot stays lethal')
+
+  // 行为验证：同一把枪，正中命中 > 边缘命中
+  const hitAt = (wid: number, aim: number): number | null => {
+    const w = new World(45000 + wid * 100 + Math.round(aim * 1000), { name: 'graze', solids: [] })
+    w.config.randomSpawn = false
+    const a = w.addPlayer('A', 'red')
+    const b = w.addPlayer('B', 'blue')
+    a.weaponIndex = wid
+    a.ammo[wid] = 30
+    a.reserveAmmo[wid] = 90
+    a.pos = { x: 6600, y: 2740 }
+    b.pos = { x: 6900, y: 2740 }
+    b.hp = 500
+    for (let i = 0; i < 150; i++) {
+      w.step(DT, new Map([[a.id, input({ fire: true, aim })], [b.id, input()]]))
+      for (const e of w.drainEvents()) {
+        if (e.kind === 'hit' && e.victimId === b.id) return e.damage ?? null
+      }
+    }
+    return null
+  }
+  for (const wid of BULLET_IDS) {
+    const body = hitAt(wid, Math.atan2(3 - 12, 300))     // 瞄躯干中心
+    assert.ok(body !== null, `${WEAPONS[wid].name} lands a body hit`)
+    assert.ok(body! >= WEAPONS[wid].grazeDamageMin!,
+      `${WEAPONS[wid].name} body hit (${body}) must be at least the graze floor (${WEAPONS[wid].grazeDamageMin})`)
+    assert.ok(body! <= Math.round(WEAPONS[wid].damage * WEAPONS[wid].headshotMult),
+      `${WEAPONS[wid].name} body hit (${body}) must not exceed headshot damage`)
+  }
+})

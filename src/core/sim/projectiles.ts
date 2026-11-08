@@ -684,13 +684,15 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
               hit = true
             } else {
               let dmg = Math.round(pr.damage)
-              // 狙击碰撞箱边缘规则：打中碰撞箱边缘才造成 edgeDamage(99)，近/远距离命中身体主体均保持 100 伤害
-              if (wep?.edgeDamage !== undefined && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
-                dmg = Math.min(dmg, wep.edgeDamage)
-              } else if (wep?.grazeDamageMin !== undefined) {
-                // 分级擦边：命中主体 = damage（37），越靠碰撞箱边缘线性降到 grazeDamageMin（30）
+              // 统一擦边分级（所有子弹类武器共用同一套规则）：
+              //   命中主体 = damage，越靠碰撞箱边缘越低，最低 grazeDamageMin。
+              //   狙击保留原有 edgeDamage(99) 作为额外上限（边缘命中不会超过 99）。
+              if (wep?.grazeDamageMin !== undefined) {
                 const q = projectileBodyHitQuality(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)
                 dmg = Math.round(wep.grazeDamageMin + (pr.damage - wep.grazeDamageMin) * q)
+                if (wep.edgeDamage !== undefined) dmg = Math.min(dmg, wep.edgeDamage)
+              } else if (wep?.edgeDamage !== undefined && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
+                dmg = Math.min(dmg, wep.edgeDamage)
               } else if (wep?.farRange && pr.weaponId === 2) {
                 const owner = ctx.playerById.get(pr.owner) ?? ctx.players.find(x => x.id === pr.owner)
                 if (owner) {
@@ -698,6 +700,8 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
                   if (dShot > wep.farRange) dmg = Math.min(dmg, wep.farDamage ?? dmg)
                 }
               }
+              // 擦边分级只决定「基于命中质量的伤害」，随后照常施加距离衰减
+              // （距离衰减必须能继续拉开近/远差距，不能被子弹的擦边下限压平）
               dmg = Math.round(dmg * calcProjectileFalloff(ctx, pr, t.pos.x, t.pos.y - 12))
               ctx.damagePlayer(t, dmg, pr, false, false)
               t.vel.x += pr.vel.x * 0.09

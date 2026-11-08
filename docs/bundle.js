@@ -249,7 +249,8 @@
       headshotMult: 1,
       pellets: 8,
       spread: 0.24,
-      // 伤害=手枪弹
+      grazeDamageMin: 20,
+      // 伤害=手枪弹；每颗弹丸独立擦边分级（24→20）
       speed: 1e3,
       recoil: 1560,
       magSize: 8,
@@ -324,7 +325,7 @@
       fovMult: 1.3,
       color: "#c084fc",
       edgeDamage: 99,
-      // 远距离命中身体依然 100 伤害；打中身体碰撞箱边缘才造成 99 伤害（留 1 血）
+      // 狙击特例：命中身体主体 100（一击必杀）；只有打中碰撞箱边缘才 99（留 1 血）。不做连续分级。
       traitDesc: "\u65E0\u9650\u5C04\u7A0B \xB7 \u547D\u4E2D\u5373\u6B7B"
     },
     {
@@ -471,6 +472,7 @@
       headshotMult: 2,
       pellets: 1,
       spread: 0.09,
+      grazeDamageMin: 20,
       speed: 1e3,
       recoil: 60,
       magSize: 12,
@@ -498,6 +500,7 @@
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.24,
+      grazeDamageMin: 20,
       // 伤害 = 手枪；极高射速用大散布/弹匣平衡
       speed: 1e3,
       recoil: 48,
@@ -1600,11 +1603,12 @@
                 hit = true;
               } else {
                 let dmg = Math.round(pr.damage);
-                if (wep?.edgeDamage !== void 0 && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
-                  dmg = Math.min(dmg, wep.edgeDamage);
-                } else if (wep?.grazeDamageMin !== void 0) {
+                if (wep?.grazeDamageMin !== void 0) {
                   const q = projectileBodyHitQuality(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX);
                   dmg = Math.round(wep.grazeDamageMin + (pr.damage - wep.grazeDamageMin) * q);
+                  if (wep.edgeDamage !== void 0) dmg = Math.min(dmg, wep.edgeDamage);
+                } else if (wep?.edgeDamage !== void 0 && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
+                  dmg = Math.min(dmg, wep.edgeDamage);
                 } else if (wep?.farRange && pr.weaponId === 2) {
                   const owner = ctx2.playerById.get(pr.owner) ?? ctx2.players.find((x) => x.id === pr.owner);
                   if (owner) {
