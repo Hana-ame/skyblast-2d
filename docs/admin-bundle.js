@@ -12,7 +12,8 @@
       pellets: 8,
       spread: 0.24,
       grazeDamageMin: 20,
-      // 伤害=手枪弹；每颗弹丸独立擦边分级（24→20）
+      shellReload: true,
+      // 伤害=手枪弹；每颗弹丸独立擦边；逐发装填
       speed: 1e3,
       recoil: 1560,
       magSize: 8,

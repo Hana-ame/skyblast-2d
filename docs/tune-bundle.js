@@ -232,7 +232,8 @@
       pellets: 8,
       spread: 0.24,
       grazeDamageMin: 20,
-      // 伤害=手枪弹；每颗弹丸独立擦边分级（24→20）
+      shellReload: true,
+      // 伤害=手枪弹；每颗弹丸独立擦边；逐发装填
       speed: 1e3,
       recoil: 1560,
       magSize: 8,
@@ -2302,7 +2303,7 @@
       if (!wep || p.reloading || p.ammo[p.weaponIndex] >= wep.magSize) return;
       if ((p.reserveAmmo[p.weaponIndex] || 0) <= 0) return;
       p.reloading = true;
-      p.reloadTimer = wep.reloadTime;
+      p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime;
     }
     rebuildSpatialBuckets() {
       for (let i = 0; i < NUM_BUCKETS; i++) {
@@ -2647,13 +2648,23 @@
       if (p.reloading) {
         p.reloadTimer -= dt;
         if (p.reloadTimer <= 0) {
-          p.reloading = false;
           const wep = WEAPONS[p.weaponIndex];
-          const needed = wep.magSize - p.ammo[p.weaponIndex];
           const avail = p.reserveAmmo[p.weaponIndex] || 0;
-          const transfer = Math.min(needed, avail);
-          p.ammo[p.weaponIndex] += transfer;
-          p.reserveAmmo[p.weaponIndex] = avail - transfer;
+          if (wep.shellReload) {
+            if (avail > 0 && p.ammo[p.weaponIndex] < wep.magSize) {
+              p.ammo[p.weaponIndex] += 1;
+              p.reserveAmmo[p.weaponIndex] = avail - 1;
+            }
+            const stillNeeds = p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0;
+            if (stillNeeds) p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize);
+            else p.reloading = false;
+          } else {
+            p.reloading = false;
+            const needed = wep.magSize - p.ammo[p.weaponIndex];
+            const transfer = Math.min(needed, avail);
+            p.ammo[p.weaponIndex] += transfer;
+            p.reserveAmmo[p.weaponIndex] = avail - transfer;
+          }
         }
       }
       if (w.reload) this.startReload(p);
@@ -2726,14 +2737,17 @@
         return;
       }
       const wep = WEAPONS[p.weaponIndex];
-      if (p.reloading || p.fireCooldown > 0) return;
+      const canFireWhileReloading = !!wep.shellReload && p.ammo[p.weaponIndex] > 0;
+      if (p.reloading && !canFireWhileReloading || p.fireCooldown > 0) return;
       if (p.ammo[p.weaponIndex] <= 0) {
         if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
         return;
       }
+      if (wep.shellReload && p.reloading) p.reloading = false;
       p.ammo[p.weaponIndex]--;
       p.fireCooldown = wep.fireDelay;
-      if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
+      const needReload = wep.shellReload ? p.ammo[p.weaponIndex] < wep.magSize : p.ammo[p.weaponIndex] <= 0;
+      if (needReload && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
       if (wep.recoil > 0) {
         const rk = recoilDelta(wep.recoil, p.aim);
         if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };

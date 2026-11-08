@@ -141,7 +141,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (!wep || p.reloading || p.ammo[p.weaponIndex] >= wep.magSize) return
     if ((p.reserveAmmo[p.weaponIndex] || 0) <= 0) return
     p.reloading = true
-    p.reloadTimer = wep.reloadTime
+    // 逐发装填（霰弹）：整匣时间平摊到每发；装满一发的耗时 = reloadTime / magSize
+    p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime
   }
 
   private rebuildSpatialBuckets(): void {
@@ -444,13 +445,24 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (p.reloading) {
       p.reloadTimer -= dt
       if (p.reloadTimer <= 0) {
-        p.reloading = false
         const wep = WEAPONS[p.weaponIndex]
-        const needed = wep.magSize - p.ammo[p.weaponIndex]
         const avail = p.reserveAmmo[p.weaponIndex] || 0
-        const transfer = Math.min(needed, avail)
-        p.ammo[p.weaponIndex] += transfer
-        p.reserveAmmo[p.weaponIndex] = avail - transfer
+        if (wep.shellReload) {
+          // 逐发装填：装进 1 发即可击发；若弹匣未满且还有备弹，自动继续装下一发
+          if (avail > 0 && p.ammo[p.weaponIndex] < wep.magSize) {
+            p.ammo[p.weaponIndex] += 1
+            p.reserveAmmo[p.weaponIndex] = avail - 1
+          }
+          const stillNeeds = p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0
+          if (stillNeeds) p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize)
+          else p.reloading = false
+        } else {
+          p.reloading = false
+          const needed = wep.magSize - p.ammo[p.weaponIndex]
+          const transfer = Math.min(needed, avail)
+          p.ammo[p.weaponIndex] += transfer
+          p.reserveAmmo[p.weaponIndex] = avail - transfer
+        }
       }
     }
     if (w.reload) this.startReload(p)
@@ -515,14 +527,22 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       return
     }
     const wep = WEAPONS[p.weaponIndex]
-    if (p.reloading || p.fireCooldown > 0) return
+    // 逐发装填的武器（霰弹）：装填中有子弹就能随时击发（击发会打断装填）
+    const canFireWhileReloading = !!wep.shellReload && p.ammo[p.weaponIndex] > 0
+    if ((p.reloading && !canFireWhileReloading) || p.fireCooldown > 0) return
     if (p.ammo[p.weaponIndex] <= 0) {
       if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
       return
     }
+    // 逐发装填：击发时中断装填进程（下次开火若弹匣未满会重新开始装填）
+    if (wep.shellReload && p.reloading) p.reloading = false
     p.ammo[p.weaponIndex]--
     p.fireCooldown = wep.fireDelay
-    if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
+    // 自动装填：弹匣打空必装；逐发装填的武器（霰弹）只要没装满就继续装
+    const needReload = wep.shellReload
+      ? p.ammo[p.weaponIndex] < wep.magSize
+      : p.ammo[p.weaponIndex] <= 0
+    if (needReload && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {
       const rk = recoilDelta(wep.recoil, p.aim)

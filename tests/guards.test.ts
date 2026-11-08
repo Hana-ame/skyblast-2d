@@ -1044,3 +1044,54 @@ test('护栏·狙击连续分级：正中 137、擦边 99、中间平滑插值�
   assert.ok(far <= sniper.farDamage!, `beyond farRange the shot is capped at ${sniper.farDamage}, got ${far}`)
   assert.ok(near > far, `close (${near}) must beat far (${far})`)
 })
+
+
+test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一发即可击发', () => {
+  const shotgun = WEAPONS[0]
+  assert.equal(shotgun.shellReload, true, 'shotgun uses shell-by-shell reload')
+  const perShell = shotgun.reloadTime / shotgun.magSize
+  assert.ok(perShell > 0 && perShell < shotgun.reloadTime,
+    `per-shell time (${perShell.toFixed(3)}s) is a fraction of the full reload (${shotgun.reloadTime}s)`)
+
+  // ① 逐发装填节奏：打空后开始装填，第一发就应该在 perShell 左右到位（而不是整个 reloadTime）
+  const w = new World(47000, { name: 'shell-reload', solids: [] })
+  w.config.randomSpawn = false
+  const p = w.addPlayer('P', 'ffa')
+  p.weaponIndex = 0
+  p.ammo[0] = 0
+  p.reserveAmmo[0] = 72
+  p.pos = { x: 6600, y: 2200 }
+  w.startReload(p)
+  let firstShellAt = -1
+  let ticks = 0
+  for (let i = 0; i < 120; i++) {
+    w.step(DT, new Map([[p.id, input()]]))
+    ticks += 1
+    if (p.ammo[0] > 0) { firstShellAt = ticks * DT; break }
+  }
+  assert.ok(firstShellAt > 0, 'first shell gets loaded')
+  assert.ok(Math.abs(firstShellAt - perShell) < 0.05,
+    `first shell arrives in ~${perShell.toFixed(3)}s, got ${firstShellAt.toFixed(3)}s`)
+
+  // ② 装一发就能击发：弹匣只有 1 发时按开火，应该打出 8 颗弹丸（一发霰弹）
+  const w2 = new World(47001, { name: 'shell-fire', solids: [] })
+  w2.config.randomSpawn = false
+  const q = w2.addPlayer('Q', 'ffa')
+  q.weaponIndex = 0
+  q.ammo[0] = 0
+  q.reserveAmmo[0] = 72
+  q.pos = { x: 6600, y: 2200 }
+  w2.startReload(q)
+  for (let i = 0; i < 30; i++) w2.step(DT, new Map([[q.id, input()]]))
+  assert.ok(q.ammo[0] >= 1, `one shell loaded (ammo=${q.ammo[0]})`)
+  const projBefore = w2.projectiles.length
+  w2.step(DT, new Map([[q.id, input({ fire: true, aim: 0 })]]))
+  assert.ok(w2.projectiles.length - projBefore >= shotgun.pellets,
+    `firing one shell produces ${shotgun.pellets} pellets, got ${w2.projectiles.length - projBefore}`)
+
+  // ③ 松手后装填会自动继续，直到装满（或备弹耗尽）
+  for (let i = 0; i < 300; i++) w2.step(DT, new Map([[q.id, input()]]))
+  assert.ok(q.ammo[0] > 1, `reload continues automatically until the magazine is full, ammo=${q.ammo[0]}`)
+  assert.equal(q.ammo[0], shotgun.magSize, `magazine fills up to ${shotgun.magSize}, got ${q.ammo[0]}`)
+  assert.equal(q.reloading, false, 'reload stops once the magazine is full')
+})

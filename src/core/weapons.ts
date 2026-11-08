@@ -36,6 +36,9 @@ export interface WeaponDef {
   /** 分级擦边伤害：命中身体主体 = damage，越靠碰撞箱边缘越低，线性落到 grazeDamageMin。
    *  （突击步枪 37 → 擦边最低 30，常见命中 33~34） */
   grazeDamageMin?: number
+  /** 逐发装填：true 时每次只装 1 发，单发耗时 = reloadTime / magSize；
+   *  装填完一发即可击发（霰弹枪）。false/缺省 = 一次性装满整匣。 */
+  shellReload?: boolean
   /** 爆炸衰减指数（默认 1 = 线性）。越大越陡：近爆点保持高伤，稍远迅速衰减。
    *  只影响玩家伤害的半径衰减，不改爆炸范围 terrainRadius。 */
   blastFalloffExponent?: number
@@ -71,7 +74,7 @@ export interface SecondaryDef {
 export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
-    damage: 24, headshotMult: 1.0, pellets: 8, spread: 0.24, grazeDamageMin: 20,   // 伤害=手枪弹；每颗弹丸独立擦边分级（24→20）
+    damage: 24, headshotMult: 1.0, pellets: 8, spread: 0.24, grazeDamageMin: 20, shellReload: true,   // 伤害=手枪弹；每颗弹丸独立擦边；逐发装填
     speed: 1000, recoil: 1560, magSize: 8, maxReserve: 72,   // 后坐力 ×2
     reloadTime: 1.5, fireDelay: 0.58, terrainRadius: 12,     // 射速略微提升（0.72 -> 0.58s）
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
