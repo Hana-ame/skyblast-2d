@@ -17,9 +17,6 @@ import {
 } from './spatial.ts'
 import type { PlayerState, Projectile, Obstacle, WorldEvent, TeamId } from '../types.ts'
 
-/** 高斯枪跨越地图边界时扣除反射次数的段长阈值（前一段长度 > 阈值则反射次数 -1，否则 ±0） */
-export const BEAM_SEAM_THRESHOLD = 1000
-
 /** 玩家开启能量护盾时的额外碰撞箱外扩半径（px） */
 export const SHIELD_HITBOX_PAD = 8
 
@@ -199,11 +196,12 @@ function isPointInPlayerBeamHitbox(
 
 /**
  * 高斯枪：按住即持续发射的反射光束
- * 反射与跨边界规则：
- *   1. 跨越地图边界时：不改变方向；如果前一段长度 > BEAM_SEAM_THRESHOLD，反射次数 -1，否则 ±0
- *   2. 碰到障碍物（原始实心地形或可破坏障碍物）时：改变方向（光线沿着表面反射），反射次数 -1
- *   3. 当反射次数归零时，不再反射（bounces = 2）
- *   4. 高斯枪的全部段均带有自伤
+ * 反射、跨地图缝隙与自伤规则：
+ *   1. 碰到障碍物（原始实心地形或可破坏障碍物）时：改变方向（光线沿着表面反射），反射次数 -1
+ *   2. 穿过地图缝隙时：不改变方向，为了防止无限长度，反射次数 -1
+ *   3. 当反射次数归零后（bouncesLeft <= 0）：不再反射，也不再穿透地图缝隙
+ *   4. 自伤保护：发射出去的初始段不会扣发射者自己的血（且贴地图缝发射时需先穿出自身碰撞箱），
+ *      经障碍物反射或跨地图缝绕回命中发射者时正常结算自伤
  */
 export function updateContinuousBeam(
   ctx: ProjectileContext,
@@ -256,7 +254,11 @@ export function updateContinuousBeam(
   const playerBroadBuckets = ctx.playerBroadBuckets
   const obstacles = ctx.obstacles
 
-  // 全部段都带有自伤：一旦光束离开枪口时穿出射手自身碰撞箱（或发生任意边界跨越/障碍物反射），即对射手自身生效
+  // 防止任意角度发射激光扣自己血：
+  // 1) 初始直射段（未发生任何障碍物反射或跨地图缝隙前）绝不自伤；
+  // 2) 若贴着地图缝隙朝外发射，跨缝瞬间仍处于自身碰撞箱内，需等光束真正离开自身碰撞箱 (exitedSelf) 后才允许自伤；
+  // 3) 一旦发生障碍物表面反射，或跨缝并离开自身碰撞箱后绕回，立即对发射者生效自伤。
+  let hasReflectedOrWrapped = false
   let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR)
 
   const checkPlayersAt = (
@@ -277,7 +279,7 @@ export function updateContinuousBeam(
     for (let pi = 0; pi < pList.length; pi++) {
       const t = pList[pi]
       if (t.id === p.id) {
-        if (!wep.selfDamage || !exitedSelf) continue
+        if (!wep.selfDamage || !hasReflectedOrWrapped || !exitedSelf) continue
       } else if (t.team === p.team && p.team !== 'ffa' && !wep.friendlyFire) {
         continue
       }
@@ -299,7 +301,6 @@ export function updateContinuousBeam(
     if (Math.hypot(rawDx, rawDy) <= 1e-6) return null
     const cut = truncateSegmentToFree(ctx.terrain, x1, y1, x2, y2, rawDx, rawDy)
     segments.push({ x1, y1, x2: cut.x, y2: cut.y, dx: cut.dx, dy: cut.dy })
-    exitedSelf = true
     return cut
   }
 
@@ -307,7 +308,7 @@ export function updateContinuousBeam(
   let segStartY = y
   let travelled = 0
   let stepsCount = 0
-  const maxTotalSegments = 16
+  const maxTotalSegments = Math.max(16, (wep.bounces ?? 2) + 2)
   const maxSingleSegLen = Math.ceil(Math.hypot(WORLD_W, WORLD_H)) + 32
   const maxTotalSteps = Math.ceil((maxSingleSegLen * 8) / step)
 
@@ -321,7 +322,7 @@ export function updateContinuousBeam(
     const nx = wrapX(rawNx)
     const ny = wrapY(rawNy)
 
-    // 1. 跨越地图边界时：不改变方向，若前一段长度 > BEAM_SEAM_THRESHOLD 则反射次数 -1，否则 ±0；反射次数归零时不再反射
+    // 1. 穿过地图缝隙时：方向不变，反射次数 -1；反射次数归零后不再穿透地图缝隙
     if (crossedSeam) {
       const gxAfter = (nx / 20) | 0
       const gyAfter = (ny / 20) | 0
@@ -332,19 +333,17 @@ export function updateContinuousBeam(
         : null
       const nextIsFree = !nextIsTerrain && !nextOb
 
-      const endX = nextIsFree ? nx : x
-      const endY = nextIsFree ? ny : y
-      const segLen = nextIsFree ? (travelled + step) : travelled
-      if (segLen > 0) {
-        pushBeamSegment(segStartX, segStartY, endX, endY, dirX * segLen, dirY * segLen)
-      }
-      if (segLen > BEAM_SEAM_THRESHOLD) {
-        bouncesLeft--
-        if (bouncesLeft <= 0) break
-      } else if (bouncesLeft <= 0) {
-        // 反射次数已归零时，仅允许短段跨缝一次后在下一障碍物或超阈值边界处终止
-      }
       if (nextIsFree) {
+        bouncesLeft--
+        if (bouncesLeft <= 0) {
+          if (travelled > 0) {
+            pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled)
+          }
+          break
+        }
+        const segLen = travelled + step
+        pushBeamSegment(segStartX, segStartY, nx, ny, dirX * segLen, dirY * segLen)
+        hasReflectedOrWrapped = true
         x = nx
         y = ny
         segStartX = nx
@@ -353,13 +352,16 @@ export function updateContinuousBeam(
         checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0)
         continue
       }
-      // 跨界后首步即紧贴障碍物：当前段已在边界结段，继续向下执行障碍物表面反射并扣除障碍物反射次数
-      segStartX = x
-      segStartY = y
-      travelled = 0
+      // 跨缝处紧贴实心地形或障碍物：若反射次数已归零，直接在缝前结段终止，不再穿透地图缝隙
+      if (bouncesLeft <= 0) {
+        if (travelled > 0) {
+          pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled)
+        }
+        break
+      }
     }
 
-    // 2. 碰到原始实心地形障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零时不再反射
+    // 2. 碰到原始实心地形障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零后不再反射
     const gx = (nx / 20) | 0
     const gy = (ny / 20) | 0
     if (tGrid[gy * GRID_W + gx] !== 0) {
@@ -380,13 +382,15 @@ export function updateContinuousBeam(
       if (hitY) dy = -dy
       if (!hitX && !hitY) { dx = -dx; dy = -dy }
       if (ctx.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) break
+      hasReflectedOrWrapped = true
+      exitedSelf = true
       segStartX = x
       segStartY = y
       travelled = 0
       continue
     }
 
-    // 3. 碰到可破坏障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零时不再反射
+    // 3. 碰到可破坏障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零后不再反射
     const bIdx = bucketIdx(nx)
     const obsList = obstacleBroadBuckets[bIdx]
     if (obsList && obsList.length > 0) {
@@ -411,6 +415,8 @@ export function updateContinuousBeam(
         if (hitX) dx = -dx
         if (hitY) dy = -dy
         if (!hitX && !hitY) { dx = -dx; dy = -dy }
+        hasReflectedOrWrapped = true
+        exitedSelf = true
         segStartX = x
         segStartY = y
         travelled = 0
@@ -418,7 +424,7 @@ export function updateContinuousBeam(
       }
     }
 
-    // 4. 自由空间步进与玩家命中判定（全部段均带自伤）
+    // 4. 自由空间步进与玩家命中判定
     x = nx
     y = ny
     travelled += step

@@ -659,7 +659,6 @@ test('护栏·蓄力锁定方向：狙击蓄力期间瞄准输入不再改变发
   assert.equal(q.chargeAim, undefined, 'aim lock cleared on cancel')
 })
 
-import { BEAM_SEAM_THRESHOLD } from '../src/core/sim/projectiles.ts'
 import {
   SECONDARIES,
   SECONDARY_UNLOCK_ORDER,
@@ -668,14 +667,15 @@ import {
   formatSecondaryCardSubtitle,
 } from '../src/core/weapons.ts'
 
-test('护栏·高斯枪地图边界与障碍物反射矩阵：左右边界、上下边界、四角边界 × 短段(±0)/长段(-1) × 实心墙体与可破坏障碍物', () => {
+test('护栏·高斯枪设计：有反射、有自伤、穿过地图缝反射次数-1、归零后不再穿透地图缝隙、任意角度发射不扣自己血', () => {
   assert.equal(WEAPONS[4].bounces, 2, '反射次数固定为 2')
-  assert.equal(BEAM_SEAM_THRESHOLD, 1000, '跨边界段长阈值为 1000px')
+  assert.equal(WEAPONS[4].selfDamage, true, '开启自伤')
 
   const fireOnce = (
     w: World,
     shooterPos: { x: number; y: number },
     aim: number,
+    withShield = false,
   ) => {
     const p = w.addPlayer('GaussTester', 'ffa')
     p.weaponIndex = 4
@@ -683,180 +683,164 @@ test('护栏·高斯枪地图边界与障碍物反射矩阵：左右边界、上
     p.reserveAmmo[4] = 48
     p.pos = { x: shooterPos.x, y: shooterPos.y }
     p.vel = { x: 0, y: 0 }
+    if (withShield) {
+      p.shieldTimer = 5
+      p.shieldHp = 100
+    }
     w.step(DT, new Map([[p.id, input({ aim, fire: true })]]))
     const ev = w.drainEvents().find(e => e.kind === 'laser')
-    return { p, segments: (ev?.segments ?? []) as { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }[] }
+    return { p, ev, segments: (ev?.segments ?? []) as { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }[] }
   }
 
-  // ── 1. 地图左右边界（无障碍物）──
-  // 1A. 短距离跨右边界（seg0 长度 <= 阈值 1000）：跨边界不改变方向，反射次数 ±0（仍剩 2 次），随后绕全图飞行两圈半后归零停止（共 4 段）
-  {
-    const w = new World(51001, { name: 'lr-boundary-short', solids: [] })
+  // ── 1. 穿过地图左右缝隙（无障碍物）：无论短距或长距接近缝隙，每次穿缝反射次数 -1，归零后不再穿透地图缝隙（共 2 段）──
+  for (const startX of [13000, 6600]) {
+    const w = new World(51001 + startX, { name: 'lr-seam', solids: [] })
     w.config.randomSpawn = false
     w.obstacles.length = 0
-    const { segments } = fireOnce(w, { x: 13000, y: 1500 }, 0)
-    assert.equal(segments.length, 3, `短段跨右边界(±0, 剩2) + 第1次全图长段跨边界(-1, 剩1) + 第2次全图长段到边界归零停止(-1, 剩0) => 3段，实得 ${segments.length}`)
-    assert.ok((segments[0].dx ?? 0) > 0 && Math.abs(segments[0].dy ?? 0) < 1e-6, '第1段向右')
-    assert.ok(worldSegLength(segments[0]) <= BEAM_SEAM_THRESHOLD, `第1段长度 ${worldSegLength(segments[0])} <= ${BEAM_SEAM_THRESHOLD}`)
-    for (let i = 1; i < segments.length; i++) {
-      assert.ok((segments[i].dx ?? 0) > 0 && Math.abs(segments[i].dy ?? 0) < 1e-6, `跨左右边界不改变方向 (seg ${i})`)
-      assert.ok(worldSegLength(segments[i]) > 13000, `第${i + 1}段横跨全图 (${worldSegLength(segments[i])})`)
-    }
-  }
-
-  // 1B. 长距离跨右边界（seg0 长度 > 阈值 1000）：跨边界不改变方向，反射次数 -1（2->1->0），共 3 段
-  {
-    const w = new World(51002, { name: 'lr-boundary-long', solids: [] })
-    w.config.randomSpawn = false
-    w.obstacles.length = 0
-    const { p, segments } = fireOnce(w, { x: 6600, y: 1500 }, 0)
-    assert.equal(segments.length, 2, `长段跨右边界(-1, 剩1) + 全图长段到右边界归零停止(-1, 剩0) => 共 2 段，实得 ${segments.length}`)
-    assert.ok(worldSegLength(segments[0]) > BEAM_SEAM_THRESHOLD, '首段长度 > 阈值')
+    const { p, ev, segments } = fireOnce(w, { x: startX, y: 1500 }, 0)
+    assert.equal(segments.length, 2, `x=${startX} 第1次穿右缝(-1, 剩1) + 第2次到右缝归零停止(-1, 剩0, 不再穿透地图缝隙) => 2 段，实得 ${segments.length}`)
     for (let i = 0; i < segments.length; i++) {
-      assert.ok((segments[i].dx ?? 0) > 0 && Math.abs(segments[i].dy ?? 0) < 1e-6, `跨左右边界不改变方向 (seg ${i})`)
+      assert.ok((segments[i].dx ?? 0) > 0 && Math.abs(segments[i].dy ?? 0) < 1e-6, `跨左右缝不改变方向 (seg ${i})`)
     }
-    assert.ok(p.hp < 100, `跨左右边界绕回的第2段命中射手自身造成自伤，hp=${p.hp}`)
+    assert.ok(worldSegLength(segments[1]) > 13000, '第2段横跨全图到达右缝')
+    assert.ok(p.hp < 100, `跨缝绕回的第2段命中射手造成自伤，hp=${p.hp}`)
+    // 验证全图长段(13200px)在二进制协议中不发生 i16 溢出
+    const decoded = decodeServerMsgBinary(encodeServerMsgBinary({ snap: w.snapshot(), events: [ev!] }))!
+    const decLaser = decoded.events!.find(e => e.kind === 'laser')!
+    assert.ok(Math.abs((decLaser.segments![1].dx ?? 0) - (segments[1].dx ?? 0)) < 1, '13200px 长段二进制编解码无溢出')
   }
 
-  // ── 2. 地图上下边界（无障碍物，挖通垂直通道使 y=0<->4400 畅通）──
-  // 2A. 短距离跨上边界（seg0 <= 阈值 1000）：反射次数 ±0，共 4 段且方向始终向上 (dy < 0)
-  {
-    const w = new World(51003, { name: 'tb-boundary-short', solids: [] })
+  // ── 2. 穿过地图上下缝隙（无障碍物，挖通垂直通道使 y=0<->4400 畅通）：每次穿缝反射次数 -1，归零后不再穿透（共 2 段）──
+  for (const startY of [300, 2200]) {
+    const w = new World(51003 + startY, { name: 'tb-seam', solids: [] })
     w.config.randomSpawn = false
     w.obstacles.length = 0
     w.terrain.carveTunnel(3800, 2800, 400, 1600, 'vertical-seam-shaft')
-    const { segments } = fireOnce(w, { x: 4000, y: 300 }, -Math.PI / 2)
-    assert.equal(segments.length, 3, `短段跨上边界(±0, 剩2) + 第1次全高跨边界(-1, 剩1) + 第2次全高到边界归零停止(-1, 剩0) => 3段，实得 ${segments.length}`)
-    assert.ok(worldSegLength(segments[0]) <= BEAM_SEAM_THRESHOLD)
+    const { p, segments } = fireOnce(w, { x: 4000, y: startY }, -Math.PI / 2)
+    assert.equal(segments.length, 2, `y=${startY} 第1次穿上缝(-1, 剩1) + 第2次到上缝归零停止(-1, 剩0, 不再穿透) => 2 段，实得 ${segments.length}`)
     for (let i = 0; i < segments.length; i++) {
-      assert.ok((segments[i].dy ?? 0) < 0 && Math.abs(segments[i].dx ?? 0) < 1e-6, `跨上下边界方向保持向上 (seg ${i})`)
+      assert.ok((segments[i].dy ?? 0) < 0 && Math.abs(segments[i].dx ?? 0) < 1e-6, `跨上下缝方向保持向上 (seg ${i})`)
     }
+    assert.ok(p.hp < 100, `跨上下缝绕回的第2段对射手造成自伤，hp=${p.hp}`)
   }
 
-  // 2B. 长距离跨上边界（seg0 > 阈值 1000）：反射次数 -1，共 3 段且第 2 段从下边界绕回造成自伤
-  {
-    const w = new World(51004, { name: 'tb-boundary-long', solids: [] })
-    w.config.randomSpawn = false
-    w.obstacles.length = 0
-    w.terrain.carveTunnel(3800, 2800, 400, 1600, 'vertical-seam-shaft')
-    const { p, segments } = fireOnce(w, { x: 4000, y: 2200 }, -Math.PI / 2)
-    assert.equal(segments.length, 2, `长段跨上边界(-1, 剩1) + 全高到上边界归零停止(-1, 剩0) => 共 2 段，实得 ${segments.length}`)
-    assert.ok(worldSegLength(segments[0]) > BEAM_SEAM_THRESHOLD)
-    assert.ok(p.hp < 100, `跨上下边界绕回的第2段对射手造成自伤，hp=${p.hp}`)
-  }
-
-  // ── 3. 地图左右边界 + 不同障碍物（实心墙体 cover/block + 可破坏障碍物 Obstacle）──
-  // 3A. 短段跨左右边界(±0) + 右侧实心墙体反射(-1) + 短段跨回左边界(±0) + 左侧可破坏障碍物反射(-1) + 短段再跨右边界(±0) -> 命中右侧墙体归零停止
+  // ── 3. 地图左右缝隙 + 实心墙体与可破坏障碍物 ──
+  // 3A. 向右先穿过右缝(-1, 剩1) -> 撞右侧可破坏掩体反射向左(-1, 剩0) -> 回到左缝时因反射次数已归零，不再穿透地图缝隙（共 3 段）
   {
     const w = new World(51005, {
-      name: 'lr-boundary-mixed-obstacles',
-      solids: [
-        { x: 240, y: 1200, w: 40, h: 600, kind: 'cover' }, // 左边界右侧 240px 的实心墙
-      ],
+      name: 'lr-seam-then-ob',
+      solids: [{ x: 12800, y: 1200, w: 40, h: 600, kind: 'cover' }],
     })
     w.config.randomSpawn = false
     w.obstacles.length = 0
-    // 右边界左侧 12900px 放置可破坏障碍物
     w.obstacles.push({
-      id: 'test_ob_lr', x: 12880, y: 1200, w: 60, h: 600,
+      id: 'test_ob_lr', x: 240, y: 1200, w: 60, h: 600,
       hp: 260, maxHp: 260, kind: 'box', color: '#334155', borderColor: '#38bdf8', label: '边界测试掩体',
     })
     const obHp0 = w.obstacles[0].hp
-    const { p, segments } = fireOnce(w, { x: 13050, y: 1500 }, 0)
-    // 轨迹：
-    // seg0: 13074 -> 13200(0) [向右，短段跨界 ±0，剩2]
-    // seg1: 0 -> 240 [向右，撞实心墙反射向左，剩1]
-    // seg2: 240 -> 0(13200) [向左，短段跨界 ±0，剩1]
-    // seg3: 13200 -> 12940 [向左，撞可破坏掩体反射向右，掩体掉血，剩0]
-    // seg4: 12940 -> 13200(0) [向右，短段跨界 ±0，剩0]
-    // seg5: 0 -> 240 [向右，撞实心墙，因反射次数=0不再反射！]
-    assert.equal(segments.length, 6, `跨左右边界双侧障碍物走廊应产生 6 段（含 3 次跨缝与 2 次障碍物反射），实得 ${segments.length}`)
-    assert.ok((segments[0].dx ?? 0) > 0, 'seg0 向右接近右边界')
-    assert.ok((segments[1].dx ?? 0) > 0, 'seg1 跨过右边界继续向右撞实心墙')
-    assert.ok((segments[2].dx ?? 0) < 0, 'seg2 被实心墙反射向左接近左边界')
-    assert.ok((segments[3].dx ?? 0) < 0, 'seg3 跨过左边界继续向左撞可破坏掩体')
-    assert.ok((segments[4].dx ?? 0) > 0, 'seg4 被可破坏掩体反射向右接近右边界')
-    assert.ok((segments[5].dx ?? 0) > 0, 'seg5 跨过右边界到达实心墙并因反射次数归零停止')
-    assert.ok(w.obstacles[0].hp < obHp0, '可破坏障碍物受到高斯枪伤害并触发表面反射')
-    assert.ok(p.hp < 100, '在跨边界走廊内往返反射的光束对射手自身造成自伤')
+    // 射手在 x=100 朝左射击：
+    // seg0: 76 -> 0 [向左穿左缝 (-1, 剩1)]
+    // seg1: 13200 -> 12840 [向左撞实心墙反射向右 (-1, 剩0)]
+    // seg2: 12840 -> 13200 [向右到达右缝，此时反射次数=0，不再穿透右缝！因此 x=100 的射手和 x=240 的掩体都不会被隔缝打到]
+    const { p, segments } = fireOnce(w, { x: 100, y: 1500 }, Math.PI)
+    assert.equal(segments.length, 3, `穿左缝(-1) + 撞墙反射(-1) => 归零后到达右缝停止（不再穿透缝隙），共 3 段，实得 ${segments.length}`)
+    assert.ok((segments[0].dx ?? 0) < 0, 'seg0 向左到左缝')
+    assert.ok((segments[1].dx ?? 0) < 0, 'seg1 跨过左缝撞 x=12800 实心墙')
+    assert.ok((segments[2].dx ?? 0) > 0, 'seg2 反射向右并在右缝处停止（不穿透右缝）')
+    assert.equal(p.hp, 100, '归零后不再穿透右缝，因此右缝另一侧 x=100 的射手不受伤害')
+    assert.equal(w.obstacles[0].hp, obHp0, '归零后不再穿透右缝，因此右缝另一侧 x=240 的掩体不受伤害')
   }
 
-  // 3B. 长段跨左右边界(-1) + 撞实心障碍物反射(-1) => 反射次数归零(0)，回程碰到第二块障碍物时不再反射
+  // 3B. 穿过右缝(-1, 剩1) + 撞可破坏掩体反射向左(-1, 剩0)，掩体掉血且反射段在缝前停止
   {
-    const w = new World(51006, {
-      name: 'lr-boundary-long-plus-obstacle',
-      solids: [
-        { x: 240, y: 1200, w: 40, h: 600, kind: 'block' },
-        { x: 10500, y: 1200, w: 40, h: 600, kind: 'cover' },
-      ],
-    })
+    const w = new World(51006, { name: 'lr-seam-hit-ob', solids: [] })
     w.config.randomSpawn = false
     w.obstacles.length = 0
-    // 射手在 x=11000（距离右边界 2200px > 1000）：
-    // seg0: 11024 -> 13200(0) [长段 2176px > 1000，跨界扣 1 次反射：2->1]
-    // seg1: 0 -> 240 [撞 x=240 方块反射向左，扣 1 次反射：1->0]
-    // seg2: 240 -> 0(13200) [短段 240px <= 1000，跨界 ±0：仍为 0]
-    // seg3: 13200 -> 10540 [撞 x=10500 掩体，此时反射次数=0，不再反射！]
-    const { segments } = fireOnce(w, { x: 11000, y: 1500 }, 0)
-    assert.equal(segments.length, 4, `长段跨界(-1) + 障碍物反射(-1) 后归零，撞第二障碍物不再反射 => 4段，实得 ${segments.length}`)
-    assert.ok((segments[0].dx ?? 0) > 0)
-    assert.ok((segments[1].dx ?? 0) > 0)
-    assert.ok((segments[2].dx ?? 0) < 0)
-    assert.ok((segments[3].dx ?? 0) < 0)
+    w.obstacles.push({
+      id: 'test_ob_lr2', x: 240, y: 1200, w: 60, h: 600,
+      hp: 260, maxHp: 260, kind: 'box', color: '#334155', borderColor: '#38bdf8', label: '边界测试掩体',
+    })
+    // 射手在 x=120 朝右撞 x=240 掩体：
+    // seg0: 144 -> 240 [撞掩体反射向左 (-1, 剩1)]
+    // seg1: 240 -> 0 [向左穿过射手(x=120)造成自伤，到达左缝 (-1, 剩0) 停止，不再穿透左缝！]
+    const { p, segments } = fireOnce(w, { x: 120, y: 1500 }, 0)
+    assert.equal(segments.length, 2, `撞掩体反射(-1, 剩1) + 到达左缝(-1, 剩0, 归零不再穿透) => 2 段，实得 ${segments.length}`)
+    assert.ok(w.obstacles[0].hp < 260, '可破坏掩体受创并反射')
+    assert.ok(p.hp < 100, '反射段经过射手造成自伤')
   }
 
-  // ── 4. 地图上下边界 + 不同障碍物（实心平台 platform + 可破坏障碍物 Obstacle）──
-  // 4A. 短段跨上下边界(±0) + 下边界上方实心平台反射(-1) + 短段跨回上下边界(±0) + 上边界下方可破坏障碍物反射(-1)
+  // ── 4. 地图上下缝隙 + 实心平台反射 ──
   {
-    const w = new World(51007, {
-      name: 'tb-boundary-mixed-obstacles',
-      solids: [
-        { x: 3800, y: 4120, w: 400, h: 30, kind: 'platform' }, // 下边界内侧 y=4120..4150 实心平台
-      ],
-    })
+    const w = new World(51007, { name: 'tb-seam-platform', solids: [] })
     w.config.randomSpawn = false
     w.obstacles.length = 0
     w.terrain.carveTunnel(3700, 2800, 600, 1600, 'vertical-seam-shaft')
-    // 重新加上 y=4120 的实心平台（carveTunnel 清空了 2800..4400）
     w.terrain.addSolidBlock(3800, 4120, 400, 30, '#334155', '#38bdf8', 'platform', 'bottom-seam-plat')
-    // 上边界下方 y=260 放置可破坏障碍物
-    w.obstacles.push({
-      id: 'test_ob_tb', x: 3900, y: 260, w: 200, h: 60,
-      hp: 260, maxHp: 260, kind: 'box', color: '#334155', borderColor: '#38bdf8', label: '上下边界测试掩体',
-    })
-    const { p, segments } = fireOnce(w, { x: 4000, y: 160 }, -Math.PI / 2)
-    assert.equal(segments.length, 6, `跨上下边界双侧障碍物竖井应产生 6 段，实得 ${segments.length}`)
-    assert.ok((segments[0].dy ?? 0) < 0, 'seg0 向上接近上边界')
-    assert.ok((segments[1].dy ?? 0) < 0, 'seg1 跨上边界后继续向上撞 y=4120 平台底面')
-    assert.ok((segments[2].dy ?? 0) > 0, 'seg2 被平台反射向下接近下边界')
-    assert.ok((segments[3].dy ?? 0) > 0, 'seg3 跨下边界后继续向下撞 y=260 可破坏掩体顶面')
-    assert.ok((segments[4].dy ?? 0) < 0, 'seg4 被可破坏掩体反射向上接近上边界')
-    assert.ok((segments[5].dy ?? 0) < 0, 'seg5 跨上边界到达 y=4120 平台并归零停止')
-    assert.ok(w.obstacles[0].hp < 260, '上下边界可破坏障碍物受创并反射光束')
-    assert.ok(p.hp < 100, '上下边界反射光束经过射手时造成自伤')
+    // 射手在 (4000, 4250) 朝上射击：
+    // seg0: 4214 -> 4150 [向上撞 y=4120..4150 平台底面反射向下 (-1, 剩1)]
+    // seg1: 4150 -> 4400 [向下穿过射手(4250)自伤，到达下缝 (-1, 剩0) 停止，不再穿透下缝！]
+    const { p, segments } = fireOnce(w, { x: 4000, y: 4250 }, -Math.PI / 2)
+    assert.equal(segments.length, 2, `撞平台底面反射(-1, 剩1) + 到下缝归零停止(-1, 剩0) => 2 段，实得 ${segments.length}`)
+    assert.ok((segments[0].dy ?? 0) < 0, 'seg0 向上撞平台')
+    assert.ok((segments[1].dy ?? 0) > 0, 'seg1 反射向下经过射手并在下缝停止')
+    assert.ok(p.hp < 100, '上下边界反射段经过射手造成自伤')
   }
 
-  // ── 5. 地图四角边界（同时跨越左右与上下边界）+ 斜向障碍物镜面反射 ──
+  // ── 5. 跨右缝 + 斜向撞击竖直墙面镜面反射 + 归零后到达左缝停止 ──
   {
     const w = new World(51008, {
-      name: 'corner-boundary-obstacles',
-      solids: [
-        { x: 300, y: 4000, w: 40, h: 350, kind: 'cover' }, // 左下角（跨过右上角 x=13200, y=0 后对应 x=300, y=4100）竖直墙面
-      ],
+      name: 'corner-seam-obstacle',
+      solids: [{ x: 80, y: 20, w: 40, h: 400, kind: 'cover' }],
     })
     w.config.randomSpawn = false
     w.obstacles.length = 0
     w.terrain.carveTunnel(0, 2800, 800, 1600, 'corner-shaft-left')
     w.terrain.carveTunnel(12400, 2800, 800, 1600, 'corner-shaft-right')
-    w.terrain.addSolidBlock(300, 4000, 40, 350, '#1f2937', '#f97316', 'cover', 'corner-wall')
-    // 射手在右上角 (13050, 150) 朝右上 -45° 射击：
-    // 先短距离跨过 y=0 上边界 (±0) 与 x=13200 右边界 (±0)，然后撞上 x=300 竖直墙面发生水平镜面反射 (dx 变负, dy 保持负)
-    const { segments } = fireOnce(w, { x: 13050, y: 150 }, -Math.PI / 4)
-    assert.ok(segments.length >= 4, `四角双轴跨边界+墙面反射至少产生 4 段，实得 ${segments.length}`)
-    assert.ok((segments[0].dx ?? 0) > 0 && (segments[0].dy ?? 0) < 0, '初始右上方向')
-    // 找到撞击 x=300 竖直墙面后的反射段：dx 应反转为负，dy 仍为负（沿竖直表面镜面反射）
-    const reflectedSeg = segments.find(s => (s.dx ?? 0) < 0 && (s.dy ?? 0) < 0)
-    assert.ok(reflectedSeg, '跨过四角边界后撞击竖直障碍物表面，水平分量反转 (dx<0) 且垂直分量保持 (dy<0)')
+    // 射手在 (13050, 350) 朝右上 -45° 射击：
+    // seg0: 跨过 x=13200 右缝 (-1, 剩1)
+    // seg1: 撞上 x=80 竖直墙面发生水平镜面反射 (-1, 剩0, dx 变负, dy 保持负)
+    // seg2: 向左上行进到达 x=0 左缝时因反射次数已归零停止（不再穿透缝隙）
+    const { segments } = fireOnce(w, { x: 13050, y: 350 }, -Math.PI / 4)
+    assert.equal(segments.length, 3, `跨右缝(-1) + 撞竖直墙反射(-1) + 归零后到左缝停止 => 3 段，实得 ${segments.length}`)
+    assert.ok((segments[0].dx ?? 0) > 0 && (segments[0].dy ?? 0) < 0, 'seg0 右上')
+    assert.ok((segments[1].dx ?? 0) > 0 && (segments[1].dy ?? 0) < 0, 'seg1 跨右缝继续右上')
+    assert.ok((segments[2].dx ?? 0) < 0 && (segments[2].dy ?? 0) < 0, 'seg2 撞竖直墙后水平反转 (dx<0, dy<0)')
+  }
+
+  // ── 6. 发射不自伤保护：任意角度（含贴近地图缝隙、开启护盾）发射出去的光束绝不会在离枪时扣自己血 ──
+  {
+    for (const withShield of [false, true]) {
+      for (const px of [6600, 13182, 13186, 13192, 8]) {
+        for (let deg = -85; deg <= 85; deg += 5) {
+          if (deg === 0) continue // 0° 水平跨缝绕全图 13200px 回来属于正常跨缝自伤
+          const w = new World(52000 + deg, { name: 'no-self-hit-on-fire', solids: [] })
+          w.config.randomSpawn = false
+          w.obstacles.length = 0
+          w.terrain.grid.fill(0)
+          const { p } = fireOnce(w, { x: px, y: 2200 }, (deg * Math.PI) / 180, withShield)
+          assert.equal(p.hp, 100, `px=${px} shield=${withShield} deg=${deg} 发射不扣自己血`)
+          if (withShield) assert.equal(p.shieldHp, 100, `px=${px} deg=${deg} 发射不扣自己护盾`)
+        }
+      }
+    }
+  }
+
+  // ── 7. 渲染裁剪不变量：地面朝天花板射击时（|dy|=2436 > WORLD_H/2），从天花板反射回地面的光束必须在玩家视口内可见 ──
+  {
+    const w = new World(53000, defaultMapData())
+    w.config.randomSpawn = false
+    const { p, segments } = fireOnce(w, { x: 1500, y: 2784 }, -Math.PI / 2)
+    assert.equal(segments.length, 3, '地面朝天花板射击反射 2 次共 3 段')
+    const cam = { x: p.pos.x, y: p.pos.y }
+    const downwardSeg = segments[1]
+    assert.ok((downwardSeg.dy ?? 0) > 2200, '第 2 段从天花板向下反射回地面 (dy > WORLD_H/2)')
+    const polys = expandBeamSegments(
+      [downwardSeg],
+      (wx, wy) => ({ x: wrapDeltaX(cam.x, wx), y: wrapDeltaY(cam.y, wy) }),
+      960, 540,
+    )
+    const visibleAtPlayer = polys.some(pl => Math.min(pl.y1, pl.y2) < 0 && Math.max(pl.y1, pl.y2) >= 0)
+    assert.ok(visibleAtPlayer, '从天花板反射回地面的光束在玩家屏幕视口内必须有可见线段副本（不能因起点 wrap 到 +1985 而被误裁）')
   }
 })
 

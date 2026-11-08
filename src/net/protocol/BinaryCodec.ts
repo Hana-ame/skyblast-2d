@@ -1269,14 +1269,14 @@ function encodeWorldEvent(w: ByteWriter, e: WorldEvent): void {
     w.ensure(4 + e.segments.length * 8)
     w.u16(e.playerId ?? 0)
     w.str(e.weaponLabel ?? '高斯枪')
-    w.ensure(2 + e.segments.length * 8)
+    w.ensure(2 + e.segments.length * 16)
     w.u8(e.segments.length)
     for (let i = 0; i < e.segments.length; i++) {
       const s = e.segments[i]
       w.u16(qPosX(s.x1)); w.u16(qPosY(s.y1)); w.u16(qPosX(s.x2)); w.u16(qPosY(s.y2))
-      // 真实位移（可为负、可超过世界尺寸）→ 用 i16 保证跨接缝/长段不折叠
-      w.i16(Math.round((s.dx ?? 0) * 4))
-      w.i16(Math.round((s.dy ?? 0) * 4))
+      // 真实位移（可为负、可达到全图宽度 13200px，i16*4 会在 >8191px 时溢出变负）→ 用 i32 保证长段无溢出
+      w.i32(Math.round((s.dx ?? 0) * 16))
+      w.i32(Math.round((s.dy ?? 0) * 16))
     }
     return
   }
@@ -1315,8 +1315,8 @@ function decodeWorldEvent(r: ByteReader): WorldEvent {
     const segments = new Array(segLen)
     for (let i = 0; i < segLen; i++) {
       const x1 = uPosX(r.u16()), y1 = uPosY(r.u16()), x2 = uPosX(r.u16()), y2 = uPosY(r.u16())
-      const dx = r.i16() / 4
-      const dy = r.i16() / 4
+      const dx = r.i32() / 16
+      const dy = r.i32() / 16
       segments[i] = { x1, y1, x2, y2, dx, dy }
     }
     return { kind: 'laser', x, y, duration, color, playerId, weaponLabel, segments }

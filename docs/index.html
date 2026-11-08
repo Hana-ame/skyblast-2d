@@ -401,7 +401,7 @@
               <p>· <strong class="text-white">补给与连死阶梯</strong>：高斯枪/M249/引力枪只能从空投特武箱获得；副手按连续阵亡依次解锁：手榴弹(默认) → 障碍物(连死1) → 100HP不溢出护盾(连死2) → Teleport(连死3) → 替身人偶(连死4或特殊补给拾取)。</p>
               <p>· <strong class="text-white">友军伤害</strong>：默认只有 <span class="text-amber-300">手榴弹 / 高斯枪 / 引力枪 / 火箭筒</span> 会伤害队友与自己，其余枪械友伤/自伤关闭；
                 两者均为可选项（数值后台可逐武器开关，手雷在全局配置里）。</p>
-              <p>· <strong class="text-white">高斯反射与自伤</strong>：高斯枪反射次数=2，碰到障碍物沿表面反射并扣 1 次反射，跨地图边界方向不变（前段超阈值扣 1 次，否则 ±0），全部段均带自伤。</p>
+              <p>· <strong class="text-white">高斯反射与自伤</strong>：高斯枪反射次数=2，碰到障碍物沿表面反射并扣 1 次反射，穿过地图缝隙时方向不变且反射次数 -1，归零后不再反射也不再穿透地图缝隙；发射时不伤自己，反射或跨缝绕回命中自身会造成自伤。</p>
               <p class="text-slate-400">· PeerJS 配对面板将接入 net/transport/Peer.ts（联机入口为下一里程碑）。</p>
             </div>
             <div class="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
@@ -544,6 +544,6 @@
   <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
   <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=1eca4f014e"></script>
+  <script src="./bundle.js?v=84d20dcb14"></script>
 </body>
 </html>

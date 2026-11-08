@@ -1112,7 +1112,6 @@
   }
 
   // src/core/sim/projectiles.ts
-  var BEAM_SEAM_THRESHOLD = 1e3;
   var SHIELD_HITBOX_PAD = 8;
   function createProjectile(id, owner, x, y, vx, vy, opts) {
     return {
@@ -1238,6 +1237,7 @@
     const obstacleBroadBuckets = ctx2.obstacleBroadBuckets;
     const playerBroadBuckets = ctx2.playerBroadBuckets;
     const obstacles = ctx2.obstacles;
+    let hasReflectedOrWrapped = false;
     let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR);
     const checkPlayersAt = (px, py, segStartX2, segStartY2, dirX, dirY, distFromSegStart) => {
       if (!exitedSelf && !isPointInPlayerBeamHitbox(p, px, py, headR)) {
@@ -1249,7 +1249,7 @@
       for (let pi = 0; pi < pList.length; pi++) {
         const t = pList[pi];
         if (t.id === p.id) {
-          if (!wep.selfDamage || !exitedSelf) continue;
+          if (!wep.selfDamage || !hasReflectedOrWrapped || !exitedSelf) continue;
         } else if (t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) {
           continue;
         }
@@ -1276,14 +1276,13 @@
       if (Math.hypot(rawDx, rawDy) <= 1e-6) return null;
       const cut = truncateSegmentToFree(ctx2.terrain, x1, y1, x2, y2, rawDx, rawDy);
       segments.push({ x1, y1, x2: cut.x, y2: cut.y, dx: cut.dx, dy: cut.dy });
-      exitedSelf = true;
       return cut;
     };
     let segStartX = x;
     let segStartY = y;
     let travelled = 0;
     let stepsCount = 0;
-    const maxTotalSegments = 16;
+    const maxTotalSegments = Math.max(16, (wep.bounces ?? 2) + 2);
     const maxSingleSegLen = Math.ceil(Math.hypot(WORLD_W, WORLD_H)) + 32;
     const maxTotalSteps = Math.ceil(maxSingleSegLen * 8 / step);
     while (segments.length < maxTotalSegments && stepsCount < maxTotalSteps) {
@@ -1302,18 +1301,17 @@
         const nextObsList = obstacleBroadBuckets[bucketIdx(nx)];
         const nextOb = !nextIsTerrain && nextObsList && nextObsList.length > 0 ? obstacleAtBucket(nextObsList, nx, ny, 0) : null;
         const nextIsFree = !nextIsTerrain && !nextOb;
-        const endX = nextIsFree ? nx : x;
-        const endY = nextIsFree ? ny : y;
-        const segLen = nextIsFree ? travelled + step : travelled;
-        if (segLen > 0) {
-          pushBeamSegment(segStartX, segStartY, endX, endY, dirX * segLen, dirY * segLen);
-        }
-        if (segLen > BEAM_SEAM_THRESHOLD) {
-          bouncesLeft--;
-          if (bouncesLeft <= 0) break;
-        } else if (bouncesLeft <= 0) {
-        }
         if (nextIsFree) {
+          bouncesLeft--;
+          if (bouncesLeft <= 0) {
+            if (travelled > 0) {
+              pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+            }
+            break;
+          }
+          const segLen = travelled + step;
+          pushBeamSegment(segStartX, segStartY, nx, ny, dirX * segLen, dirY * segLen);
+          hasReflectedOrWrapped = true;
           x = nx;
           y = ny;
           segStartX = nx;
@@ -1322,9 +1320,12 @@
           checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0);
           continue;
         }
-        segStartX = x;
-        segStartY = y;
-        travelled = 0;
+        if (bouncesLeft <= 0) {
+          if (travelled > 0) {
+            pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+          }
+          break;
+        }
       }
       const gx = nx / 20 | 0;
       const gy = ny / 20 | 0;
@@ -1349,6 +1350,8 @@
           dy = -dy;
         }
         if (ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) break;
+        hasReflectedOrWrapped = true;
+        exitedSelf = true;
         segStartX = x;
         segStartY = y;
         travelled = 0;
@@ -1380,6 +1383,8 @@
             dx = -dx;
             dy = -dy;
           }
+          hasReflectedOrWrapped = true;
+          exitedSelf = true;
           segStartX = x;
           segStartY = y;
           travelled = 0;
@@ -5319,18 +5324,24 @@
   // src/web/render/beamGeometry.ts
   function expandBeamSegments(segments, toScreen, halfW, halfH) {
     const out = [];
+    const padX = halfW + 200;
+    const padY = halfH + 200;
     for (const seg of segments) {
       const from = toScreen(seg.x1, seg.y1);
       const dx = seg.dx ?? wrapDeltaX(seg.x1, seg.x2);
       const dy = seg.dy ?? wrapDeltaY(seg.y1, seg.y2);
       out.push({ x1: from.x, y1: from.y, x2: from.x + dx, y2: from.y + dy });
-      for (const ox of [-WORLD_W, WORLD_W]) {
-        if (from.x + ox < -halfW - 200 || from.x + ox > halfW + 200) continue;
-        out.push({ x1: from.x + ox, y1: from.y, x2: from.x + dx + ox, y2: from.y + dy });
-      }
-      for (const oy of [-WORLD_H, WORLD_H]) {
-        if (from.y + oy < -halfH - 200 || from.y + oy > halfH + 200) continue;
-        out.push({ x1: from.x, y1: from.y + oy, x2: from.x + dx, y2: from.y + dy + oy });
+      for (const ox of [-WORLD_W, 0, WORLD_W]) {
+        for (const oy of [-WORLD_H, 0, WORLD_H]) {
+          if (ox === 0 && oy === 0) continue;
+          const x1 = from.x + ox;
+          const y1 = from.y + oy;
+          const x2 = x1 + dx;
+          const y2 = y1 + dy;
+          if (Math.max(x1, x2) < -padX || Math.min(x1, x2) > padX) continue;
+          if (Math.max(y1, y2) < -padY || Math.min(y1, y2) > padY) continue;
+          out.push({ x1, y1, x2, y2 });
+        }
       }
     }
     return out;

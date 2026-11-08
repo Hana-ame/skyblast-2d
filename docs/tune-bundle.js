@@ -1074,7 +1074,6 @@
   }
 
   // src/core/sim/projectiles.ts
-  var BEAM_SEAM_THRESHOLD = 1e3;
   var SHIELD_HITBOX_PAD = 8;
   function createProjectile(id, owner, x, y, vx, vy, opts) {
     return {
@@ -1200,6 +1199,7 @@
     const obstacleBroadBuckets = ctx2.obstacleBroadBuckets;
     const playerBroadBuckets = ctx2.playerBroadBuckets;
     const obstacles = ctx2.obstacles;
+    let hasReflectedOrWrapped = false;
     let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR);
     const checkPlayersAt = (px, py, segStartX2, segStartY2, dirX, dirY, distFromSegStart) => {
       if (!exitedSelf && !isPointInPlayerBeamHitbox(p, px, py, headR)) {
@@ -1211,7 +1211,7 @@
       for (let pi = 0; pi < pList.length; pi++) {
         const t = pList[pi];
         if (t.id === p.id) {
-          if (!wep.selfDamage || !exitedSelf) continue;
+          if (!wep.selfDamage || !hasReflectedOrWrapped || !exitedSelf) continue;
         } else if (t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) {
           continue;
         }
@@ -1238,14 +1238,13 @@
       if (Math.hypot(rawDx, rawDy) <= 1e-6) return null;
       const cut = truncateSegmentToFree(ctx2.terrain, x1, y1, x2, y2, rawDx, rawDy);
       segments.push({ x1, y1, x2: cut.x, y2: cut.y, dx: cut.dx, dy: cut.dy });
-      exitedSelf = true;
       return cut;
     };
     let segStartX = x;
     let segStartY = y;
     let travelled = 0;
     let stepsCount = 0;
-    const maxTotalSegments = 16;
+    const maxTotalSegments = Math.max(16, (wep.bounces ?? 2) + 2);
     const maxSingleSegLen = Math.ceil(Math.hypot(WORLD_W, WORLD_H)) + 32;
     const maxTotalSteps = Math.ceil(maxSingleSegLen * 8 / step);
     while (segments.length < maxTotalSegments && stepsCount < maxTotalSteps) {
@@ -1264,18 +1263,17 @@
         const nextObsList = obstacleBroadBuckets[bucketIdx(nx)];
         const nextOb = !nextIsTerrain && nextObsList && nextObsList.length > 0 ? obstacleAtBucket(nextObsList, nx, ny, 0) : null;
         const nextIsFree = !nextIsTerrain && !nextOb;
-        const endX = nextIsFree ? nx : x;
-        const endY = nextIsFree ? ny : y;
-        const segLen = nextIsFree ? travelled + step : travelled;
-        if (segLen > 0) {
-          pushBeamSegment(segStartX, segStartY, endX, endY, dirX * segLen, dirY * segLen);
-        }
-        if (segLen > BEAM_SEAM_THRESHOLD) {
-          bouncesLeft--;
-          if (bouncesLeft <= 0) break;
-        } else if (bouncesLeft <= 0) {
-        }
         if (nextIsFree) {
+          bouncesLeft--;
+          if (bouncesLeft <= 0) {
+            if (travelled > 0) {
+              pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+            }
+            break;
+          }
+          const segLen = travelled + step;
+          pushBeamSegment(segStartX, segStartY, nx, ny, dirX * segLen, dirY * segLen);
+          hasReflectedOrWrapped = true;
           x = nx;
           y = ny;
           segStartX = nx;
@@ -1284,9 +1282,12 @@
           checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0);
           continue;
         }
-        segStartX = x;
-        segStartY = y;
-        travelled = 0;
+        if (bouncesLeft <= 0) {
+          if (travelled > 0) {
+            pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+          }
+          break;
+        }
       }
       const gx = nx / 20 | 0;
       const gy = ny / 20 | 0;
@@ -1311,6 +1312,8 @@
           dy = -dy;
         }
         if (ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) break;
+        hasReflectedOrWrapped = true;
+        exitedSelf = true;
         segStartX = x;
         segStartY = y;
         travelled = 0;
@@ -1342,6 +1345,8 @@
             dx = -dx;
             dy = -dy;
           }
+          hasReflectedOrWrapped = true;
+          exitedSelf = true;
           segStartX = x;
           segStartY = y;
           travelled = 0;
@@ -3299,7 +3304,7 @@
       w.ensure(4 + e.segments.length * 8);
       w.u16(e.playerId ?? 0);
       w.str(e.weaponLabel ?? "\u9AD8\u65AF\u67AA");
-      w.ensure(2 + e.segments.length * 8);
+      w.ensure(2 + e.segments.length * 16);
       w.u8(e.segments.length);
       for (let i = 0; i < e.segments.length; i++) {
         const s = e.segments[i];
@@ -3307,8 +3312,8 @@
         w.u16(qPosY(s.y1));
         w.u16(qPosX(s.x2));
         w.u16(qPosY(s.y2));
-        w.i16(Math.round((s.dx ?? 0) * 4));
-        w.i16(Math.round((s.dy ?? 0) * 4));
+        w.i32(Math.round((s.dx ?? 0) * 16));
+        w.i32(Math.round((s.dy ?? 0) * 16));
       }
       return;
     }
