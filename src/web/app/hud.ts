@@ -1,13 +1,61 @@
-// web/app/hud.ts —— HUD / 大厅与死亡界面配装按钮状态（只读权威世界）
+// web/app/hud.ts —— HUD / 大厅与死亡界面配装按钮状态（只读权威世界，统一由 core/weapons.ts 单一数据源驱动）
 import { world, localPlayer, pendingLoadout } from './context.ts'
-import { WEAPONS, SECONDARIES } from '../../core/weapons.ts'
+import {
+  WEAPONS,
+  SECONDARIES,
+  isSecondaryUnlocked,
+  getHighestUnlockedSecondary,
+  formatWeaponCardSubtitle,
+  formatSecondaryButtonTitle,
+  formatSecondaryCardSubtitle,
+} from '../../core/weapons.ts'
 import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { clamp, wrapDist } from '../../core/wrap.ts'
 import { showToast } from './toast.ts'
 
+/** 将死亡界面与待机大厅中的主/副武器卡片文案统一同步自 core/weapons.ts + world.config */
+export function syncLoadoutTextFromSingleSource(): void {
+  document.querySelectorAll('.death-wep-btn').forEach((btn) => {
+    const slot = Number(btn.getAttribute('data-wep') || 0)
+    const wep = WEAPONS[slot]
+    if (!wep) return
+    const divs = btn.querySelectorAll('div')
+    if (divs[0]) divs[0].textContent = wep.shortName
+    if (divs[1]) divs[1].textContent = formatWeaponCardSubtitle(wep)
+  })
+
+  document.querySelectorAll('.lobby-wep-btn').forEach((btn, idx) => {
+    const slot = Number(btn.getAttribute('data-wep') || 0)
+    const wep = WEAPONS[slot]
+    if (!wep) return
+    const divs = btn.querySelectorAll('div')
+    if (divs[0]) divs[0].textContent = `${idx + 1}. ${wep.shortName}`
+    if (divs[1]) divs[1].textContent = formatWeaponCardSubtitle(wep)
+  })
+
+  document.querySelectorAll('.death-sec-btn').forEach((btn) => {
+    const sec = btn.getAttribute('data-sec') || 'frag'
+    const def = SECONDARIES[sec]
+    if (!def) return
+    btn.textContent = formatSecondaryButtonTitle(def, true)
+  })
+
+  document.querySelectorAll('.lobby-sec-btn').forEach((btn) => {
+    const sec = btn.getAttribute('data-sec') || 'frag'
+    const def = SECONDARIES[sec]
+    if (!def) return
+    const divs = btn.querySelectorAll('div')
+    if (divs[0]) divs[0].textContent = formatSecondaryButtonTitle(def, false)
+    if (divs[1]) divs[1].textContent = formatSecondaryCardSubtitle(def, world.config)
+  })
+}
+
 // ── HUD 更新 ──
 export function updateHudWeaponButtons(): void {
+  syncLoadoutTextFromSingleSource()
   // 死亡界面：主/副武器选中态（重生时套用 pendingLoadout）；只读牌由 updateHUD 每帧刷新
+  const streak = localPlayer.deathStreak ?? 0
+  const dollCharges = localPlayer.dollCharges ?? 0
 
   document.querySelectorAll('.death-wep-btn').forEach((btn) => {
     const slot = Number(btn.getAttribute('data-wep') || 0)
@@ -16,16 +64,23 @@ export function updateHudWeaponButtons(): void {
       : 'death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500'
   })
   document.querySelectorAll('.death-sec-btn').forEach((btn) => {
-    const sec = btn.getAttribute('data-sec')
-    const def = sec ? SECONDARIES[sec] : undefined
-    const noCharge = sec === 'doll' && localPlayer.dollCharges <= 0
-    btn.className = 'death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs ' +
-      (sec === pendingLoadout.secondaryType
-        ? 'border-rose-400 bg-rose-500/20 font-extrabold text-white'
-        : 'border-slate-700 bg-slate-950/60 font-semibold text-slate-400') +
-      (noCharge || def?.supplyOnly && sec === 'doll' ? ' opacity-60 cursor-not-allowed' : '')
-    ;(btn as HTMLButtonElement).disabled = sec === 'doll' && localPlayer.dollCharges <= 0
+    const sec = btn.getAttribute('data-sec') || 'frag'
+    const unlocked = isSecondaryUnlocked(sec, streak, dollCharges)
+    const isSelected = sec === pendingLoadout.secondaryType
+    btn.className = 'death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs transition ' +
+      (isSelected
+        ? 'border-2 border-rose-400 bg-rose-500/20 font-extrabold text-white'
+        : unlocked
+          ? 'border-slate-600 bg-slate-900/90 font-semibold text-slate-200 hover:border-rose-400/60'
+          : 'border-slate-800 bg-slate-950/40 font-semibold text-slate-500 opacity-55 cursor-not-allowed')
+    ;(btn as HTMLButtonElement).disabled = !unlocked
   })
+  const streakNote = document.getElementById('deathSecNote')
+  if (streakNote) {
+    const highest = SECONDARIES[getHighestUnlockedSecondary(streak, dollCharges)] ?? SECONDARIES.frag
+    streakNote.textContent = `当前连死 ${streak} 次 · 已解锁至【${highest.icon} ${highest.name}】（获得击杀重置连死）`
+  }
+
   document.querySelectorAll('.lobby-wep-btn').forEach((btn) => {
     const slot = Number(btn.getAttribute('data-wep') || 0)
     btn.className = slot === pendingLoadout.weaponIndex
@@ -33,15 +88,16 @@ export function updateHudWeaponButtons(): void {
       : 'lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500'
   })
   document.querySelectorAll('.lobby-sec-btn').forEach((btn) => {
-    const sec = btn.getAttribute('data-sec')
-    const def = sec ? SECONDARIES[sec] : undefined
-    if (def?.supplyOnly) {
+    const sec = btn.getAttribute('data-sec') || 'frag'
+    const unlocked = isSecondaryUnlocked(sec, streak, dollCharges)
+    if (!unlocked) {
       btn.className = 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60'
     } else {
       btn.className = sec === pendingLoadout.secondaryType
         ? 'lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition'
         : 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500'
     }
+    ;(btn as HTMLButtonElement).disabled = !unlocked
   })
 }
 
@@ -78,15 +134,22 @@ export function tryChangePrimaryWeapon(slotIdx: number): void {
 export function tryChangeSecondaryWeapon(secType: string): void {
   const def = SECONDARIES[secType]
   if (!def) return
-  if (def?.supplyOnly) {
-    // 补给专属例外：只有持有充能时才可临时切换使用
-    if (localPlayer.dollCharges <= 0) {
-      showToast('🎎 替身人偶只能从战场特殊补给箱获得充能！')
-      return
+  const streak = localPlayer.deathStreak ?? 0
+  const dollCharges = localPlayer.dollCharges ?? 0
+  const unlocked = isSecondaryUnlocked(secType, streak, dollCharges)
+  if (!unlocked) {
+    if (secType === 'doll') {
+      showToast(`🔒 替身人偶需连续阵亡 ${def.unlockStreak} 次解锁，或从战场特殊补给箱拾取充能！`)
+    } else {
+      showToast(`🔒 【${def.icon} ${def.name}】需连续阵亡 ${def.unlockStreak} 次解锁（当前连死 ${streak} 次）`)
     }
+    return
+  }
+  if (secType === 'doll' && localPlayer.deployed && localPlayer.respawnTimer <= 0 && dollCharges > 0) {
+    // 补给专属例外：持有充能时可在战中切换使用
     localPlayer.secondary = secType
     updateHudWeaponButtons()
-    showToast(`🎎 已切换替身人偶（充能 ${localPlayer.dollCharges}）`)
+    showToast(`🎎 已切换替身人偶（充能 ${dollCharges}）`)
     return
   }
   if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
@@ -144,31 +207,42 @@ export function updateHudUI(): void {
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
   const wNameEl = document.getElementById('currentWeaponName')
   if (wNameEl) wNameEl.textContent = mounted ? '🎯 公共迫击炮操控中' : `${wep.name} ${localPlayer.deployed ? '🔒' : ''}`
-  // 底部只读"当前主武器"牌：每帧按权威 weaponIndex 刷新（拾取补给/换枪后不再显示旧武器）
   const plateEl = document.getElementById('hudCurrentWeaponName')
   if (plateEl) plateEl.textContent = wep.shortName
+  const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag
   const secChipEl = document.getElementById('hudSecondaryChipText')
   if (secChipEl) {
-    secChipEl.textContent = localPlayer.secondary === 'doll'
-      ? `🎎 替身人偶 [${localPlayer.dollCharges}]`
-      : `💣 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
+    if (localPlayer.secondary === 'doll') {
+      secChipEl.textContent = `🎎 替身人偶 [${localPlayer.dollCharges}]`
+    } else if (localPlayer.secondary === 'frag') {
+      secChipEl.textContent = `💣 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
+    } else if (localPlayer.secondary === 'teleport' && (localPlayer.teleportTimer ?? 0) > 0) {
+      secChipEl.textContent = `🌀 Teleport [读条 ${localPlayer.teleportTimer!.toFixed(1)}s]`
+    } else {
+      const cdStr = localPlayer.secondaryCooldown > 0 ? ` [${localPlayer.secondaryCooldown.toFixed(1)}s]` : ' [就绪]'
+      secChipEl.textContent = `${secDef.icon} ${secDef.name}${cdStr}`
+    }
   }
   const ammoEl = document.getElementById('currentAmmoText')
   if (ammoEl) ammoEl.textContent = mounted ? '∞' : `${Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`
 
-  const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag
   const gOverlay = document.getElementById('grenadeCdOverlay')
   const gLabel = document.getElementById('hudGrenadeLabel')
   const gTitle = document.getElementById('hudSecondaryTitle')
-  const isDoll = localPlayer.secondary === 'doll'
-  if (gTitle) gTitle.textContent = isDoll
-    ? `[G/右键] 替身人偶 [充能${localPlayer.dollCharges}]`
-    : `[G/右键] 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
+  if (gTitle) {
+    if (localPlayer.secondary === 'doll') {
+      gTitle.textContent = `[G/右键] 替身人偶 [充能${localPlayer.dollCharges}]`
+    } else if (localPlayer.secondary === 'frag') {
+      gTitle.textContent = `[G/右键] 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
+    } else {
+      gTitle.textContent = `[G/右键] ${secDef.name}`
+    }
+  }
   if (gOverlay && gLabel) {
-    if (isDoll) {
+    if (localPlayer.secondary === 'doll') {
       gOverlay.style.height = localPlayer.dollCharges > 0 ? '0%' : '100%'
       gLabel.textContent = localPlayer.dollCharges > 0 ? '🎎 就绪' : '🎎 无充能'
-    } else {
+    } else if (localPlayer.secondary === 'frag') {
       const need = localPlayer.fragCharges >= world.config.fragMaxCharges
       if (need) {
         gOverlay.style.height = '0%'
@@ -177,6 +251,20 @@ export function updateHudUI(): void {
         const pct = Math.min(100, (localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds) * 100)
         gOverlay.style.height = pct + '%'
         gLabel.textContent = `💣 ${localPlayer.fragCharges}/${world.config.fragMaxCharges} 回复中`
+      }
+    } else if (localPlayer.secondary === 'teleport' && (localPlayer.teleportTimer ?? 0) > 0) {
+      const castTotal = Math.max(0.05, world.config.teleportCastTime ?? 0.35)
+      const pct = clamp((1 - localPlayer.teleportTimer! / castTotal) * 100, 0, 100)
+      gOverlay.style.height = (100 - pct) + '%'
+      gLabel.textContent = `🌀 读条 ${Math.round(pct)}%`
+    } else {
+      if (localPlayer.secondaryCooldown <= 0) {
+        gOverlay.style.height = '0%'
+        gLabel.textContent = `${secDef.icon} 就绪`
+      } else {
+        const pct = clamp((localPlayer.secondaryCooldown / Math.max(0.1, secDef.cd)) * 100, 0, 100)
+        gOverlay.style.height = pct + '%'
+        gLabel.textContent = `${secDef.icon} ${localPlayer.secondaryCooldown.toFixed(1)}s`
       }
     }
   }
@@ -261,4 +349,3 @@ export function updateTeamCountUI(): void {
     if (el) el.textContent = counts[key.toLowerCase()] + '人'
   }
 }
-

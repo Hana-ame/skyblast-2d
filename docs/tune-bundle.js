@@ -238,8 +238,9 @@
       maxReserve: 72,
       // 后坐力 ×2
       reloadTime: 1.5,
-      fireDelay: 0.72,
+      fireDelay: 0.58,
       terrainRadius: 12,
+      // 射速略微提升（0.72 -> 0.58s）
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1.08,
@@ -248,8 +249,9 @@
       color: "#fbbf24",
       falloffStart: 200,
       falloffEnd: 700,
-      falloffMin: 0.45
+      falloffMin: 0.45,
       // 霰弹随距离衰减（中距仍可用）
+      traitDesc: "\u8FD1\u8DDD\u9AD8\u4F24 \xB7 \u5168\u4E2D\u81F4\u6B7B"
     },
     {
       id: 1,
@@ -273,7 +275,8 @@
       moveSpeedMult: 1,
       fuelMult: 1,
       fovMult: 1,
-      color: "#38bdf8"
+      color: "#38bdf8",
+      traitDesc: "\u7A33\u5B9A\u8FDE\u53D1 \xB7 \u5747\u8861\u4E3B\u529B"
     },
     {
       id: 2,
@@ -300,8 +303,9 @@
       fuelMult: 0.6,
       fovMult: 1.3,
       color: "#c084fc",
-      edgeDamage: 99
+      edgeDamage: 99,
       // 远距离命中身体依然 100 伤害；打中身体碰撞箱边缘才造成 99 伤害（留 1 血）
+      traitDesc: "\u65E0\u9650\u5C04\u7A0B \xB7 \u547D\u4E2D\u5373\u6B7B"
     },
     {
       id: 3,
@@ -332,8 +336,9 @@
       fovMult: 1,
       color: "#fb7185",
       friendlyFire: true,
-      selfDamage: true
+      selfDamage: true,
       // 火箭筒：爆炸友伤/自伤
+      traitDesc: "\u76F4\u7EBF\u6162\u901F \xB7 \u78B0\u5230\u7206\u70B8"
     },
     {
       id: 4,
@@ -361,14 +366,14 @@
       beam: true,
       friendlyFire: true,
       selfDamage: true,
-      // 高斯：反射光束可打到友军/自己
+      // 高斯：全部段可打到友军/自己
       damagePerSecond: 90,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1,
-      color: "#22d3ee"
-      // 伤害减半（180→90）；单匣 4s；换弹 6s
+      color: "#22d3ee",
+      traitDesc: "\u5373\u65F6\u5149\u675F \xB7 \u53CD\u5C042\u6B21 \xB7 \u5168\u6BB5\u81EA\u4F24"
     },
     {
       id: 5,
@@ -392,7 +397,8 @@
       moveSpeedMult: 0.78,
       fuelMult: 0.7,
       fovMult: 1.3,
-      color: "#f97316"
+      color: "#f97316",
+      traitDesc: "\u91CD\u578B\u673A\u67AA \xB7 \u706B\u529B\u538B\u5236"
     },
     {
       id: 6,
@@ -428,8 +434,9 @@
       // 引力场弯曲其他子弹
       falloffStart: 200,
       falloffEnd: 700,
-      falloffMin: 0.12
+      falloffMin: 0.12,
       // 射程与霰弹类似（200→700），远端衰减更狠
+      traitDesc: "\u7A7F\u5899\u5F15\u529B\u573A \xB7 \u5F2F\u6298\u5F39\u9053"
     },
     {
       id: 7,
@@ -454,8 +461,9 @@
       fuelMult: 2,
       ascendMult: 1.25,
       fovMult: 1,
-      color: "#fde047"
+      color: "#fde047",
       // 移速1.5/飞行容量2.0/升空速度1.25
+      traitDesc: "\u79FB\u901F\u6700\u5FEB \xB7 \u53CC\u500D\u98DE\u884C"
     },
     {
       id: 8,
@@ -482,7 +490,8 @@
       moveSpeedMult: 1.25,
       fuelMult: 1,
       fovMult: 1,
-      color: "#4ade80"
+      color: "#4ade80",
+      traitDesc: "\u6781\u9AD8\u5C04\u901F \xB7 \u673A\u52A8\u538B\u5236"
     }
   ];
   function weaponFalloff(wep, dist, exponent = 1) {
@@ -495,17 +504,82 @@
     const t = Math.pow((dist - start) / (end - start), exponent);
     return 1 - (1 - min) * t;
   }
+  var SECONDARY_UNLOCK_ORDER = [
+    "frag",
+    "obstacle",
+    "shield",
+    "teleport",
+    "doll"
+  ];
   var SECONDARIES = {
-    frag: { id: "frag", name: "\u624B\u69B4\u5F39", icon: "\u{1F4A3}", cd: 0.8 },
-    doll: { id: "doll", name: "\u66FF\u8EAB\u4EBA\u5076", icon: "\u{1F38E}", cd: 24, supplyOnly: true }
+    frag: {
+      id: "frag",
+      name: "\u624B\u69B4\u5F39",
+      icon: "\u{1F4A3}",
+      cd: 0.8,
+      unlockStreak: 0,
+      desc: "1 \u5145\u80FD\u81EA\u7136\u56DE\u590D\uFF086s/\u679A\uFF09"
+    },
+    obstacle: {
+      id: "obstacle",
+      name: "\u969C\u788D\u7269",
+      icon: "\u{1F9F1}",
+      cd: 10,
+      unlockStreak: 1,
+      supplyOnly: true,
+      desc: "10s\u51B7\u5374 \xB7 \u65E0\u9650\u751F\u6210240HP\u63A9\u4F53"
+    },
+    shield: {
+      id: "shield",
+      name: "\u62A4\u76FE",
+      icon: "\u{1F6E1}\uFE0F",
+      cd: 10,
+      unlockStreak: 2,
+      supplyOnly: true,
+      desc: "100HP \u62A4\u76FE \xB7 \u4F24\u5BB3\u4E0D\u6EA2\u51FA \xB7 \u78B0\u649E\u7BB1\u7565\u5927"
+    },
+    teleport: {
+      id: "teleport",
+      name: "Teleport",
+      icon: "\u{1F300}",
+      cd: 10,
+      unlockStreak: 3,
+      supplyOnly: true,
+      desc: "\u8BFB\u6761\u540E\u76F4\u63A5\u51FA\u73B0\u5728\u53F3\u952E\u4F4D\u7F6E"
+    },
+    doll: {
+      id: "doll",
+      name: "\u66FF\u8EAB\u4EBA\u5076",
+      icon: "\u{1F38E}",
+      cd: 24,
+      unlockStreak: 4,
+      supplyOnly: true,
+      desc: "\u8FDE\u6B7B4\u89E3\u9501\u6216\u7279\u6B8A\u8865\u7ED9\u62FE\u53D6"
+    }
   };
+  function isSecondaryUnlocked(secId, deathStreak, dollCharges = 0) {
+    const def = SECONDARIES[secId];
+    if (!def) return false;
+    if (secId === "doll" && dollCharges > 0) return true;
+    return (deathStreak ?? 0) >= def.unlockStreak;
+  }
+  function getHighestUnlockedSecondary(deathStreak, dollCharges = 0) {
+    const s = Math.max(0, Math.floor(deathStreak ?? 0));
+    for (let i = SECONDARY_UNLOCK_ORDER.length - 1; i >= 0; i--) {
+      const id = SECONDARY_UNLOCK_ORDER[i];
+      if (s >= SECONDARIES[id].unlockStreak) return id;
+    }
+    if (dollCharges > 0) return "doll";
+    return "frag";
+  }
   var DEFAULT_CONFIG = {
     maxHp: 100,
     headRadius: 13,
-    shieldHp: 130,
+    shieldHp: 100,
     shieldDuration: 5,
     dollDuration: 10,
     obstacleDefaultHp: 240,
+    teleportCastTime: 0.35,
     grenadeDamage: 520,
     // 一发致死：最远衰减(0.2)也有 104 伤害
     grenadeRadius: 100,
@@ -1000,6 +1074,8 @@
   }
 
   // src/core/sim/projectiles.ts
+  var BEAM_SEAM_THRESHOLD = 1e3;
+  var SHIELD_HITBOX_PAD = 8;
   function createProjectile(id, owner, x, y, vx, vy, opts) {
     return {
       id,
@@ -1066,6 +1142,23 @@
     const midY = ry + sMid * uy;
     return midX > 10 || midY > 13.5 || chord >= 0 && chord < 8;
   }
+  function isPointInPlayerBeamHitbox(t, px, py, baseHeadR) {
+    const shieldPad = t.shieldTimer > 0 && t.shieldHp > 0 ? SHIELD_HITBOX_PAD : 0;
+    const rawDy = Math.abs(t.pos.y - py);
+    if (rawDy > 40 + shieldPad && rawDy < WORLD_H - (40 + shieldPad)) return null;
+    const hx = wrapDeltaX(t.pos.x, px);
+    const maxHalfX = 18 + shieldPad;
+    if (hx > maxHalfX || hx < -maxHalfX) return null;
+    const hy = wrapDeltaY(t.pos.y - 24, py);
+    const effHeadR = baseHeadR + shieldPad;
+    const isHead = hx * hx + hy * hy <= effHeadR * effHeadR;
+    const bx = Math.abs(hx);
+    const by = wrapDeltaY(t.pos.y, py);
+    if (isHead || bx <= 14 + shieldPad && by >= -12 - shieldPad && by <= 18 + shieldPad) {
+      return { isHead };
+    }
+    return null;
+  }
   function updateContinuousBeam(ctx2, p, wep, dt) {
     if (p.respawnTimer > 0 || !p.alive) return;
     const wi = p.weaponIndex;
@@ -1090,146 +1183,175 @@
       const cx = wrapX(p.pos.x + dx * ahead);
       const cy = wrapY(p.pos.y - 12 + dy * ahead);
       if (ctx2.terrain.isSolidAt(cx, cy) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, cx, cy)) break;
+      if (ahead > 4) {
+        const nxProbe = wrapX(cx + dx * 4);
+        const nyProbe = wrapY(cy + dy * 4);
+        if (ctx2.terrain.isSolidAt(nxProbe, nyProbe) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, nxProbe, nyProbe)) break;
+      }
       x = cx;
       y = cy;
       originOk = true;
     }
     if (!originOk) return;
-    const originX = x;
-    const originY = y;
-    const segCapFor = (ddx, ddy) => Math.abs(ddx) >= Math.abs(ddy) ? WORLD_W - 200 : WORLD_H - 200;
     const step = 4;
-    const bounces = wep.bounces ?? 0;
+    let bouncesLeft = wep.bounces ?? 2;
     const headR = ctx2.config.headRadius + 3;
-    const headRSq = headR * headR;
     const tGrid = ctx2.terrain.grid;
     const obstacleBroadBuckets = ctx2.obstacleBroadBuckets;
     const playerBroadBuckets = ctx2.playerBroadBuckets;
     const obstacles = ctx2.obstacles;
-    let budget = bounces;
-    let b = 0;
-    while (b <= bounces) {
-      let travelled = 0;
-      let hitWall = false;
-      let blockedByObstacle = false;
-      const segStartX = x;
-      const segStartY = y;
+    let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR);
+    const checkPlayersAt = (px, py, segStartX2, segStartY2, dirX, dirY, distFromSegStart) => {
+      if (!exitedSelf && !isPointInPlayerBeamHitbox(p, px, py, headR)) {
+        exitedSelf = true;
+      }
+      const bIdx = bucketIdx(px);
+      const pList = playerBroadBuckets[bIdx];
+      if (!pList || pList.length === 0) return;
+      for (let pi = 0; pi < pList.length; pi++) {
+        const t = pList[pi];
+        if (t.id === p.id) {
+          if (!wep.selfDamage || !exitedSelf) continue;
+        } else if (t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) {
+          continue;
+        }
+        if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
+        const hitInfo = isPointInPlayerBeamHitbox(t, px, py, headR);
+        if (!hitInfo) continue;
+        if (lineBlockedByTerrain(
+          ctx2.terrain,
+          obstacles,
+          obstacleBroadBuckets,
+          segStartX2,
+          segStartY2,
+          t.pos.x,
+          t.pos.y - 12,
+          dirX * distFromSegStart,
+          dirY * distFromSegStart
+        )) continue;
+        hitPlayer.add(t.id);
+        const mult = hitInfo.isHead ? wep.headshotMult : 1;
+        ctx2.damagePlayer(t, dps * mult * dt, void 0, hitInfo.isHead, false, p.id, p.team, wep.shortName);
+      }
+    };
+    const pushBeamSegment = (x1, y1, x2, y2, rawDx, rawDy) => {
+      if (Math.hypot(rawDx, rawDy) <= 1e-6) return null;
+      const cut = truncateSegmentToFree(ctx2.terrain, x1, y1, x2, y2, rawDx, rawDy);
+      segments.push({ x1, y1, x2: cut.x, y2: cut.y, dx: cut.dx, dy: cut.dy });
+      exitedSelf = true;
+      return cut;
+    };
+    let segStartX = x;
+    let segStartY = y;
+    let travelled = 0;
+    let stepsCount = 0;
+    const maxTotalSegments = 16;
+    const maxSingleSegLen = Math.ceil(Math.hypot(WORLD_W, WORLD_H)) + 32;
+    const maxTotalSteps = Math.ceil(maxSingleSegLen * 8 / step);
+    while (segments.length < maxTotalSegments && stepsCount < maxTotalSteps) {
+      stepsCount++;
       const dirX = dx;
       const dirY = dy;
-      const stepX = dx * step;
-      const stepY = dy * step;
-      const maxSegLen = segCapFor(dirX, dirY);
-      while (travelled < maxSegLen) {
-        let nx = x + stepX;
-        let crossedSeam = false;
-        if (nx >= WORLD_W) {
-          nx -= WORLD_W;
-          crossedSeam = true;
-        } else if (nx < 0) {
-          nx += WORLD_W;
-          crossedSeam = true;
+      const rawNx = x + dirX * step;
+      const rawNy = y + dirY * step;
+      const crossedSeam = rawNx < 0 || rawNx >= WORLD_W || rawNy < 0 || rawNy >= WORLD_H;
+      const nx = wrapX(rawNx);
+      const ny = wrapY(rawNy);
+      if (crossedSeam) {
+        const gxAfter = nx / 20 | 0;
+        const gyAfter = ny / 20 | 0;
+        const nextIsTerrain = tGrid[gyAfter * GRID_W + gxAfter] !== 0;
+        const nextObsList = obstacleBroadBuckets[bucketIdx(nx)];
+        const nextOb = !nextIsTerrain && nextObsList && nextObsList.length > 0 ? obstacleAtBucket(nextObsList, nx, ny, 0) : null;
+        const nextIsFree = !nextIsTerrain && !nextOb;
+        const endX = nextIsFree ? nx : x;
+        const endY = nextIsFree ? ny : y;
+        const segLen = nextIsFree ? travelled + step : travelled;
+        if (segLen > 0) {
+          pushBeamSegment(segStartX, segStartY, endX, endY, dirX * segLen, dirY * segLen);
         }
-        let ny = y + stepY;
-        if (ny >= WORLD_H) {
-          ny -= WORLD_H;
-          crossedSeam = true;
-        } else if (ny < 0) {
-          ny += WORLD_H;
-          crossedSeam = true;
+        if (segLen > BEAM_SEAM_THRESHOLD) {
+          bouncesLeft--;
+          if (bouncesLeft <= 0) break;
+        } else if (bouncesLeft <= 0) {
         }
-        if (crossedSeam) {
-          if (budget <= 0) {
-            hitWall = false;
-            break;
+        if (nextIsFree) {
+          x = nx;
+          y = ny;
+          segStartX = nx;
+          segStartY = ny;
+          travelled = 0;
+          checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0);
+          continue;
+        }
+        segStartX = x;
+        segStartY = y;
+        travelled = 0;
+      }
+      const gx = nx / 20 | 0;
+      const gy = ny / 20 | 0;
+      if (tGrid[gy * GRID_W + gx] !== 0) {
+        if (travelled > 0) {
+          const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+          if (cut && cut.shortened) {
+            x = cut.x;
+            y = cut.y;
           }
-          budget--;
         }
-        const gx = nx / 20 | 0;
-        const gy = ny / 20 | 0;
-        if (tGrid[gy * GRID_W + gx] !== 0) {
-          hitWall = true;
-          const prevGx = x / 20 | 0;
-          const prevGy = y / 20 | 0;
-          const hitX = tGrid[prevGy * GRID_W + gx] !== 0;
-          const hitY = tGrid[gy * GRID_W + prevGx] !== 0;
+        if (bouncesLeft <= 0) break;
+        bouncesLeft--;
+        const prevGx = x / 20 | 0;
+        const prevGy = y / 20 | 0;
+        const hitX = tGrid[prevGy * GRID_W + gx] !== 0;
+        const hitY = tGrid[gy * GRID_W + prevGx] !== 0;
+        if (hitX) dx = -dx;
+        if (hitY) dy = -dy;
+        if (!hitX && !hitY) {
+          dx = -dx;
+          dy = -dy;
+        }
+        if (ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) break;
+        segStartX = x;
+        segStartY = y;
+        travelled = 0;
+        continue;
+      }
+      const bIdx = bucketIdx(nx);
+      const obsList = obstacleBroadBuckets[bIdx];
+      if (obsList && obsList.length > 0) {
+        const ob = obstacleAtBucket(obsList, nx, ny, 0);
+        if (ob) {
+          const hitX = obstacleAtBucket([ob], nx, y, 0) !== null;
+          const hitY = obstacleAtBucket([ob], x, ny, 0) !== null;
+          if (!hitObstacle.has(ob.id)) {
+            hitObstacle.add(ob.id);
+            ctx2.damageObstacle(ob, dps * dt, void 0);
+          }
+          if (travelled > 0) {
+            const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+            if (cut && cut.shortened) {
+              x = cut.x;
+              y = cut.y;
+            }
+          }
+          if (bouncesLeft <= 0) break;
+          bouncesLeft--;
           if (hitX) dx = -dx;
           if (hitY) dy = -dy;
           if (!hitX && !hitY) {
             dx = -dx;
             dy = -dy;
           }
-          break;
+          segStartX = x;
+          segStartY = y;
+          travelled = 0;
+          continue;
         }
-        const bIdx = nx * INV_BUCKET_SIZE | 0;
-        const obsList = obstacleBroadBuckets[bIdx];
-        if (obsList && obsList.length > 0) {
-          const ob = obstacleAtBucket(obsList, nx, ny, 0);
-          if (ob) {
-            if (!hitObstacle.has(ob.id)) {
-              hitObstacle.add(ob.id);
-              ctx2.damageObstacle(ob, dps * dt, void 0);
-            }
-            x = nx;
-            y = ny;
-            blockedByObstacle = true;
-            break;
-          }
-        }
-        const pList = playerBroadBuckets[bIdx];
-        if (pList && pList.length > 0) {
-          for (let pi = 0; pi < pList.length; pi++) {
-            const t = pList[pi];
-            if (t.id === p.id && b === 0) continue;
-            if (t.id === p.id && !wep.selfDamage) continue;
-            if (t.id !== p.id && t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) continue;
-            if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
-            const rawDy2 = Math.abs(t.pos.y - ny);
-            if (rawDy2 > 40 && rawDy2 < WORLD_H - 40) continue;
-            const hx = wrapDeltaX(t.pos.x, nx);
-            if (hx > 18 || hx < -18) continue;
-            const hy = wrapDeltaY(t.pos.y - 24, ny);
-            const isHead = hx * hx + hy * hy <= headRSq;
-            const bx = Math.abs(hx);
-            const by = wrapDeltaY(t.pos.y, ny);
-            if (isHead || bx <= 14 && by >= -12 && by <= 18) {
-              if (lineBlockedByTerrain(
-                ctx2.terrain,
-                obstacles,
-                obstacleBroadBuckets,
-                segStartX,
-                segStartY,
-                t.pos.x,
-                t.pos.y - 12,
-                dirX * travelled,
-                dirY * travelled
-              )) continue;
-              hitPlayer.add(t.id);
-              const mult = isHead ? wep.headshotMult : 1;
-              ctx2.damagePlayer(t, dps * mult * dt, void 0, isHead, false, p.id, p.team, wep.shortName);
-            }
-          }
-        }
-        x = nx;
-        y = ny;
-        travelled += step;
       }
-      if (hitWall && ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
-        hitWall = false;
-      }
-      const seg = { x1: segStartX, y1: segStartY, x2: x, y2: y, dx: 0, dy: 0 };
-      const rawDx = dirX * travelled;
-      const rawDy = dirY * travelled;
-      const cut = truncateSegmentToFree(ctx2.terrain, seg.x1, seg.y1, seg.x2, seg.y2, rawDx, rawDy);
-      seg.x2 = cut.x;
-      seg.y2 = cut.y;
-      seg.dx = cut.dx;
-      seg.dy = cut.dy;
-      segments.push(seg);
-      if (cut.shortened) break;
-      if (blockedByObstacle || !hitWall) break;
-      if (budget <= 0) break;
-      budget--;
-      b++;
+      x = nx;
+      y = ny;
+      travelled += step;
+      checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, travelled);
     }
     ctx2.events.push({
       kind: "laser",
@@ -1335,7 +1457,6 @@
       const allowFF = !!wep?.friendlyFire;
       const allowSelf = !!wep?.selfDamage;
       const headHitR = ctx2.config.headRadius + pr.r;
-      const headHitRSq = headHitR * headHitR;
       const bodyHalfX = 13 + pr.r;
       for (let step = 0; step < steps; step++) {
         const prevX = pr.pos.x;
@@ -1357,14 +1478,19 @@
             if (t.id !== pr.owner && t.team === ownerTeam && t.team !== "ffa" && !allowFF) continue;
             if (t.id === pr.owner && !allowSelf) continue;
             if (t.respawnTimer > 0 || !t.deployed || !t.alive) continue;
+            const shieldPad = t.shieldTimer > 0 && t.shieldHp > 0 ? SHIELD_HITBOX_PAD : 0;
             const rawDy = Math.abs(t.pos.y - ny);
-            if (rawDy > 42 && rawDy < WORLD_H - 42) continue;
+            if (rawDy > 42 + shieldPad && rawDy < WORLD_H - (42 + shieldPad)) continue;
             if (pr.hitTargets.includes(t.id)) continue;
+            const tHeadHitR = headHitR + shieldPad;
+            const tHeadHitRSq = tHeadHitR * tHeadHitR;
+            const tBodyHalfX = bodyHalfX + shieldPad;
             const dxHead = wrapDeltaX(t.pos.x, nx);
             const dxBody = Math.abs(dxHead);
-            if (dxBody > Math.max(headHitR, bodyHalfX)) continue;
+            if (dxBody > Math.max(tHeadHitR, tBodyHalfX)) continue;
             const dyHead = wrapDeltaY(t.pos.y - 24, ny);
-            if (dxHead * dxHead + dyHead * dyHead <= headHitRSq) {
+            const isRealHead = dxHead * dxHead + dyHead * dyHead <= headHitR * headHitR;
+            if (isRealHead) {
               pr.hitTargets.push(t.id);
               const piercing = pr.pierceOnHeadshot || pr.pierceAll;
               if (pr.explosive) {
@@ -1380,7 +1506,9 @@
               continue;
             }
             const dyBody = wrapDeltaY(t.pos.y, ny);
-            if (dxBody <= bodyHalfX && dyBody >= -12 && dyBody <= 18) {
+            const hitShieldHead = shieldPad > 0 && dxHead * dxHead + dyHead * dyHead <= tHeadHitRSq;
+            const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= -12 - shieldPad && dyBody <= 18 + shieldPad;
+            if (hitShieldHead || hitBodyBox) {
               pr.hitTargets.push(t.id);
               if (pr.explosive) {
                 ctx2.explode(nx, ny, pr.terrainRadius, pr.damage * calcProjectileFalloff(ctx2, pr, nx, ny), 900, pr);
@@ -1471,6 +1599,128 @@
   }
 
   // src/core/sim/throwables.ts
+  function stepPlayerTeleport(ctx2, p, dt) {
+    if (!p.teleportTimer || p.teleportTimer <= 0 || !p.teleportTarget) return;
+    if (!p.alive || p.respawnTimer > 0 || !p.deployed) {
+      p.teleportTimer = 0;
+      p.teleportTarget = null;
+      return;
+    }
+    p.teleportTimer -= dt;
+    if (p.teleportTimer > 0) return;
+    const target = p.teleportTarget;
+    p.teleportTimer = 0;
+    p.teleportTarget = null;
+    const curMortar = ctx2.mortars.find((m) => m.operatorId === p.id);
+    if (curMortar) curMortar.operatorId = null;
+    if (p.mountedTowerId) {
+      const tw = ctx2.watchtowers.find((t) => t.id === p.mountedTowerId);
+      if (tw) tw.operatorId = null;
+      p.mountedTowerId = null;
+      p.watchtowerTimer = 0;
+    }
+    p.pos = { x: wrapX(target.x), y: clamp(target.y, 40, 4360) };
+    if (p.vel.y > 0) p.vel.y = 0;
+    resolvePenetration(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+    ensureFreePosition(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+    ctx2.events.push({ kind: "warp", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "Teleport" });
+  }
+  function useSecondaryInWorld(ctx2, p, s) {
+    if (p.respawnTimer > 0 || p.secondaryCooldown > 0 || !p.alive) return;
+    const def = SECONDARIES[s.type];
+    if (!def) return;
+    if (s.type === "frag") {
+      if (p.fragCharges <= 0) return;
+      p.fragCharges--;
+      p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8);
+      const throwSpeed = 760;
+      ctx2.grenades.push({
+        id: ctx2.nextGrenadeId(),
+        owner: p.id,
+        pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
+        vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
+        fuse: ctx2.config.grenadeFuse,
+        bounces: 0
+      });
+      return;
+    }
+    if (s.type === "doll") {
+      if (p.dollCharges <= 0) return;
+      p.dollCharges--;
+      p.secondaryCooldown = def.cd;
+      p.doll = {
+        pos: { x: p.pos.x, y: p.pos.y },
+        hp: p.hp,
+        shieldHp: p.shieldHp,
+        fuel: p.fuel,
+        weaponIndex: p.weaponIndex,
+        ammo: [...p.ammo],
+        reserveAmmo: [...p.reserveAmmo],
+        timer: ctx2.config.dollDuration
+      };
+      ctx2.events.push({ kind: "doll_recall", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "anchor" });
+      return;
+    }
+    if ((p.deathStreak ?? 0) < def.unlockStreak && p.secondary !== s.type) return;
+    if (s.type === "obstacle") {
+      p.secondaryCooldown = def.cd;
+      const w = 56;
+      const h = 76;
+      const dist = 76;
+      const cx = wrapX(p.pos.x + Math.cos(p.aim) * dist);
+      const cy = Math.max(80, Math.min(4300 - h, p.pos.y - 16 + Math.sin(p.aim) * dist));
+      const ox = wrapX(cx - w / 2);
+      let oy = cy - h / 2;
+      for (let sStep = 0; sStep < 24; sStep++) {
+        if (ctx2.terrain.isSolidAt(wrapX(ox + w / 2), oy + h - 1) && !ctx2.terrain.isSolidAt(wrapX(ox + w / 2), oy - 2)) {
+          oy -= 2;
+        } else break;
+      }
+      const obKind = "box";
+      const ob = {
+        id: `p_obs_${p.id}_${ctx2.nextObstacleSeq()}`,
+        x: ox,
+        y: oy,
+        w,
+        h,
+        hp: ctx2.config.obstacleDefaultHp,
+        maxHp: ctx2.config.obstacleDefaultHp,
+        kind: obKind,
+        color: "#334155",
+        borderColor: "#38bdf8",
+        label: "\u6218\u672F\u63A9\u4F53"
+      };
+      ctx2.obstacles.push(ob);
+      ctx2.rebuildSpatial();
+      if (checkBodyOverlapsAt(ctx2.terrain, ctx2.obstacles, p.pos.x, p.pos.y, ctx2.obstacleBroadBuckets)) {
+        resolvePenetration(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+        ensureFreePosition(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+      }
+      return;
+    }
+    if (s.type === "shield") {
+      if (p.shieldTimer > 0 && p.shieldHp > 0) return;
+      p.secondaryCooldown = def.cd;
+      p.shieldHp = ctx2.config.shieldHp;
+      p.shieldTimer = ctx2.config.shieldDuration;
+      ctx2.events.push({ kind: "shield", x: p.pos.x, y: p.pos.y, playerId: p.id });
+      return;
+    }
+    if (s.type === "teleport") {
+      if (p.teleportTimer && p.teleportTimer > 0) return;
+      p.secondaryCooldown = def.cd;
+      let tx = wrapX(p.pos.x + Math.cos(p.aim) * 280);
+      let ty = clamp(p.pos.y + Math.sin(p.aim) * 280, 40, 4360);
+      if (Number.isFinite(s.targetX) && Number.isFinite(s.targetY) && (s.targetX !== 0 || s.targetY !== 0)) {
+        tx = wrapX(s.targetX);
+        ty = clamp(s.targetY, 40, 4360);
+      }
+      const castTime = ctx2.config.teleportCastTime ?? 0.35;
+      p.teleportTimer = Math.max(0.05, castTime);
+      p.teleportTarget = { x: tx, y: ty };
+      return;
+    }
+  }
   function damageObstacleInWorld(ctx2, ob, dmg) {
     if (ob.hp <= 0 || dmg <= 0) return;
     ob.hp = Math.max(0, ob.hp - Math.round(dmg));
@@ -1486,20 +1736,32 @@
     const atkId = attackerId ?? pr?.owner ?? 0;
     const atkTeam = attackerTeam ?? ctx2.ownerTeamOf(atkId);
     const label = weaponLabel ?? pr?.weaponLabel ?? "\u672A\u77E5";
-    let remaining = amount;
     if (t.shieldTimer > 0 && t.shieldHp > 0) {
-      const absorbed = Math.min(t.shieldHp, remaining);
-      t.shieldHp -= absorbed;
-      remaining -= absorbed;
+      const absorbed = Math.min(t.shieldHp, amount);
+      t.shieldHp = Math.max(0, t.shieldHp - amount);
+      ctx2.events.push({
+        kind: "hit",
+        x: t.pos.x,
+        y: t.pos.y,
+        victimId: t.id,
+        attackerId: atkId,
+        headshot: isHead,
+        damage: absorbed,
+        weaponLabel: label,
+        victimTeam: t.team,
+        isHeadshot: isHead,
+        isPierced
+      });
+      ctx2.onHitCount();
       if (t.shieldHp <= 0) {
         t.shieldHp = 0;
         t.shieldTimer = 0;
         ctx2.events.push({ kind: "shield", x: t.pos.x, y: t.pos.y, playerId: t.id });
         ctx2.events.push({ kind: "shield_break", x: t.pos.x, y: t.pos.y, playerId: t.id });
       }
-      if (remaining <= 0) return;
+      return;
     }
-    t.hp -= remaining;
+    t.hp -= amount;
     ctx2.events.push({
       kind: "hit",
       x: t.pos.x,
@@ -1507,7 +1769,7 @@
       victimId: t.id,
       attackerId: atkId,
       headshot: isHead,
-      damage: remaining,
+      damage: amount,
       weaponLabel: label,
       victimTeam: t.team,
       isHeadshot: isHead,
@@ -1522,25 +1784,28 @@
     t.hp = 0;
     t.alive = false;
     t.deaths++;
+    t.deathStreak = (t.deathStreak ?? 0) + 1;
+    t.secondary = getHighestUnlockedSecondary(t.deathStreak, t.dollCharges);
     t.respawnTimer = ctx2.config.respawnDelay;
     t.shieldHp = 0;
     t.shieldTimer = 0;
     t.watchtowerTimer = 0;
+    t.teleportTimer = 0;
+    t.teleportTarget = null;
     const mk = ctx2.mortars.find((m) => m.operatorId === t.id);
     if (mk) mk.operatorId = null;
     const killer = ctx2.playerById.get(atkId) ?? ctx2.players.find((x) => x.id === atkId);
     if (killer && atkId !== t.id) {
       killer.kills++;
+      killer.deathStreak = 0;
       if (ctx2.scores[atkTeam] !== void 0) ctx2.scores[atkTeam]++;
     }
     ctx2.events.push({
       kind: "kill",
-      // 新字段（联机协议/新表现层用）
       attackerId: atkId,
       victimId: t.id,
       weaponLabel: label,
       headshot: isHead,
-      // 旧字段（killfeed / 死亡界面直接读名称与队伍，避免显示成「?」）
       killerId: atkId,
       killerName: killer?.name ?? "\u6218\u573A\u73AF\u5883",
       killerTeam: atkTeam,
@@ -1679,7 +1944,7 @@
         m.fuse -= dt;
         if (m.fuse <= 0) {
           const label = m.instant ? "\u26A1\u77AC\u53D1\u5730\u96F7" : "\u{1F6A8}\u611F\u5E94\u5730\u96F7";
-          explodeInWorld(ctx2, m.pos.x, m.pos.y, 82, ctx2.config.mineDamage, 19 * 60, void 0, m.owner === 0 ? void 0 : m.owner, void 0, label);
+          explodeInWorld(ctx2, m.pos.x, m.pos.y, m.preset ? 82 : 104, m.preset ? ctx2.config.mineDamage : Math.round(ctx2.config.mineDamage * 1.25), 19 * 60, void 0, m.owner === 0 ? void 0 : m.owner, void 0, label);
           if (m.preset) m.respawnTimer = ctx2.config.mineRespawnTime;
           else ctx2.landmines.splice(i, 1);
         }
@@ -1911,11 +2176,12 @@
     pid = 1;
     prj = 1;
     gren = 1;
+    obsSeq = 1;
+    mineSeq = 1;
     ammo = 1;
     crate = 1;
     ammoSpawnTimer = 0;
     stuckTicks = /* @__PURE__ */ new Map();
-    // 空间加速索引（每帧按需刷新，直接作为单态字段供各子系统零开销访问）
     playerBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
     obstacleBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
     playerById = /* @__PURE__ */ new Map();
@@ -1926,9 +2192,18 @@
       this.terrain.build(map?.solids);
       this.resetMatch();
     }
-    // ── 子系统接口方法（零闭包/零 getter 开销） ──
+    // ── 子系统接口方法 ──
     nextProjId() {
       return this.prj++;
+    }
+    nextGrenadeId() {
+      return this.gren++;
+    }
+    nextObstacleSeq() {
+      return this.obsSeq++;
+    }
+    nextMineId() {
+      return this.mineSeq++;
     }
     nextAmmoId() {
       return this.ammo++;
@@ -1938,6 +2213,9 @@
     }
     setAmmoTimer(t) {
       this.ammoSpawnTimer = t;
+    }
+    rebuildSpatial() {
+      this.rebuildSpatialBuckets();
     }
     onHitCount() {
       this.hits++;
@@ -2012,6 +2290,8 @@
       }
     }
     resetMatch() {
+      this.obsSeq = 1;
+      this.mineSeq = 1;
       this.obstacles = OBSTACLE_PRESETS.map((o) => ({ ...o, maxHp: o.hp }));
       this.capturePoints = CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
       this.mortars = MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
@@ -2100,11 +2380,14 @@
         watchtowerTimer: 0,
         mountedTowerId: null,
         warpCooldown: 0,
+        teleportTimer: 0,
+        teleportTarget: null,
         doll: null,
         dollCharges: 0,
         respawnTimer: 0,
         kills: 0,
-        deaths: 0
+        deaths: 0,
+        deathStreak: 0
       };
       this.respawnAt(p, team);
       this.players.push(p);
@@ -2149,8 +2432,14 @@
       p.watchtowerTimer = 0;
       p.mountedTowerId = null;
       p.warpCooldown = 0;
+      p.teleportTimer = 0;
+      p.teleportTarget = null;
+      const streak = p.deathStreak ?? 0;
       p.doll = null;
-      p.dollCharges = 0;
+      p.dollCharges = streak >= SECONDARIES.doll.unlockStreak ? 1 : 0;
+      if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges)) {
+        p.secondary = getHighestUnlockedSecondary(streak, p.dollCharges);
+      }
       p.reloading = false;
       p.fireCooldown = 0;
       p.chargeTimer = 0;
@@ -2292,6 +2581,7 @@
       }
       if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt);
       if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt);
+      stepPlayerTeleport(this, p, dt);
       if (p.reloading) {
         p.reloadTimer -= dt;
         if (p.reloadTimer <= 0) {
@@ -2316,7 +2606,7 @@
         mountedNow.angle = a;
       }
       if (w.interact) handlePlayerInteract(this, p);
-      if (w.secondary) this.useSecondary(p, w.secondary);
+      if (w.secondary) useSecondaryInWorld(this, p, w.secondary);
       const wepNow = WEAPONS[p.weaponIndex];
       if (wepNow?.beam) {
         if (w.fire) updateContinuousBeam(this, p, wepNow, dt);
@@ -2430,42 +2720,6 @@
         if (pr.isGravityOrb && pr.life > 0 && pr.damage > 0) this.activeGravityOrbs.push(pr);
       }
     }
-    useSecondary(p, s) {
-      if (p.respawnTimer > 0 || p.secondaryCooldown > 0 || !p.alive) return;
-      const def = SECONDARIES[s.type];
-      if (!def) return;
-      if (s.type === "frag") {
-        if (p.fragCharges <= 0) return;
-        p.fragCharges--;
-        p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8);
-        const throwSpeed = 760;
-        this.grenades.push({
-          id: this.gren++,
-          owner: p.id,
-          pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
-          vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
-          fuse: this.config.grenadeFuse,
-          bounces: 0
-        });
-        return;
-      }
-      if (s.type === "doll") {
-        if (p.dollCharges <= 0) return;
-        p.dollCharges--;
-        p.secondaryCooldown = def.cd;
-        p.doll = {
-          pos: { x: p.pos.x, y: p.pos.y },
-          hp: p.hp,
-          shieldHp: p.shieldHp,
-          fuel: p.fuel,
-          weaponIndex: p.weaponIndex,
-          ammo: [...p.ammo],
-          reserveAmmo: [...p.reserveAmmo],
-          timer: this.config.dollDuration
-        };
-        this.events.push({ kind: "doll_recall", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "anchor" });
-      }
-    }
     snapshot() {
       return {
         tick: this.tick,
@@ -2476,6 +2730,7 @@
           vel: { x: p.vel.x, y: p.vel.y },
           ammo: [...p.ammo],
           reserveAmmo: [...p.reserveAmmo],
+          teleportTarget: p.teleportTarget ? { x: p.teleportTarget.x, y: p.teleportTarget.y } : null,
           doll: p.doll ? { ...p.doll, pos: { x: p.doll.pos.x, y: p.doll.pos.y }, ammo: [...p.doll.ammo], reserveAmmo: [...p.doll.reserveAmmo] } : null
         })),
         projectiles: this.projectiles.map((pr) => ({ ...pr, pos: { x: pr.pos.x, y: pr.pos.y }, vel: { x: pr.vel.x, y: pr.vel.y }, hitTargets: [...pr.hitTargets] })),
@@ -2897,15 +3152,17 @@
     const teamIdx = TEAM_TO_IDX[p.team] ?? 3;
     const bitFlags = teamIdx & 3 | (p.alive ? 4 : 0) | (p.deployed ? 8 : 0) | (p.onGround ? 16 : 0) | (p.jetpack ? 32 : 0) | (p.reloading ? 64 : 0) | (p.doll ? 128 : 0);
     w.u8(bitFlags);
-    const secBit = p.secondary === "doll" ? 1 : 0;
-    const wepAndSec = p.weaponIndex & 15 | secBit << 4 | (p.fragCharges & 7) << 5;
+    const secIdx = Math.max(0, SECONDARY_UNLOCK_ORDER.indexOf(p.secondary));
+    const wepAndSec = p.weaponIndex & 15 | (secIdx & 1) << 4 | (p.fragCharges & 7) << 5;
     w.u8(wepAndSec);
     w.i16(clamp(Math.round(p.hp * 10), -32767, 32767));
     w.u16(p.maxHp);
     w.u16(clamp(Math.round(p.fuel * 1e3), 0, 65535));
     w.u16(p.kills);
     w.u16(p.deaths);
-    w.u8(p.dollCharges);
+    const dollAndSec = clamp(p.dollCharges, 0, 7) & 7 | (secIdx & 7) << 3;
+    w.u8(dollAndSec);
+    w.u8(clamp(p.deathStreak ?? 0, 0, 255));
     if (encodedPlayerNames.get(p.id) === p.name) {
       w.u8(1);
     } else {
@@ -2925,7 +3182,7 @@
         break;
       }
     }
-    const timerMask = (otherAmmoModified ? 1 : 0) | (p.reloadTimer > 0 ? 2 : 0) | (p.fireCooldown > 0 ? 4 : 0) | (p.chargeTimer > 0 ? 8 : 0) | (p.secondaryCooldown > 0 ? 16 : 0) | (p.fragRechargeTimer > 0 ? 32 : 0) | (p.shieldTimer > 0 || p.shieldHp > 0 ? 64 : 0) | (p.respawnTimer > 0 || p.warpCooldown > 0 || p.mountedTowerId !== null || p.watchtowerTimer > 0 ? 128 : 0);
+    const timerMask = (otherAmmoModified ? 1 : 0) | (p.reloadTimer > 0 ? 2 : 0) | (p.fireCooldown > 0 ? 4 : 0) | (p.chargeTimer > 0 ? 8 : 0) | (p.secondaryCooldown > 0 ? 16 : 0) | (p.fragRechargeTimer > 0 ? 32 : 0) | (p.shieldTimer > 0 || p.shieldHp > 0 ? 64 : 0) | (p.respawnTimer > 0 || p.warpCooldown > 0 || p.mountedTowerId !== null || p.watchtowerTimer > 0 || (p.teleportTimer ?? 0) > 0 ? 128 : 0);
     w.u8(timerMask);
     if (timerMask & 1) {
       w.ensure(2 + p.ammo.length * 4);
@@ -2949,6 +3206,13 @@
       w.u16(qTimerMs(p.warpCooldown));
       w.u16(qTimerMs(p.watchtowerTimer));
       w.str(p.mountedTowerId ?? "");
+      const tpActive = (p.teleportTimer ?? 0) > 0 && p.teleportTarget ? 1 : 0;
+      w.u8(tpActive);
+      if (tpActive && p.teleportTarget) {
+        w.u16(qTimerMs(p.teleportTimer ?? 0));
+        w.u16(qPosX(p.teleportTarget.x));
+        w.u16(qPosY(p.teleportTarget.y));
+      }
     }
     if (p.doll) {
       w.ensure(32 + p.doll.ammo.length * 4);

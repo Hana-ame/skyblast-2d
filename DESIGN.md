@@ -816,3 +816,19 @@ src/web/
 ### 10.53 尚未完成（设计位）
 
 联机大厅页面（`server/server.js` 已带入）、浏览器联机入口（Peer 传输已就绪）、完整 v2 UI、主机迁移。
+
+### 10.54 连死补偿：副手按平衡性阶梯依次解锁（2026-11-07）
+
+用户："连续死了太多次的时候，副手按照平衡性依次解锁：障碍物，护盾，teleport，地雷，护盾，替身人偶。"
+- **`src/core/weapons.ts` & `src/core/types.ts`**：
+  - `PlayerState` 新增 `deathStreak: number`（未获击杀前每次阵亡 `+1`，拿到敌方击杀重置为 `0`）。
+  - 新增 `SECONDARY_UNLOCK_ORDER = ['frag', 'obstacle', 'shield', 'teleport', 'mine', 'doll']` 及 `isSecondaryUnlocked` / `getUnlockedSecondaries` / `getHighestUnlockedSecondary`：
+    - 0 连死（默认）：`frag`（手榴弹，1 充能 6s 自然回复）
+    - 1 连死解锁：`obstacle`（障碍物，放置 240HP 战术掩体箱，同玩家场上最多保留 3 个）
+    - 2 连死解锁：`shield`（护盾，激活 130HP 能量护盾，持续 5s）
+    - 3 连死解锁：`teleport`（Teleport，朝准星方向瞬移最多 320px，自动防卡墙）
+    - 4 连死解锁：`mine`（地雷，抛投 110 伤感应/直击瞬爆地雷，同玩家场上最多保留 3 枚）
+    - 5 连死解锁：`doll`（替身人偶，重生自动赠送 1 次充能；平时仍可从特殊补给箱获得）
+- **`src/core/sim/throwables.ts` & `world.ts`**：实现全部 6 种副手权威模拟与连死自动进阶；`invariants.ts` 新增副手阶梯顺序护栏。
+- **`src/net/protocol/BinaryCodec.ts`**：紧凑二进制协议同步 6 种 `secondary` 枚举与 `deathStreak`。
+- **`docs/index.html` & `src/web/app/hud.ts` & `loop.ts`**：死亡界面与大厅新增 6 档副手按钮及连死解锁状态展示，阵亡时自动预选当前最高阶已解锁副手。

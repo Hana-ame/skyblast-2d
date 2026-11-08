@@ -18,8 +18,9 @@
       maxReserve: 72,
       // 后坐力 ×2
       reloadTime: 1.5,
-      fireDelay: 0.72,
+      fireDelay: 0.58,
       terrainRadius: 12,
+      // 射速略微提升（0.72 -> 0.58s）
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1.08,
@@ -28,8 +29,9 @@
       color: "#fbbf24",
       falloffStart: 200,
       falloffEnd: 700,
-      falloffMin: 0.45
+      falloffMin: 0.45,
       // 霰弹随距离衰减（中距仍可用）
+      traitDesc: "\u8FD1\u8DDD\u9AD8\u4F24 \xB7 \u5168\u4E2D\u81F4\u6B7B"
     },
     {
       id: 1,
@@ -53,7 +55,8 @@
       moveSpeedMult: 1,
       fuelMult: 1,
       fovMult: 1,
-      color: "#38bdf8"
+      color: "#38bdf8",
+      traitDesc: "\u7A33\u5B9A\u8FDE\u53D1 \xB7 \u5747\u8861\u4E3B\u529B"
     },
     {
       id: 2,
@@ -80,8 +83,9 @@
       fuelMult: 0.6,
       fovMult: 1.3,
       color: "#c084fc",
-      edgeDamage: 99
+      edgeDamage: 99,
       // 远距离命中身体依然 100 伤害；打中身体碰撞箱边缘才造成 99 伤害（留 1 血）
+      traitDesc: "\u65E0\u9650\u5C04\u7A0B \xB7 \u547D\u4E2D\u5373\u6B7B"
     },
     {
       id: 3,
@@ -112,8 +116,9 @@
       fovMult: 1,
       color: "#fb7185",
       friendlyFire: true,
-      selfDamage: true
+      selfDamage: true,
       // 火箭筒：爆炸友伤/自伤
+      traitDesc: "\u76F4\u7EBF\u6162\u901F \xB7 \u78B0\u5230\u7206\u70B8"
     },
     {
       id: 4,
@@ -141,14 +146,14 @@
       beam: true,
       friendlyFire: true,
       selfDamage: true,
-      // 高斯：反射光束可打到友军/自己
+      // 高斯：全部段可打到友军/自己
       damagePerSecond: 90,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1,
-      color: "#22d3ee"
-      // 伤害减半（180→90）；单匣 4s；换弹 6s
+      color: "#22d3ee",
+      traitDesc: "\u5373\u65F6\u5149\u675F \xB7 \u53CD\u5C042\u6B21 \xB7 \u5168\u6BB5\u81EA\u4F24"
     },
     {
       id: 5,
@@ -172,7 +177,8 @@
       moveSpeedMult: 0.78,
       fuelMult: 0.7,
       fovMult: 1.3,
-      color: "#f97316"
+      color: "#f97316",
+      traitDesc: "\u91CD\u578B\u673A\u67AA \xB7 \u706B\u529B\u538B\u5236"
     },
     {
       id: 6,
@@ -208,8 +214,9 @@
       // 引力场弯曲其他子弹
       falloffStart: 200,
       falloffEnd: 700,
-      falloffMin: 0.12
+      falloffMin: 0.12,
       // 射程与霰弹类似（200→700），远端衰减更狠
+      traitDesc: "\u7A7F\u5899\u5F15\u529B\u573A \xB7 \u5F2F\u6298\u5F39\u9053"
     },
     {
       id: 7,
@@ -234,8 +241,9 @@
       fuelMult: 2,
       ascendMult: 1.25,
       fovMult: 1,
-      color: "#fde047"
+      color: "#fde047",
       // 移速1.5/飞行容量2.0/升空速度1.25
+      traitDesc: "\u79FB\u901F\u6700\u5FEB \xB7 \u53CC\u500D\u98DE\u884C"
     },
     {
       id: 8,
@@ -262,16 +270,18 @@
       moveSpeedMult: 1.25,
       fuelMult: 1,
       fovMult: 1,
-      color: "#4ade80"
+      color: "#4ade80",
+      traitDesc: "\u6781\u9AD8\u5C04\u901F \xB7 \u673A\u52A8\u538B\u5236"
     }
   ];
   var DEFAULT_CONFIG = {
     maxHp: 100,
     headRadius: 13,
-    shieldHp: 130,
+    shieldHp: 100,
     shieldDuration: 5,
     dollDuration: 10,
     obstacleDefaultHp: 240,
+    teleportCastTime: 0.35,
     grenadeDamage: 520,
     // 一发致死：最远衰减(0.2)也有 104 伤害
     grenadeRadius: 100,

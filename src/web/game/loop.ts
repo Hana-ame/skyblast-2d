@@ -1,4 +1,4 @@
-// web/game/loop.ts —— 固定步长主循环 / 本机输入 / 阵亡与重生
+// web/game/loop.ts —— 主循环（固定步长推进权威世界 + 渲染 + 死亡界面同步）
 import {
   canvas, world, localPlayer, bots, mode, pendingLoadout, keys, mouse, touchState, inputQueue,
   effects, beams, camera, FIXED,
@@ -8,7 +8,7 @@ import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
-import { WEAPONS, SECONDARIES } from '../../core/weapons.ts'
+import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
 import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput } from '../../core/types.ts'
@@ -17,35 +17,35 @@ import { wrapDeltaX, wrapDeltaY, wrapX, wrapY, clamp } from '../../core/wrap.ts'
 // ── 主循环 ──
 let playerInput: WorldInput = defaultWorldInput()
 let prevFireCooldown = 0
+let wasDead = false
 let lastFrame = performance.now()
 let acc = 0
-let wasDead = false
 
 function buildLocalInput(): WorldInput {
   const w = defaultWorldInput()
-  if (!localPlayer.deployed) return w
-  if (localPlayer.respawnTimer > 0) {
-    // 阵亡等待期：仍可操作大厅（不产生战斗输入）
-    if (inputQueue.interact) { inputQueue.interact = false; return w }
-    return w
-  }
-  const left = !!(keys['KeyA'] || keys['ArrowLeft'])
-  const right = !!(keys['KeyD'] || keys['ArrowRight'])
-  let move: -1 | 0 | 1 = left === right ? 0 : (left ? -1 : 1)
-  if (touchState.moveActive && Math.abs(touchState.moveX) > 0.18) move = touchState.moveX > 0 ? 1 : -1
-  w.move = localPlayer.mountedTowerId ? 0 : move
-  w.jetpack = !!(keys['KeyW'] || keys['Space'] || keys['ArrowUp']) || touchState.boostButtonDown || (touchState.moveActive && touchState.moveY < -0.32)
-  // 下降加速：S / ↓ / 左摇杆下推；水平仍为零惯性（松手即停）
-  w.dive = !!(keys['KeyS'] || keys['ArrowDown']) || (touchState.moveActive && touchState.moveY > 0.45)
+  const k = keys
+  let move: -1 | 0 | 1 = 0
+  if (k['KeyA'] || k['ArrowLeft']) move = (move - 1) as -1 | 0 | 1
+  if (k['KeyD'] || k['ArrowRight']) move = (move + 1) as -1 | 0 | 1
+  if (touchState.moveActive && Math.abs(touchState.moveX) > 0.22) move = touchState.moveX > 0 ? 1 : -1
+  w.move = move
+  w.jump = false
+  w.jetpack = Boolean(k['KeyW'] || k['Space'] || k['ArrowUp'] || touchState.boostButtonDown || (touchState.moveActive && touchState.moveY < -0.35))
+  w.dive = Boolean(k['KeyS'] || k['ArrowDown'] || (touchState.moveActive && touchState.moveY > 0.45))
 
-  const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
-  // 屏幕空间瞄准：玩家在屏幕上的位置 = 画布中心 + 绕行最短位移×缩放；
-  // 角度直接用「鼠标像素 - 玩家像素」算，避免相机跟随 aim 造成的反馈回路（此前的"鼠标瞄不准"根因）。
   const zoom = 1 / camera.fovFactor
   const psx = canvas.width / 2 + wrapDeltaX(camera.x, localPlayer.pos.x) * zoom
   const psy = canvas.height / 2 + wrapDeltaY(camera.y, localPlayer.pos.y) * zoom
+  mouse.worldX = wrapX(camera.x + (mouse.x - canvas.width / 2) / zoom)
+  mouse.worldY = wrapY(camera.y + (mouse.y - canvas.height / 2) / zoom)
+
+  const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
   if (mounted) {
-    w.aim = Math.atan2(mouse.y - psy, mouse.x - psx)
+    const msx = canvas.width / 2 + wrapDeltaX(camera.x, mounted.x) * zoom
+    const msy = canvas.height / 2 + wrapDeltaY(camera.y, mounted.y - 18) * zoom
+    let a = Math.atan2(mouse.y - msy, mouse.x - msx)
+    if (a > -0.12) a = a < Math.PI * 0.5 ? -0.12 : -Math.PI + 0.12
+    w.aim = a
   } else if (touchState.aimActive && Math.hypot(touchState.aimX, touchState.aimY) > 0.15) {
     w.aim = Math.atan2(touchState.aimY, touchState.aimX)
   } else {
@@ -60,18 +60,26 @@ function buildLocalInput(): WorldInput {
 
 function onLocalDeath(): void {
   // 阵亡：打开死亡界面（唯一可换枪处），默认选中「上次的常规主武器」
-  // （拿着补给特武时不能把选择回落到 0，否则玩家会莫名丢掉原本的主武器）
   const cur = WEAPONS[localPlayer.weaponIndex]
   const lastIdx = localPlayer.lastPrimaryIndex ?? localPlayer.weaponIndex
   const last = WEAPONS[lastIdx]
   pendingLoadout.weaponIndex = cur && !cur.isSupplyOnly
     ? localPlayer.weaponIndex
     : (last && !last.isSupplyOnly ? lastIdx : 0)
-  pendingLoadout.secondaryType = localPlayer.secondary === 'doll' ? 'frag' : localPlayer.secondary
+  // 连死阶梯自动解锁并默认预选当前最高阶可用副手（玩家也可在死亡界面手动切换任意已解锁副手）
+  const streak = localPlayer.deathStreak ?? 0
+  const highestSec = getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0)
+  pendingLoadout.secondaryType = highestSec
+  localPlayer.secondary = highestSec
   updateHudWeaponButtons()
   const ds = document.getElementById('deathScreen')
   if (ds) ds.classList.remove('hidden')
-  showToast('💀 已阵亡：在死亡界面选择重生配装')
+  const secDef = SECONDARIES[highestSec] ?? SECONDARIES.frag
+  if (streak > 0 && secDef.unlockStreak > 0) {
+    showToast(`💀 连死 ${streak} 次：副手已解锁并预选【${secDef.icon} ${secDef.name}】`)
+  } else {
+    showToast('💀 已阵亡：在死亡界面选择重生配装')
+  }
 }
 
 function onLocalRespawn(): void {
@@ -80,7 +88,15 @@ function onLocalRespawn(): void {
   const next = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0
   localPlayer.weaponIndex = next
   localPlayer.lastPrimaryIndex = next
-  localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : 'frag'
+  const streak = localPlayer.deathStreak ?? 0
+  const wantSec = pendingLoadout.secondaryType
+  const validSec = isSecondaryUnlocked(wantSec, streak, localPlayer.dollCharges ?? 0)
+    ? wantSec
+    : getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0)
+  localPlayer.secondary = validSec
+  if (validSec === 'doll' && streak >= SECONDARIES.doll.unlockStreak && localPlayer.dollCharges <= 0) {
+    localPlayer.dollCharges = 1
+  }
   updateHudWeaponButtons()
   showToast(world.config.randomSpawn ? '🔄 已在随机安全点重生' : '🔄 已在队伍基地重生')
 }
@@ -106,58 +122,48 @@ export function startGameLoop(): void {
 
     const dead = localPlayer.respawnTimer > 0
     if (dead && !wasDead) onLocalDeath()
-    if (!dead && wasDead) onLocalRespawn()
+    if (!dead && wasDead) {
+      const ds = document.getElementById('deathScreen')
+      if (ds) ds.classList.add('hidden')
+      onLocalRespawn()
+    }
     wasDead = dead
-    // 死亡界面：显示/隐藏 + 倒计时 + 击杀者
-    const deathEl = document.getElementById('deathScreen')
-    if (deathEl) {
-      deathEl.classList.toggle('hidden', !dead)
-      deathEl.classList.toggle('flex', dead)
-      if (dead) {
-        const cd = document.getElementById('deathCountdown')
-        if (cd) cd.textContent = localPlayer.respawnTimer.toFixed(1)
-        const kl = document.getElementById('deathKillerLine')
-        if (kl) kl.textContent = death.info
-          ? `被 ${death.info.killer}${death.info.weapon ? ` 的 ${death.info.weapon}` : ''} 击杀`
-          : '等待重生…'
-      }
+    if (dead) {
+      const cd = document.getElementById('deathCountdown')
+      if (cd) cd.textContent = Math.max(0, localPlayer.respawnTimer).toFixed(1)
+      const kl = document.getElementById('deathKillerLine')
+      if (kl) kl.textContent = death.info
+        ? `被 ${death.info.killer} 使用【${death.info.weapon}】击倒`
+        : '已被击倒 · 请选择重生配装'
     }
 
-    // 表现层：粒子/光束寿命 + 喷气尾焰 + 枪口火焰
+    // 喷气尾焰粒子
+    for (const p of world.players) {
+      if (p.deployed && p.respawnTimer <= 0 && p.jetpack) {
+        effects.jet(p.pos.x, p.pos.y)
+      }
+    }
+    // 玩家开火枪口火花
+    if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
+      effects.muzzle(
+        wrapX(localPlayer.pos.x + Math.cos(localPlayer.aim) * 26),
+        (localPlayer.pos.y - 12) + Math.sin(localPlayer.aim) * 26,
+        WEAPONS[localPlayer.weaponIndex]?.color ?? '#fde047',
+      )
+    }
+    prevFireCooldown = localPlayer.fireCooldown
     effects.update(FIXED)
     for (let i = beams.length - 1; i >= 0; i--) {
       beams[i].life -= FIXED
       if (beams[i].life <= 0) beams.splice(i, 1)
     }
-    if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-      if (localPlayer.jetpack) {
-        const back = Math.cos(localPlayer.aim) >= 0 ? -1 : 1
-        effects.jet(localPlayer.pos.x + back * 14, localPlayer.pos.y + 6)
-      }
-      // fireCooldown 被重新点满 → 视为开火，喷枪口火焰
-      if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
-        const w = WEAPONS[localPlayer.weaponIndex]
-        effects.muzzle(
-          localPlayer.pos.x + Math.cos(localPlayer.aim) * 26,
-          localPlayer.pos.y - 12 + Math.sin(localPlayer.aim) * 26,
-          w?.color ?? '#fbbf24',
-        )
-      }
-    }
-    prevFireCooldown = localPlayer.fireCooldown
-
     acc -= FIXED
     guard++
   }
 
-  // 鼠标世界坐标（屏幕中心 = 相机）
-  mouse.worldX = wrapX(camera.x + (mouse.x - canvas.width / 2) * camera.fovFactor)
-  mouse.worldY = wrapY(camera.y + (mouse.y - canvas.height / 2) * camera.fovFactor)
-
-    renderScene()
-    updateHudUI()
-    updateScoreboardUI()
-    requestAnimationFrame(gameLoop)
+  renderScene()
+  updateHudUI()
+  updateScoreboardUI()
+  requestAnimationFrame(gameLoop)
   })
 }
-

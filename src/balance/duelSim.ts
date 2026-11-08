@@ -163,3 +163,97 @@ export function runDuelSim(opts: DuelSimOptions = {}): DuelSimResult {
   }
   return { rows, table, side }
 }
+
+export interface SecondaryBalanceRow {
+  secId: string
+  name: string
+  unlockStreak: number
+  winRate: number
+  survivalRate: number
+  avgAliveSec: number
+}
+
+/**
+ * 评估连死阶梯各副手（无副手 vs 障碍物/100HP不溢出护盾/teleport/替身人偶）对劣势方（手枪/冲锋枪/步枪 对阵 全主武器）的追赶增益
+ */
+export function runSecondaryBalanceSim(seeds = 15): SecondaryBalanceRow[] {
+  const tiers: { id: string; secId: string; label: string; streak: number }[] = [
+    { id: 'none', secId: 'none', label: '无副手(基线)', streak: 0 },
+    { id: 'obstacle', secId: 'obstacle', label: '🧱 障碍物', streak: 1 },
+    { id: 'shield', secId: 'shield', label: '🛡️ 护盾(100HP不溢出)', streak: 2 },
+    { id: 'teleport', secId: 'teleport', label: '🌀 Teleport(读条)', streak: 3 },
+    { id: 'doll', secId: 'doll', label: '🎎 替身人偶', streak: 4 },
+  ]
+  const underdogWeps = [7, 8, 1] // 手枪 / 冲锋枪 / 突击步枪
+  const enemyWeps = MAIN_WEAPONS
+  const dists = [220, 380, 620]
+  const out: SecondaryBalanceRow[] = []
+
+  for (const tier of tiers) {
+    let games = 0
+    let wins = 0
+    let survived = 0
+    let aliveSum = 0
+
+    for (const uw of underdogWeps) {
+      for (const ew of enemyWeps) {
+        for (const dist of dists) {
+          for (let s = 1; s <= seeds; s++) {
+            games++
+            const w = makeArena()
+            const a = w.addPlayer('Underdog', 'red')
+            const b = w.addPlayer('Dominant', 'blue')
+            a.weaponIndex = uw
+            b.weaponIndex = ew
+            a.pos = { x: 700, y: 984 }
+            b.pos = { x: 700 + dist, y: 984 }
+            a.vel = { x: 0, y: 0 }
+            b.vel = { x: 0, y: 0 }
+            a.deathStreak = tier.streak
+            if (tier.secId !== 'none') {
+              a.secondary = tier.secId
+              if (tier.secId === 'doll') a.dollCharges = 1
+            }
+
+            const ca = newCtl(a, b, s * 13 + uw * 7 + dist)
+            const cb = newCtl(b, a, s * 17 + ew * 11 + dist)
+            let usedSec = false
+            let t = 0
+            for (let tick = 0; tick < MAX_SECONDS * 60; tick++) {
+              const inA = aiInput(ca)
+              const inB = aiInput(cb)
+              if (!usedSec && tick === 1 && tier.secId !== 'none') {
+                usedSec = true
+                if (tier.secId === 'teleport') {
+                  inA.secondary = { type: 'teleport', targetX: b.pos.x + 140, targetY: b.pos.y - 160 }
+                } else {
+                  inA.secondary = { type: tier.secId, targetX: b.pos.x, targetY: b.pos.y }
+                }
+              }
+              if (tier.secId === 'obstacle' && tick > 1 && tick < 180) {
+                inA.move = 0
+                inB.move = -1
+              }
+              w.step(DT, new Map([[a.id, inA], [b.id, inB]]))
+              w.drainEvents()
+              t += DT
+              if (!a.alive || !b.alive) break
+            }
+            aliveSum += t
+            if (a.alive && !b.alive) wins++
+            if (a.alive) survived++
+          }
+        }
+      }
+    }
+    out.push({
+      secId: tier.id,
+      name: tier.label,
+      unlockStreak: tier.streak,
+      winRate: +(wins / games * 100).toFixed(1),
+      survivalRate: +(survived / games * 100).toFixed(1),
+      avgAliveSec: +(aliveSum / games).toFixed(2),
+    })
+  }
+  return out
+}

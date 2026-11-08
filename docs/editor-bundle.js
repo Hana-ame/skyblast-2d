@@ -68,6 +68,8 @@
     // 落地回充：约 1.43s 回满（空中不回充）
   };
   var P = { ...defaults };
+  var RECOIL_DECAY = 7;
+  var RECOIL_INTEGRAL = (1 - Math.exp(-RECOIL_DECAY * (1 / 60))) / RECOIL_DECAY;
 
   // src/core/terrain.ts
   var TILE_SIZE = 20;

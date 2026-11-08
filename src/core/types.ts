@@ -39,8 +39,8 @@ export interface PlayerState {
   chargeTimer: number    // 蓄力已持续秒数（狙击等蓄力武器；松手清零，满 chargeSeconds 发射）
   /** 蓄力锁定方向（rad）：蓄力开始时记录，蓄力期间不再跟随瞄准输入 → 蓄力中不能改发射方向 */
   chargeAim?: number
-  // 副武器
-  secondary: string      // 'frag'|'Flash'|'mine'|'airstrike'|'shield'|'doll'|'impact'
+  // 副武器（连死按平衡性阶梯解锁：frag → obstacle → shield → teleport → mine → doll）
+  secondary: string      // 'frag'|'obstacle'|'shield'|'teleport'|'mine'|'doll'
   secondaryCooldown: number
   fragCharges: number        // 手雷当前可用充能（上限 fragMaxCharges，自然回复）
   fragRechargeTimer: number  // 当前充能已累计回复秒数
@@ -55,7 +55,10 @@ export interface PlayerState {
   /** 当前登上的瞭望塔 id（非 null 时玩家位置锁定在塔顶、不能移动，享 200% 视野；再按 E 下塔） */
   mountedTowerId: string | null
   warpCooldown: number
-  // 替身人偶锚点（激活期间非 null）+ 可用充能数（只能从特殊补给箱获得）
+  // Teleport 读条传送状态（读条结束后直接出现在右键目标位置）
+  teleportTimer?: number
+  teleportTarget?: Vec2 | null
+  // 替身人偶锚点（激活期间非 null）+ 可用充能数（特殊补给箱获得，或连死解锁赠送）
   doll: DollSnapshot | null
   dollCharges: number
   // 重生倒计时（>0 表示死亡等待重生）
@@ -65,6 +68,8 @@ export interface PlayerState {
   recoilVel?: Vec2
   kills: number
   deaths: number
+  /** 连续死亡次数（每次阵亡 +1，获得击杀时重置为 0；用于按平衡性阶梯依次解锁副手） */
+  deathStreak: number
 }
 
 export interface Projectile {
@@ -229,9 +234,6 @@ export interface WorldInput {
 }
 
 // 触发事件（瞬态、不进快照；由 World 产出、net/ui 层订阅 → killfeed/音效/粒子）
-// 说明：核心（core/sim/*）已切换为 attackerId/victimId/headshot/projectile 这套新字段，
-// 而表现层/联机层仍有按旧字段（killerName/isHeadshot/obstacle_destroy…）读取的代码。
-// 为保证两边都能工作，这里取「并集」：新字段 + 旧字段 + 两套 kind 都保留。
 export interface WorldEvent {
   /** 高斯枪光束分段（kind='laser' 时） */
   segments?: { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }[]

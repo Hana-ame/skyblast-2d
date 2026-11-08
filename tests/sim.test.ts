@@ -9,7 +9,7 @@ import { ServerSim } from '../src/net/ServerSim.ts'
 import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
-import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
+import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, getUnlockedSecondaries, getHighestUnlockedSecondary, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
 import { defaultMapData, sanitizeMapData } from '../src/core/map.ts'
 import { sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides } from '../src/core/balanceOverrides.ts'
@@ -377,7 +377,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[0].magSize, 8, 'shotgun magazine 8')
   assert.equal(WEAPONS[0].maxReserve, 72, 'shotgun reserve 72')
   assert.equal(WEAPONS[0].headshotMult, 1.0, 'no headshot bonus')
-  assert.ok(WEAPONS[0].fireDelay >= 0.7, 'shotgun fire rate lowered')
+  assert.equal(WEAPONS[0].fireDelay, 0.58, 'shotgun fire rate slightly increased (0.72 -> 0.58s)')
   assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
   assert.ok((WEAPONS[2].chargeSeconds ?? 0) >= 0.5, 'sniper needs aim charge time (balance)')
   assert.equal(WEAPONS[3].lifeSeconds, 999, 'bazooka infinite range')
@@ -417,7 +417,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   // 狙击：超过视距(800) 非爆头只有 99 伤害
   assert.equal(WEAPONS[2].edgeDamage, 99, 'sniper hitbox edge damage 99')
   assert.equal(WEAPONS[2].farRange, undefined, 'sniper has no farRange penalty on body')
-  assert.deepEqual(Object.keys(SECONDARIES).sort(), ['doll', 'frag'], 'only frag + doll secondaries')
+  assert.deepEqual(SECONDARY_UNLOCK_ORDER, ['frag', 'obstacle', 'shield', 'teleport', 'doll'], 'secondary unlock order matches balance progression')
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
   assert.ok(!SECONDARIES.frag.supplyOnly, 'frag selectable')
 
@@ -1097,12 +1097,11 @@ test('地图编辑器数据：默认地图/清洗/自定义地图可被 World �
 })
 
 
-test('高斯枪自伤：只有枪口第一小段不自伤，其余反射都会伤到自己', () => {
-  // 设计意图：枪口第一段（b=0）不伤自己，否则玩家一开火就自杀；
-  // 但**任何反射回来的段**都必须自伤（包括绕世界接缝撞基岩再弹回来的情况）。
-  const probe = (label: string, solids: MapSolid[], aim: number, frames = 90) => {
+test('高斯枪自伤：全部段（含跨地图边界段、第1次反射段、第2次反射段）均带有自伤', () => {
+  const probe = (label: string, solids: MapSolid[], aim: number, frames = 60) => {
     const w = new World(41000 + solids.length, { name: label, solids })
     w.config.randomSpawn = false
+    w.obstacles.length = 0
     const p = w.addPlayer('P', 'ffa')
     p.weaponIndex = 4
     p.ammo[4] = 24
@@ -1116,23 +1115,22 @@ test('高斯枪自伤：只有枪口第一小段不自伤，其余反射都会�
     return { p, segCount }
   }
 
-  // ① 枪口第一段不自伤：空旷处水平开火，光束不撞任何东西 → 1 段、不掉血
-  const open = probe('open', [], 0)
-  assert.equal(open.segCount, 1, `open shot has a single forward segment, got ${open.segCount}`)
-  assert.equal(open.p.hp, 100, 'the first (muzzle) segment must not damage the shooter')
+  // ① 空旷地图水平开火：第1段到达右边界后跨过地图边界（方向不变），第2段从左边界绕回穿过射手 -> 造成自伤
+  const openWrap = probe('open-wrap', [], 0)
+  assert.equal(openWrap.segCount, 2, `open horizontal shot wraps across boundary with bounces=2 => 2 segments, got ${openWrap.segCount}`)
+  assert.ok(openWrap.p.hp < 100, `wrapped segment damages the shooter (all segments have self-damage), hp=${openWrap.p.hp}`)
 
-  // ② 朝脚下地面开火：撞地反射 → 自伤
+  // ② 朝脚下地面开火：撞地反射 -> 自伤
   const ground = probe('ground', [], Math.PI / 2)
   assert.ok(ground.segCount >= 2, `ground shot reflects, got ${ground.segCount} segments`)
   assert.ok(ground.p.hp < 100, `reflected beam damages the shooter, hp=${ground.p.hp}`)
 
-  // ③ 眼前一堵墙：撞墙反射 → 自伤
+  // ③ 眼前一堵墙：第1次撞墙反射段 -> 自伤
   const wall = probe('wall', [{ x: 6520, y: 2500, w: 40, h: 400, kind: 'cover' }], 0)
   assert.ok(wall.segCount >= 2, `wall shot reflects, got ${wall.segCount} segments`)
-  assert.ok(wall.p.hp < 100, `reflected beam damages the shooter, hp=${wall.p.hp}`)
+  assert.ok(wall.p.hp < 100, `1st reflected segment damages the shooter, hp=${wall.p.hp}`)
 
-  // ④ 向上穿过天花板空口 → 绕世界上下接缝撞到底部基岩 → 反射回来 → 自伤
-  //    （这条最容易被误判成"接缝穿模"而错误地终止反射，必须显式锁住）
+  // ④ 向上穿过天花板空口 -> 跨上下边界并撞到底部基岩反射回来 -> 自伤
   const seam = probe('seam', [], -Math.PI / 2)
   assert.ok(seam.segCount >= 2, `upward shot crossing the world seam reflects, got ${seam.segCount} segments`)
   assert.ok(seam.p.hp < 100, `reflection back across the seam damages the shooter, hp=${seam.p.hp}`)
@@ -1473,4 +1471,150 @@ test('快照增量精简与高频弹丸事件化：静态设施零重复传输 +
   assert.ok(advanced.pos.x > 3020, `local dead reckoning advanced bullet x to ${advanced.pos.x.toFixed(1)}`)
   sync.applyProjectileEvents([{ kind: 'projectile_destroy', projectileId: 8888 }])
   assert.equal(sync.getDeadReckonedProjectiles().length, 0, 'destroy event removed local projectile')
+})
+
+
+test('连死副手阶梯解锁：按平衡性依次解锁 障碍物 → 护盾 → teleport → 替身人偶（已移除地雷），且击杀重置连死', () => {
+  const w = new World(777)
+  w.config.randomSpawn = false
+  const p = w.addPlayer('Victim', 'red')
+  const killer = w.addPlayer('Killer', 'blue')
+
+  assert.equal(p.deathStreak, 0)
+  assert.deepEqual(getUnlockedSecondaries(p.deathStreak), ['frag'])
+  assert.equal(p.secondary, 'frag')
+  assert.equal(SECONDARIES['mine'], undefined, 'mine option removed from SECONDARIES')
+
+  // 未解锁前直接请求使用高阶副手应被拒绝（不消耗冷却）
+  const obsCount0 = w.obstacles.length
+  w.step(DT, new Map([[p.id, input({ secondary: sec('obstacle') })]]))
+  assert.equal(w.obstacles.length, obsCount0, 'locked obstacle must not spawn')
+  assert.equal(p.secondaryCooldown, 0)
+
+  const expectedProgression = ['obstacle', 'shield', 'teleport', 'doll']
+  for (let i = 0; i < expectedProgression.length; i++) {
+    const expectedSec = expectedProgression[i]
+    w.damagePlayer(p, 999, undefined, false, false, killer.id, killer.team, '测试')
+    assert.equal(p.deathStreak, i + 1, `death #${i + 1} increments deathStreak`)
+    assert.equal(getHighestUnlockedSecondary(p.deathStreak), expectedSec)
+    assert.equal(p.secondary, expectedSec, `auto-unlocks and selects ${expectedSec} at streak ${i + 1}`)
+    // 推进到重生完成
+    for (let t = 0; t < 300; t++) w.step(DT, new Map([[p.id, input()], [killer.id, input()]]))
+    assert.ok(p.alive && p.respawnTimer <= 0, 'player respawned')
+    assert.equal(p.secondary, expectedSec)
+  }
+
+  // 连死 4 次解锁替身人偶后，重生自动赠送 1 充能，可直接使用
+  assert.equal(p.dollCharges, 1, 'streak 4 grants 1 doll charge on respawn')
+  w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
+  assert.ok(p.doll !== null, 'doll anchored after streak unlock')
+
+  // 当 Victim 反杀 Killer 时，Victim 的连死计数重置为 0
+  w.damagePlayer(killer, 999, undefined, false, false, p.id, p.team, '反杀')
+  assert.equal(p.kills, 1)
+  assert.equal(p.deathStreak, 0, 'getting a kill resets deathStreak to 0')
+})
+
+test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且碰撞箱略大的唯一护盾 / teleport读条落右键点 / 二进制同步无损', () => {
+  const w = new World(778)
+  w.config.randomSpawn = false
+  const p = w.addPlayer('Tester', 'red')
+  const enemy = w.addPlayer('Enemy', 'blue')
+  p.pos = { x: 3000, y: 2784 }
+  enemy.pos = { x: 4200, y: 2784 }
+  p.deathStreak = 4 // 解锁全部阶梯
+
+  // 1) 障碍物 (obstacle)：10.0s 冷却，不设同屏数量上限，可无限生成
+  assert.equal(SECONDARIES.obstacle.cd, 10.0)
+  const obs0 = w.obstacles.length
+  for (let k = 0; k < 5; k++) {
+    p.secondaryCooldown = 0
+    p.pos = { x: 2400 + k * 140, y: 2784 }
+    w.step(DT, new Map([[p.id, input({ aim: 0, secondary: sec('obstacle') })]]))
+  }
+  assert.equal(w.obstacles.length, obs0 + 5, 'all 5 player-spawned obstacles remain active (unlimited spawning)')
+  assert.equal(w.bodyOverlapsAt(p.pos.x, p.pos.y), false, 'player not stuck in spawned obstacle')
+
+  // 2) 护盾 (shield)：唯一 100HP 护盾，不可叠加，且伤害不溢出（即使剩 20HP 护盾吃下 520 手雷/250 狙击爆头，本体仍满血 100HP）
+  assert.equal(w.config.shieldHp, 100, 'shield capacity is 100HP')
+  p.secondaryCooldown = 0
+  w.step(DT, new Map([[p.id, input({ secondary: sec('shield') })]]))
+  assert.equal(p.shieldHp, 100, 'shield starts at 100HP')
+  assert.ok(p.shieldTimer > 0)
+  // 先受 80 伤害 -> 护盾剩余 20HP，本体 100HP
+  w.damagePlayer(p, 80, undefined, false, false, enemy.id, enemy.team, '测试')
+  assert.equal(p.hp, 100, 'shield absorbed 80 damage')
+  assert.equal(p.shieldHp, 20, '20 shieldHp left')
+  // 护盾已存在时再次按护盾不会叠加或重置（只允许出现一个）
+  p.secondaryCooldown = 0
+  w.step(DT, new Map([[p.id, input({ secondary: sec('shield') })]]))
+  assert.equal(p.shieldHp, 20, 'cannot stack a second shield while active')
+  // 再受 250 巨额伤害 -> 护盾破碎归零，溢出伤害不扣本体 HP（p.hp 仍为 100）
+  w.damagePlayer(p, 250, undefined, true, false, enemy.id, enemy.team, '狙')
+  assert.equal(p.shieldHp, 0, 'shield broken')
+  assert.equal(p.shieldTimer, 0, 'shield timer cleared on break')
+  assert.equal(p.hp, 100, 'overflow damage (230) did NOT spill into player HP!')
+
+  // 2b) 护盾开启时碰撞箱稍微扩大：擦边弹道（距身体中心 dx=20px，超出常规 bodyHalfX=16.2px 但小于护盾外扩 24.2px）未开盾不中、开盾命中护盾
+  {
+    const wHitbox = new World(779, { name: 'shield-hitbox', solids: [] })
+    wHitbox.config.randomSpawn = false
+    const s = wHitbox.addPlayer('Shooter', 'red')
+    const t = wHitbox.addPlayer('Target', 'blue')
+    s.pos = { x: 2000, y: 1500 }
+    t.pos = { x: 2020, y: 1200 } // 水平偏移 20px（常规身体碰撞半宽 13+3.2=16.2px，开盾后 +8=24.2px）
+    // 未开护盾：竖直向上发射单发步枪弹（x=2000）从 t 左侧 20px 掠过，不命中
+    wHitbox.projectiles.push({
+      id: 910001, owner: s.id, pos: { x: 2000, y: 1240 }, vel: { x: 0, y: -1200 },
+      spawnX: 2000, spawnY: 1240, weaponId: 1, curveRate: 0, life: 1.0, r: 3.2,
+      damage: 33, headshotMult: 2.2, explosive: false, terrainRadius: 8, gravityScale: 0,
+      pierceOnHeadshot: false, pierceAll: false, isGravityOrb: false, bounces: 0, passWalls: false,
+      beam: false, rocket: false, dragPerSecond: 1, weaponLabel: '突击步枪', color: '#38bdf8', hitTargets: [s.id],
+    })
+    wHitbox.step(DT, new Map())
+    assert.equal(t.hp, 100, 'unshielded player is missed at dx=20px')
+
+    // 开启护盾后：清空旧弹丸，发射完全相同的弹道 x=2000 命中扩大的护盾碰撞箱！
+    wHitbox.projectiles.length = 0
+    t.pos = { x: 2020, y: 1200 }
+    t.shieldHp = 100
+    t.shieldTimer = 5.0
+    wHitbox.projectiles.push({
+      id: 910002, owner: s.id, pos: { x: 2000, y: 1240 }, vel: { x: 0, y: -1200 },
+      spawnX: 2000, spawnY: 1240, weaponId: 1, curveRate: 0, life: 1.0, r: 3.2,
+      damage: 33, headshotMult: 2.2, explosive: false, terrainRadius: 8, gravityScale: 0,
+      pierceOnHeadshot: false, pierceAll: false, isGravityOrb: false, bounces: 0, passWalls: false,
+      beam: false, rocket: false, dragPerSecond: 1, weaponLabel: '突击步枪', color: '#38bdf8', hitTargets: [s.id],
+    })
+    wHitbox.step(DT, new Map())
+    assert.equal(t.shieldHp, 67, 'shielded player with slightly larger hitbox catches the grazing shot at dx=20px')
+    assert.equal(t.hp, 100)
+  }
+
+  // 3) Teleport (teleport)：直接开始读条，读条结束后直接出现在右键目标位置
+  p.secondaryCooldown = 0
+  const rightClickX = 5200
+  const rightClickY = 2784
+  w.step(DT, new Map([[p.id, input({ aim: 0, secondary: sec('teleport', rightClickX, rightClickY) })]]))
+  assert.ok((p.teleportTimer ?? 0) > 0, 'teleport starts channeling (读条中)')
+  assert.deepEqual(p.teleportTarget, { x: rightClickX, y: rightClickY })
+  assert.ok(Math.abs(p.pos.x - rightClickX) > 1000, 'not teleported before cast bar completes')
+  for (let i = 0; i < 50; i++) w.step(DT, new Map([[p.id, input()]]))
+  assert.equal(p.teleportTimer, 0, 'teleport cast finished')
+  assert.equal(p.teleportTarget, null)
+  assert.ok(Math.abs(p.pos.x - rightClickX) < 10, `teleported directly to right-click x=${rightClickX}, got ${p.pos.x}`)
+  assert.equal(w.bodyOverlapsAt(p.pos.x, p.pos.y), false, 'teleport destination is free of solids')
+
+  // 4) 二进制编解码保真
+  p.secondary = 'teleport'
+  p.deathStreak = 3
+  p.teleportTimer = 0.3
+  p.teleportTarget = { x: 6100, y: 2784 }
+  const bin = encodeServerMsgBinary({ snap: w.snapshot(), events: [] })
+  const dec = decodeServerMsgBinary(bin)!
+  const decP = dec.snap.players.find(x => x.id === p.id)!
+  assert.equal(decP.secondary, 'teleport')
+  assert.equal(decP.deathStreak, 3)
+  assert.ok((decP.teleportTimer ?? 0) > 0.25)
+  assert.ok(decP.teleportTarget && Math.abs(decP.teleportTarget.x - 6100) <= 1)
 })

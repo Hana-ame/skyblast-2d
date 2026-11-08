@@ -8,6 +8,7 @@ import type { WeaponDef, GameConfig } from '../weapons.ts'
 import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist } from '../wrap.ts'
 import {
   INV_BUCKET_SIZE,
+  bucketIdx,
   obstacleAtBucket,
   findObstacleAt,
   lineBlockedByTerrain,
@@ -15,6 +16,12 @@ import {
   checkBodyOverlapsAt,
 } from './spatial.ts'
 import type { PlayerState, Projectile, Obstacle, WorldEvent, TeamId } from '../types.ts'
+
+/** 高斯枪跨越地图边界时扣除反射次数的段长阈值（前一段长度 > 阈值则反射次数 -1，否则 ±0） */
+export const BEAM_SEAM_THRESHOLD = 1000
+
+/** 玩家开启能量护盾时的额外碰撞箱外扩半径（px） */
+export const SHIELD_HITBOX_PAD = 8
 
 export interface ProjectileContext {
   terrain: Terrain
@@ -166,7 +173,38 @@ export function isProjectileBodyEdgeHit(
   return midX > 10 || midY > 13.5 || (chord >= 0 && chord < 8)
 }
 
-/** 高斯枪：按住即持续发射的反射光束（2 次镜面反射、连续 DPS、弹药按秒消耗） */
+/** 判定光束采样点 (px, py) 是否命中玩家 t（含护盾开启时稍微扩大的碰撞箱） */
+function isPointInPlayerBeamHitbox(
+  t: PlayerState,
+  px: number,
+  py: number,
+  baseHeadR: number,
+): { isHead: boolean } | null {
+  const shieldPad = (t.shieldTimer > 0 && t.shieldHp > 0) ? SHIELD_HITBOX_PAD : 0
+  const rawDy = Math.abs(t.pos.y - py)
+  if (rawDy > 40 + shieldPad && rawDy < WORLD_H - (40 + shieldPad)) return null
+  const hx = wrapDeltaX(t.pos.x, px)
+  const maxHalfX = 18 + shieldPad
+  if (hx > maxHalfX || hx < -maxHalfX) return null
+  const hy = wrapDeltaY(t.pos.y - 24, py)
+  const effHeadR = baseHeadR + shieldPad
+  const isHead = (hx * hx + hy * hy) <= effHeadR * effHeadR
+  const bx = Math.abs(hx)
+  const by = wrapDeltaY(t.pos.y, py)
+  if (isHead || (bx <= 14 + shieldPad && by >= -12 - shieldPad && by <= 18 + shieldPad)) {
+    return { isHead }
+  }
+  return null
+}
+
+/**
+ * 高斯枪：按住即持续发射的反射光束
+ * 反射与跨边界规则：
+ *   1. 跨越地图边界时：不改变方向；如果前一段长度 > BEAM_SEAM_THRESHOLD，反射次数 -1，否则 ±0
+ *   2. 碰到障碍物（原始实心地形或可破坏障碍物）时：改变方向（光线沿着表面反射），反射次数 -1
+ *   3. 当反射次数归零时，不再反射（bounces = 2）
+ *   4. 高斯枪的全部段均带有自伤
+ */
 export function updateContinuousBeam(
   ctx: ProjectileContext,
   p: PlayerState,
@@ -199,149 +237,192 @@ export function updateContinuousBeam(
     const cx = wrapX(p.pos.x + dx * ahead)
     const cy = wrapY((p.pos.y - 12) + dy * ahead)
     if (ctx.terrain.isSolidAt(cx, cy) || findObstacleAt(ctx.obstacles, ctx.obstacleBroadBuckets, cx, cy)) break
+    if (ahead > 4) {
+      const nxProbe = wrapX(cx + dx * 4)
+      const nyProbe = wrapY(cy + dy * 4)
+      if (ctx.terrain.isSolidAt(nxProbe, nyProbe) || findObstacleAt(ctx.obstacles, ctx.obstacleBroadBuckets, nxProbe, nyProbe)) break
+    }
     x = cx
     y = cy
     originOk = true
   }
   if (!originOk) return
-  const originX = x
-  const originY = y
-  // 每段独立射程，按「本段主导轴」取小于该轴绕世界一圈的距离：
-  //   水平主导 → WORLD_W-200 (13000)，够"横跨地图左右的大房间"单段 11976；
-  //   垂直主导 → WORLD_H-200 (4200)，避免竖直激光绕过世界上下接缝、从背面打回射手
-  //              （实测：地面上朝正上方开火，2748px 后到顶接缝，绕到底部反射回来打中射手）。
-  // 不能跨段累计预算——那会让大房间第二段被截断、反射次数变少。
-  const segCapFor = (ddx: number, ddy: number): number =>
-    Math.abs(ddx) >= Math.abs(ddy) ? WORLD_W - 200 : WORLD_H - 200
+
   const step = 4
-  const bounces = wep.bounces ?? 0
+  let bouncesLeft = wep.bounces ?? 2
   const headR = ctx.config.headRadius + 3
-  const headRSq = headR * headR
   const tGrid = ctx.terrain.grid
   const obstacleBroadBuckets = ctx.obstacleBroadBuckets
   const playerBroadBuckets = ctx.playerBroadBuckets
   const obstacles = ctx.obstacles
 
-  // 反射预算：真实镜面反射与「接缝穿透式反射」共享。每次穿越世界接缝消耗一次，
-  // 因此激光不可能绕环面世界转很多周；但穿接缝时**方向不变、线段不拆**，视觉仍连续。
-  let budget = bounces
-  let b = 0
-  while (b <= bounces) {
-    let travelled = 0
-    let hitWall = false
-    let blockedByObstacle = false
-    const segStartX = x
-    const segStartY = y
-    const dirX = dx       // 本段方向（反射会改 dx/dy，这里先存一份用于真实位移）
-    const dirY = dy
-    const stepX = dx * step
-    const stepY = dy * step
-    const maxSegLen = segCapFor(dirX, dirY)
-    while (travelled < maxSegLen) {
-      let nx = x + stepX
-      let crossedSeam = false
-      if (nx >= WORLD_W) { nx -= WORLD_W; crossedSeam = true }
-      else if (nx < 0) { nx += WORLD_W; crossedSeam = true }
-      let ny = y + stepY
-      if (ny >= WORLD_H) { ny -= WORLD_H; crossedSeam = true }
-      else if (ny < 0) { ny += WORLD_H; crossedSeam = true }
+  // 全部段都带有自伤：一旦光束离开枪口时穿出射手自身碰撞箱（或发生任意边界跨越/障碍物反射），即对射手自身生效
+  let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR)
 
-      // 接缝 → 一次「穿透式反射」：不改变方向、不拆线段（保持连续），只扣反射预算。
-      if (crossedSeam) {
-        if (budget <= 0) { hitWall = false; break }   // 预算耗尽：射程尽头自然终止
-        budget--
+  const checkPlayersAt = (
+    px: number,
+    py: number,
+    segStartX: number,
+    segStartY: number,
+    dirX: number,
+    dirY: number,
+    distFromSegStart: number,
+  ): void => {
+    if (!exitedSelf && !isPointInPlayerBeamHitbox(p, px, py, headR)) {
+      exitedSelf = true
+    }
+    const bIdx = bucketIdx(px)
+    const pList = playerBroadBuckets[bIdx]
+    if (!pList || pList.length === 0) return
+    for (let pi = 0; pi < pList.length; pi++) {
+      const t = pList[pi]
+      if (t.id === p.id) {
+        if (!wep.selfDamage || !exitedSelf) continue
+      } else if (t.team === p.team && p.team !== 'ffa' && !wep.friendlyFire) {
+        continue
       }
+      if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
+      const hitInfo = isPointInPlayerBeamHitbox(t, px, py, headR)
+      if (!hitInfo) continue
+      if (lineBlockedByTerrain(
+        ctx.terrain, obstacles, obstacleBroadBuckets,
+        segStartX, segStartY, t.pos.x, t.pos.y - 12,
+        dirX * distFromSegStart, dirY * distFromSegStart,
+      )) continue
+      hitPlayer.add(t.id)
+      const mult = hitInfo.isHead ? wep.headshotMult : 1
+      ctx.damagePlayer(t, dps * mult * dt, undefined, hitInfo.isHead, false, p.id, p.team, wep.shortName)
+    }
+  }
 
-      const gx = (nx / 20) | 0
-      const gy = (ny / 20) | 0
-      if (tGrid[gy * GRID_W + gx] !== 0) {
-        hitWall = true
-        // 反射点必须退回到「最后一个空点」（x,y 当前就是），绝不能让下一段从墙体内部出发，
-        // 否则下一段的真实位移会算成"从墙内穿出"（实测会得到 dx≈±13176 这类荒谬值），
-        // 进而让反射光束打到墙背面的目标。
-        const prevGx = (x / 20) | 0
-        const prevGy = (y / 20) | 0
-        const hitX = tGrid[prevGy * GRID_W + gx] !== 0
-        const hitY = tGrid[gy * GRID_W + prevGx] !== 0
+  const pushBeamSegment = (x1: number, y1: number, x2: number, y2: number, rawDx: number, rawDy: number) => {
+    if (Math.hypot(rawDx, rawDy) <= 1e-6) return null
+    const cut = truncateSegmentToFree(ctx.terrain, x1, y1, x2, y2, rawDx, rawDy)
+    segments.push({ x1, y1, x2: cut.x, y2: cut.y, dx: cut.dx, dy: cut.dy })
+    exitedSelf = true
+    return cut
+  }
+
+  let segStartX = x
+  let segStartY = y
+  let travelled = 0
+  let stepsCount = 0
+  const maxTotalSegments = 16
+  const maxSingleSegLen = Math.ceil(Math.hypot(WORLD_W, WORLD_H)) + 32
+  const maxTotalSteps = Math.ceil((maxSingleSegLen * 8) / step)
+
+  while (segments.length < maxTotalSegments && stepsCount < maxTotalSteps) {
+    stepsCount++
+    const dirX = dx
+    const dirY = dy
+    const rawNx = x + dirX * step
+    const rawNy = y + dirY * step
+    const crossedSeam = rawNx < 0 || rawNx >= WORLD_W || rawNy < 0 || rawNy >= WORLD_H
+    const nx = wrapX(rawNx)
+    const ny = wrapY(rawNy)
+
+    // 1. 跨越地图边界时：不改变方向，若前一段长度 > BEAM_SEAM_THRESHOLD 则反射次数 -1，否则 ±0；反射次数归零时不再反射
+    if (crossedSeam) {
+      const gxAfter = (nx / 20) | 0
+      const gyAfter = (ny / 20) | 0
+      const nextIsTerrain = tGrid[gyAfter * GRID_W + gxAfter] !== 0
+      const nextObsList = obstacleBroadBuckets[bucketIdx(nx)]
+      const nextOb = (!nextIsTerrain && nextObsList && nextObsList.length > 0)
+        ? obstacleAtBucket(nextObsList, nx, ny, 0)
+        : null
+      const nextIsFree = !nextIsTerrain && !nextOb
+
+      const endX = nextIsFree ? nx : x
+      const endY = nextIsFree ? ny : y
+      const segLen = nextIsFree ? (travelled + step) : travelled
+      if (segLen > 0) {
+        pushBeamSegment(segStartX, segStartY, endX, endY, dirX * segLen, dirY * segLen)
+      }
+      if (segLen > BEAM_SEAM_THRESHOLD) {
+        bouncesLeft--
+        if (bouncesLeft <= 0) break
+      } else if (bouncesLeft <= 0) {
+        // 反射次数已归零时，仅允许短段跨缝一次后在下一障碍物或超阈值边界处终止
+      }
+      if (nextIsFree) {
+        x = nx
+        y = ny
+        segStartX = nx
+        segStartY = ny
+        travelled = 0
+        checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0)
+        continue
+      }
+      // 跨界后首步即紧贴障碍物：当前段已在边界结段，继续向下执行障碍物表面反射并扣除障碍物反射次数
+      segStartX = x
+      segStartY = y
+      travelled = 0
+    }
+
+    // 2. 碰到原始实心地形障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零时不再反射
+    const gx = (nx / 20) | 0
+    const gy = (ny / 20) | 0
+    if (tGrid[gy * GRID_W + gx] !== 0) {
+      if (travelled > 0) {
+        const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled)
+        if (cut && cut.shortened) {
+          x = cut.x
+          y = cut.y
+        }
+      }
+      if (bouncesLeft <= 0) break
+      bouncesLeft--
+      const prevGx = (x / 20) | 0
+      const prevGy = (y / 20) | 0
+      const hitX = tGrid[prevGy * GRID_W + gx] !== 0
+      const hitY = tGrid[gy * GRID_W + prevGx] !== 0
+      if (hitX) dx = -dx
+      if (hitY) dy = -dy
+      if (!hitX && !hitY) { dx = -dx; dy = -dy }
+      if (ctx.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) break
+      segStartX = x
+      segStartY = y
+      travelled = 0
+      continue
+    }
+
+    // 3. 碰到可破坏障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零时不再反射
+    const bIdx = bucketIdx(nx)
+    const obsList = obstacleBroadBuckets[bIdx]
+    if (obsList && obsList.length > 0) {
+      const ob = obstacleAtBucket(obsList, nx, ny, 0)
+      if (ob) {
+        // 先基于未销毁的障碍物几何计算碰撞面法线，再结算伤害（防止当帧打爆后 obstacleAtBucket 返回 null）
+        const hitX = obstacleAtBucket([ob], nx, y, 0) !== null
+        const hitY = obstacleAtBucket([ob], x, ny, 0) !== null
+        if (!hitObstacle.has(ob.id)) {
+          hitObstacle.add(ob.id)
+          ctx.damageObstacle(ob, dps * dt, undefined)
+        }
+        if (travelled > 0) {
+          const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled)
+          if (cut && cut.shortened) {
+            x = cut.x
+            y = cut.y
+          }
+        }
+        if (bouncesLeft <= 0) break
+        bouncesLeft--
         if (hitX) dx = -dx
         if (hitY) dy = -dy
         if (!hitX && !hitY) { dx = -dx; dy = -dy }
-        break
+        segStartX = x
+        segStartY = y
+        travelled = 0
+        continue
       }
-
-      const bIdx = (nx * INV_BUCKET_SIZE) | 0
-      const obsList = obstacleBroadBuckets[bIdx]
-      if (obsList && obsList.length > 0) {
-        const ob = obstacleAtBucket(obsList, nx, ny, 0)
-        if (ob) {
-          if (!hitObstacle.has(ob.id)) {
-            hitObstacle.add(ob.id)
-            ctx.damageObstacle(ob, dps * dt, undefined)
-          }
-          x = nx
-          y = ny
-          blockedByObstacle = true
-          break
-        }
-      }
-
-      const pList = playerBroadBuckets[bIdx]
-      if (pList && pList.length > 0) {
-        for (let pi = 0; pi < pList.length; pi++) {
-          const t = pList[pi]
-          // 自伤：第一段（枪口出发）不伤自己，只有反射回来的光束且开启 selfDamage 才会打到自己
-          if (t.id === p.id && b === 0) continue
-          if (t.id === p.id && !wep.selfDamage) continue
-          if (t.id !== p.id && t.team === p.team && p.team !== 'ffa' && !wep.friendlyFire) continue
-          if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
-          const rawDy = Math.abs(t.pos.y - ny)
-          if (rawDy > 40 && rawDy < WORLD_H - 40) continue
-          const hx = wrapDeltaX(t.pos.x, nx)
-          if (hx > 18 || hx < -18) continue
-          const hy = wrapDeltaY(t.pos.y - 24, ny)
-          const isHead = (hx * hx + hy * hy) <= headRSq
-          const bx = Math.abs(hx)
-          const by = wrapDeltaY(t.pos.y, ny)
-          if (isHead || (bx <= 14 && by >= -12 && by <= 18)) {
-            // 用「本步真实方向 × 到枪口的距离」做遮挡判定：跨接缝时 wrapDelta 会反向
-            if (lineBlockedByTerrain(
-              ctx.terrain, obstacles, obstacleBroadBuckets,
-              segStartX, segStartY, t.pos.x, t.pos.y - 12,
-              dirX * travelled, dirY * travelled,
-            )) continue
-            hitPlayer.add(t.id)
-            const mult = isHead ? wep.headshotMult : 1
-            ctx.damagePlayer(t, dps * mult * dt, undefined, isHead, false, p.id, p.team, wep.shortName)
-          }
-        }
-      }
-
-      x = nx
-      y = ny
-      travelled += step
     }
-    if (hitWall && ctx.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
-      hitWall = false
-    }
-    // 段起点必须是本段真实的起点（segStartX/Y），不能用上一段"截断后"的端点：
-    // 截断会把上段端点拉回墙前，若拿它当本源点，本源点与 rawDx 就错位，
-    // 真实位移会算出 dx≈±13176 这种荒谬值（并让反射光束打到墙背面）。
-    const seg = { x1: segStartX, y1: segStartY, x2: x, y2: y, dx: 0, dy: 0 }
-    // 真实（未 wrap）位移：单段可能 > 半世界（如地面→天花板 2440px），
-    // 用 wrapDelta 会折叠成反向最短路径 → 段被截成几像素、反射丢失。
-    const rawDx = dirX * travelled
-    const rawDy = dirY * travelled
-    const cut = truncateSegmentToFree(ctx.terrain, seg.x1, seg.y1, seg.x2, seg.y2, rawDx, rawDy)
-    seg.x2 = cut.x
-    seg.y2 = cut.y
-    seg.dx = cut.dx
-    seg.dy = cut.dy
-    segments.push(seg)
-    if (cut.shortened) break
-    if (blockedByObstacle || !hitWall) break
-    if (budget <= 0) break
-    budget--
-    b++
+
+    // 4. 自由空间步进与玩家命中判定（全部段均带自伤）
+    x = nx
+    y = ny
+    travelled += step
+    checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, travelled)
   }
 
   ctx.events.push({
@@ -464,7 +545,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
     const allowFF = !!wep?.friendlyFire
     const allowSelf = !!wep?.selfDamage
     const headHitR = ctx.config.headRadius + pr.r
-    const headHitRSq = headHitR * headHitR
     const bodyHalfX = 13 + pr.r
 
     for (let step = 0; step < steps; step++) {
@@ -481,7 +561,7 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
 
       const bIdx = (nx * INV_BUCKET_SIZE) | 0
 
-      // A. 玩家命中判定
+      // A. 玩家命中判定（护盾开启时碰撞箱稍微扩大 SHIELD_HITBOX_PAD）
       let hit = false
       const pList = playerBroadBuckets[bIdx]
       if (pList && pList.length > 0) {
@@ -490,14 +570,20 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
           if (t.id !== pr.owner && t.team === ownerTeam && t.team !== 'ffa' && !allowFF) continue
           if (t.id === pr.owner && !allowSelf) continue
           if (t.respawnTimer > 0 || !t.deployed || !t.alive) continue
+          const shieldPad = (t.shieldTimer > 0 && t.shieldHp > 0) ? SHIELD_HITBOX_PAD : 0
           const rawDy = Math.abs(t.pos.y - ny)
-          if (rawDy > 42 && rawDy < WORLD_H - 42) continue
+          if (rawDy > 42 + shieldPad && rawDy < WORLD_H - (42 + shieldPad)) continue
           if (pr.hitTargets.includes(t.id)) continue
+          const tHeadHitR = headHitR + shieldPad
+          const tHeadHitRSq = tHeadHitR * tHeadHitR
+          const tBodyHalfX = bodyHalfX + shieldPad
           const dxHead = wrapDeltaX(t.pos.x, nx)
           const dxBody = Math.abs(dxHead)
-          if (dxBody > Math.max(headHitR, bodyHalfX)) continue
+          if (dxBody > Math.max(tHeadHitR, tBodyHalfX)) continue
           const dyHead = wrapDeltaY(t.pos.y - 24, ny)
-          if (dxHead * dxHead + dyHead * dyHead <= headHitRSq) {
+          // 爆头仅在未开护盾（或命中真实头部圆）时按头部算；护盾外扩圈命中算躯干/护盾受击
+          const isRealHead = (dxHead * dxHead + dyHead * dyHead) <= (headHitR * headHitR)
+          if (isRealHead) {
             pr.hitTargets.push(t.id)
             const piercing = pr.pierceOnHeadshot || pr.pierceAll
             if (pr.explosive) {
@@ -513,7 +599,9 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
             continue
           }
           const dyBody = wrapDeltaY(t.pos.y, ny)
-          if (dxBody <= bodyHalfX && dyBody >= -12 && dyBody <= 18) {
+          const hitShieldHead = shieldPad > 0 && (dxHead * dxHead + dyHead * dyHead <= tHeadHitRSq)
+          const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= (-12 - shieldPad) && dyBody <= (18 + shieldPad)
+          if (hitShieldHead || hitBodyBox) {
             pr.hitTargets.push(t.id)
             if (pr.explosive) {
               ctx.explode(nx, ny, pr.terrainRadius, pr.damage * calcProjectileFalloff(ctx, pr, nx, ny), 900, pr)

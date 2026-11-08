@@ -256,8 +256,9 @@
       maxReserve: 72,
       // 后坐力 ×2
       reloadTime: 1.5,
-      fireDelay: 0.72,
+      fireDelay: 0.58,
       terrainRadius: 12,
+      // 射速略微提升（0.72 -> 0.58s）
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1.08,
@@ -266,8 +267,9 @@
       color: "#fbbf24",
       falloffStart: 200,
       falloffEnd: 700,
-      falloffMin: 0.45
+      falloffMin: 0.45,
       // 霰弹随距离衰减（中距仍可用）
+      traitDesc: "\u8FD1\u8DDD\u9AD8\u4F24 \xB7 \u5168\u4E2D\u81F4\u6B7B"
     },
     {
       id: 1,
@@ -291,7 +293,8 @@
       moveSpeedMult: 1,
       fuelMult: 1,
       fovMult: 1,
-      color: "#38bdf8"
+      color: "#38bdf8",
+      traitDesc: "\u7A33\u5B9A\u8FDE\u53D1 \xB7 \u5747\u8861\u4E3B\u529B"
     },
     {
       id: 2,
@@ -318,8 +321,9 @@
       fuelMult: 0.6,
       fovMult: 1.3,
       color: "#c084fc",
-      edgeDamage: 99
+      edgeDamage: 99,
       // 远距离命中身体依然 100 伤害；打中身体碰撞箱边缘才造成 99 伤害（留 1 血）
+      traitDesc: "\u65E0\u9650\u5C04\u7A0B \xB7 \u547D\u4E2D\u5373\u6B7B"
     },
     {
       id: 3,
@@ -350,8 +354,9 @@
       fovMult: 1,
       color: "#fb7185",
       friendlyFire: true,
-      selfDamage: true
+      selfDamage: true,
       // 火箭筒：爆炸友伤/自伤
+      traitDesc: "\u76F4\u7EBF\u6162\u901F \xB7 \u78B0\u5230\u7206\u70B8"
     },
     {
       id: 4,
@@ -379,14 +384,14 @@
       beam: true,
       friendlyFire: true,
       selfDamage: true,
-      // 高斯：反射光束可打到友军/自己
+      // 高斯：全部段可打到友军/自己
       damagePerSecond: 90,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1,
-      color: "#22d3ee"
-      // 伤害减半（180→90）；单匣 4s；换弹 6s
+      color: "#22d3ee",
+      traitDesc: "\u5373\u65F6\u5149\u675F \xB7 \u53CD\u5C042\u6B21 \xB7 \u5168\u6BB5\u81EA\u4F24"
     },
     {
       id: 5,
@@ -410,7 +415,8 @@
       moveSpeedMult: 0.78,
       fuelMult: 0.7,
       fovMult: 1.3,
-      color: "#f97316"
+      color: "#f97316",
+      traitDesc: "\u91CD\u578B\u673A\u67AA \xB7 \u706B\u529B\u538B\u5236"
     },
     {
       id: 6,
@@ -446,8 +452,9 @@
       // 引力场弯曲其他子弹
       falloffStart: 200,
       falloffEnd: 700,
-      falloffMin: 0.12
+      falloffMin: 0.12,
       // 射程与霰弹类似（200→700），远端衰减更狠
+      traitDesc: "\u7A7F\u5899\u5F15\u529B\u573A \xB7 \u5F2F\u6298\u5F39\u9053"
     },
     {
       id: 7,
@@ -472,8 +479,9 @@
       fuelMult: 2,
       ascendMult: 1.25,
       fovMult: 1,
-      color: "#fde047"
+      color: "#fde047",
       // 移速1.5/飞行容量2.0/升空速度1.25
+      traitDesc: "\u79FB\u901F\u6700\u5FEB \xB7 \u53CC\u500D\u98DE\u884C"
     },
     {
       id: 8,
@@ -500,7 +508,8 @@
       moveSpeedMult: 1.25,
       fuelMult: 1,
       fovMult: 1,
-      color: "#4ade80"
+      color: "#4ade80",
+      traitDesc: "\u6781\u9AD8\u5C04\u901F \xB7 \u673A\u52A8\u538B\u5236"
     }
   ];
   function weaponFalloff(wep, dist, exponent = 1) {
@@ -513,17 +522,82 @@
     const t = Math.pow((dist - start) / (end - start), exponent);
     return 1 - (1 - min) * t;
   }
+  var SECONDARY_UNLOCK_ORDER = [
+    "frag",
+    "obstacle",
+    "shield",
+    "teleport",
+    "doll"
+  ];
   var SECONDARIES = {
-    frag: { id: "frag", name: "\u624B\u69B4\u5F39", icon: "\u{1F4A3}", cd: 0.8 },
-    doll: { id: "doll", name: "\u66FF\u8EAB\u4EBA\u5076", icon: "\u{1F38E}", cd: 24, supplyOnly: true }
+    frag: {
+      id: "frag",
+      name: "\u624B\u69B4\u5F39",
+      icon: "\u{1F4A3}",
+      cd: 0.8,
+      unlockStreak: 0,
+      desc: "1 \u5145\u80FD\u81EA\u7136\u56DE\u590D\uFF086s/\u679A\uFF09"
+    },
+    obstacle: {
+      id: "obstacle",
+      name: "\u969C\u788D\u7269",
+      icon: "\u{1F9F1}",
+      cd: 10,
+      unlockStreak: 1,
+      supplyOnly: true,
+      desc: "10s\u51B7\u5374 \xB7 \u65E0\u9650\u751F\u6210240HP\u63A9\u4F53"
+    },
+    shield: {
+      id: "shield",
+      name: "\u62A4\u76FE",
+      icon: "\u{1F6E1}\uFE0F",
+      cd: 10,
+      unlockStreak: 2,
+      supplyOnly: true,
+      desc: "100HP \u62A4\u76FE \xB7 \u4F24\u5BB3\u4E0D\u6EA2\u51FA \xB7 \u78B0\u649E\u7BB1\u7565\u5927"
+    },
+    teleport: {
+      id: "teleport",
+      name: "Teleport",
+      icon: "\u{1F300}",
+      cd: 10,
+      unlockStreak: 3,
+      supplyOnly: true,
+      desc: "\u8BFB\u6761\u540E\u76F4\u63A5\u51FA\u73B0\u5728\u53F3\u952E\u4F4D\u7F6E"
+    },
+    doll: {
+      id: "doll",
+      name: "\u66FF\u8EAB\u4EBA\u5076",
+      icon: "\u{1F38E}",
+      cd: 24,
+      unlockStreak: 4,
+      supplyOnly: true,
+      desc: "\u8FDE\u6B7B4\u89E3\u9501\u6216\u7279\u6B8A\u8865\u7ED9\u62FE\u53D6"
+    }
   };
+  function isSecondaryUnlocked(secId, deathStreak, dollCharges = 0) {
+    const def = SECONDARIES[secId];
+    if (!def) return false;
+    if (secId === "doll" && dollCharges > 0) return true;
+    return (deathStreak ?? 0) >= def.unlockStreak;
+  }
+  function getHighestUnlockedSecondary(deathStreak, dollCharges = 0) {
+    const s = Math.max(0, Math.floor(deathStreak ?? 0));
+    for (let i = SECONDARY_UNLOCK_ORDER.length - 1; i >= 0; i--) {
+      const id = SECONDARY_UNLOCK_ORDER[i];
+      if (s >= SECONDARIES[id].unlockStreak) return id;
+    }
+    if (dollCharges > 0) return "doll";
+    return "frag";
+  }
   var DEFAULT_CONFIG = {
     maxHp: 100,
     headRadius: 13,
-    shieldHp: 130,
+    shieldHp: 100,
     shieldDuration: 5,
     dollDuration: 10,
     obstacleDefaultHp: 240,
+    teleportCastTime: 0.35,
     grenadeDamage: 520,
     // 一发致死：最远衰减(0.2)也有 104 伤害
     grenadeRadius: 100,
@@ -554,6 +628,26 @@
     fragRechargeSeconds: 6,
     dollMaxCharges: 2
   };
+  function formatWeaponAmmoText(w) {
+    return w.pellets > 1 ? `${w.magSize}/${w.maxReserve}\u53D1(${w.pellets}\u4E38)` : `${w.magSize}/${w.maxReserve}\u53D1`;
+  }
+  function formatWeaponCardSubtitle(w) {
+    const ammo = formatWeaponAmmoText(w);
+    return w.traitDesc ? `${ammo} \xB7 ${w.traitDesc}` : ammo;
+  }
+  function formatSecondaryButtonTitle(s, withSupplyTag = false) {
+    if (s.unlockStreak <= 0) return `${s.icon} ${s.name} [\u9ED8\u8BA4]`;
+    if (s.id === "doll" && withSupplyTag) return `${s.icon} ${s.name} [\u8FDE\u6B7B${s.unlockStreak}/\u8865\u7ED9]`;
+    return `${s.icon} ${s.name} [\u8FDE\u6B7B${s.unlockStreak}]`;
+  }
+  function formatSecondaryCardSubtitle(s, cfg = DEFAULT_CONFIG) {
+    if (s.id === "frag") return `${cfg.fragMaxCharges} \u5145\u80FD\u81EA\u7136\u56DE\u590D\uFF08${cfg.fragRechargeSeconds}s/\u679A\uFF09`;
+    if (s.id === "obstacle") return `${s.cd}s\u51B7\u5374 \xB7 \u65E0\u9650\u751F\u6210${cfg.obstacleDefaultHp}HP\u63A9\u4F53`;
+    if (s.id === "shield") return `${cfg.shieldHp}HP \u62A4\u76FE \xB7 \u4F24\u5BB3\u4E0D\u6EA2\u51FA \xB7 \u78B0\u649E\u7BB1\u7565\u5927`;
+    if (s.id === "teleport") return "\u8BFB\u6761\u540E\u76F4\u63A5\u51FA\u73B0\u5728\u53F3\u952E\u4F4D\u7F6E";
+    if (s.id === "doll") return `\u8FDE\u6B7B${s.unlockStreak}\u89E3\u9501\u6216\u7279\u6B8A\u8865\u7ED9\u62FE\u53D6`;
+    return s.desc ?? "";
+  }
 
   // src/core/types.ts
   function defaultWorldInput() {
@@ -1018,6 +1112,8 @@
   }
 
   // src/core/sim/projectiles.ts
+  var BEAM_SEAM_THRESHOLD = 1e3;
+  var SHIELD_HITBOX_PAD = 8;
   function createProjectile(id, owner, x, y, vx, vy, opts) {
     return {
       id,
@@ -1084,6 +1180,23 @@
     const midY = ry + sMid * uy;
     return midX > 10 || midY > 13.5 || chord >= 0 && chord < 8;
   }
+  function isPointInPlayerBeamHitbox(t, px, py, baseHeadR) {
+    const shieldPad = t.shieldTimer > 0 && t.shieldHp > 0 ? SHIELD_HITBOX_PAD : 0;
+    const rawDy = Math.abs(t.pos.y - py);
+    if (rawDy > 40 + shieldPad && rawDy < WORLD_H - (40 + shieldPad)) return null;
+    const hx = wrapDeltaX(t.pos.x, px);
+    const maxHalfX = 18 + shieldPad;
+    if (hx > maxHalfX || hx < -maxHalfX) return null;
+    const hy = wrapDeltaY(t.pos.y - 24, py);
+    const effHeadR = baseHeadR + shieldPad;
+    const isHead = hx * hx + hy * hy <= effHeadR * effHeadR;
+    const bx = Math.abs(hx);
+    const by = wrapDeltaY(t.pos.y, py);
+    if (isHead || bx <= 14 + shieldPad && by >= -12 - shieldPad && by <= 18 + shieldPad) {
+      return { isHead };
+    }
+    return null;
+  }
   function updateContinuousBeam(ctx2, p, wep, dt) {
     if (p.respawnTimer > 0 || !p.alive) return;
     const wi = p.weaponIndex;
@@ -1108,146 +1221,175 @@
       const cx = wrapX(p.pos.x + dx * ahead);
       const cy = wrapY(p.pos.y - 12 + dy * ahead);
       if (ctx2.terrain.isSolidAt(cx, cy) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, cx, cy)) break;
+      if (ahead > 4) {
+        const nxProbe = wrapX(cx + dx * 4);
+        const nyProbe = wrapY(cy + dy * 4);
+        if (ctx2.terrain.isSolidAt(nxProbe, nyProbe) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, nxProbe, nyProbe)) break;
+      }
       x = cx;
       y = cy;
       originOk = true;
     }
     if (!originOk) return;
-    const originX = x;
-    const originY = y;
-    const segCapFor = (ddx, ddy) => Math.abs(ddx) >= Math.abs(ddy) ? WORLD_W - 200 : WORLD_H - 200;
     const step = 4;
-    const bounces = wep.bounces ?? 0;
+    let bouncesLeft = wep.bounces ?? 2;
     const headR = ctx2.config.headRadius + 3;
-    const headRSq = headR * headR;
     const tGrid = ctx2.terrain.grid;
     const obstacleBroadBuckets = ctx2.obstacleBroadBuckets;
     const playerBroadBuckets = ctx2.playerBroadBuckets;
     const obstacles = ctx2.obstacles;
-    let budget = bounces;
-    let b = 0;
-    while (b <= bounces) {
-      let travelled = 0;
-      let hitWall = false;
-      let blockedByObstacle = false;
-      const segStartX = x;
-      const segStartY = y;
+    let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR);
+    const checkPlayersAt = (px, py, segStartX2, segStartY2, dirX, dirY, distFromSegStart) => {
+      if (!exitedSelf && !isPointInPlayerBeamHitbox(p, px, py, headR)) {
+        exitedSelf = true;
+      }
+      const bIdx = bucketIdx(px);
+      const pList = playerBroadBuckets[bIdx];
+      if (!pList || pList.length === 0) return;
+      for (let pi = 0; pi < pList.length; pi++) {
+        const t = pList[pi];
+        if (t.id === p.id) {
+          if (!wep.selfDamage || !exitedSelf) continue;
+        } else if (t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) {
+          continue;
+        }
+        if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
+        const hitInfo = isPointInPlayerBeamHitbox(t, px, py, headR);
+        if (!hitInfo) continue;
+        if (lineBlockedByTerrain(
+          ctx2.terrain,
+          obstacles,
+          obstacleBroadBuckets,
+          segStartX2,
+          segStartY2,
+          t.pos.x,
+          t.pos.y - 12,
+          dirX * distFromSegStart,
+          dirY * distFromSegStart
+        )) continue;
+        hitPlayer.add(t.id);
+        const mult = hitInfo.isHead ? wep.headshotMult : 1;
+        ctx2.damagePlayer(t, dps * mult * dt, void 0, hitInfo.isHead, false, p.id, p.team, wep.shortName);
+      }
+    };
+    const pushBeamSegment = (x1, y1, x2, y2, rawDx, rawDy) => {
+      if (Math.hypot(rawDx, rawDy) <= 1e-6) return null;
+      const cut = truncateSegmentToFree(ctx2.terrain, x1, y1, x2, y2, rawDx, rawDy);
+      segments.push({ x1, y1, x2: cut.x, y2: cut.y, dx: cut.dx, dy: cut.dy });
+      exitedSelf = true;
+      return cut;
+    };
+    let segStartX = x;
+    let segStartY = y;
+    let travelled = 0;
+    let stepsCount = 0;
+    const maxTotalSegments = 16;
+    const maxSingleSegLen = Math.ceil(Math.hypot(WORLD_W, WORLD_H)) + 32;
+    const maxTotalSteps = Math.ceil(maxSingleSegLen * 8 / step);
+    while (segments.length < maxTotalSegments && stepsCount < maxTotalSteps) {
+      stepsCount++;
       const dirX = dx;
       const dirY = dy;
-      const stepX = dx * step;
-      const stepY = dy * step;
-      const maxSegLen = segCapFor(dirX, dirY);
-      while (travelled < maxSegLen) {
-        let nx = x + stepX;
-        let crossedSeam = false;
-        if (nx >= WORLD_W) {
-          nx -= WORLD_W;
-          crossedSeam = true;
-        } else if (nx < 0) {
-          nx += WORLD_W;
-          crossedSeam = true;
+      const rawNx = x + dirX * step;
+      const rawNy = y + dirY * step;
+      const crossedSeam = rawNx < 0 || rawNx >= WORLD_W || rawNy < 0 || rawNy >= WORLD_H;
+      const nx = wrapX(rawNx);
+      const ny = wrapY(rawNy);
+      if (crossedSeam) {
+        const gxAfter = nx / 20 | 0;
+        const gyAfter = ny / 20 | 0;
+        const nextIsTerrain = tGrid[gyAfter * GRID_W + gxAfter] !== 0;
+        const nextObsList = obstacleBroadBuckets[bucketIdx(nx)];
+        const nextOb = !nextIsTerrain && nextObsList && nextObsList.length > 0 ? obstacleAtBucket(nextObsList, nx, ny, 0) : null;
+        const nextIsFree = !nextIsTerrain && !nextOb;
+        const endX = nextIsFree ? nx : x;
+        const endY = nextIsFree ? ny : y;
+        const segLen = nextIsFree ? travelled + step : travelled;
+        if (segLen > 0) {
+          pushBeamSegment(segStartX, segStartY, endX, endY, dirX * segLen, dirY * segLen);
         }
-        let ny = y + stepY;
-        if (ny >= WORLD_H) {
-          ny -= WORLD_H;
-          crossedSeam = true;
-        } else if (ny < 0) {
-          ny += WORLD_H;
-          crossedSeam = true;
+        if (segLen > BEAM_SEAM_THRESHOLD) {
+          bouncesLeft--;
+          if (bouncesLeft <= 0) break;
+        } else if (bouncesLeft <= 0) {
         }
-        if (crossedSeam) {
-          if (budget <= 0) {
-            hitWall = false;
-            break;
+        if (nextIsFree) {
+          x = nx;
+          y = ny;
+          segStartX = nx;
+          segStartY = ny;
+          travelled = 0;
+          checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0);
+          continue;
+        }
+        segStartX = x;
+        segStartY = y;
+        travelled = 0;
+      }
+      const gx = nx / 20 | 0;
+      const gy = ny / 20 | 0;
+      if (tGrid[gy * GRID_W + gx] !== 0) {
+        if (travelled > 0) {
+          const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+          if (cut && cut.shortened) {
+            x = cut.x;
+            y = cut.y;
           }
-          budget--;
         }
-        const gx = nx / 20 | 0;
-        const gy = ny / 20 | 0;
-        if (tGrid[gy * GRID_W + gx] !== 0) {
-          hitWall = true;
-          const prevGx = x / 20 | 0;
-          const prevGy = y / 20 | 0;
-          const hitX = tGrid[prevGy * GRID_W + gx] !== 0;
-          const hitY = tGrid[gy * GRID_W + prevGx] !== 0;
+        if (bouncesLeft <= 0) break;
+        bouncesLeft--;
+        const prevGx = x / 20 | 0;
+        const prevGy = y / 20 | 0;
+        const hitX = tGrid[prevGy * GRID_W + gx] !== 0;
+        const hitY = tGrid[gy * GRID_W + prevGx] !== 0;
+        if (hitX) dx = -dx;
+        if (hitY) dy = -dy;
+        if (!hitX && !hitY) {
+          dx = -dx;
+          dy = -dy;
+        }
+        if (ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) break;
+        segStartX = x;
+        segStartY = y;
+        travelled = 0;
+        continue;
+      }
+      const bIdx = bucketIdx(nx);
+      const obsList = obstacleBroadBuckets[bIdx];
+      if (obsList && obsList.length > 0) {
+        const ob = obstacleAtBucket(obsList, nx, ny, 0);
+        if (ob) {
+          const hitX = obstacleAtBucket([ob], nx, y, 0) !== null;
+          const hitY = obstacleAtBucket([ob], x, ny, 0) !== null;
+          if (!hitObstacle.has(ob.id)) {
+            hitObstacle.add(ob.id);
+            ctx2.damageObstacle(ob, dps * dt, void 0);
+          }
+          if (travelled > 0) {
+            const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
+            if (cut && cut.shortened) {
+              x = cut.x;
+              y = cut.y;
+            }
+          }
+          if (bouncesLeft <= 0) break;
+          bouncesLeft--;
           if (hitX) dx = -dx;
           if (hitY) dy = -dy;
           if (!hitX && !hitY) {
             dx = -dx;
             dy = -dy;
           }
-          break;
+          segStartX = x;
+          segStartY = y;
+          travelled = 0;
+          continue;
         }
-        const bIdx = nx * INV_BUCKET_SIZE | 0;
-        const obsList = obstacleBroadBuckets[bIdx];
-        if (obsList && obsList.length > 0) {
-          const ob = obstacleAtBucket(obsList, nx, ny, 0);
-          if (ob) {
-            if (!hitObstacle.has(ob.id)) {
-              hitObstacle.add(ob.id);
-              ctx2.damageObstacle(ob, dps * dt, void 0);
-            }
-            x = nx;
-            y = ny;
-            blockedByObstacle = true;
-            break;
-          }
-        }
-        const pList = playerBroadBuckets[bIdx];
-        if (pList && pList.length > 0) {
-          for (let pi = 0; pi < pList.length; pi++) {
-            const t = pList[pi];
-            if (t.id === p.id && b === 0) continue;
-            if (t.id === p.id && !wep.selfDamage) continue;
-            if (t.id !== p.id && t.team === p.team && p.team !== "ffa" && !wep.friendlyFire) continue;
-            if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
-            const rawDy2 = Math.abs(t.pos.y - ny);
-            if (rawDy2 > 40 && rawDy2 < WORLD_H - 40) continue;
-            const hx = wrapDeltaX(t.pos.x, nx);
-            if (hx > 18 || hx < -18) continue;
-            const hy = wrapDeltaY(t.pos.y - 24, ny);
-            const isHead = hx * hx + hy * hy <= headRSq;
-            const bx = Math.abs(hx);
-            const by = wrapDeltaY(t.pos.y, ny);
-            if (isHead || bx <= 14 && by >= -12 && by <= 18) {
-              if (lineBlockedByTerrain(
-                ctx2.terrain,
-                obstacles,
-                obstacleBroadBuckets,
-                segStartX,
-                segStartY,
-                t.pos.x,
-                t.pos.y - 12,
-                dirX * travelled,
-                dirY * travelled
-              )) continue;
-              hitPlayer.add(t.id);
-              const mult = isHead ? wep.headshotMult : 1;
-              ctx2.damagePlayer(t, dps * mult * dt, void 0, isHead, false, p.id, p.team, wep.shortName);
-            }
-          }
-        }
-        x = nx;
-        y = ny;
-        travelled += step;
       }
-      if (hitWall && ctx2.terrain.isSolidAt(wrapX(x + dx * step), wrapY(y + dy * step))) {
-        hitWall = false;
-      }
-      const seg = { x1: segStartX, y1: segStartY, x2: x, y2: y, dx: 0, dy: 0 };
-      const rawDx = dirX * travelled;
-      const rawDy = dirY * travelled;
-      const cut = truncateSegmentToFree(ctx2.terrain, seg.x1, seg.y1, seg.x2, seg.y2, rawDx, rawDy);
-      seg.x2 = cut.x;
-      seg.y2 = cut.y;
-      seg.dx = cut.dx;
-      seg.dy = cut.dy;
-      segments.push(seg);
-      if (cut.shortened) break;
-      if (blockedByObstacle || !hitWall) break;
-      if (budget <= 0) break;
-      budget--;
-      b++;
+      x = nx;
+      y = ny;
+      travelled += step;
+      checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, travelled);
     }
     ctx2.events.push({
       kind: "laser",
@@ -1353,7 +1495,6 @@
       const allowFF = !!wep?.friendlyFire;
       const allowSelf = !!wep?.selfDamage;
       const headHitR = ctx2.config.headRadius + pr.r;
-      const headHitRSq = headHitR * headHitR;
       const bodyHalfX = 13 + pr.r;
       for (let step = 0; step < steps; step++) {
         const prevX = pr.pos.x;
@@ -1375,14 +1516,19 @@
             if (t.id !== pr.owner && t.team === ownerTeam && t.team !== "ffa" && !allowFF) continue;
             if (t.id === pr.owner && !allowSelf) continue;
             if (t.respawnTimer > 0 || !t.deployed || !t.alive) continue;
+            const shieldPad = t.shieldTimer > 0 && t.shieldHp > 0 ? SHIELD_HITBOX_PAD : 0;
             const rawDy = Math.abs(t.pos.y - ny);
-            if (rawDy > 42 && rawDy < WORLD_H - 42) continue;
+            if (rawDy > 42 + shieldPad && rawDy < WORLD_H - (42 + shieldPad)) continue;
             if (pr.hitTargets.includes(t.id)) continue;
+            const tHeadHitR = headHitR + shieldPad;
+            const tHeadHitRSq = tHeadHitR * tHeadHitR;
+            const tBodyHalfX = bodyHalfX + shieldPad;
             const dxHead = wrapDeltaX(t.pos.x, nx);
             const dxBody = Math.abs(dxHead);
-            if (dxBody > Math.max(headHitR, bodyHalfX)) continue;
+            if (dxBody > Math.max(tHeadHitR, tBodyHalfX)) continue;
             const dyHead = wrapDeltaY(t.pos.y - 24, ny);
-            if (dxHead * dxHead + dyHead * dyHead <= headHitRSq) {
+            const isRealHead = dxHead * dxHead + dyHead * dyHead <= headHitR * headHitR;
+            if (isRealHead) {
               pr.hitTargets.push(t.id);
               const piercing = pr.pierceOnHeadshot || pr.pierceAll;
               if (pr.explosive) {
@@ -1398,7 +1544,9 @@
               continue;
             }
             const dyBody = wrapDeltaY(t.pos.y, ny);
-            if (dxBody <= bodyHalfX && dyBody >= -12 && dyBody <= 18) {
+            const hitShieldHead = shieldPad > 0 && dxHead * dxHead + dyHead * dyHead <= tHeadHitRSq;
+            const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= -12 - shieldPad && dyBody <= 18 + shieldPad;
+            if (hitShieldHead || hitBodyBox) {
               pr.hitTargets.push(t.id);
               if (pr.explosive) {
                 ctx2.explode(nx, ny, pr.terrainRadius, pr.damage * calcProjectileFalloff(ctx2, pr, nx, ny), 900, pr);
@@ -1489,6 +1637,128 @@
   }
 
   // src/core/sim/throwables.ts
+  function stepPlayerTeleport(ctx2, p, dt) {
+    if (!p.teleportTimer || p.teleportTimer <= 0 || !p.teleportTarget) return;
+    if (!p.alive || p.respawnTimer > 0 || !p.deployed) {
+      p.teleportTimer = 0;
+      p.teleportTarget = null;
+      return;
+    }
+    p.teleportTimer -= dt;
+    if (p.teleportTimer > 0) return;
+    const target = p.teleportTarget;
+    p.teleportTimer = 0;
+    p.teleportTarget = null;
+    const curMortar = ctx2.mortars.find((m) => m.operatorId === p.id);
+    if (curMortar) curMortar.operatorId = null;
+    if (p.mountedTowerId) {
+      const tw = ctx2.watchtowers.find((t) => t.id === p.mountedTowerId);
+      if (tw) tw.operatorId = null;
+      p.mountedTowerId = null;
+      p.watchtowerTimer = 0;
+    }
+    p.pos = { x: wrapX(target.x), y: clamp(target.y, 40, 4360) };
+    if (p.vel.y > 0) p.vel.y = 0;
+    resolvePenetration(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+    ensureFreePosition(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+    ctx2.events.push({ kind: "warp", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "Teleport" });
+  }
+  function useSecondaryInWorld(ctx2, p, s) {
+    if (p.respawnTimer > 0 || p.secondaryCooldown > 0 || !p.alive) return;
+    const def = SECONDARIES[s.type];
+    if (!def) return;
+    if (s.type === "frag") {
+      if (p.fragCharges <= 0) return;
+      p.fragCharges--;
+      p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8);
+      const throwSpeed = 760;
+      ctx2.grenades.push({
+        id: ctx2.nextGrenadeId(),
+        owner: p.id,
+        pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
+        vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
+        fuse: ctx2.config.grenadeFuse,
+        bounces: 0
+      });
+      return;
+    }
+    if (s.type === "doll") {
+      if (p.dollCharges <= 0) return;
+      p.dollCharges--;
+      p.secondaryCooldown = def.cd;
+      p.doll = {
+        pos: { x: p.pos.x, y: p.pos.y },
+        hp: p.hp,
+        shieldHp: p.shieldHp,
+        fuel: p.fuel,
+        weaponIndex: p.weaponIndex,
+        ammo: [...p.ammo],
+        reserveAmmo: [...p.reserveAmmo],
+        timer: ctx2.config.dollDuration
+      };
+      ctx2.events.push({ kind: "doll_recall", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "anchor" });
+      return;
+    }
+    if ((p.deathStreak ?? 0) < def.unlockStreak && p.secondary !== s.type) return;
+    if (s.type === "obstacle") {
+      p.secondaryCooldown = def.cd;
+      const w = 56;
+      const h = 76;
+      const dist = 76;
+      const cx = wrapX(p.pos.x + Math.cos(p.aim) * dist);
+      const cy = Math.max(80, Math.min(4300 - h, p.pos.y - 16 + Math.sin(p.aim) * dist));
+      const ox = wrapX(cx - w / 2);
+      let oy = cy - h / 2;
+      for (let sStep = 0; sStep < 24; sStep++) {
+        if (ctx2.terrain.isSolidAt(wrapX(ox + w / 2), oy + h - 1) && !ctx2.terrain.isSolidAt(wrapX(ox + w / 2), oy - 2)) {
+          oy -= 2;
+        } else break;
+      }
+      const obKind = "box";
+      const ob = {
+        id: `p_obs_${p.id}_${ctx2.nextObstacleSeq()}`,
+        x: ox,
+        y: oy,
+        w,
+        h,
+        hp: ctx2.config.obstacleDefaultHp,
+        maxHp: ctx2.config.obstacleDefaultHp,
+        kind: obKind,
+        color: "#334155",
+        borderColor: "#38bdf8",
+        label: "\u6218\u672F\u63A9\u4F53"
+      };
+      ctx2.obstacles.push(ob);
+      ctx2.rebuildSpatial();
+      if (checkBodyOverlapsAt(ctx2.terrain, ctx2.obstacles, p.pos.x, p.pos.y, ctx2.obstacleBroadBuckets)) {
+        resolvePenetration(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+        ensureFreePosition(ctx2.terrain, ctx2.obstacles, ctx2.obstacleBroadBuckets, p);
+      }
+      return;
+    }
+    if (s.type === "shield") {
+      if (p.shieldTimer > 0 && p.shieldHp > 0) return;
+      p.secondaryCooldown = def.cd;
+      p.shieldHp = ctx2.config.shieldHp;
+      p.shieldTimer = ctx2.config.shieldDuration;
+      ctx2.events.push({ kind: "shield", x: p.pos.x, y: p.pos.y, playerId: p.id });
+      return;
+    }
+    if (s.type === "teleport") {
+      if (p.teleportTimer && p.teleportTimer > 0) return;
+      p.secondaryCooldown = def.cd;
+      let tx = wrapX(p.pos.x + Math.cos(p.aim) * 280);
+      let ty = clamp(p.pos.y + Math.sin(p.aim) * 280, 40, 4360);
+      if (Number.isFinite(s.targetX) && Number.isFinite(s.targetY) && (s.targetX !== 0 || s.targetY !== 0)) {
+        tx = wrapX(s.targetX);
+        ty = clamp(s.targetY, 40, 4360);
+      }
+      const castTime = ctx2.config.teleportCastTime ?? 0.35;
+      p.teleportTimer = Math.max(0.05, castTime);
+      p.teleportTarget = { x: tx, y: ty };
+      return;
+    }
+  }
   function damageObstacleInWorld(ctx2, ob, dmg) {
     if (ob.hp <= 0 || dmg <= 0) return;
     ob.hp = Math.max(0, ob.hp - Math.round(dmg));
@@ -1504,20 +1774,32 @@
     const atkId = attackerId ?? pr?.owner ?? 0;
     const atkTeam = attackerTeam ?? ctx2.ownerTeamOf(atkId);
     const label = weaponLabel ?? pr?.weaponLabel ?? "\u672A\u77E5";
-    let remaining = amount;
     if (t.shieldTimer > 0 && t.shieldHp > 0) {
-      const absorbed = Math.min(t.shieldHp, remaining);
-      t.shieldHp -= absorbed;
-      remaining -= absorbed;
+      const absorbed = Math.min(t.shieldHp, amount);
+      t.shieldHp = Math.max(0, t.shieldHp - amount);
+      ctx2.events.push({
+        kind: "hit",
+        x: t.pos.x,
+        y: t.pos.y,
+        victimId: t.id,
+        attackerId: atkId,
+        headshot: isHead,
+        damage: absorbed,
+        weaponLabel: label,
+        victimTeam: t.team,
+        isHeadshot: isHead,
+        isPierced
+      });
+      ctx2.onHitCount();
       if (t.shieldHp <= 0) {
         t.shieldHp = 0;
         t.shieldTimer = 0;
         ctx2.events.push({ kind: "shield", x: t.pos.x, y: t.pos.y, playerId: t.id });
         ctx2.events.push({ kind: "shield_break", x: t.pos.x, y: t.pos.y, playerId: t.id });
       }
-      if (remaining <= 0) return;
+      return;
     }
-    t.hp -= remaining;
+    t.hp -= amount;
     ctx2.events.push({
       kind: "hit",
       x: t.pos.x,
@@ -1525,7 +1807,7 @@
       victimId: t.id,
       attackerId: atkId,
       headshot: isHead,
-      damage: remaining,
+      damage: amount,
       weaponLabel: label,
       victimTeam: t.team,
       isHeadshot: isHead,
@@ -1540,25 +1822,28 @@
     t.hp = 0;
     t.alive = false;
     t.deaths++;
+    t.deathStreak = (t.deathStreak ?? 0) + 1;
+    t.secondary = getHighestUnlockedSecondary(t.deathStreak, t.dollCharges);
     t.respawnTimer = ctx2.config.respawnDelay;
     t.shieldHp = 0;
     t.shieldTimer = 0;
     t.watchtowerTimer = 0;
+    t.teleportTimer = 0;
+    t.teleportTarget = null;
     const mk = ctx2.mortars.find((m) => m.operatorId === t.id);
     if (mk) mk.operatorId = null;
     const killer = ctx2.playerById.get(atkId) ?? ctx2.players.find((x) => x.id === atkId);
     if (killer && atkId !== t.id) {
       killer.kills++;
+      killer.deathStreak = 0;
       if (ctx2.scores[atkTeam] !== void 0) ctx2.scores[atkTeam]++;
     }
     ctx2.events.push({
       kind: "kill",
-      // 新字段（联机协议/新表现层用）
       attackerId: atkId,
       victimId: t.id,
       weaponLabel: label,
       headshot: isHead,
-      // 旧字段（killfeed / 死亡界面直接读名称与队伍，避免显示成「?」）
       killerId: atkId,
       killerName: killer?.name ?? "\u6218\u573A\u73AF\u5883",
       killerTeam: atkTeam,
@@ -1697,7 +1982,7 @@
         m.fuse -= dt;
         if (m.fuse <= 0) {
           const label = m.instant ? "\u26A1\u77AC\u53D1\u5730\u96F7" : "\u{1F6A8}\u611F\u5E94\u5730\u96F7";
-          explodeInWorld(ctx2, m.pos.x, m.pos.y, 82, ctx2.config.mineDamage, 19 * 60, void 0, m.owner === 0 ? void 0 : m.owner, void 0, label);
+          explodeInWorld(ctx2, m.pos.x, m.pos.y, m.preset ? 82 : 104, m.preset ? ctx2.config.mineDamage : Math.round(ctx2.config.mineDamage * 1.25), 19 * 60, void 0, m.owner === 0 ? void 0 : m.owner, void 0, label);
           if (m.preset) m.respawnTimer = ctx2.config.mineRespawnTime;
           else ctx2.landmines.splice(i, 1);
         }
@@ -1929,11 +2214,12 @@
     pid = 1;
     prj = 1;
     gren = 1;
+    obsSeq = 1;
+    mineSeq = 1;
     ammo = 1;
     crate = 1;
     ammoSpawnTimer = 0;
     stuckTicks = /* @__PURE__ */ new Map();
-    // 空间加速索引（每帧按需刷新，直接作为单态字段供各子系统零开销访问）
     playerBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
     obstacleBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
     playerById = /* @__PURE__ */ new Map();
@@ -1944,9 +2230,18 @@
       this.terrain.build(map?.solids);
       this.resetMatch();
     }
-    // ── 子系统接口方法（零闭包/零 getter 开销） ──
+    // ── 子系统接口方法 ──
     nextProjId() {
       return this.prj++;
+    }
+    nextGrenadeId() {
+      return this.gren++;
+    }
+    nextObstacleSeq() {
+      return this.obsSeq++;
+    }
+    nextMineId() {
+      return this.mineSeq++;
     }
     nextAmmoId() {
       return this.ammo++;
@@ -1956,6 +2251,9 @@
     }
     setAmmoTimer(t) {
       this.ammoSpawnTimer = t;
+    }
+    rebuildSpatial() {
+      this.rebuildSpatialBuckets();
     }
     onHitCount() {
       this.hits++;
@@ -2030,6 +2328,8 @@
       }
     }
     resetMatch() {
+      this.obsSeq = 1;
+      this.mineSeq = 1;
       this.obstacles = OBSTACLE_PRESETS.map((o) => ({ ...o, maxHp: o.hp }));
       this.capturePoints = CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
       this.mortars = MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
@@ -2118,11 +2418,14 @@
         watchtowerTimer: 0,
         mountedTowerId: null,
         warpCooldown: 0,
+        teleportTimer: 0,
+        teleportTarget: null,
         doll: null,
         dollCharges: 0,
         respawnTimer: 0,
         kills: 0,
-        deaths: 0
+        deaths: 0,
+        deathStreak: 0
       };
       this.respawnAt(p, team);
       this.players.push(p);
@@ -2167,8 +2470,14 @@
       p.watchtowerTimer = 0;
       p.mountedTowerId = null;
       p.warpCooldown = 0;
+      p.teleportTimer = 0;
+      p.teleportTarget = null;
+      const streak = p.deathStreak ?? 0;
       p.doll = null;
-      p.dollCharges = 0;
+      p.dollCharges = streak >= SECONDARIES.doll.unlockStreak ? 1 : 0;
+      if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges)) {
+        p.secondary = getHighestUnlockedSecondary(streak, p.dollCharges);
+      }
       p.reloading = false;
       p.fireCooldown = 0;
       p.chargeTimer = 0;
@@ -2310,6 +2619,7 @@
       }
       if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt);
       if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt);
+      stepPlayerTeleport(this, p, dt);
       if (p.reloading) {
         p.reloadTimer -= dt;
         if (p.reloadTimer <= 0) {
@@ -2334,7 +2644,7 @@
         mountedNow.angle = a;
       }
       if (w.interact) handlePlayerInteract(this, p);
-      if (w.secondary) this.useSecondary(p, w.secondary);
+      if (w.secondary) useSecondaryInWorld(this, p, w.secondary);
       const wepNow = WEAPONS[p.weaponIndex];
       if (wepNow?.beam) {
         if (w.fire) updateContinuousBeam(this, p, wepNow, dt);
@@ -2448,42 +2758,6 @@
         if (pr.isGravityOrb && pr.life > 0 && pr.damage > 0) this.activeGravityOrbs.push(pr);
       }
     }
-    useSecondary(p, s) {
-      if (p.respawnTimer > 0 || p.secondaryCooldown > 0 || !p.alive) return;
-      const def = SECONDARIES[s.type];
-      if (!def) return;
-      if (s.type === "frag") {
-        if (p.fragCharges <= 0) return;
-        p.fragCharges--;
-        p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8);
-        const throwSpeed = 760;
-        this.grenades.push({
-          id: this.gren++,
-          owner: p.id,
-          pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
-          vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
-          fuse: this.config.grenadeFuse,
-          bounces: 0
-        });
-        return;
-      }
-      if (s.type === "doll") {
-        if (p.dollCharges <= 0) return;
-        p.dollCharges--;
-        p.secondaryCooldown = def.cd;
-        p.doll = {
-          pos: { x: p.pos.x, y: p.pos.y },
-          hp: p.hp,
-          shieldHp: p.shieldHp,
-          fuel: p.fuel,
-          weaponIndex: p.weaponIndex,
-          ammo: [...p.ammo],
-          reserveAmmo: [...p.reserveAmmo],
-          timer: this.config.dollDuration
-        };
-        this.events.push({ kind: "doll_recall", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "anchor" });
-      }
-    }
     snapshot() {
       return {
         tick: this.tick,
@@ -2494,6 +2768,7 @@
           vel: { x: p.vel.x, y: p.vel.y },
           ammo: [...p.ammo],
           reserveAmmo: [...p.reserveAmmo],
+          teleportTarget: p.teleportTarget ? { x: p.teleportTarget.x, y: p.teleportTarget.y } : null,
           doll: p.doll ? { ...p.doll, pos: { x: p.doll.pos.x, y: p.doll.pos.y }, ammo: [...p.doll.ammo], reserveAmmo: [...p.doll.reserveAmmo] } : null
         })),
         projectiles: this.projectiles.map((pr) => ({ ...pr, pos: { x: pr.pos.x, y: pr.pos.y }, vel: { x: pr.vel.x, y: pr.vel.y }, hitTargets: [...pr.hitTargets] })),
@@ -2954,30 +3229,72 @@
   }
 
   // src/web/app/hud.ts
+  function syncLoadoutTextFromSingleSource() {
+    document.querySelectorAll(".death-wep-btn").forEach((btn) => {
+      const slot = Number(btn.getAttribute("data-wep") || 0);
+      const wep = WEAPONS[slot];
+      if (!wep) return;
+      const divs = btn.querySelectorAll("div");
+      if (divs[0]) divs[0].textContent = wep.shortName;
+      if (divs[1]) divs[1].textContent = formatWeaponCardSubtitle(wep);
+    });
+    document.querySelectorAll(".lobby-wep-btn").forEach((btn, idx) => {
+      const slot = Number(btn.getAttribute("data-wep") || 0);
+      const wep = WEAPONS[slot];
+      if (!wep) return;
+      const divs = btn.querySelectorAll("div");
+      if (divs[0]) divs[0].textContent = `${idx + 1}. ${wep.shortName}`;
+      if (divs[1]) divs[1].textContent = formatWeaponCardSubtitle(wep);
+    });
+    document.querySelectorAll(".death-sec-btn").forEach((btn) => {
+      const sec = btn.getAttribute("data-sec") || "frag";
+      const def = SECONDARIES[sec];
+      if (!def) return;
+      btn.textContent = formatSecondaryButtonTitle(def, true);
+    });
+    document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
+      const sec = btn.getAttribute("data-sec") || "frag";
+      const def = SECONDARIES[sec];
+      if (!def) return;
+      const divs = btn.querySelectorAll("div");
+      if (divs[0]) divs[0].textContent = formatSecondaryButtonTitle(def, false);
+      if (divs[1]) divs[1].textContent = formatSecondaryCardSubtitle(def, world.config);
+    });
+  }
   function updateHudWeaponButtons() {
+    syncLoadoutTextFromSingleSource();
+    const streak = localPlayer.deathStreak ?? 0;
+    const dollCharges = localPlayer.dollCharges ?? 0;
     document.querySelectorAll(".death-wep-btn").forEach((btn) => {
       const slot = Number(btn.getAttribute("data-wep") || 0);
       btn.className = slot === pendingLoadout.weaponIndex ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
     });
     document.querySelectorAll(".death-sec-btn").forEach((btn) => {
-      const sec = btn.getAttribute("data-sec");
-      const def = sec ? SECONDARIES[sec] : void 0;
-      const noCharge = sec === "doll" && localPlayer.dollCharges <= 0;
-      btn.className = "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs " + (sec === pendingLoadout.secondaryType ? "border-rose-400 bg-rose-500/20 font-extrabold text-white" : "border-slate-700 bg-slate-950/60 font-semibold text-slate-400") + (noCharge || def?.supplyOnly && sec === "doll" ? " opacity-60 cursor-not-allowed" : "");
-      btn.disabled = sec === "doll" && localPlayer.dollCharges <= 0;
+      const sec = btn.getAttribute("data-sec") || "frag";
+      const unlocked = isSecondaryUnlocked(sec, streak, dollCharges);
+      const isSelected = sec === pendingLoadout.secondaryType;
+      btn.className = "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs transition " + (isSelected ? "border-2 border-rose-400 bg-rose-500/20 font-extrabold text-white" : unlocked ? "border-slate-600 bg-slate-900/90 font-semibold text-slate-200 hover:border-rose-400/60" : "border-slate-800 bg-slate-950/40 font-semibold text-slate-500 opacity-55 cursor-not-allowed");
+      btn.disabled = !unlocked;
     });
+    const streakNote = document.getElementById("deathSecNote");
+    if (streakNote) {
+      const highest = SECONDARIES[getHighestUnlockedSecondary(streak, dollCharges)] ?? SECONDARIES.frag;
+      streakNote.textContent = `\u5F53\u524D\u8FDE\u6B7B ${streak} \u6B21 \xB7 \u5DF2\u89E3\u9501\u81F3\u3010${highest.icon} ${highest.name}\u3011\uFF08\u83B7\u5F97\u51FB\u6740\u91CD\u7F6E\u8FDE\u6B7B\uFF09`;
+    }
     document.querySelectorAll(".lobby-wep-btn").forEach((btn) => {
       const slot = Number(btn.getAttribute("data-wep") || 0);
       btn.className = slot === pendingLoadout.weaponIndex ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
     });
     document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
-      const sec = btn.getAttribute("data-sec");
-      const def = sec ? SECONDARIES[sec] : void 0;
-      if (def?.supplyOnly) {
+      const sec = btn.getAttribute("data-sec") || "frag";
+      const unlocked = isSecondaryUnlocked(sec, streak, dollCharges);
+      if (!unlocked) {
         btn.className = "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60";
       } else {
         btn.className = sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
       }
+      ;
+      btn.disabled = !unlocked;
     });
   }
   function updateSpawnPointButtonsUI() {
@@ -3011,14 +3328,21 @@
   function tryChangeSecondaryWeapon(secType) {
     const def = SECONDARIES[secType];
     if (!def) return;
-    if (def?.supplyOnly) {
-      if (localPlayer.dollCharges <= 0) {
-        showToast("\u{1F38E} \u66FF\u8EAB\u4EBA\u5076\u53EA\u80FD\u4ECE\u6218\u573A\u7279\u6B8A\u8865\u7ED9\u7BB1\u83B7\u5F97\u5145\u80FD\uFF01");
-        return;
+    const streak = localPlayer.deathStreak ?? 0;
+    const dollCharges = localPlayer.dollCharges ?? 0;
+    const unlocked = isSecondaryUnlocked(secType, streak, dollCharges);
+    if (!unlocked) {
+      if (secType === "doll") {
+        showToast(`\u{1F512} \u66FF\u8EAB\u4EBA\u5076\u9700\u8FDE\u7EED\u9635\u4EA1 ${def.unlockStreak} \u6B21\u89E3\u9501\uFF0C\u6216\u4ECE\u6218\u573A\u7279\u6B8A\u8865\u7ED9\u7BB1\u62FE\u53D6\u5145\u80FD\uFF01`);
+      } else {
+        showToast(`\u{1F512} \u3010${def.icon} ${def.name}\u3011\u9700\u8FDE\u7EED\u9635\u4EA1 ${def.unlockStreak} \u6B21\u89E3\u9501\uFF08\u5F53\u524D\u8FDE\u6B7B ${streak} \u6B21\uFF09`);
       }
+      return;
+    }
+    if (secType === "doll" && localPlayer.deployed && localPlayer.respawnTimer <= 0 && dollCharges > 0) {
       localPlayer.secondary = secType;
       updateHudWeaponButtons();
-      showToast(`\u{1F38E} \u5DF2\u5207\u6362\u66FF\u8EAB\u4EBA\u5076\uFF08\u5145\u80FD ${localPlayer.dollCharges}\uFF09`);
+      showToast(`\u{1F38E} \u5DF2\u5207\u6362\u66FF\u8EAB\u4EBA\u5076\uFF08\u5145\u80FD ${dollCharges}\uFF09`);
       return;
     }
     if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
@@ -3071,23 +3395,39 @@
     if (wNameEl) wNameEl.textContent = mounted ? "\u{1F3AF} \u516C\u5171\u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D" : `${wep.name} ${localPlayer.deployed ? "\u{1F512}" : ""}`;
     const plateEl = document.getElementById("hudCurrentWeaponName");
     if (plateEl) plateEl.textContent = wep.shortName;
+    const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag;
     const secChipEl = document.getElementById("hudSecondaryChipText");
     if (secChipEl) {
-      secChipEl.textContent = localPlayer.secondary === "doll" ? `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]` : `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+      if (localPlayer.secondary === "doll") {
+        secChipEl.textContent = `\u{1F38E} \u66FF\u8EAB\u4EBA\u5076 [${localPlayer.dollCharges}]`;
+      } else if (localPlayer.secondary === "frag") {
+        secChipEl.textContent = `\u{1F4A3} \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+      } else if (localPlayer.secondary === "teleport" && (localPlayer.teleportTimer ?? 0) > 0) {
+        secChipEl.textContent = `\u{1F300} Teleport [\u8BFB\u6761 ${localPlayer.teleportTimer.toFixed(1)}s]`;
+      } else {
+        const cdStr = localPlayer.secondaryCooldown > 0 ? ` [${localPlayer.secondaryCooldown.toFixed(1)}s]` : " [\u5C31\u7EEA]";
+        secChipEl.textContent = `${secDef.icon} ${secDef.name}${cdStr}`;
+      }
     }
     const ammoEl = document.getElementById("currentAmmoText");
     if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : `${Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`;
-    const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag;
     const gOverlay = document.getElementById("grenadeCdOverlay");
     const gLabel = document.getElementById("hudGrenadeLabel");
     const gTitle = document.getElementById("hudSecondaryTitle");
-    const isDoll = localPlayer.secondary === "doll";
-    if (gTitle) gTitle.textContent = isDoll ? `[G/\u53F3\u952E] \u66FF\u8EAB\u4EBA\u5076 [\u5145\u80FD${localPlayer.dollCharges}]` : `[G/\u53F3\u952E] \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+    if (gTitle) {
+      if (localPlayer.secondary === "doll") {
+        gTitle.textContent = `[G/\u53F3\u952E] \u66FF\u8EAB\u4EBA\u5076 [\u5145\u80FD${localPlayer.dollCharges}]`;
+      } else if (localPlayer.secondary === "frag") {
+        gTitle.textContent = `[G/\u53F3\u952E] \u624B\u69B4\u5F39 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`;
+      } else {
+        gTitle.textContent = `[G/\u53F3\u952E] ${secDef.name}`;
+      }
+    }
     if (gOverlay && gLabel) {
-      if (isDoll) {
+      if (localPlayer.secondary === "doll") {
         gOverlay.style.height = localPlayer.dollCharges > 0 ? "0%" : "100%";
         gLabel.textContent = localPlayer.dollCharges > 0 ? "\u{1F38E} \u5C31\u7EEA" : "\u{1F38E} \u65E0\u5145\u80FD";
-      } else {
+      } else if (localPlayer.secondary === "frag") {
         const need = localPlayer.fragCharges >= world.config.fragMaxCharges;
         if (need) {
           gOverlay.style.height = "0%";
@@ -3096,6 +3436,20 @@
           const pct = Math.min(100, localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds * 100);
           gOverlay.style.height = pct + "%";
           gLabel.textContent = `\u{1F4A3} ${localPlayer.fragCharges}/${world.config.fragMaxCharges} \u56DE\u590D\u4E2D`;
+        }
+      } else if (localPlayer.secondary === "teleport" && (localPlayer.teleportTimer ?? 0) > 0) {
+        const castTotal = Math.max(0.05, world.config.teleportCastTime ?? 0.35);
+        const pct = clamp((1 - localPlayer.teleportTimer / castTotal) * 100, 0, 100);
+        gOverlay.style.height = 100 - pct + "%";
+        gLabel.textContent = `\u{1F300} \u8BFB\u6761 ${Math.round(pct)}%`;
+      } else {
+        if (localPlayer.secondaryCooldown <= 0) {
+          gOverlay.style.height = "0%";
+          gLabel.textContent = `${secDef.icon} \u5C31\u7EEA`;
+        } else {
+          const pct = clamp(localPlayer.secondaryCooldown / Math.max(0.1, secDef.cd) * 100, 0, 100);
+          gOverlay.style.height = pct + "%";
+          gLabel.textContent = `${secDef.icon} ${localPlayer.secondaryCooldown.toFixed(1)}s`;
         }
       }
     }
@@ -3315,7 +3669,9 @@
     const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0;
     localPlayer.weaponIndex = wIdx;
     localPlayer.lastPrimaryIndex = wIdx;
-    localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : "frag";
+    const streak = localPlayer.deathStreak ?? 0;
+    const wantSec = pendingLoadout.secondaryType;
+    localPlayer.secondary = isSecondaryUnlocked(wantSec, streak, localPlayer.dollCharges ?? 0) ? wantSec : getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0);
     localPlayer.deployed = true;
     localPlayer.alive = true;
     world.deploy(localPlayer);
@@ -4032,7 +4388,7 @@
       ctx2.restore();
     }
     if (p.shieldTimer > 0 && p.shieldHp > 0) {
-      const r = 30 + Math.sin(t * 0.15) * 1.5;
+      const r = 34 + Math.sin(t * 0.15) * 1.5;
       const sGrad = ctx2.createRadialGradient(0, -8, r * 0.4, 0, -8, r);
       sGrad.addColorStop(0, "rgba(56,189,248,0.04)");
       sGrad.addColorStop(0.75, "rgba(56,189,248,0.16)");
@@ -4071,7 +4427,7 @@
       ctx2.fillStyle = "rgba(15,23,42,0.85)";
       ctx2.fillRect(-barW / 2, -36, barW, 3);
       ctx2.fillStyle = "#38bdf8";
-      ctx2.fillRect(-barW / 2, -36, barW * Math.min(1, p.shieldHp / 130), 3);
+      ctx2.fillRect(-barW / 2, -36, barW * Math.min(1, p.shieldHp / DEFAULT_CONFIG.shieldHp), 3);
     }
     ctx2.font = "9px Inter, system-ui, sans-serif";
     ctx2.fillStyle = "rgba(226,232,240,0.8)";
@@ -5513,6 +5869,59 @@
         mounted: pMounted
       });
       drawPlayerTag(ctx, p, px, py, p.id === localPlayer.id);
+      if ((p.teleportTimer ?? 0) > 0 && p.teleportTarget) {
+        const castTotal = Math.max(0.1, world.config.teleportCastTime ?? 0.75);
+        const pct = clamp(1 - p.teleportTimer / castTotal, 0, 1);
+        const tx = sx(p.teleportTarget.x);
+        const ty = sy(p.teleportTarget.y);
+        ctx.save();
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = "rgba(192, 132, 252, 0.55)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(px, py - 14);
+        ctx.lineTo(tx, ty - 14);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (inView(tx, ty, 80)) {
+          const pulse = 18 + Math.sin(world.tick * 0.35) * 4;
+          ctx.strokeStyle = "#c084fc";
+          ctx.fillStyle = "rgba(192, 132, 252, 0.18)";
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.arc(tx, ty - 12, pulse, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.strokeStyle = "#38bdf8";
+          ctx.beginPath();
+          ctx.arc(tx, ty - 12, pulse * (1 - pct * 0.65), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = "#e9d5ff";
+          ctx.font = "bold 11px Inter, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("\u{1F300} \u4F20\u9001\u843D\u70B9", tx, ty - 36);
+        }
+        const barW = 58;
+        const barH = 6;
+        const bx = px - barW / 2;
+        const by = py - 72;
+        ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+        ctx.strokeStyle = "#c084fc";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, barW, barH, 3);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#a855f7";
+        ctx.beginPath();
+        ctx.roundRect(bx + 1, by + 1, Math.max(2, (barW - 2) * pct), barH - 2, 2);
+        ctx.fill();
+        ctx.fillStyle = "#f3e8ff";
+        ctx.font = "bold 10px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(`\u{1F300} \u8BFB\u6761 ${Math.round(pct * 100)}%`, px, by - 4);
+        ctx.restore();
+      }
     }
     const mountedNow = world.mortars.find((m) => m.operatorId === localPlayer.id);
     if (mountedNow) {
@@ -5654,32 +6063,32 @@
   // src/web/game/loop.ts
   var playerInput = defaultWorldInput();
   var prevFireCooldown = 0;
+  var wasDead = false;
   var lastFrame = performance.now();
   var acc = 0;
-  var wasDead = false;
   function buildLocalInput() {
     const w = defaultWorldInput();
-    if (!localPlayer.deployed) return w;
-    if (localPlayer.respawnTimer > 0) {
-      if (inputQueue.interact) {
-        inputQueue.interact = false;
-        return w;
-      }
-      return w;
-    }
-    const left = !!(keys["KeyA"] || keys["ArrowLeft"]);
-    const right = !!(keys["KeyD"] || keys["ArrowRight"]);
-    let move = left === right ? 0 : left ? -1 : 1;
-    if (touchState.moveActive && Math.abs(touchState.moveX) > 0.18) move = touchState.moveX > 0 ? 1 : -1;
-    w.move = localPlayer.mountedTowerId ? 0 : move;
-    w.jetpack = !!(keys["KeyW"] || keys["Space"] || keys["ArrowUp"]) || touchState.boostButtonDown || touchState.moveActive && touchState.moveY < -0.32;
-    w.dive = !!(keys["KeyS"] || keys["ArrowDown"]) || touchState.moveActive && touchState.moveY > 0.45;
-    const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
+    const k = keys;
+    let move = 0;
+    if (k["KeyA"] || k["ArrowLeft"]) move = move - 1;
+    if (k["KeyD"] || k["ArrowRight"]) move = move + 1;
+    if (touchState.moveActive && Math.abs(touchState.moveX) > 0.22) move = touchState.moveX > 0 ? 1 : -1;
+    w.move = move;
+    w.jump = false;
+    w.jetpack = Boolean(k["KeyW"] || k["Space"] || k["ArrowUp"] || touchState.boostButtonDown || touchState.moveActive && touchState.moveY < -0.35);
+    w.dive = Boolean(k["KeyS"] || k["ArrowDown"] || touchState.moveActive && touchState.moveY > 0.45);
     const zoom = 1 / camera.fovFactor;
     const psx = canvas.width / 2 + wrapDeltaX(camera.x, localPlayer.pos.x) * zoom;
     const psy = canvas.height / 2 + wrapDeltaY(camera.y, localPlayer.pos.y) * zoom;
+    mouse.worldX = wrapX(camera.x + (mouse.x - canvas.width / 2) / zoom);
+    mouse.worldY = wrapY(camera.y + (mouse.y - canvas.height / 2) / zoom);
+    const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
     if (mounted) {
-      w.aim = Math.atan2(mouse.y - psy, mouse.x - psx);
+      const msx = canvas.width / 2 + wrapDeltaX(camera.x, mounted.x) * zoom;
+      const msy = canvas.height / 2 + wrapDeltaY(camera.y, mounted.y - 18) * zoom;
+      let a = Math.atan2(mouse.y - msy, mouse.x - msx);
+      if (a > -0.12) a = a < Math.PI * 0.5 ? -0.12 : -Math.PI + 0.12;
+      w.aim = a;
     } else if (touchState.aimActive && Math.hypot(touchState.aimX, touchState.aimY) > 0.15) {
       w.aim = Math.atan2(touchState.aimY, touchState.aimX);
     } else {
@@ -5696,18 +6105,32 @@
     const lastIdx = localPlayer.lastPrimaryIndex ?? localPlayer.weaponIndex;
     const last = WEAPONS[lastIdx];
     pendingLoadout.weaponIndex = cur && !cur.isSupplyOnly ? localPlayer.weaponIndex : last && !last.isSupplyOnly ? lastIdx : 0;
-    pendingLoadout.secondaryType = localPlayer.secondary === "doll" ? "frag" : localPlayer.secondary;
+    const streak = localPlayer.deathStreak ?? 0;
+    const highestSec = getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0);
+    pendingLoadout.secondaryType = highestSec;
+    localPlayer.secondary = highestSec;
     updateHudWeaponButtons();
     const ds = document.getElementById("deathScreen");
     if (ds) ds.classList.remove("hidden");
-    showToast("\u{1F480} \u5DF2\u9635\u4EA1\uFF1A\u5728\u6B7B\u4EA1\u754C\u9762\u9009\u62E9\u91CD\u751F\u914D\u88C5");
+    const secDef = SECONDARIES[highestSec] ?? SECONDARIES.frag;
+    if (streak > 0 && secDef.unlockStreak > 0) {
+      showToast(`\u{1F480} \u8FDE\u6B7B ${streak} \u6B21\uFF1A\u526F\u624B\u5DF2\u89E3\u9501\u5E76\u9884\u9009\u3010${secDef.icon} ${secDef.name}\u3011`);
+    } else {
+      showToast("\u{1F480} \u5DF2\u9635\u4EA1\uFF1A\u5728\u6B7B\u4EA1\u754C\u9762\u9009\u62E9\u91CD\u751F\u914D\u88C5");
+    }
   }
   function onLocalRespawn() {
     const wantW = Number(pendingLoadout.weaponIndex);
     const next = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0;
     localPlayer.weaponIndex = next;
     localPlayer.lastPrimaryIndex = next;
-    localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : "frag";
+    const streak = localPlayer.deathStreak ?? 0;
+    const wantSec = pendingLoadout.secondaryType;
+    const validSec = isSecondaryUnlocked(wantSec, streak, localPlayer.dollCharges ?? 0) ? wantSec : getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0);
+    localPlayer.secondary = validSec;
+    if (validSec === "doll" && streak >= SECONDARIES.doll.unlockStreak && localPlayer.dollCharges <= 0) {
+      localPlayer.dollCharges = 1;
+    }
     updateHudWeaponButtons();
     showToast(world.config.randomSpawn ? "\u{1F504} \u5DF2\u5728\u968F\u673A\u5B89\u5168\u70B9\u91CD\u751F" : "\u{1F504} \u5DF2\u5728\u961F\u4F0D\u57FA\u5730\u91CD\u751F");
   }
@@ -5729,44 +6152,39 @@
         handleEvents(world.drainEvents());
         const dead = localPlayer.respawnTimer > 0;
         if (dead && !wasDead) onLocalDeath();
-        if (!dead && wasDead) onLocalRespawn();
+        if (!dead && wasDead) {
+          const ds = document.getElementById("deathScreen");
+          if (ds) ds.classList.add("hidden");
+          onLocalRespawn();
+        }
         wasDead = dead;
-        const deathEl = document.getElementById("deathScreen");
-        if (deathEl) {
-          deathEl.classList.toggle("hidden", !dead);
-          deathEl.classList.toggle("flex", dead);
-          if (dead) {
-            const cd = document.getElementById("deathCountdown");
-            if (cd) cd.textContent = localPlayer.respawnTimer.toFixed(1);
-            const kl = document.getElementById("deathKillerLine");
-            if (kl) kl.textContent = death.info ? `\u88AB ${death.info.killer}${death.info.weapon ? ` \u7684 ${death.info.weapon}` : ""} \u51FB\u6740` : "\u7B49\u5F85\u91CD\u751F\u2026";
+        if (dead) {
+          const cd = document.getElementById("deathCountdown");
+          if (cd) cd.textContent = Math.max(0, localPlayer.respawnTimer).toFixed(1);
+          const kl = document.getElementById("deathKillerLine");
+          if (kl) kl.textContent = death.info ? `\u88AB ${death.info.killer} \u4F7F\u7528\u3010${death.info.weapon}\u3011\u51FB\u5012` : "\u5DF2\u88AB\u51FB\u5012 \xB7 \u8BF7\u9009\u62E9\u91CD\u751F\u914D\u88C5";
+        }
+        for (const p of world.players) {
+          if (p.deployed && p.respawnTimer <= 0 && p.jetpack) {
+            effects.jet(p.pos.x, p.pos.y);
           }
         }
+        if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
+          effects.muzzle(
+            wrapX(localPlayer.pos.x + Math.cos(localPlayer.aim) * 26),
+            localPlayer.pos.y - 12 + Math.sin(localPlayer.aim) * 26,
+            WEAPONS[localPlayer.weaponIndex]?.color ?? "#fde047"
+          );
+        }
+        prevFireCooldown = localPlayer.fireCooldown;
         effects.update(FIXED);
         for (let i = beams.length - 1; i >= 0; i--) {
           beams[i].life -= FIXED;
           if (beams[i].life <= 0) beams.splice(i, 1);
         }
-        if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-          if (localPlayer.jetpack) {
-            const back = Math.cos(localPlayer.aim) >= 0 ? -1 : 1;
-            effects.jet(localPlayer.pos.x + back * 14, localPlayer.pos.y + 6);
-          }
-          if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
-            const w = WEAPONS[localPlayer.weaponIndex];
-            effects.muzzle(
-              localPlayer.pos.x + Math.cos(localPlayer.aim) * 26,
-              localPlayer.pos.y - 12 + Math.sin(localPlayer.aim) * 26,
-              w?.color ?? "#fbbf24"
-            );
-          }
-        }
-        prevFireCooldown = localPlayer.fireCooldown;
         acc -= FIXED;
         guard++;
       }
-      mouse.worldX = wrapX(camera.x + (mouse.x - canvas.width / 2) * camera.fovFactor);
-      mouse.worldY = wrapY(camera.y + (mouse.y - canvas.height / 2) * camera.fovFactor);
       renderScene();
       updateHudUI();
       updateScoreboardUI();
@@ -5800,6 +6218,12 @@
     },
     syncBotsCount,
     applyPendingLoadoutAndSpawn,
+    render: () => {
+      renderScene();
+      updateHudUI();
+      updateScoreboardUI();
+      updateHudWeaponButtons();
+    },
     get touch() {
       return touchState;
     },

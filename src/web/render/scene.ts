@@ -248,6 +248,54 @@ export function renderScene(): void {
       mounted: pMounted,
     })
     drawPlayerTag(ctx, p, px, py, p.id === localPlayer.id)
+
+    // Teleport 读条进度条 + 右键目标落点信标
+    if ((p.teleportTimer ?? 0) > 0 && p.teleportTarget) {
+      const castTotal = Math.max(0.1, world.config.teleportCastTime ?? 0.75)
+      const pct = clamp(1 - (p.teleportTimer! / castTotal), 0, 1)
+      const tx = sx(p.teleportTarget.x)
+      const ty = sy(p.teleportTarget.y)
+      ctx.save()
+      // 虚线连接当前位置与右键落点
+      ctx.setLineDash([6, 6])
+      ctx.strokeStyle = "rgba(192, 132, 252, 0.55)"
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(px, py - 14)
+      ctx.lineTo(tx, ty - 14)
+      ctx.stroke()
+      ctx.setLineDash([])
+      // 右键目标位置闪烁传送阵
+      if (inView(tx, ty, 80)) {
+        const pulse = 18 + Math.sin(world.tick * 0.35) * 4
+        ctx.strokeStyle = "#c084fc"
+        ctx.fillStyle = "rgba(192, 132, 252, 0.18)"
+        ctx.lineWidth = 2.2
+        ctx.beginPath(); ctx.arc(tx, ty - 12, pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+        ctx.strokeStyle = "#38bdf8"
+        ctx.beginPath(); ctx.arc(tx, ty - 12, pulse * (1 - pct * 0.65), 0, Math.PI * 2); ctx.stroke()
+        ctx.fillStyle = "#e9d5ff"
+        ctx.font = "bold 11px Inter, sans-serif"
+        ctx.textAlign = "center"
+        ctx.fillText("🌀 传送落点", tx, ty - 36)
+      }
+      // 玩家头顶读条进度条
+      const barW = 58
+      const barH = 6
+      const bx = px - barW / 2
+      const by = py - 72
+      ctx.fillStyle = "rgba(15, 23, 42, 0.88)"
+      ctx.strokeStyle = "#c084fc"
+      ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 3); ctx.fill(); ctx.stroke()
+      ctx.fillStyle = "#a855f7"
+      ctx.beginPath(); ctx.roundRect(bx + 1, by + 1, Math.max(2, (barW - 2) * pct), barH - 2, 2); ctx.fill()
+      ctx.fillStyle = "#f3e8ff"
+      ctx.font = "bold 10px Inter, sans-serif"
+      ctx.textAlign = "center"
+      ctx.fillText(`🌀 读条 ${Math.round(pct * 100)}%`, px, by - 4)
+      ctx.restore()
+    }
   }
 
   // 10.5 迫击炮瞄准线 + 鼠标准星

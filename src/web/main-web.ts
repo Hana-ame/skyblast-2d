@@ -8,7 +8,8 @@ import { autoDetectDeviceInput } from './input/device.ts'
 import { syncBotsCount, pickBotTarget } from './game/bots.ts'
 import { applyPendingLoadoutAndSpawn } from './game/loadout.ts'
 import { startGameLoop } from './game/loop.ts'
-import { updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI } from './app/hud.ts'
+import { renderScene } from './render/scene.ts'
+import { updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI, updateHudUI, updateScoreboardUI } from './app/hud.ts'
 import { syncParamsToUI } from './app/params.ts'
 import { mode } from './app/context.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
@@ -33,6 +34,7 @@ startGameLoop()
   get pendingLoadout() { return pendingLoadout },
   syncBotsCount,
   applyPendingLoadoutAndSpawn,
+  render: () => { renderScene(); updateHudUI(); updateScoreboardUI(); updateHudWeaponButtons(); },
   get touch() { return touchState },
   botTargets: () => bots.map(b => ({ bot: b.name, team: b.team, target: pickBotTarget(b)?.name ?? null, targetTeam: pickBotTarget(b)?.team ?? null })),
   get beams() { return beams },

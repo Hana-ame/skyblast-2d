@@ -4,13 +4,13 @@
 //   - spatial.ts         一维环形空间哈希桶与几何查询
 //   - playerPhysics.ts   玩家运动学、采样碰撞、穿模解算、重叠分离与客户端预测纯函数
 //   - projectiles.ts     弹丸子步进、高斯枪 2 次反射光线追踪、引力场弯折与牵引
-//   - throwables.ts      手雷、地雷、空袭与爆炸伤害结算 (stepExplosionsAndThrowables)
+//   - throwables.ts      副武器、手雷、地雷、空袭与爆炸伤害结算 (stepExplosionsAndThrowables)
 //   - interactables.ts   占领点、迫击炮、瞭望塔、传送门、补给箱与弹药经济 (stepMapInteractables)
 import { jetpack, jump, updateJetpackFuel, getPhysicsParams, recoilDelta } from './physics.ts'
 import { Terrain, OBSTACLE_PRESETS } from '../terrain.ts'
 import type { MapData } from '../map.ts'
 import { Rng } from '../rng.ts'
-import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../weapons.ts'
+import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX } from '../wrap.ts'
 import { defaultWorldInput } from '../types.ts'
@@ -37,7 +37,7 @@ import {
 } from './projectiles.ts'
 import type { ProjectileContext } from './projectiles.ts'
 import {
-  damageObstacleInWorld, damagePlayerInWorld, explodeInWorld, stepExplosionsAndThrowables,
+  stepPlayerTeleport, useSecondaryInWorld, damageObstacleInWorld, damagePlayerInWorld, explodeInWorld, stepExplosionsAndThrowables,
 } from './throwables.ts'
 import type { ThrowablesContext } from './throwables.ts'
 import {
@@ -72,12 +72,13 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   private pid = 1
   private prj = 1
   private gren = 1
+  private obsSeq = 1
+  private mineSeq = 1
   private ammo = 1
   private crate = 1
   private ammoSpawnTimer = 0
   private stuckTicks = new Map<number, number>()
 
-  // 空间加速索引（每帧按需刷新，直接作为单态字段供各子系统零开销访问）
   playerBroadBuckets: PlayerState[][] = Array.from({ length: NUM_BUCKETS }, () => [])
   obstacleBroadBuckets: Obstacle[][] = Array.from({ length: NUM_BUCKETS }, () => [])
   playerById = new Map<number, PlayerState>()
@@ -90,11 +91,15 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     this.resetMatch()
   }
 
-  // ── 子系统接口方法（零闭包/零 getter 开销） ──
+  // ── 子系统接口方法 ──
   nextProjId(): number { return this.prj++ }
+  nextGrenadeId(): number { return this.gren++ }
+  nextObstacleSeq(): number { return this.obsSeq++ }
+  nextMineId(): number { return this.mineSeq++ }
   nextAmmoId(): number { return this.ammo++ }
   getAmmoTimer(): number { return this.ammoSpawnTimer }
   setAmmoTimer(t: number): void { this.ammoSpawnTimer = t }
+  rebuildSpatial(): void { this.rebuildSpatialBuckets() }
   onHitCount(): void { this.hits++ }
   ownerTeamOf(id: number): TeamId {
     return (this.playerById.get(id) ?? this.players.find(p => p.id === id))?.team ?? 'ffa'
@@ -189,6 +194,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   }
 
   resetMatch(): void {
+    this.obsSeq = 1
+    this.mineSeq = 1
     this.obstacles = OBSTACLE_PRESETS.map(o => ({ ...o, maxHp: o.hp }))
     this.capturePoints = CP_INITS.map(c => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }))
     this.mortars = MORTARS_INIT.map(m => ({ ...m, cooldown: 0, operatorId: null }))
@@ -237,8 +244,9 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       fragCharges: DEFAULT_CONFIG.fragMaxCharges, fragRechargeTimer: 0,
       jetpack: false, fuel: getPhysicsParams().jetpackFuel,
       shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0, mountedTowerId: null, warpCooldown: 0,
+      teleportTimer: 0, teleportTarget: null,
       doll: null, dollCharges: 0, respawnTimer: 0,
-      kills: 0, deaths: 0,
+      kills: 0, deaths: 0, deathStreak: 0,
     }
     this.respawnAt(p, team)
     this.players.push(p)
@@ -251,7 +259,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   }
 
   private respawnAt(p: PlayerState, team: TeamId): void {
-    // 记住上次武器：常规主武器沿用到重生；补给特武是临时武器，重生时回退到上次的常规主武器
     const cur = WEAPONS[p.weaponIndex]
     const lastIdx = p.lastPrimaryIndex ?? p.weaponIndex
     if (!cur || cur.isSupplyOnly) {
@@ -282,7 +289,14 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     p.fragRechargeTimer = 0
     p.fuel = getPhysicsParams().jetpackFuel * (WEAPONS[p.weaponIndex]?.fuelMult ?? 1)
     p.shieldHp = 0; p.shieldTimer = 0; p.watchtowerTimer = 0; p.mountedTowerId = null; p.warpCooldown = 0
-    p.doll = null; p.dollCharges = 0; p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.chargeAim = undefined; p.secondaryCooldown = 0
+    p.teleportTimer = 0; p.teleportTarget = null
+    const streak = p.deathStreak ?? 0
+    p.doll = null
+    p.dollCharges = streak >= SECONDARIES.doll.unlockStreak ? 1 : 0
+    if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges)) {
+      p.secondary = getHighestUnlockedSecondary(streak, p.dollCharges)
+    }
+    p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.chargeAim = undefined; p.secondaryCooldown = 0
     p.deployed = true; p.alive = true; p.respawnTimer = 0
     resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
     ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
@@ -344,8 +358,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     stepMapInteractables(this, dt)
 
     // 5. 原地双指针清理失效实体
-    // 弹丸消失必须同时发 projectile_destroy（客户端事件化推算依赖它移除本地弹丸），
-    // 否则客户端会留下"幽灵弹丸"。已经在上方发过的用 destroyedIds 去重。
     let pw = 0
     for (let i = 0; i < this.projectiles.length; i++) {
       const pr = this.projectiles[i]
@@ -395,7 +407,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       }
     }
 
-    // 蓄力中锁定发射方向：蓄力期间瞄准输入不再改变 p.aim（松手/满蓄力发射后解除）
     const charging = p.chargeTimer > 0 && p.chargeAim !== undefined
     p.aim = charging ? p.chargeAim! : w.aim
     const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
@@ -428,6 +439,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     }
     if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt)
     if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
+    stepPlayerTeleport(this, p, dt)
 
     if (p.reloading) {
       p.reloadTimer -= dt
@@ -456,7 +468,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     }
 
     if (w.interact) handlePlayerInteract(this, p)
-    if (w.secondary) this.useSecondary(p, w.secondary)
+    if (w.secondary) useSecondaryInWorld(this, p, w.secondary)
 
     const wepNow = WEAPONS[p.weaponIndex]
     if (wepNow?.beam) {
@@ -464,7 +476,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       p.chargeTimer = 0
     } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
       if (w.fire) {
-        // 蓄力开始的那一帧记录锁定方向
         if (p.chargeTimer <= 0) p.chargeAim = p.aim
         p.chargeTimer = Math.max(p.chargeTimer, 1e-4)
       }
@@ -475,7 +486,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
           p.chargeTimer = 0
           p.chargeAim = undefined
         } else if (!w.fire) {
-          // 松手取消蓄力（不发射）→ 解除方向锁定
           p.chargeTimer = 0
           p.chargeAim = undefined
         }
@@ -515,14 +525,10 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {
-      // 后坐力写入独立通道（不与 vel 混算）：
-      // 覆盖式赋值 → 连发/单发每发的击退量恒定；阻尼通道保证各向同性、且不被移动覆写/重力/喷气上限吞掉。
       const rk = recoilDelta(wep.recoil, p.aim)
       if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
       p.recoilVel.x = rk.x
       p.recoilVel.y = rk.y
-      // 注意：不要在这里修改 p.vel 去"抵消下坠"——那会让后坐力位移随玩家当时的下坠速度变化，
-      // 破坏"各向相同"。后坐力完全由独立通道结算，玩家相对"没有这一枪"的位置永远位移同样多。
     }
 
     const mx = wrapX(p.pos.x + Math.cos(p.aim) * 24)
@@ -541,43 +547,11 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         life: wep.lifeSeconds ?? (wep.id === 2 || wep.id === 4 ? 175 : 130) / 60,
       })
       this.projectiles.push(pr)
-      // 事件化：发射（客户端据此本地推算弹道，无需每帧同步位置）
       this.events.push({
         kind: 'projectile_spawn', projectileId: pr.id, playerId: p.id, weaponId: pr.weaponId,
         x: pr.pos.x, y: pr.pos.y, vx: pr.vel.x, vy: pr.vel.y, bounces: pr.bounces, life: pr.life,
       })
       if (pr.isGravityOrb && pr.life > 0 && pr.damage > 0) this.activeGravityOrbs.push(pr)
-    }
-  }
-
-  private useSecondary(p: PlayerState, s: { type: string; targetX: number; targetY: number }): void {
-    if (p.respawnTimer > 0 || p.secondaryCooldown > 0 || !p.alive) return
-    const def = SECONDARIES[s.type]
-    if (!def) return
-    if (s.type === 'frag') {
-      if (p.fragCharges <= 0) return
-      p.fragCharges--
-      p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8)
-      const throwSpeed = 760
-      this.grenades.push({
-        id: this.gren++,
-        owner: p.id,
-        pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
-        vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
-        fuse: this.config.grenadeFuse, bounces: 0,
-      })
-      return
-    }
-    if (s.type === 'doll') {
-      if (p.dollCharges <= 0) return
-      p.dollCharges--
-      p.secondaryCooldown = def.cd
-      p.doll = {
-        pos: { x: p.pos.x, y: p.pos.y }, hp: p.hp, shieldHp: p.shieldHp, fuel: p.fuel,
-        weaponIndex: p.weaponIndex, ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
-        timer: this.config.dollDuration,
-      }
-      this.events.push({ kind: 'doll_recall', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: 'anchor' })
     }
   }
 
@@ -589,6 +563,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         ...p,
         pos: { x: p.pos.x, y: p.pos.y }, vel: { x: p.vel.x, y: p.vel.y },
         ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
+        teleportTarget: p.teleportTarget ? { x: p.teleportTarget.x, y: p.teleportTarget.y } : null,
         doll: p.doll ? { ...p.doll, pos: { x: p.doll.pos.x, y: p.doll.pos.y }, ammo: [...p.doll.ammo], reserveAmmo: [...p.doll.reserveAmmo] } : null,
       })),
       projectiles: this.projectiles.map(pr => ({ ...pr, pos: { x: pr.pos.x, y: pr.pos.y }, vel: { x: pr.vel.x, y: pr.vel.y }, hitTargets: [...pr.hitTargets] })),

@@ -5,7 +5,7 @@ import type {
   PlayerState, SupplyCrate, AmmoPack, Mortar, Watchtower, WarpPortal,
   CapturePoint, Landmine, Projectile, Grenade, Airstrike,
 } from '../core/types.ts'
-import { WEAPONS } from '../core/weapons.ts'
+import { WEAPONS, DEFAULT_CONFIG } from '../core/weapons.ts'
 
 export interface TeamPalette { color: string; light: string; dark: string; glow: string }
 export const TEAM_PALETTE: Record<string, TeamPalette> = {
@@ -469,7 +469,7 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
 
   // 7. 能量护盾（六边形科技感双层光罩）
   if (p.shieldTimer > 0 && p.shieldHp > 0) {
-    const r = 30 + Math.sin(t * 0.15) * 1.5
+    const r = 34 + Math.sin(t * 0.15) * 1.5
     const sGrad = ctx.createRadialGradient(0, -8, r * 0.4, 0, -8, r)
     sGrad.addColorStop(0, 'rgba(56,189,248,0.04)')
     sGrad.addColorStop(0.75, 'rgba(56,189,248,0.16)')
@@ -514,7 +514,7 @@ export function drawPlayerTag(ctx: CanvasRenderingContext2D, p: PlayerState, dx:
     ctx.fillStyle = 'rgba(15,23,42,0.85)'
     ctx.fillRect(-barW / 2, -36, barW, 3)
     ctx.fillStyle = '#38bdf8'
-    ctx.fillRect(-barW / 2, -36, barW * Math.min(1, p.shieldHp / 130), 3)
+    ctx.fillRect(-barW / 2, -36, barW * Math.min(1, p.shieldHp / DEFAULT_CONFIG.shieldHp), 3)
   }
   // 弹药小字
   ctx.font = '9px Inter, system-ui, sans-serif'

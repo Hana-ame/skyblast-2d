@@ -2,7 +2,7 @@
 import { world, localPlayer, pendingLoadout } from '../app/context.ts'
 import { updateHudWeaponButtons } from '../app/hud.ts'
 import { showToast } from '../app/toast.ts'
-import { WEAPONS, SECONDARIES } from '../../core/weapons.ts'
+import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
 import { SPAWN_POINTS } from '../../core/sim/world.ts'
 
 // ── 待部署配装 ──
@@ -16,7 +16,11 @@ export function applyPendingLoadoutAndSpawn(): void {
   const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0
   localPlayer.weaponIndex = wIdx
   localPlayer.lastPrimaryIndex = wIdx
-  localPlayer.secondary = SECONDARIES[pendingLoadout.secondaryType] ? pendingLoadout.secondaryType : 'frag'
+  const streak = localPlayer.deathStreak ?? 0
+  const wantSec = pendingLoadout.secondaryType
+  localPlayer.secondary = isSecondaryUnlocked(wantSec, streak, localPlayer.dollCharges ?? 0)
+    ? wantSec
+    : getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0)
   localPlayer.deployed = true
   localPlayer.alive = true
   world.deploy(localPlayer)
@@ -24,4 +28,3 @@ export function applyPendingLoadoutAndSpawn(): void {
   const spLabel = world.config.randomSpawn ? '随机安全点' : '队伍主基地'
   showToast(`⚡ 已在【${spLabel}】部署！配装已锁定：${WEAPONS[wIdx].name} + ${(SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag).name}`)
 }
-

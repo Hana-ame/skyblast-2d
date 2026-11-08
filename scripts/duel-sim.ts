@@ -1,6 +1,6 @@
 // scripts/duel-sim.ts —— 1v1 对射平衡模拟 CLI（核心实现见 src/balance/duelSim.ts）
 // 用法：node scripts/duel-sim.ts [--seeds=40] [--json|--sides|--matrix]
-import { runDuelSim } from '../src/balance/duelSim.ts'
+import { runDuelSim, runSecondaryBalanceSim } from '../src/balance/duelSim.ts'
 import { WEAPONS } from '../src/core/weapons.ts'
 import { MAIN_WEAPONS, DISTANCES } from '../src/balance/duelSim.ts'
 
@@ -54,5 +54,17 @@ for (const r of res.table) {
     String(r.byDist['180'] ?? '-').padStart(7) + '%' +
     String(r.byDist['380'] ?? '-').padStart(7) + '%' +
     String(r.byDist['700'] ?? '-').padStart(7) + '%'
+  )
+}
+
+console.log('\n=== 连死补偿副手阶梯平衡性验证（劣势方对阵全主武器） ===')
+console.log('副手阶梯          解锁连死  对拼胜率  存活率  平均存活时长')
+for (const sr of runSecondaryBalanceSim(12)) {
+  console.log(
+    sr.name.padEnd(14, '　') +
+    String(sr.unlockStreak).padStart(6) + '    ' +
+    String(sr.winRate).padStart(6) + '%  ' +
+    String(sr.survivalRate).padStart(5) + '%  ' +
+    String(sr.avgAliveSec).padStart(8) + 's'
   )
 }

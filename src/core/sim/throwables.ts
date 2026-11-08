@@ -1,13 +1,14 @@
-// core/sim/throwables.ts —— 手雷、地雷、空袭与爆炸结算子系统 (stepExplosionsAndThrowables)
+// core/sim/throwables.ts —— 副武器释放、读条传送、手雷、地雷、空袭与爆炸结算子系统 (stepExplosionsAndThrowables)
 import type { Terrain } from '../terrain.ts'
 import type { Rng } from '../rng.ts'
-import { WEAPONS } from '../weapons.ts'
+import { WEAPONS, SECONDARIES, getHighestUnlockedSecondary } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
-import { bucketIdx, findObstacleAt } from './spatial.ts'
+import { bucketIdx, findObstacleAt, checkBodyOverlapsAt } from './spatial.ts'
+import { ensureFreePosition, resolvePenetration } from './playerPhysics.ts'
 import { createProjectile } from './projectiles.ts'
 import type {
-  PlayerState, Projectile, Grenade, Landmine, Airstrike, Obstacle, Mortar, WorldEvent, TeamId,
+  PlayerState, Projectile, Grenade, Landmine, Airstrike, Obstacle, Mortar, Watchtower, WorldEvent, TeamId,
 } from '../types.ts'
 
 export interface ThrowablesContext {
@@ -22,14 +23,152 @@ export interface ThrowablesContext {
   landmines: Landmine[]
   airstrikes: Airstrike[]
   mortars: Mortar[]
+  watchtowers: Watchtower[]
   scores: Record<string, number>
   events: WorldEvent[]
   config: GameConfig
   rng: Rng
   nextProjId: () => number
+  nextGrenadeId: () => number
+  nextObstacleSeq: () => number
+  nextMineId: () => number
+  rebuildSpatial: () => void
   onHitCount: () => void
   ownerTeamOf: (id: number) => TeamId
   recallDoll: (p: PlayerState, ev: 'doll_recall') => void
+}
+
+/** 推进玩家 Teleport 读条：读条完成后直接出现在右键目标位置 */
+export function stepPlayerTeleport(ctx: ThrowablesContext, p: PlayerState, dt: number): void {
+  if (!p.teleportTimer || p.teleportTimer <= 0 || !p.teleportTarget) return
+  if (!p.alive || p.respawnTimer > 0 || !p.deployed) {
+    p.teleportTimer = 0
+    p.teleportTarget = null
+    return
+  }
+  p.teleportTimer -= dt
+  if (p.teleportTimer > 0) return
+
+  const target = p.teleportTarget
+  p.teleportTimer = 0
+  p.teleportTarget = null
+
+  const curMortar = ctx.mortars.find(m => m.operatorId === p.id)
+  if (curMortar) curMortar.operatorId = null
+  if (p.mountedTowerId) {
+    const tw = ctx.watchtowers.find(t => t.id === p.mountedTowerId)
+    if (tw) tw.operatorId = null
+    p.mountedTowerId = null
+    p.watchtowerTimer = 0
+  }
+
+  p.pos = { x: wrapX(target.x), y: clamp(target.y, 40, 4360) }
+  if (p.vel.y > 0) p.vel.y = 0
+  resolvePenetration(ctx.terrain, ctx.obstacles, ctx.obstacleBroadBuckets, p)
+  ensureFreePosition(ctx.terrain, ctx.obstacles, ctx.obstacleBroadBuckets, p)
+  ctx.events.push({ kind: 'warp', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: 'Teleport' })
+}
+
+export function useSecondaryInWorld(
+  ctx: ThrowablesContext,
+  p: PlayerState,
+  s: { type: string; targetX: number; targetY: number },
+): void {
+  if (p.respawnTimer > 0 || p.secondaryCooldown > 0 || !p.alive) return
+  const def = SECONDARIES[s.type]
+  if (!def) return
+  if (s.type === 'frag') {
+    if (p.fragCharges <= 0) return
+    p.fragCharges--
+    p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8)
+    const throwSpeed = 760
+    ctx.grenades.push({
+      id: ctx.nextGrenadeId(),
+      owner: p.id,
+      pos: { x: wrapX(p.pos.x + Math.cos(p.aim) * 20), y: p.pos.y - 16 + Math.sin(p.aim) * 20 },
+      vel: { x: Math.cos(p.aim) * throwSpeed + p.vel.x * 0.25, y: Math.sin(p.aim) * throwSpeed - 96 + p.vel.y * 0.2 },
+      fuse: ctx.config.grenadeFuse, bounces: 0,
+    })
+    return
+  }
+  if (s.type === 'doll') {
+    if (p.dollCharges <= 0) return
+    p.dollCharges--
+    p.secondaryCooldown = def.cd
+    p.doll = {
+      pos: { x: p.pos.x, y: p.pos.y }, hp: p.hp, shieldHp: p.shieldHp, fuel: p.fuel,
+      weaponIndex: p.weaponIndex, ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
+      timer: ctx.config.dollDuration,
+    }
+    ctx.events.push({ kind: 'doll_recall', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: 'anchor' })
+    return
+  }
+
+  // 连死阶梯解锁校验：必须达到对应连死阈值（或当前已合法装备该副手）
+  if ((p.deathStreak ?? 0) < def.unlockStreak && p.secondary !== s.type) return
+
+  if (s.type === 'obstacle') {
+    // 10.0s 冷却，不设同屏/同玩家数量上限，可无限生成
+    p.secondaryCooldown = def.cd
+    const w = 56
+    const h = 76
+    const dist = 76
+    const cx = wrapX(p.pos.x + Math.cos(p.aim) * dist)
+    const cy = Math.max(80, Math.min(4300 - h, (p.pos.y - 16) + Math.sin(p.aim) * dist))
+    const ox = wrapX(cx - w / 2)
+    let oy = cy - h / 2
+    for (let sStep = 0; sStep < 24; sStep++) {
+      if (ctx.terrain.isSolidAt(wrapX(ox + w / 2), oy + h - 1) && !ctx.terrain.isSolidAt(wrapX(ox + w / 2), oy - 2)) {
+        oy -= 2
+      } else break
+    }
+    const obKind: Obstacle['kind'] = 'box'
+    const ob: Obstacle = {
+      id: `p_obs_${p.id}_${ctx.nextObstacleSeq()}`,
+      x: ox,
+      y: oy,
+      w,
+      h,
+      hp: ctx.config.obstacleDefaultHp,
+      maxHp: ctx.config.obstacleDefaultHp,
+      kind: obKind,
+      color: '#334155',
+      borderColor: '#38bdf8',
+      label: '战术掩体',
+    }
+    ctx.obstacles.push(ob)
+    ctx.rebuildSpatial()
+    if (checkBodyOverlapsAt(ctx.terrain, ctx.obstacles, p.pos.x, p.pos.y, ctx.obstacleBroadBuckets)) {
+      resolvePenetration(ctx.terrain, ctx.obstacles, ctx.obstacleBroadBuckets, p)
+      ensureFreePosition(ctx.terrain, ctx.obstacles, ctx.obstacleBroadBuckets, p)
+    }
+    return
+  }
+
+  if (s.type === 'shield') {
+    // 护盾只允许出现一个：固定 100HP（ctx.config.shieldHp），不可叠加
+    if (p.shieldTimer > 0 && p.shieldHp > 0) return
+    p.secondaryCooldown = def.cd
+    p.shieldHp = ctx.config.shieldHp
+    p.shieldTimer = ctx.config.shieldDuration
+    ctx.events.push({ kind: 'shield', x: p.pos.x, y: p.pos.y, playerId: p.id })
+    return
+  }
+
+  if (s.type === 'teleport') {
+    if (p.teleportTimer && p.teleportTimer > 0) return
+    p.secondaryCooldown = def.cd
+    let tx = wrapX(p.pos.x + Math.cos(p.aim) * 280)
+    let ty = clamp(p.pos.y + Math.sin(p.aim) * 280, 40, 4360)
+    if (Number.isFinite(s.targetX) && Number.isFinite(s.targetY) && (s.targetX !== 0 || s.targetY !== 0)) {
+      tx = wrapX(s.targetX)
+      ty = clamp(s.targetY, 40, 4360)
+    }
+    const castTime = ctx.config.teleportCastTime ?? 0.35
+    p.teleportTimer = Math.max(0.05, castTime)
+    p.teleportTarget = { x: tx, y: ty }
+    return
+  }
 }
 
 export function damageObstacleInWorld(ctx: ThrowablesContext, ob: Obstacle, dmg: number): void {
@@ -58,23 +197,30 @@ export function damagePlayerInWorld(
   const atkId = attackerId ?? pr?.owner ?? 0
   const atkTeam = attackerTeam ?? ctx.ownerTeamOf(atkId)
   const label = weaponLabel ?? pr?.weaponLabel ?? '未知'
-  let remaining = amount
+
+  // 护盾（100HP）且伤害不溢出：只要护盾尚存，本次受击全部由护盾承担，超出护盾剩余量的溢出伤害不扣生命值
   if (t.shieldTimer > 0 && t.shieldHp > 0) {
-    const absorbed = Math.min(t.shieldHp, remaining)
-    t.shieldHp -= absorbed
-    remaining -= absorbed
+    const absorbed = Math.min(t.shieldHp, amount)
+    t.shieldHp = Math.max(0, t.shieldHp - amount)
+    ctx.events.push({
+      kind: 'hit', x: t.pos.x, y: t.pos.y,
+      victimId: t.id, attackerId: atkId, headshot: isHead, damage: absorbed,
+      weaponLabel: label, victimTeam: t.team, isHeadshot: isHead, isPierced,
+    })
+    ctx.onHitCount()
     if (t.shieldHp <= 0) {
       t.shieldHp = 0
       t.shieldTimer = 0
       ctx.events.push({ kind: 'shield', x: t.pos.x, y: t.pos.y, playerId: t.id })
       ctx.events.push({ kind: 'shield_break', x: t.pos.x, y: t.pos.y, playerId: t.id })
     }
-    if (remaining <= 0) return
+    return
   }
-  t.hp -= remaining
+
+  t.hp -= amount
   ctx.events.push({
     kind: 'hit', x: t.pos.x, y: t.pos.y,
-    victimId: t.id, attackerId: atkId, headshot: isHead, damage: remaining,
+    victimId: t.id, attackerId: atkId, headshot: isHead, damage: amount,
     weaponLabel: label, victimTeam: t.team, isHeadshot: isHead, isPierced,
   })
   ctx.onHitCount()
@@ -88,25 +234,28 @@ export function damagePlayerInWorld(
   t.hp = 0
   t.alive = false
   t.deaths++
+  t.deathStreak = (t.deathStreak ?? 0) + 1
+  t.secondary = getHighestUnlockedSecondary(t.deathStreak, t.dollCharges)
   t.respawnTimer = ctx.config.respawnDelay
   t.shieldHp = 0
   t.shieldTimer = 0
   t.watchtowerTimer = 0
+  t.teleportTimer = 0
+  t.teleportTarget = null
   const mk = ctx.mortars.find(m => m.operatorId === t.id)
   if (mk) mk.operatorId = null
   const killer = ctx.playerById.get(atkId) ?? ctx.players.find(x => x.id === atkId)
   if (killer && atkId !== t.id) {
     killer.kills++
+    killer.deathStreak = 0
     if (ctx.scores[atkTeam] !== undefined) ctx.scores[atkTeam]++
   }
   ctx.events.push({
     kind: 'kill',
-    // 新字段（联机协议/新表现层用）
     attackerId: atkId,
     victimId: t.id,
     weaponLabel: label,
     headshot: isHead,
-    // 旧字段（killfeed / 死亡界面直接读名称与队伍，避免显示成「?」）
     killerId: atkId,
     killerName: killer?.name ?? '战场环境',
     killerTeam: atkTeam,
@@ -147,7 +296,6 @@ export function explodeInWorld(
   const label = weaponLabel ?? pr?.weaponLabel ?? '爆炸'
   const isGrenade = label === '手榴弹'
   const srcWep = pr && pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : undefined
-  // 手雷走全局配置；枪械走各自 WeaponDef；地雷/迫击炮等非枪械来源保持旧行为（不伤友军、可自伤）
   const ffAllowed = isGrenade ? ctx.config.grenadeFriendlyFire : (srcWep ? (srcWep.friendlyFire ?? false) : false)
   const selfAllowed = isGrenade ? ctx.config.grenadeSelfDamage : (srcWep ? (srcWep.selfDamage ?? false) : true)
 
@@ -202,7 +350,7 @@ export function stepExplosionsAndThrowables(ctx: ThrowablesContext, dt: number):
     }
   }
 
-  // 2. 地雷
+  // 2. 地雷（场景预设感应地雷）
   for (let i = ctx.landmines.length - 1; i >= 0; i--) {
     const m = ctx.landmines[i]
     if (m.respawnTimer > 0) {
@@ -251,7 +399,7 @@ export function stepExplosionsAndThrowables(ctx: ThrowablesContext, dt: number):
       m.fuse -= dt
       if (m.fuse <= 0) {
         const label = m.instant ? '⚡瞬发地雷' : '🚨感应地雷'
-        explodeInWorld(ctx, m.pos.x, m.pos.y, 82, ctx.config.mineDamage, 19 * 60, undefined, m.owner === 0 ? undefined : m.owner, undefined, label)
+        explodeInWorld(ctx, m.pos.x, m.pos.y, m.preset ? 82 : 104, m.preset ? ctx.config.mineDamage : Math.round(ctx.config.mineDamage * 1.25), 19 * 60, undefined, m.owner === 0 ? undefined : m.owner, undefined, label)
         if (m.preset) m.respawnTimer = ctx.config.mineRespawnTime
         else ctx.landmines.splice(i, 1)
       }

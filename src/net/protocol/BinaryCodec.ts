@@ -11,7 +11,7 @@ import type {
   Obstacle, CapturePoint, AmmoPack, SupplyCrate, Mortar, WorldEvent, TeamId,
 } from '../../core/types.ts'
 import type { Intent } from '../../input/intent.ts'
-import { WEAPONS } from '../../core/weapons.ts'
+import { WEAPONS, SECONDARY_UNLOCK_ORDER } from '../../core/weapons.ts'
 import { OBSTACLE_PRESETS } from '../../core/terrain.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, clamp } from '../../core/wrap.ts'
 import { stepClientProjectilesDeadReckoning } from '../../core/sim/projectiles.ts'
@@ -911,8 +911,8 @@ function encodePlayer(w: ByteWriter, p: PlayerState): void {
     (p.doll ? 128 : 0)
   w.u8(bitFlags)
 
-  const secBit = p.secondary === 'doll' ? 1 : 0
-  const wepAndSec = (p.weaponIndex & 0x0f) | (secBit << 4) | ((p.fragCharges & 0x07) << 5)
+  const secIdx = Math.max(0, SECONDARY_UNLOCK_ORDER.indexOf(p.secondary as (typeof SECONDARY_UNLOCK_ORDER)[number]))
+  const wepAndSec = (p.weaponIndex & 0x0f) | ((secIdx & 1) << 4) | ((p.fragCharges & 0x07) << 5)
   w.u8(wepAndSec)
 
   w.i16(clamp(Math.round(p.hp * 10), -32767, 32767))
@@ -920,7 +920,9 @@ function encodePlayer(w: ByteWriter, p: PlayerState): void {
   w.u16(clamp(Math.round(p.fuel * 1000), 0, 65535))
   w.u16(p.kills)
   w.u16(p.deaths)
-  w.u8(p.dollCharges)
+  const dollAndSec = (clamp(p.dollCharges, 0, 7) & 0x07) | ((secIdx & 0x07) << 3)
+  w.u8(dollAndSec)
+  w.u8(clamp(p.deathStreak ?? 0, 0, 255))
   if (encodedPlayerNames.get(p.id) === p.name) {
     w.u8(1)
   } else {
@@ -951,7 +953,7 @@ function encodePlayer(w: ByteWriter, p: PlayerState): void {
     (p.secondaryCooldown > 0 ? 16 : 0) |
     (p.fragRechargeTimer > 0 ? 32 : 0) |
     (p.shieldTimer > 0 || p.shieldHp > 0 ? 64 : 0) |
-    (p.respawnTimer > 0 || p.warpCooldown > 0 || p.mountedTowerId !== null || p.watchtowerTimer > 0 ? 128 : 0)
+    (p.respawnTimer > 0 || p.warpCooldown > 0 || p.mountedTowerId !== null || p.watchtowerTimer > 0 || (p.teleportTimer ?? 0) > 0 ? 128 : 0)
   w.u8(timerMask)
 
   if (timerMask & 1) {
@@ -976,6 +978,13 @@ function encodePlayer(w: ByteWriter, p: PlayerState): void {
     w.u16(qTimerMs(p.warpCooldown))
     w.u16(qTimerMs(p.watchtowerTimer))
     w.str(p.mountedTowerId ?? '')
+    const tpActive = (p.teleportTimer ?? 0) > 0 && p.teleportTarget ? 1 : 0
+    w.u8(tpActive)
+    if (tpActive && p.teleportTarget) {
+      w.u16(qTimerMs(p.teleportTimer ?? 0))
+      w.u16(qPosX(p.teleportTarget.x))
+      w.u16(qPosY(p.teleportTarget.y))
+    }
   }
 
   if (p.doll) {
@@ -1014,7 +1023,6 @@ function decodePlayer(r: ByteReader): PlayerState {
   const hasDoll = !!(bitFlags & 128)
 
   const weaponIndex = wepAndSec & 0x0f
-  const secondary = ((wepAndSec >> 4) & 1) === 1 ? 'doll' : 'frag'
   const fragCharges = (wepAndSec >> 5) & 0x07
 
   const hp = r.i16() * 0.1
@@ -1022,7 +1030,11 @@ function decodePlayer(r: ByteReader): PlayerState {
   const fuel = r.u16() * 0.001
   const kills = r.u16()
   const deaths = r.u16()
-  const dollCharges = r.u8()
+  const dollAndSec = r.u8()
+  const dollCharges = dollAndSec & 0x07
+  const secIdx = (dollAndSec >> 3) & 0x07
+  const secondary = SECONDARY_UNLOCK_ORDER[secIdx] ?? 'frag'
+  const deathStreak = r.u8()
   const nameCached = r.u8() === 1
   let name = ''
   if (nameCached) {
@@ -1064,12 +1076,19 @@ function decodePlayer(r: ByteReader): PlayerState {
   let warpCooldown = 0
   let watchtowerTimer = 0
   let mountedTowerId: string | null = null
+  let teleportTimer = 0
+  let teleportTarget: { x: number; y: number } | null = null
   if (timerMask & 128) {
     respawnTimer = uTimerMs(r.u16())
     warpCooldown = uTimerMs(r.u16())
     watchtowerTimer = uTimerMs(r.u16())
     const mt = r.str()
     mountedTowerId = mt ? mt : null
+    const tpActive = r.u8()
+    if (tpActive) {
+      teleportTimer = uTimerMs(r.u16())
+      teleportTarget = { x: uPosX(r.u16()), y: uPosY(r.u16()) }
+    }
   }
 
   let doll: PlayerState['doll'] = null
@@ -1107,7 +1126,7 @@ function decodePlayer(r: ByteReader): PlayerState {
     reloading, reloadTimer, fireCooldown, chargeTimer,
     secondary, secondaryCooldown, fragCharges, fragRechargeTimer,
     jetpack, fuel, shieldHp, shieldTimer, watchtowerTimer, mountedTowerId, warpCooldown,
-    doll, dollCharges, respawnTimer, kills, deaths,
+    teleportTimer, teleportTarget, doll, dollCharges, respawnTimer, kills, deaths, deathStreak,
   }
 }
 

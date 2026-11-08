@@ -1,6 +1,6 @@
 // core/invariants.ts —— 数据一致性/布局校验（防“改了这个坏那个”）
 // 供测试使用；数值改动后若违反约定，`npm test` 会直接红，而不是等到线上才发现。
-import { WEAPONS } from './weapons.ts'
+import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, DEFAULT_CONFIG } from './weapons.ts'
 import { SPAWN_POINTS, JUMP_PADS, AMMO_SPOTS } from './sim/world.ts'
 import type { World } from './sim/world.ts'
 import { WORLD_W, WORLD_H } from './wrap.ts'
@@ -32,6 +32,24 @@ export function weaponViolations(): Violation[] {
     if (w.damagePerSecond !== undefined && w.damagePerSecond < 0) add('weapon.dps', `${w.name} damagePerSecond < 0`)
     if (w.ammoPerSecond !== undefined && w.ammoPerSecond <= 0) add('weapon.aps', `${w.name} ammoPerSecond <= 0`)
   }
+
+  // 副手平衡性阶梯解锁顺序硬性约定：frag(0) → obstacle(1) → shield(2) → teleport(3) → doll(4)
+  const EXPECTED_SEC_ORDER = ['frag', 'obstacle', 'shield', 'teleport', 'doll']
+  if (SECONDARY_UNLOCK_ORDER.join(',') !== EXPECTED_SEC_ORDER.join(',')) {
+    add('secondary.order', `SECONDARY_UNLOCK_ORDER "${SECONDARY_UNLOCK_ORDER.join(',')}" !== "${EXPECTED_SEC_ORDER.join(',')}"`)
+  }
+  if (SECONDARIES['mine']) {
+    add('secondary.mine', 'mine should be removed from SECONDARIES')
+  }
+  if (DEFAULT_CONFIG.shieldHp !== 100) {
+    add('config.shieldHp', `DEFAULT_CONFIG.shieldHp=${DEFAULT_CONFIG.shieldHp} expected 100`)
+  }
+  EXPECTED_SEC_ORDER.forEach((secId, idx) => {
+    const def = SECONDARIES[secId]
+    if (!def) { add('secondary.missing', `missing secondary "${secId}"`); return }
+    if (def.unlockStreak !== idx) add('secondary.streak', `secondary "${secId}" unlockStreak=${def.unlockStreak} expected ${idx}`)
+    if (def.cd <= 0) add('secondary.cd', `secondary "${secId}" cd <= 0`)
+  })
 
   const byName = (n: string) => WEAPONS.find(w => w.name === n)
   const rifle = byName('突击步枪')
@@ -69,6 +87,7 @@ export function weaponViolations(): Violation[] {
   }
   if (shotgun && shotgun.pellets !== 8) add('rule.shotgunpellets', '霰弹必须 8 弹丸')
   if (shotgun && shotgun.headshotMult !== 1) add('rule.shotgunhead', '霰弹无爆头加成')
+  if (shotgun && Math.abs((shotgun.fireDelay ?? 0) - 0.58) > 1e-9) add('rule.shotgunfire', '霰弹射击间隔必须为 0.58s（略微提高射速）')
   if (laser) {
     const dur = laser.magSize / (laser.ammoPerSecond ?? 1)
     if (Math.abs(dur - 4) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 4 秒')
@@ -77,6 +96,7 @@ export function weaponViolations(): Violation[] {
     if ((laser.fovMult ?? 1) !== 1) add('rule.laserfov', '高斯枪视野必须正常（1.0）')
     if (!laser.beam) add('rule.laserbeam', '高斯枪必须是持续光束')
     if (laser.bounces !== 2) add('rule.laserbounces', '高斯枪必须反射 2 次')
+    if (!laser.selfDamage) add('rule.laserself', '高斯枪必须开启自伤')
   }
   if (smg && Math.abs((smg.fireDelay ?? 0) - 0.05) > 1e-9) add('rule.smgfire', '冲锋枪射击间隔必须 0.05s')
   if (pistol && pistol.moveSpeedMult !== 1.5) add('rule.pistolmove', '手枪移速必须 1.5x')
