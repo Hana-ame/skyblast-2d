@@ -38,10 +38,12 @@
       name: "\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 33,
+      damage: 37,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
+      grazeDamageMin: 30,
+      // 命中主体 37；擦边按几何质量线性降到 30（大多数命中 33~34）
       speed: 1500,
       recoil: 84,
       magSize: 30,
@@ -160,10 +162,12 @@
       name: "M249",
       shortName: "M249",
       isSupplyOnly: true,
-      damage: 33,
+      damage: 37,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
+      grazeDamageMin: 30,
+      // 与突击步枪同步（37，擦边降到 30）
       speed: 1300,
       recoil: 66,
       magSize: 120,
@@ -171,7 +175,7 @@
       reloadTime: 3,
       fireDelay: 0.06,
       terrainRadius: 8,
-      // M249 伤害=突击(33)，高射速补给枪
+      // M249 伤害=突击(37，同步擦边分级)，高射速补给枪
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.78,

@@ -276,10 +276,12 @@
       name: "\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 33,
+      damage: 37,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
+      grazeDamageMin: 30,
+      // 命中主体 37；擦边按几何质量线性降到 30（大多数命中 33~34）
       speed: 1500,
       recoil: 84,
       magSize: 30,
@@ -398,10 +400,12 @@
       name: "M249",
       shortName: "M249",
       isSupplyOnly: true,
-      damage: 33,
+      damage: 37,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
+      grazeDamageMin: 30,
+      // 与突击步枪同步（37，擦边降到 30）
       speed: 1300,
       recoil: 66,
       magSize: 120,
@@ -409,7 +413,7 @@
       reloadTime: 3,
       fireDelay: 0.06,
       terrainRadius: 8,
-      // M249 伤害=突击(33)，高射速补给枪
+      // M249 伤害=突击(37，同步擦边分级)，高射速补给枪
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.78,
@@ -1179,6 +1183,42 @@
     const midY = ry + sMid * uy;
     return midX > 10 || midY > 13.5 || chord >= 0 && chord < 8;
   }
+  function projectileBodyHitQuality(dxToCenter, dyToFeet, vx, vy, bodyHalfX) {
+    const spd = Math.hypot(vx, vy);
+    const TOP = -12, BOTTOM = 18;
+    const halfY = (BOTTOM - TOP) * 0.5;
+    const centerY = (BOTTOM + TOP) * 0.5;
+    if (spd < 1e-6) return 1;
+    const ux = vx / spd;
+    const uy = vy / spd;
+    let sMin = -1e9;
+    let sMax = 1e9;
+    const slab = (o, u, lo, hi) => {
+      if (Math.abs(u) < 1e-9) return;
+      const t1 = (lo - o) / u;
+      const t2 = (hi - o) / u;
+      sMin = Math.max(sMin, Math.min(t1, t2));
+      sMax = Math.min(sMax, Math.max(t1, t2));
+    };
+    slab(dxToCenter, ux, -bodyHalfX, bodyHalfX);
+    slab(dyToFeet, uy, TOP, BOTTOM);
+    const chord = sMax - sMin;
+    if (chord <= 0) return 0;
+    const fullness = Math.min(1, chord / (halfY * 2));
+    const midAlong = (sMin + sMax) * 0.5;
+    const midY = dyToFeet + midAlong * uy;
+    const midX = dxToCenter + midAlong * ux;
+    const offY = Math.min(1, Math.abs(midY - centerY) / halfY);
+    const offX = Math.min(1, Math.abs(midX) / Math.max(1e-6, bodyHalfX));
+    const off = Math.max(offY, offX);
+    const centered = 1 - off * 0.5;
+    const raw = fullness * 0.7 + centered * 0.3;
+    let q;
+    if (raw <= 0.6) q = raw / 0.6 * 0.3;
+    else if (raw <= 0.9) q = 0.3 + (raw - 0.6) / 0.3 * 0.2;
+    else q = 0.5 + (raw - 0.9) / 0.1 * 0.5;
+    return Math.max(0, Math.min(1, q));
+  }
   function isPointInPlayerBeamHitbox(t, px, py, baseHeadR) {
     const shieldPad = t.shieldTimer > 0 && t.shieldHp > 0 ? SHIELD_HITBOX_PAD : 0;
     const rawDy = Math.abs(t.pos.y - py);
@@ -1560,6 +1600,9 @@
                 let dmg = Math.round(pr.damage);
                 if (wep?.edgeDamage !== void 0 && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
                   dmg = Math.min(dmg, wep.edgeDamage);
+                } else if (wep?.grazeDamageMin !== void 0) {
+                  const q = projectileBodyHitQuality(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX);
+                  dmg = Math.round(wep.grazeDamageMin + (pr.damage - wep.grazeDamageMin) * q);
                 } else if (wep?.farRange && pr.weaponId === 2) {
                   const owner = ctx2.playerById.get(pr.owner) ?? ctx2.players.find((x) => x.id === pr.owner);
                   if (owner) {

@@ -363,11 +363,11 @@ test('特武（高斯枪/M249/引力枪）只能从补给箱获得，常规换�
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 780, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 33, 100, 115, 25, 33, 24, 24, 24])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 37, 100, 115, 25, 37, 24, 24, 24])
   assert.equal(WEAPONS[1].magSize, 30, 'assault rifle mag 30')
   assert.equal(WEAPONS[1].maxReserve, 90, 'assault rifle reserve 90')
   assert.equal(WEAPONS[8].magSize, 30, 'SMG mag 30')
-  assert.equal(WEAPONS[8].maxReserve, 150, 'SMG reserve 150')   // 霰弹=手枪弹 24；M249=突击(33)；引力枪/手枪/冲锋枪 24
+  assert.equal(WEAPONS[8].maxReserve, 150, 'SMG reserve 150')   // 霰弹=手枪弹 24；M249=突击(37，擦边分级 30~37)；引力枪/手枪/冲锋枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
   // 霰弹：8 弹丸 ×19 伤害；弹匣 8/72；无爆头加成
@@ -1567,7 +1567,7 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
     wHitbox.projectiles.push({
       id: 910001, owner: s.id, pos: { x: 2000, y: 1240 }, vel: { x: 0, y: -1200 },
       spawnX: 2000, spawnY: 1240, weaponId: 1, curveRate: 0, life: 1.0, r: 3.2,
-      damage: 33, headshotMult: 2.2, explosive: false, terrainRadius: 8, gravityScale: 0,
+      damage: 37, headshotMult: 2.2, explosive: false, terrainRadius: 8, gravityScale: 0,
       pierceOnHeadshot: false, pierceAll: false, isGravityOrb: false, bounces: 0, passWalls: false,
       beam: false, rocket: false, dragPerSecond: 1, weaponLabel: '突击步枪', color: '#38bdf8', hitTargets: [s.id],
     })
@@ -1582,12 +1582,13 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
     wHitbox.projectiles.push({
       id: 910002, owner: s.id, pos: { x: 2000, y: 1240 }, vel: { x: 0, y: -1200 },
       spawnX: 2000, spawnY: 1240, weaponId: 1, curveRate: 0, life: 1.0, r: 3.2,
-      damage: 33, headshotMult: 2.2, explosive: false, terrainRadius: 8, gravityScale: 0,
+      damage: 37, headshotMult: 2.2, explosive: false, terrainRadius: 8, gravityScale: 0,
       pierceOnHeadshot: false, pierceAll: false, isGravityOrb: false, bounces: 0, passWalls: false,
       beam: false, rocket: false, dragPerSecond: 1, weaponLabel: '突击步枪', color: '#38bdf8', hitTargets: [s.id],
     })
     wHitbox.step(DT, new Map())
-    assert.equal(t.shieldHp, 67, 'shielded player with slightly larger hitbox catches the grazing shot at dx=20px')
+    const grazeDealt = 100 - t.shieldHp
+    assert.ok(grazeDealt >= 30 && grazeDealt <= 37, `shielded grazing shot deals a graded 30~37 damage, got ${grazeDealt}`)
     assert.equal(t.hp, 100)
   }
 

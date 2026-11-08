@@ -33,6 +33,9 @@ export interface WeaponDef {
   farRange?: number        // 远距阈值（可选）
   farDamage?: number       // 超过 farRange 时的伤害（可选）
   edgeDamage?: number      // 命中身体碰撞箱边缘（擦边）时的伤害（狙击 = 99，正常命中身体与远距身体均为 100）
+  /** 分级擦边伤害：命中身体主体 = damage，越靠碰撞箱边缘越低，线性落到 grazeDamageMin。
+   *  （突击步枪 37 → 擦边最低 30，常见命中 33~34） */
+  grazeDamageMin?: number
   chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
   friendlyFire?: boolean   // 是否对友军造成伤害（默认 false=关闭；手雷/高斯/引力/火箭开启）
   selfDamage?: boolean     // 是否会对使用者自己造成伤害（默认 false；高斯反射光束等开启）
@@ -74,7 +77,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
-    damage: 33, headshotMult: 2.2, pellets: 1, spread: 0.045,
+    damage: 37, headshotMult: 2.2, pellets: 1, spread: 0.045, grazeDamageMin: 30,   // 命中主体 37；擦边按几何质量线性降到 30（大多数命中 33~34）
     speed: 1500, recoil: 84, magSize: 30, maxReserve: 90,    // 30/90
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
@@ -110,9 +113,9 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,
-    damage: 33, headshotMult: 1.8, pellets: 1, spread: 0.11,
+    damage: 37, headshotMult: 1.8, pellets: 1, spread: 0.11, grazeDamageMin: 30,   // 与突击步枪同步（37，擦边降到 30）
     speed: 1300, recoil: 66, magSize: 120, maxReserve: 240,
-    reloadTime: 3.0, fireDelay: 0.06, terrainRadius: 8,   // M249 伤害=突击(33)，高射速补给枪
+    reloadTime: 3.0, fireDelay: 0.06, terrainRadius: 8,   // M249 伤害=突击(37，同步擦边分级)，高射速补给枪
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.30, color: '#f97316',
     traitDesc: '重型机枪 · 火力压制',
   },

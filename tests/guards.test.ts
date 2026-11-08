@@ -16,6 +16,7 @@ import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
 import type { WorldInput } from '../src/core/types.ts'
 import { recoilDelta, RECOIL_SCALE } from '../src/core/sim/physics.ts'
+import { projectileBodyHitQuality } from '../src/core/sim/projectiles.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../src/core/wrap.ts'
 
 test('护栏·武器约定：跨武器规则/数值范围全部满足', () => {
@@ -878,4 +879,38 @@ test('护栏·UI 文本单一数据源校验：index.html 死亡界面与大厅�
     assert.equal(m[2].trim(), formatSecondaryButtonTitle(def, false), `lobby secondary title "${m[1]}" matches single source`)
     assert.equal(m[3].trim(), formatSecondaryCardSubtitle(def, DEFAULT_CONFIG), `lobby secondary subtitle "${m[1]}" matches single source`)
   }
+})
+
+
+test('护栏·突击步枪擦边分级：命中主体 37、擦边最低 30，大多数命中落在 33~34', () => {
+  const rifle = WEAPONS[1]
+  assert.equal(rifle.damage, 37, 'rifle body hit damage is 37')
+  assert.equal(rifle.grazeDamageMin, 30, 'rifle graze floor is 30')
+  // M249 与突击步枪伤害同步（既有规则）
+  assert.equal(WEAPONS[5].damage, 37, 'M249 damage mirrors the rifle')
+  assert.equal(WEAPONS[5].grazeDamageMin, 30, 'M249 graze floor mirrors the rifle')
+
+  const halfX = 13 + 3.2   // 身体判定半宽 = 13 + 弹丸半径
+  const dmgOf = (q: number) => Math.round(30 + (37 - 30) * q)
+
+  // ① 水平平射穿过躯干：伤害必须落在 30~37，且正中最高、贴边更低
+  const horiz: number[] = []
+  for (let dy = -12; dy <= 18; dy++) horiz.push(dmgOf(projectileBodyHitQuality(-halfX, dy, 1500, 0, halfX)))
+  assert.ok(Math.min(...horiz) >= 30 && Math.max(...horiz) <= 37,
+    `horizontal hits stay within 30~37, got ${Math.min(...horiz)}~${Math.max(...horiz)}`)
+  const center = dmgOf(projectileBodyHitQuality(-halfX, 3, 1500, 0, halfX))
+  const edge = dmgOf(projectileBodyHitQuality(-halfX, 18, 1500, 0, halfX))
+  assert.ok(center > edge, `center hit (${center}) must beat edge hit (${edge})`)
+
+  // ② 垂直弹（从脚下进入）：横向偏移越大伤害越低，且仍 ≥ 30
+  const vert: number[] = []
+  for (let dx = -16; dx <= 16; dx++) vert.push(dmgOf(projectileBodyHitQuality(dx, 18, 0, -1200, halfX)))
+  assert.ok(Math.min(...vert) >= 30 && Math.max(...vert) <= 37,
+    `vertical hits stay within 30~37, got ${Math.min(...vert)}~${Math.max(...vert)}`)
+  assert.ok(vert[16] > vert[0], `vertical center (${vert[16]}) must beat sideways (${vert[0]})`)
+
+  // ③ 绝大多数命中集中在 33~34：水平扫描里 33~34 的占比要过半数
+  const common = horiz.filter(d => d === 33 || d === 34).length
+  assert.ok(common / horiz.length >= 0.4,
+    `most hits cluster at 33~34, got ${common}/${horiz.length} = ${(common / horiz.length * 100).toFixed(0)}%`)
 })

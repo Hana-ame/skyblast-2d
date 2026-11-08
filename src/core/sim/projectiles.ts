@@ -170,6 +170,76 @@ export function isProjectileBodyEdgeHit(
   return midX > 10 || midY > 13.5 || (chord >= 0 && chord < 8)
 }
 
+/**
+ * 分级擦边命中质量（0..1）——用于「命中主体满伤、越靠边缘越少」的武器（突击步枪）。
+ *   1 = 正中身体主体（弦长饱满、中心接近躯干中心）
+ *   0 = 仅擦到碰撞箱边角
+ * 依据：弹道穿过身体 AABB 的弦长（越短越擦边）+ 穿点中心距躯干中心的横向偏移。
+ */
+export function projectileBodyHitQuality(
+  /** 命中瞬间弹丸相对玩家中心（头中心）的横向偏移（已 wrap，可正可负） */
+  dxToCenter: number,
+  /** 命中瞬间弹丸相对玩家脚底的纵向偏移 */
+  dyToFeet: number,
+  /** 弹丸速度：用来求弹道穿过身体 AABB 的实际弦长 */
+  vx: number,
+  vy: number,
+  bodyHalfX: number,
+): number {
+  // 关键：弹丸判定发生在「首次进入碰撞箱」的那一步，所以命中点几乎总在边缘。
+  // 真正能反映「打得正不正」的是**弹道穿过身体的弦长**：
+  //   平直穿过躯干中心 → 弦长≈整个躯干高度（30px）→ 满伤
+  //   擦过肩/脚/侧面 → 弦长很短 → 最低伤
+  const spd = Math.hypot(vx, vy)
+  const TOP = -12, BOTTOM = 18
+  const halfY = (BOTTOM - TOP) * 0.5
+  const centerY = (BOTTOM + TOP) * 0.5
+
+  if (spd < 1e-6) return 1
+  const ux = vx / spd
+  const uy = vy / spd
+  // 沿弹道方向，与 AABB（横 [-halfX, halfX]、纵 [TOP, BOTTOM]）相交的弦长
+  let sMin = -1e9
+  let sMax = 1e9
+  const slab = (o: number, u: number, lo: number, hi: number): void => {
+    if (Math.abs(u) < 1e-9) return
+    const t1 = (lo - o) / u
+    const t2 = (hi - o) / u
+    sMin = Math.max(sMin, Math.min(t1, t2))
+    sMax = Math.min(sMax, Math.max(t1, t2))
+  }
+  slab(dxToCenter, ux, -bodyHalfX, bodyHalfX)
+  slab(dyToFeet, uy, TOP, BOTTOM)
+  const chord = sMax - sMin
+  if (chord <= 0) return 0
+  // 弦长饱满度（0..1）：穿过长度达到「躯干高度」视为满
+  const fullness = Math.min(1, chord / (halfY * 2))
+  // 穿点的居中程度：同时看纵向（靠肩/脚）和横向（靠身侧）
+  const midAlong = (sMin + sMax) * 0.5
+  const midY = dyToFeet + midAlong * uy
+  const midX = dxToCenter + midAlong * ux
+  const offY = Math.min(1, Math.abs(midY - centerY) / halfY)
+  const offX = Math.min(1, Math.abs(midX) / Math.max(1e-6, bodyHalfX))
+  // 取较差的一维：垂直弹看横向偏移，水平弹看纵向高度
+  const off = Math.max(offY, offX)
+  const centered = 1 - off * 0.5
+  // 主体：弦长为主（70%），居中度占 30%
+  const raw = fullness * 0.7 + centered * 0.3
+  // 分段映射（raw: 0=擦边, 1=完美穿心）→ 质量：
+  //   raw 0.00~0.55 → 质量 0.00~0.42（30~33，真正的擦边惩罚）
+  //   raw 0.55~0.85 → 质量 0.42~0.62（33~34，绝大多数命中落这里）
+  //   raw 0.85~1.00 → 质量 0.62~1.00（35~37，只有正中穿心才满伤）
+  // 目标分布：擦边 30~32 占少数，绝大多数命中落在 33~34，只有极正中的穿心才到 36~37。
+  // raw 0.00~0.60 → 质量 0.00~0.30（30~32）
+  // raw 0.60~0.90 → 质量 0.30~0.50（32~33.5，主群体）
+  // raw 0.90~1.00 → 质量 0.50~1.00（33.5~37，只有穿心）
+  let q: number
+  if (raw <= 0.60) q = (raw / 0.60) * 0.30
+  else if (raw <= 0.90) q = 0.30 + ((raw - 0.60) / 0.30) * 0.20
+  else q = 0.50 + ((raw - 0.90) / 0.10) * 0.50
+  return Math.max(0, Math.min(1, q))
+}
+
 /** 判定光束采样点 (px, py) 是否命中玩家 t（含护盾开启时稍微扩大的碰撞箱） */
 function isPointInPlayerBeamHitbox(
   t: PlayerState,
@@ -617,6 +687,10 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
               // 狙击碰撞箱边缘规则：打中碰撞箱边缘才造成 edgeDamage(99)，近/远距离命中身体主体均保持 100 伤害
               if (wep?.edgeDamage !== undefined && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
                 dmg = Math.min(dmg, wep.edgeDamage)
+              } else if (wep?.grazeDamageMin !== undefined) {
+                // 分级擦边：命中主体 = damage（37），越靠碰撞箱边缘线性降到 grazeDamageMin（30）
+                const q = projectileBodyHitQuality(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)
+                dmg = Math.round(wep.grazeDamageMin + (pr.damage - wep.grazeDamageMin) * q)
               } else if (wep?.farRange && pr.weaponId === 2) {
                 const owner = ctx.playerById.get(pr.owner) ?? ctx.players.find(x => x.id === pr.owner)
                 if (owner) {
