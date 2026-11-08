@@ -363,7 +363,7 @@ test('特武（高斯枪/M249/引力枪）只能从补给箱获得，常规换�
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 780, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 37, 100, 115, 25, 37, 24, 24, 24])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 37, 100, 160, 25, 37, 24, 24, 24])
   assert.equal(WEAPONS[1].magSize, 30, 'assault rifle mag 30')
   assert.equal(WEAPONS[1].maxReserve, 90, 'assault rifle reserve 90')
   assert.equal(WEAPONS[8].magSize, 30, 'SMG mag 30')

@@ -85,6 +85,9 @@ export function weaponViolations(): Violation[] {
   if (rocket && (rocket.magSize !== 1 || rocket.maxReserve !== 20)) add('rule.rocketmag', '火箭筒必须 1/20 弹匣')
   if (rocket && rocket.fireDelay !== 0) add('rule.rocketfire', '火箭筒射击间隔必须 0')
   if (rocket && rocket.speed !== 780) add('rule.rocketspeed', '火箭筒弹速必须 780（520 × 1.5）')
+  if (rocket && rocket.damage !== 160) add('rule.rocketdmg', '火箭筒爆炸伤害必须 160')
+  if (rocket && rocket.terrainRadius !== 124) add('rule.rocketradius', '火箭筒爆炸范围必须保持 124（本次只改伤害与衰减）')
+  if (rocket && (rocket.blastFalloffExponent ?? 1) <= 1) add('rule.rocketblast', '火箭筒爆炸衰减必须比线性更陡（blastFalloffExponent > 1）')
   if (sniper && (sniper.damage !== 100 || sniper.edgeDamage !== 99 || sniper.farRange !== undefined)) {
     add('rule.sniperedge', '狙击命中身体必须 100（含远距），打中碰撞箱边缘必须 99')
   }

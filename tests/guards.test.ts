@@ -914,3 +914,37 @@ test('护栏·突击步枪擦边分级：命中主体 37、擦边最低 30，大
   assert.ok(common / horiz.length >= 0.4,
     `most hits cluster at 33~34, got ${common}/${horiz.length} = ${(common / horiz.length * 100).toFixed(0)}%`)
 })
+
+
+test('护栏·火箭筒爆炸：伤害 160、范围不变(124)、衰减比线性更陡', () => {
+  const rocket = WEAPONS[3]
+  assert.equal(rocket.damage, 160, 'rocket blast damage is 160')
+  assert.equal(rocket.terrainRadius, 124, 'blast radius stays 124')
+  assert.ok((rocket.blastFalloffExponent ?? 1) > 1, `blast falloff must be steeper than linear, got ${rocket.blastFalloffExponent}`)
+
+  // 实测：近爆点接近满伤，距离越远衰减越快，且半径外无伤
+  const hitR = rocket.terrainRadius * 1.35
+  const blastAt = (dist: number): number => {
+    const w = new World(44000 + Math.round(dist), { name: 'blast', solids: [] })
+    w.config.randomSpawn = false
+    const a = w.addPlayer('A', 'red')
+    const b = w.addPlayer('B', 'blue')
+    a.pos = { x: 6600, y: 2200 }
+    const cx = 7000, cy = 2300
+    b.pos = { x: cx + dist, y: cy + 12 }
+    b.hp = 500
+    w.explode(cx, cy, rocket.terrainRadius, rocket.damage, 900, undefined, a.id, a.team, '火箭筒')
+    w.drainEvents()
+    return 500 - b.hp
+  }
+  const near = blastAt(20)
+  const mid = blastAt(80)
+  const edge = blastAt(160)
+  assert.ok(Math.abs(near - Math.round(160 * (1 - Math.pow(20 / hitR, 1.8)))) <= 2,
+    `20px blast matches the 1.8-exponent curve, got ${near}`)
+  assert.ok(near > mid && mid > edge, `damage falls off with distance: ${near} > ${mid} > ${edge}`)
+  assert.ok(edge <= 40, `far edge is heavily attenuated, got ${edge}`)
+  // 比旧的线性 115 衰减更快（同样距离掉得更多）
+  const linear115 = Math.round(115 * Math.max(0.2, 1 - 100 / hitR))
+  assert.ok(blastAt(100) > linear115, `new 160-damage curve still hits harder than the old 115 linear at mid range`)
+})

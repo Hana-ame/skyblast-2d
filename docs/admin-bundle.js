@@ -94,10 +94,12 @@
       name: "\u706B\u7BAD\u7B52",
       shortName: "\u706B\u7BAD\u7B52",
       isSupplyOnly: false,
-      damage: 115,
+      damage: 160,
       headshotMult: 1.5,
       pellets: 1,
       spread: 0,
+      blastFalloffExponent: 1.8,
+      // 伤害 115→160；爆炸范围不变(124)，衰减更陡
       speed: 780,
       recoil: 420,
       magSize: 1,

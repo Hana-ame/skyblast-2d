@@ -36,6 +36,9 @@ export interface WeaponDef {
   /** 分级擦边伤害：命中身体主体 = damage，越靠碰撞箱边缘越低，线性落到 grazeDamageMin。
    *  （突击步枪 37 → 擦边最低 30，常见命中 33~34） */
   grazeDamageMin?: number
+  /** 爆炸衰减指数（默认 1 = 线性）。越大越陡：近爆点保持高伤，稍远迅速衰减。
+   *  只影响玩家伤害的半径衰减，不改爆炸范围 terrainRadius。 */
+  blastFalloffExponent?: number
   chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
   friendlyFire?: boolean   // 是否对友军造成伤害（默认 false=关闭；手雷/高斯/引力/火箭开启）
   selfDamage?: boolean     // 是否会对使用者自己造成伤害（默认 false；高斯反射光束等开启）
@@ -94,7 +97,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 3, name: '火箭筒', shortName: '火箭筒', isSupplyOnly: false,
-    damage: 115, headshotMult: 1.5, pellets: 1, spread: 0.0,
+    damage: 160, headshotMult: 1.5, pellets: 1, spread: 0.0, blastFalloffExponent: 1.8,   // 伤害 115→160；爆炸范围不变(124)，衰减更陡
     speed: 780, recoil: 420, magSize: 1, maxReserve: 20,   // 弹速 ×1.5（520→780）；1 发/弹匣，共 20 个弹匣；换弹 2s
     reloadTime: 2.0, fireDelay: 0, terrainRadius: 124,   // 射击间隔 = 0（节奏由 2s 换弹决定）
     explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.7, fuelMult: 0.7, ascendMult: 0.7, fovMult: 1.0, color: '#fb7185',

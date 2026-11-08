@@ -332,10 +332,12 @@
       name: "\u706B\u7BAD\u7B52",
       shortName: "\u706B\u7BAD\u7B52",
       isSupplyOnly: false,
-      damage: 115,
+      damage: 160,
       headshotMult: 1.5,
       pellets: 1,
       spread: 0,
+      blastFalloffExponent: 1.8,
+      // 伤害 115→160；爆炸范围不变(124)，衰减更陡
       speed: 780,
       recoil: 420,
       magSize: 1,
@@ -1921,6 +1923,11 @@
     const srcWep = pr && pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
     const ffAllowed = isGrenade ? ctx2.config.grenadeFriendlyFire : srcWep ? srcWep.friendlyFire ?? false : false;
     const selfAllowed = isGrenade ? ctx2.config.grenadeSelfDamage : srcWep ? srcWep.selfDamage ?? false : true;
+    let blastExp = srcWep?.blastFalloffExponent ?? 1;
+    if (!srcWep && label) {
+      const byLabel = WEAPONS.find((w) => w.shortName === label || w.name === label);
+      if (byLabel?.blastFalloffExponent) blastExp = byLabel.blastFalloffExponent;
+    }
     for (const t of ctx2.players) {
       if (t.respawnTimer > 0 || !t.deployed || !t.alive) continue;
       const dx = wrapDeltaX(wCx, t.pos.x);
@@ -1929,7 +1936,8 @@
       if (Math.abs(dy) > hitR) continue;
       const dist = Math.hypot(dx, dy);
       if (dist > hitR) continue;
-      const falloff = Math.max(0.2, 1 - dist / hitR);
+      const tNorm = Math.min(1, dist / hitR);
+      const falloff = Math.max(0.2, 1 - Math.pow(tNorm, blastExp));
       const nx = dist > 0.1 ? dx / dist : 0;
       const ny = dist > 0.1 ? dy / dist : -1;
       const sign = implosion ? -0.85 : 1;

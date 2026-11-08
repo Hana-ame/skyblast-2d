@@ -298,6 +298,12 @@ export function explodeInWorld(
   const srcWep = pr && pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : undefined
   const ffAllowed = isGrenade ? ctx.config.grenadeFriendlyFire : (srcWep ? (srcWep.friendlyFire ?? false) : false)
   const selfAllowed = isGrenade ? ctx.config.grenadeSelfDamage : (srcWep ? (srcWep.selfDamage ?? false) : true)
+  // 取爆炸衰减指数：优先用弹丸对应武器；无 pr 时按武器名回退（保证同一武器参数一致）
+  let blastExp = srcWep?.blastFalloffExponent ?? 1
+  if (!srcWep && label) {
+    const byLabel = WEAPONS.find(w => w.shortName === label || w.name === label)
+    if (byLabel?.blastFalloffExponent) blastExp = byLabel.blastFalloffExponent
+  }
 
   for (const t of ctx.players) {
     if (t.respawnTimer > 0 || !t.deployed || !t.alive) continue
@@ -307,7 +313,10 @@ export function explodeInWorld(
     if (Math.abs(dy) > hitR) continue
     const dist = Math.hypot(dx, dy)
     if (dist > hitR) continue
-    const falloff = Math.max(0.2, 1 - dist / hitR)
+    // 衰减：默认线性；武器可配 blastFalloffExponent >1（火箭筒 1.8）→ 近爆点更保伤、边缘掉得更快。
+    // 只影响玩家伤害曲线，不改爆炸半径 terrainRadius。
+    const tNorm = Math.min(1, dist / hitR)
+    const falloff = Math.max(0.2, 1 - Math.pow(tNorm, blastExp))
     const nx = dist > 0.1 ? dx / dist : 0
     const ny = dist > 0.1 ? dy / dist : -1
     const sign = implosion ? -0.85 : 1.0
