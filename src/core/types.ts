@@ -39,6 +39,8 @@ export interface PlayerState {
   chargeTimer: number    // 蓄力已持续秒数（狙击等蓄力武器；松手清零，满 chargeSeconds 发射）
   /** 蓄力锁定方向（rad）：蓄力开始时记录，蓄力期间不再跟随瞄准输入 → 蓄力中不能改发射方向 */
   chargeAim?: number
+  /** 上一帧的开火键状态：用于检测「按下沿」（狙：按一下开始读条，不需按住） */
+  prevFireHeld?: boolean
   // 副武器（连死按平衡性阶梯解锁：frag → obstacle → shield → teleport → mine → doll）
   secondary: string      // 'frag'|'obstacle'|'shield'|'teleport'|'mine'|'doll'
   secondaryCooldown: number

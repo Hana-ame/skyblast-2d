@@ -77,8 +77,9 @@
       maxReserve: 15,
       reloadTime: 2.8,
       fireDelay: 0.95,
-      chargeSeconds: 0.6,
+      chargeSeconds: 0.5,
       terrainRadius: 16,
+      // 按下后读条 0.5s 自动发射
       explosive: false,
       laser: true,
       pierceOnHeadshot: true,

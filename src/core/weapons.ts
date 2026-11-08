@@ -42,7 +42,9 @@ export interface WeaponDef {
   /** 爆炸衰减指数（默认 1 = 线性）。越大越陡：近爆点保持高伤，稍远迅速衰减。
    *  只影响玩家伤害的半径衰减，不改爆炸范围 terrainRadius。 */
   blastFalloffExponent?: number
-  chargeSeconds?: number   // 开火蓄力时间（狙击等慢速重型武器）
+  /** 按下后的读条时间（秒）：不需要按住，按一下即开始读条，读满自动发射；
+   *  发射方向锁定为按下那一刻的瞄准方向。 */
+  chargeSeconds?: number
   friendlyFire?: boolean   // 是否对友军造成伤害（默认 false=关闭；手雷/高斯/引力/火箭开启）
   selfDamage?: boolean     // 是否会对使用者自己造成伤害（默认 false；高斯反射光束等开启）
   damagePerSecond?: number // 持续光束每秒伤害（beam 武器）
@@ -93,7 +95,7 @@ export const WEAPONS: WeaponDef[] = [
     id: 2, name: '狙击步枪', shortName: '狙', isSupplyOnly: false,
     damage: 137, headshotMult: 2.5, pellets: 1, spread: 0.003,
     speed: 4000, recoil: 390, magSize: 3, maxReserve: 15,
-    reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.60, terrainRadius: 16,
+    reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.50, terrainRadius: 16,   // 按下后读条 0.5s 自动发射
     explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.6, fuelMult: 0.6, fovMult: 1.30, color: '#c084fc',
     // 狙击擦边分级：正中（穿心）= 137，越靠碰撞箱边缘越低，最低 99。
     // edgeDamage 保留=99，作为「边缘命中上限」（连续分级的最低档即 99）。

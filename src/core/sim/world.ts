@@ -487,17 +487,21 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (w.fire) updateContinuousBeam(this, p, wepNow, dt)
       p.chargeTimer = 0
     } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-      if (w.fire) {
-        if (p.chargeTimer <= 0) p.chargeAim = p.aim
-        p.chargeTimer = Math.max(p.chargeTimer, 1e-4)
+      // 蓄力武器（狙击）：**按下沿**开始读条，不需要按住；
+      // 发射方向锁定为「按下那一刻」的瞄准方向，读条期间不再跟随鼠标。
+      const firePressed = w.fire && !p.prevFireHeld
+      if (firePressed && p.chargeTimer <= 0 && p.fireCooldown <= 0) {
+        if (p.ammo[p.weaponIndex] > 0) {
+          p.chargeAim = p.aim          // 锁定按下瞬间的方向
+          p.chargeTimer = 1e-4         // 开始读条
+        } else if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) {
+          this.startReload(p)
+        }
       }
       if (p.chargeTimer > 0) {
         p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
-          this.fire(p)
-          p.chargeTimer = 0
-          p.chargeAim = undefined
-        } else if (!w.fire) {
+          this.fire(p)                 // 读条完成自动发射（方向用锁定的 chargeAim）
           p.chargeTimer = 0
           p.chargeAim = undefined
         }
@@ -505,6 +509,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     } else if (w.fire) {
       this.fire(p)
     }
+    // 记录本帧开火键状态，供下一帧做按下沿检测（所有武器共用）
+    p.prevFireHeld = w.fire
   }
 
   private fire(p: PlayerState): void {

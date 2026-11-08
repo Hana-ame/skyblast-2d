@@ -297,8 +297,9 @@
       maxReserve: 15,
       reloadTime: 2.8,
       fireDelay: 0.95,
-      chargeSeconds: 0.6,
+      chargeSeconds: 0.5,
       terrainRadius: 16,
+      // 按下后读条 0.5s 自动发射
       explosive: false,
       laser: true,
       pierceOnHeadshot: true,
@@ -2685,9 +2686,14 @@
         if (w.fire) updateContinuousBeam(this, p, wepNow, dt);
         p.chargeTimer = 0;
       } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-        if (w.fire) {
-          if (p.chargeTimer <= 0) p.chargeAim = p.aim;
-          p.chargeTimer = Math.max(p.chargeTimer, 1e-4);
+        const firePressed = w.fire && !p.prevFireHeld;
+        if (firePressed && p.chargeTimer <= 0 && p.fireCooldown <= 0) {
+          if (p.ammo[p.weaponIndex] > 0) {
+            p.chargeAim = p.aim;
+            p.chargeTimer = 1e-4;
+          } else if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) {
+            this.startReload(p);
+          }
         }
         if (p.chargeTimer > 0) {
           p.chargeTimer += dt;
@@ -2695,14 +2701,12 @@
             this.fire(p);
             p.chargeTimer = 0;
             p.chargeAim = void 0;
-          } else if (!w.fire) {
-            p.chargeTimer = 0;
-            p.chargeAim = void 0;
           }
         }
       } else if (w.fire) {
         this.fire(p);
       }
+      p.prevFireHeld = w.fire;
     }
     fire(p) {
       if (p.respawnTimer > 0 || !p.alive) return;

@@ -7,7 +7,10 @@ import { World } from '../src/core/sim/world.ts'
 import { SPAWN_POINTS } from '../src/core/sim/world.ts'
 import { allViolations, layoutViolations, weaponViolations } from '../src/core/invariants.ts'
 import { defaultMapData } from '../src/core/map.ts'
-import { WEAPONS, DEFAULT_CONFIG } from '../src/core/weapons.ts'
+import {
+  WEAPONS, DEFAULT_CONFIG, SECONDARIES, SECONDARY_UNLOCK_ORDER,
+  formatWeaponAmmoText, formatWeaponCardSubtitle, formatSecondaryButtonTitle, formatSecondaryCardSubtitle,
+} from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
 import type { WorldEvent } from '../src/core/types.ts'
 import { encodeServerMsgBinary, decodeServerMsgBinary } from '../src/net/protocol/BinaryCodec.ts'
@@ -618,56 +621,64 @@ test('护栏·高斯枪反射：小房间与「横跨地图左右」的大房间
 })
 
 
-test('护栏·蓄力锁定方向：狙击蓄力期间瞄准输入不再改变发射方向，松手后可重新瞄准', () => {
-  const w = new World(39000, { name: 'charge-arena', solids: [] })
-  w.config.randomSpawn = false
-  const p = w.addPlayer('P', 'ffa')
-  p.weaponIndex = 2                 // 狙击：chargeSeconds 0.6
-  p.ammo[2] = 3
-  p.reserveAmmo[2] = 15
-  p.pos = { x: 6600, y: 1600 }
+test('护栏·狙击读条：按一下即开始读条(无需按住)，方向锁定在按下那一刻，读满 0.5s 自动发射', () => {
+  const sniper = WEAPONS[2]
+  assert.ok(Math.abs((sniper.chargeSeconds ?? 0) - 0.5) < 1e-9, `sniper charge is 0.5s, got ${sniper.chargeSeconds}`)
 
-  // 前 20 帧朝右蓄力，之后把瞄准转到正下方；发射方向必须仍锁在 0 rad
-  let firedAngle: number | null = null
-  for (let i = 0; i < 60; i++) {
-    const aim = i < 20 ? 0 : Math.PI / 2
-    w.step(DT, new Map([[p.id, input({ fire: true, aim })]]))
-    for (const e of w.drainEvents()) {
-      if (e.kind !== 'projectile_spawn') continue
-      const pr = w.projectiles.find(x => x.id === e.projectileId)
-      if (pr) firedAngle = Math.atan2(pr.vel.y, pr.vel.x)
+  // ① 只在第一帧按下、之后完全不按：仍然读条并发射（不是"按住才蓄力"）
+  const run = (aimAtPress: number, aimAfter: number) => {
+    const w = new World(48000 + Math.round(aimAtPress * 100), { name: 'sniper-charge', solids: [] })
+    w.config.randomSpawn = false
+    const p = w.addPlayer('P', 'ffa')
+    p.weaponIndex = 2
+    p.ammo[2] = 3
+    p.reserveAmmo[2] = 15
+    p.pos = { x: 6600, y: 2200 }
+    type Shot = { tick: number; angle: number }
+    let fired: Shot | null = null
+    for (let i = 0; i < 90; i++) {
+      // 只在第 0 帧按下开火键；瞄准在按下后立刻改变
+      w.step(DT, new Map([[p.id, input({ fire: i === 0, aim: i === 0 ? aimAtPress : aimAfter })]]))
+      for (const e of w.drainEvents()) {
+        if (e.kind !== 'projectile_spawn') continue
+        const pr = w.projectiles.find(x => x.id === e.projectileId)
+        if (pr) fired = { tick: i, angle: Math.atan2(pr.vel.y, pr.vel.x) } as Shot
+      }
+      if (fired !== null) break
     }
+    return fired as Shot | null
   }
-  assert.ok(firedAngle !== null, 'sniper eventually fires after charging')
-  assert.ok(Math.abs(firedAngle!) < 0.05, `charge must lock the firing direction at 0 rad, got ${(firedAngle! * 180 / Math.PI).toFixed(1)}°`)
 
-  // 松手后锁定解除：可以自由转向
-  for (let i = 0; i < 10; i++) w.step(DT, new Map([[p.id, input({ aim: -Math.PI / 2 })]]))
-  assert.ok(Math.abs(p.aim + Math.PI / 2) < 0.05, `aim is free again after releasing, got ${(p.aim * 180 / Math.PI).toFixed(1)}°`)
-  assert.equal(p.chargeTimer, 0, 'charge timer reset after fire')
-  assert.equal(p.chargeAim, undefined, 'aim lock cleared after firing')
+  const shot = run(0, Math.PI / 2)
+  assert.ok(shot !== null, 'pressing once without holding still charges and fires')
+  // 读条约 0.5s（30 帧）后发射
+  assert.ok(Math.abs((shot!.tick + 1) * DT - 0.5) <= 0.06,
+    `fires after about 0.5s of charging, got ${((shot!.tick + 1) * DT).toFixed(2)}s`)
+  // 方向锁定在按下瞬间（朝右 0 rad），而不是松手/发射时的瞄准
+  assert.ok(Math.abs(shot!.angle) < 0.05,
+    `direction locked at press time (0 rad), got ${(shot!.angle * 180 / Math.PI).toFixed(1)}°`)
 
-  // 半途松手也解除锁定（不发射）
-  const w2 = new World(39001, { name: 'charge-cancel', solids: [] })
-  w2.config.randomSpawn = false
-  const q = w2.addPlayer('Q', 'ffa')
+  // ② 按下时朝下，之后转朝右：仍然朝下发射
+  const shot2 = run(Math.PI / 2, 0)
+  assert.ok(shot2 !== null, 'second charge also fires')
+  assert.ok(Math.abs(shot2!.angle - Math.PI / 2) < 0.05,
+    `direction follows the press-time aim, got ${(shot2!.angle * 180 / Math.PI).toFixed(1)}°`)
+
+  // ③ 读条期间不再接受新的按下沿来重置方向干扰：连续按住不会重复触发读条
+  const w3 = new World(48100, { name: 'sniper-hold', solids: [] })
+  w3.config.randomSpawn = false
+  const q = w3.addPlayer('Q', 'ffa')
   q.weaponIndex = 2
   q.ammo[2] = 3
-  q.pos = { x: 6600, y: 1600 }
-  for (let i = 0; i < 10; i++) w2.step(DT, new Map([[q.id, input({ fire: true, aim: 0 })]]))
-  assert.ok(q.chargeTimer > 0, 'charging')
-  for (let i = 0; i < 10; i++) w2.step(DT, new Map([[q.id, input({ aim: Math.PI / 2 })]]))
-  assert.ok(Math.abs(q.aim - Math.PI / 2) < 0.05, 'aim unlocked after cancelling the charge')
-  assert.equal(q.chargeAim, undefined, 'aim lock cleared on cancel')
+  q.reserveAmmo[2] = 15
+  q.pos = { x: 6600, y: 2200 }
+  let shots = 0
+  for (let i = 0; i < 90; i++) {
+    w3.step(DT, new Map([[q.id, input({ fire: true, aim: 0 })]]))
+    for (const e of w3.drainEvents()) if (e.kind === 'projectile_spawn') shots++
+  }
+  assert.equal(shots, 1, `holding the button fires once per charge (not auto-repeating), got ${shots}`)
 })
-
-import {
-  SECONDARIES,
-  SECONDARY_UNLOCK_ORDER,
-  formatWeaponCardSubtitle,
-  formatSecondaryButtonTitle,
-  formatSecondaryCardSubtitle,
-} from '../src/core/weapons.ts'
 
 test('护栏·高斯枪设计：有反射、有自伤、穿过地图缝反射次数-1、归零后不再穿透地图缝隙、任意角度发射不扣自己血', () => {
   assert.equal(WEAPONS[4].bounces, 2, '反射次数固定为 2')
