@@ -540,9 +540,13 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
       return
     }
-    // 逐发装填：装填过程**不因开火而中断**（打光后开始装填，边打边装、逐发续满）。
+    // 逐发装填：**按下射击即停止换弹**（弹匣里已有弹药时开火会打断装填）；
+    // 打空后（ammo 归零）才重新开始装填。
     // 记下开火瞬间是否在装填，用于决定本次射击间隔（边装边打更慢）。
     const wasReloading = p.reloading
+    if (wep.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
+      p.reloading = false
+    }
     p.ammo[p.weaponIndex]--
     // 射速：满弹匣（未装填）用正常 fireDelay；「边装边打」期间按倍率放慢
     const fireDelayMult = (wep.shellReload && wasReloading) ? (wep.shellReloadFireDelayMult ?? 1) : 1

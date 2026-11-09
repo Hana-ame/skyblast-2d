@@ -1100,11 +1100,34 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   assert.ok(w2.projectiles.length - projBefore >= shotgun.pellets,
     `firing one shell produces ${shotgun.pellets} pellets, got ${w2.projectiles.length - projBefore}`)
 
-  // ③ 装填一旦开始就会连续装到满（打光才触发；触发后逐发续满）
-  //   ② 开火后弹匣可能还有存货，会继续自动装填
+  // ③ 开火打断换弹后，弹匣里还有存货 → 松手也不会自动续装（只有打空才重新开始换弹）
+  const ammoAfterFire = q.ammo[0]
   for (let i = 0; i < 300; i++) w2.step(DT, new Map([[q.id, input()]]))
-  assert.equal(q.ammo[0], shotgun.magSize, `magazine fills up to ${shotgun.magSize}, got ${q.ammo[0]}`)
-  assert.equal(q.reloading, false, 'reload stops once the magazine is full')
+  assert.equal(q.ammo[0], ammoAfterFire, `no auto top-up while shells remain (${ammoAfterFire})`)
+  assert.equal(q.reloading, false, 'reload stays interrupted until the magazine is empty')
+
+  // ④ 按下射击立刻停止换弹；打空后重新开始换弹
+  const w3 = new World(47002, { name: 'shell-interrupt', solids: [] })
+  w3.config.randomSpawn = false
+  const r = w3.addPlayer('R', 'ffa')
+  r.weaponIndex = 0
+  r.ammo[0] = 0
+  r.reserveAmmo[0] = 72
+  r.pos = { x: 6600, y: 2200 }
+  w3.startReload(r)
+  for (let i = 0; i < 40; i++) w3.step(DT, new Map([[r.id, input()]]))
+  assert.ok(r.ammo[0] > 0, `shells loaded before firing (ammo=${r.ammo[0]})`)
+  assert.equal(r.reloading, true, 'still reloading before the shot')
+  w3.step(DT, new Map([[r.id, input({ fire: true, aim: 0 })]]))
+  assert.equal(r.reloading, false, 'pressing fire interrupts the shell reload')
+  // 打空后应重新开始换弹
+  for (let i = 0; i < 400; i++) {
+    w3.step(DT, new Map([[r.id, input({ fire: true, aim: 0 })]]))
+    w3.drainEvents()
+    if (r.ammo[0] === 0) break
+  }
+  assert.equal(r.ammo[0], 0, 'magazine runs dry')
+  assert.equal(r.reloading, true, 'reload restarts once the magazine is empty')
 })
 
 
