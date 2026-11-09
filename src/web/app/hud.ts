@@ -223,8 +223,19 @@ export function updateHudUI(): void {
       secChipEl.textContent = `${secDef.icon} ${secDef.name}${cdStr}`
     }
   }
+  // 弹药显示：当前弹匣与备弹分列在固定宽度槽里（tabular-nums），位数变化不会让 HUD 抖动
   const ammoEl = document.getElementById('currentAmmoText')
-  if (ammoEl) ammoEl.textContent = mounted ? '∞' : `${Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`
+  const reserveEl = document.getElementById('reserveAmmoText')
+  if (ammoEl) {
+    ammoEl.textContent = mounted
+      ? '∞'
+      : String(Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0)))
+  }
+  if (reserveEl) {
+    reserveEl.textContent = mounted
+      ? ''
+      : String(localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0)
+  }
 
   const gOverlay = document.getElementById('grenadeCdOverlay')
   const gLabel = document.getElementById('hudGrenadeLabel')
@@ -271,15 +282,24 @@ export function updateHudUI(): void {
 
   const reloadWrap = document.getElementById('reloadProgressWrap')
   const reloadBar = document.getElementById('reloadProgressBar')
+  const reloadLabel = document.getElementById('reloadProgressLabel')
   if (reloadWrap && reloadBar) {
     if (localPlayer.reloading) {
-      reloadWrap.classList.remove('hidden')
-      reloadWrap.classList.add('flex')
+      // 常驻占位：只去掉 invisible，不切换 display，避免整条 HUD 宽度跳动
+      reloadWrap.classList.remove('invisible')
       const wep2 = WEAPONS[localPlayer.weaponIndex]
-      reloadBar.style.width = clamp(100 * (1 - localPlayer.reloadTimer / wep2.reloadTime), 0, 100) + '%'
+      if (wep2.shellReload) {
+        // 逐发装填：进度按「当前这一发」的装填进度显示，并标出已装发数
+        const perShell = wep2.reloadTime / Math.max(1, wep2.magSize)
+        const pct = clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, perShell)), 0, 100)
+        reloadBar.style.width = pct + '%'
+        if (reloadLabel) reloadLabel.textContent = `装填 ${localPlayer.ammo[localPlayer.weaponIndex]}/${wep2.magSize}`
+      } else {
+        reloadBar.style.width = clamp(100 * (1 - localPlayer.reloadTimer / wep2.reloadTime), 0, 100) + '%'
+        if (reloadLabel) reloadLabel.textContent = '换弹中...'
+      }
     } else {
-      reloadWrap.classList.add('hidden')
-      reloadWrap.classList.remove('flex')
+      reloadWrap.classList.add('invisible')
     }
   }
 

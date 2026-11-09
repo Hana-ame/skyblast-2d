@@ -3491,7 +3491,13 @@
       }
     }
     const ammoEl = document.getElementById("currentAmmoText");
-    if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : `${Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))} / ${localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0}`;
+    const reserveEl = document.getElementById("reserveAmmoText");
+    if (ammoEl) {
+      ammoEl.textContent = mounted ? "\u221E" : String(Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0)));
+    }
+    if (reserveEl) {
+      reserveEl.textContent = mounted ? "" : String(localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0);
+    }
     const gOverlay = document.getElementById("grenadeCdOverlay");
     const gLabel = document.getElementById("hudGrenadeLabel");
     const gTitle = document.getElementById("hudSecondaryTitle");
@@ -3536,15 +3542,22 @@
     }
     const reloadWrap = document.getElementById("reloadProgressWrap");
     const reloadBar = document.getElementById("reloadProgressBar");
+    const reloadLabel = document.getElementById("reloadProgressLabel");
     if (reloadWrap && reloadBar) {
       if (localPlayer.reloading) {
-        reloadWrap.classList.remove("hidden");
-        reloadWrap.classList.add("flex");
+        reloadWrap.classList.remove("invisible");
         const wep2 = WEAPONS[localPlayer.weaponIndex];
-        reloadBar.style.width = clamp(100 * (1 - localPlayer.reloadTimer / wep2.reloadTime), 0, 100) + "%";
+        if (wep2.shellReload) {
+          const perShell = wep2.reloadTime / Math.max(1, wep2.magSize);
+          const pct = clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, perShell)), 0, 100);
+          reloadBar.style.width = pct + "%";
+          if (reloadLabel) reloadLabel.textContent = `\u88C5\u586B ${localPlayer.ammo[localPlayer.weaponIndex]}/${wep2.magSize}`;
+        } else {
+          reloadBar.style.width = clamp(100 * (1 - localPlayer.reloadTimer / wep2.reloadTime), 0, 100) + "%";
+          if (reloadLabel) reloadLabel.textContent = "\u6362\u5F39\u4E2D...";
+        }
       } else {
-        reloadWrap.classList.add("hidden");
-        reloadWrap.classList.remove("flex");
+        reloadWrap.classList.add("invisible");
       }
     }
     const banner = document.getElementById("interactBanner");

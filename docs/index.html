@@ -149,15 +149,23 @@
   <!-- 底部中央：主武器栏、副武器按钮组、有限备弹与换弹进度 (重生后自动锁定配装) -->
   <div id="bottomWeaponDock" class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 pointer-events-none w-full max-w-3xl px-2">
     <div class="glass-panel rounded-xl px-3.5 py-1.5 flex flex-wrap items-center justify-center gap-2 pointer-events-auto shadow-lg border border-slate-700/80">
-      <div class="flex items-center gap-2">
-        <span id="currentWeaponName" class="text-xs sm:text-sm font-bold text-amber-300">霰弹枪</span>
-        <span id="currentAmmoText" class="text-sm sm:text-base font-extrabold text-white font-mono" title="当前弹匣 / 剩余备弹">8 / 72</span>
+      <!-- 固定宽度槽位：武器名 + 弹药数字用 tabular-nums 固定字宽，换弹进度条常驻占位，
+           避免数字位数变化 / 进度条显隐导致整条 HUD 宽度跳动 -->
+      <div class="flex items-center gap-2 shrink-0">
+        <span id="currentWeaponName" class="w-[4.5rem] text-xs sm:text-sm font-bold text-amber-300 text-left truncate">霰弹枪</span>
+        <span class="inline-flex items-baseline justify-end gap-0.5 font-mono tabular-nums"
+              title="当前弹匣 / 剩余备弹">
+          <span id="currentAmmoText" class="inline-block w-[1.6em] text-right text-sm sm:text-base font-extrabold text-white">8</span>
+          <span class="text-slate-500 text-xs">/</span>
+          <span id="reserveAmmoText" class="inline-block w-[2.2em] text-right text-sm sm:text-base font-extrabold text-slate-300">72</span>
+        </span>
       </div>
-      <div id="reloadProgressWrap" class="hidden items-center gap-1.5">
+      <!-- 换弹进度：常驻占位（隐藏时只隐藏子内容，不改变布局宽度） -->
+      <div id="reloadProgressWrap" class="flex items-center gap-1.5 shrink-0 invisible">
         <div class="w-20 h-2 bg-slate-800 rounded-full overflow-hidden border border-amber-500/40">
           <div id="reloadProgressBar" class="h-full bg-amber-400 transition-all duration-75" style="width: 0%;"></div>
         </div>
-        <span class="text-[10px] text-amber-300 font-bold animate-pulse">换弹中...</span>
+        <span id="reloadProgressLabel" class="w-[3.2rem] text-[10px] text-amber-300 font-bold animate-pulse">换弹中...</span>
       </div>
       <button id="hudReloadBtn" type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-600">
         [R] 换弹
@@ -544,6 +552,6 @@
   <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
   <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=781729ef3f"></script>
+  <script src="./bundle.js?v=22771f0d35"></script>
 </body>
 </html>
