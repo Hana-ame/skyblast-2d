@@ -81,7 +81,8 @@ export const WEAPONS: WeaponDef[] = [
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
     damage: 24, headshotMult: 1.0, pellets: 8, spread: 0.24, grazeDamageMin: 20, shellReload: true,   // 伤害=手枪弹；每颗弹丸独立擦边；逐发装填
     speed: 1000, recoil: 1560, magSize: 8, maxReserve: 72,   // 后坐力 ×2
-    reloadTime: 1.5, fireDelay: 0.58, shellReloadFireDelayMult: 1.5, terrainRadius: 12,   // 满匣 0.58s；边装边打 0.87s（更慢）
+    // 满匣射击间隔 0.42s（原 0.58s）；「边装边打」保持原 0.87s 不变 → 倍率 0.87/0.42≈2.0714
+    reloadTime: 1.5, fireDelay: 0.42, shellReloadFireDelayMult: 2.0714285714285716, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
     falloffStart: 200, falloffEnd: 700, falloffMin: 0.45,   // 霰弹随距离衰减（中距仍可用）
     traitDesc: '近距高伤 · 全中致死',
@@ -111,7 +112,7 @@ export const WEAPONS: WeaponDef[] = [
     damage: 160, headshotMult: 1.5, pellets: 1, spread: 0.0, blastFalloffExponent: 1.8,   // 伤害 115→160；爆炸范围不变(124)，衰减更陡
     speed: 780, recoil: 420, magSize: 1, maxReserve: 20,   // 弹速 ×1.5（520→780）；1 发/弹匣，共 20 个弹匣；换弹 2s
     reloadTime: 2.0, fireDelay: 0, terrainRadius: 124,   // 射击间隔 = 0（节奏由 2s 换弹决定）
-    explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 0.7, fuelMult: 0.7, ascendMult: 0.7, fovMult: 1.0, color: '#fb7185',
+    explosive: true, gravityScale: 0, lifeSeconds: 999, rocket: true, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, ascendMult: 1.0, fovMult: 1.0, color: '#fb7185',   // 移速/飞行容量/升空速度全部 1×
     friendlyFire: true, selfDamage: true,   // 火箭筒：爆炸友伤/自伤
     traitDesc: '直线慢速 · 碰到爆炸',
   },

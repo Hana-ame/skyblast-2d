@@ -1138,12 +1138,12 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   s.ammo[0] = 1
   s.reserveAmmo[0] = 72
   s.pos = { x: 6600, y: 2200 }
-  // 打出最后 1 发，触发 fireCooldown (0.58s) 与自动换弹排队
+  // 打出最后 1 发，触发 fireCooldown (0.42s) 与自动换弹排队
   w4.step(DT, new Map([[s.id, input({ fire: true, aim: 0 })]]))
   w4.drainEvents()
   assert.equal(s.ammo[0], 0, 'last shell fired')
   assert.equal(s.reloading, true, 'reload queued on empty')
-  assert.ok(s.fireCooldown > 0.5, 'pump fireCooldown active')
+  assert.ok(s.fireCooldown > 0.3, `pump fireCooldown active (${s.fireCooldown.toFixed(2)}s)`)
   // 在 fireCooldown 尚未结束的帧内，弹匣必须保持为 0（不能在泵动冷却期偷塞 3 发）
   while (s.fireCooldown > DT * 1.5) {
     w4.step(DT, new Map([[s.id, input({ fire: true, aim: 0 })]]))

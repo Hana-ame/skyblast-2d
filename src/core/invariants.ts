@@ -96,7 +96,7 @@ export function weaponViolations(): Violation[] {
   }
   if (shotgun && shotgun.pellets !== 8) add('rule.shotgunpellets', '霰弹必须 8 弹丸')
   if (shotgun && shotgun.headshotMult !== 1) add('rule.shotgunhead', '霰弹无爆头加成')
-  if (shotgun && Math.abs((shotgun.fireDelay ?? 0) - 0.58) > 1e-9) add('rule.shotgunfire', '霰弹射击间隔必须为 0.58s（略微提高射速）')
+  if (shotgun && Math.abs((shotgun.fireDelay ?? 0) - 0.42) > 1e-9) add('rule.shotgunfire', '霰弹满匣射击间隔必须为 0.42s（提升射速）')
   if (laser) {
     const dur = laser.magSize / (laser.ammoPerSecond ?? 1)
     if (Math.abs(dur - 4) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 4 秒')
@@ -111,12 +111,12 @@ export function weaponViolations(): Violation[] {
   if (pistol && pistol.moveSpeedMult !== 1.5) add('rule.pistolmove', '手枪移速必须 1.5x')
   if (pistol && pistol.fuelMult !== 2) add('rule.pistolfuel', '手枪飞行容量必须 2x')
   if (pistol && pistol.ascendMult !== 1.25) add('rule.pistolascend', '手枪升空速度必须 1.25x')
-  if (bazookaCheck()) add('rule.bazooka', '火箭筒移速/飞行/升空必须都是 0.7')
+  if (bazookaCheck()) add('rule.bazooka', '火箭筒移速/飞行容量/升空必须都是 1.0（1×）')
 
   return out
 
   function bazookaCheck(): boolean {
-    return !rocket || rocket.moveSpeedMult !== 0.7 || rocket.fuelMult !== 0.7 || rocket.ascendMult !== 0.7
+    return !rocket || rocket.moveSpeedMult !== 1.0 || rocket.fuelMult !== 1.0 || rocket.ascendMult !== 1.0
   }
 }
 

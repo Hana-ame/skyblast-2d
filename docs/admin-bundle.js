@@ -19,11 +19,11 @@
       magSize: 8,
       maxReserve: 72,
       // 后坐力 ×2
+      // 满匣射击间隔 0.42s（原 0.58s）；「边装边打」保持原 0.87s 不变 → 倍率 0.87/0.42≈2.0714
       reloadTime: 1.5,
-      fireDelay: 0.58,
-      shellReloadFireDelayMult: 1.5,
+      fireDelay: 0.42,
+      shellReloadFireDelayMult: 2.0714285714285716,
       terrainRadius: 12,
-      // 满匣 0.58s；边装边打 0.87s（更慢）
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1.08,
@@ -123,11 +123,12 @@
       lifeSeconds: 999,
       rocket: true,
       pierceOnHeadshot: false,
-      moveSpeedMult: 0.7,
-      fuelMult: 0.7,
-      ascendMult: 0.7,
+      moveSpeedMult: 1,
+      fuelMult: 1,
+      ascendMult: 1,
       fovMult: 1,
       color: "#fb7185",
+      // 移速/飞行容量/升空速度全部 1×
       friendlyFire: true,
       selfDamage: true,
       // 火箭筒：爆炸友伤/自伤
