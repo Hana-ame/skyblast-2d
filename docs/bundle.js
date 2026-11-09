@@ -2787,6 +2787,9 @@
         return;
       }
       const wasReloading = p.reloading;
+      if (wep.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
+        p.reloading = false;
+      }
       p.ammo[p.weaponIndex]--;
       const fireDelayMult = wep.shellReload && wasReloading ? wep.shellReloadFireDelayMult ?? 1 : 1;
       p.fireCooldown = wep.fireDelay * fireDelayMult;
