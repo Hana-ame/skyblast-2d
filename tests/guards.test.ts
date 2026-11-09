@@ -1106,3 +1106,42 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   assert.equal(q.ammo[0], shotgun.magSize, `magazine fills up to ${shotgun.magSize}, got ${q.ammo[0]}`)
   assert.equal(q.reloading, false, 'reload stops once the magazine is full')
 })
+
+
+test('护栏·阵亡 HUD：居中布局 + KD 统计 + 排行榜元素齐全且用固定宽度防抖动', () => {
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+
+  // ① 居中：deathScreen 必须是 flex 容器且水平/垂直都居中
+  const dsTag = /<div id="deathScreen"[^>]*class="([^"]*)"/.exec(html)
+  assert.ok(dsTag, 'deathScreen exists')
+  const cls = dsTag![1]
+  assert.ok(cls.includes('items-center'), 'death screen vertically centers its panel')
+  assert.ok(cls.includes('justify-center'), 'death screen horizontally centers its panel')
+  assert.ok(cls.includes('flex'), 'death screen uses flex layout (otherwise centering has no effect)')
+  assert.ok(cls.includes('inset-0'), 'death screen covers the viewport')
+  assert.ok(cls.includes('overflow-y-auto'), 'death screen scrolls when the panel is taller than the viewport')
+
+  // ② KD 统计元素齐全，且数字容器带 tabular-nums（等宽数字，位数变化不抖动）
+  for (const id of ['deathKdKills', 'deathKdDeaths', 'deathKdRatio']) {
+    const m = new RegExp(`id="${id}"[^>]*class="([^"]*)"`).exec(html)
+    assert.ok(m, `${id} exists in the death HUD`)
+    assert.ok(m![1].includes('tabular-nums'), `${id} uses tabular-nums so digits do not shift the layout`)
+  }
+
+  // ③ 排行榜元素齐全
+  for (const id of ['deathRankList', 'deathRankSelfLine', 'deathRankSelfBar']) {
+    assert.ok(html.includes(`id="${id}"`), `${id} exists in the death HUD`)
+  }
+
+  // ④ 排行榜有排序说明列（击杀/阵亡/KD），且列表限高可滚动（人多不会撑爆）
+  assert.ok(html.includes('击杀 / 阵亡 / KD'), 'leaderboard header lists the sort columns')
+  const listTag = /<ol id="deathRankList"[^>]*class="([^"]*)"/.exec(html)
+  assert.ok(listTag && listTag[1].includes('max-h-'), 'leaderboard list is height-capped')
+
+  // ⑤ 渲染逻辑存在：按击杀降序排序，并在阵亡时刷新
+  const loopSrc = readFileSync(new URL('../src/web/game/loop.ts', import.meta.url), 'utf8')
+  assert.ok(loopSrc.includes('renderDeathStats'), 'death stats renderer is wired up')
+  assert.ok(loopSrc.includes('kills') && loopSrc.includes('deaths'), 'renderer uses kill/death counters')
+  assert.ok(loopSrc.includes("localeCompare"), 'leaderboard has a deterministic tie-break')
+  assert.ok(loopSrc.includes('escapeHudText'), 'names are escaped before being injected as HTML')
+})

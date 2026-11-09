@@ -73,7 +73,7 @@ function onLocalDeath(): void {
   localPlayer.secondary = highestSec
   updateHudWeaponButtons()
   const ds = document.getElementById('deathScreen')
-  if (ds) ds.classList.remove('hidden')
+  if (ds) { ds.classList.remove('hidden'); ds.classList.add('flex') }
   const secDef = SECONDARIES[highestSec] ?? SECONDARIES.frag
   if (streak > 0 && secDef.unlockStreak > 0) {
     showToast(`💀 连死 ${streak} 次：副手已解锁并预选【${secDef.icon} ${secDef.name}】`)
@@ -135,6 +135,7 @@ export function startGameLoop(): void {
       if (kl) kl.textContent = death.info
         ? `被 ${death.info.killer} 使用【${death.info.weapon}】击倒`
         : '已被击倒 · 请选择重生配装'
+      renderDeathStats()
     }
 
     // 喷气尾焰粒子
@@ -166,4 +167,66 @@ export function startGameLoop(): void {
   updateScoreboardUI()
   requestAnimationFrame(gameLoop)
   })
+}
+
+/**
+ * 阵亡界面的 KD + 排行榜渲染。
+ * 数字全部走固定宽度槽位（tabular-nums + 定宽 span），避免位数变化推动布局。
+ */
+function renderDeathStats(): void {
+  const me = localPlayer
+  const kills = me.kills ?? 0
+  const deaths = me.deaths ?? 0
+  const ratio = deaths === 0 ? kills : kills / deaths
+
+  const kEl = document.getElementById('deathKdKills')
+  const dEl = document.getElementById('deathKdDeaths')
+  const rEl = document.getElementById('deathKdRatio')
+  if (kEl) kEl.textContent = String(kills)
+  if (dEl) dEl.textContent = String(deaths)
+  if (rEl) rEl.textContent = ratio.toFixed(2)
+
+  // 排行榜：按击杀降序，击杀相同按阵亡升序，再按名字稳定排序
+  const ranked = [...world.players]
+    .filter(p => p.deployed)
+    .sort((a, b) => {
+      const ka = a.kills ?? 0, kb = b.kills ?? 0
+      if (kb !== ka) return kb - ka
+      const da = a.deaths ?? 0, db = b.deaths ?? 0
+      if (da !== db) return da - db
+      return (a.name ?? '').localeCompare(b.name ?? '')
+    })
+
+  const list = document.getElementById('deathRankList')
+  if (list) {
+    const top = ranked.slice(0, 10)
+    const myRank = ranked.findIndex(p => p.id === me.id) + 1
+    const maxKills = Math.max(1, ...ranked.map(p => p.kills ?? 0))
+    list.innerHTML = top.map((p, i) => {
+      const isMe = p.id === me.id
+      const k = p.kills ?? 0
+      const d = p.deaths ?? 0
+      const kd = d === 0 ? k.toFixed(2) : (k / d).toFixed(2)
+      const pct = Math.max(4, Math.round((k / maxKills) * 100))
+      const teamColor = p.team === 'red' ? 'text-rose-300' : p.team === 'blue' ? 'text-sky-300' : 'text-slate-300'
+      return `
+        <li class="relative flex items-center gap-2 rounded-lg px-2 py-1 text-[11px] ${isMe ? 'bg-sky-500/15 ring-1 ring-sky-400/40' : 'bg-slate-900/50'}">
+          <span class="absolute inset-y-0 left-0 rounded-lg bg-sky-400/10" style="width:${pct}%"></span>
+          <span class="relative w-4 text-right font-mono font-bold text-slate-400 tabular-nums">${i + 1}</span>
+          <span class="relative flex-1 truncate font-bold ${teamColor}">${escapeHudText(p.name ?? '?')}</span>
+          <span class="relative w-6 text-right font-mono font-bold text-emerald-300 tabular-nums">${k}</span>
+          <span class="relative w-6 text-right font-mono text-slate-400 tabular-nums">${d}</span>
+          <span class="relative w-9 text-right font-mono font-bold text-amber-300 tabular-nums">${kd}</span>
+        </li>`
+    }).join('')
+
+    const selfLine = document.getElementById('deathRankSelfLine')
+    const selfBar = document.getElementById('deathRankSelfBar')
+    if (selfLine) selfLine.textContent = myRank > 0 ? `你的排名：#${myRank} / ${ranked.length}` : '你的排名 —'
+    if (selfBar) selfBar.style.width = ranked.length > 0 ? `${Math.max(4, Math.round(((ranked.length - myRank + 1) / ranked.length) * 100))}%` : '0%'
+  }
+}
+
+function escapeHudText(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c))
 }

@@ -91,18 +91,41 @@
   </div>
 
   <!-- 死亡界面（唯一可换配装的地方；游戏中下方 HUD 只读显示当前武器） -->
-  <div id="deathScreen" class="hidden fixed inset-0 z-[70] items-center justify-center bg-slate-950/80 backdrop-blur-sm pointer-events-auto">
-    <div class="w-[min(92vw,880px)] rounded-2xl border border-rose-500/40 bg-slate-900/95 p-5 shadow-2xl">
+  <div id="deathScreen" class="hidden fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/80 backdrop-blur-sm pointer-events-auto py-6">
+    <div class="w-[min(94vw,1040px)] rounded-2xl border border-rose-500/40 bg-slate-900/95 p-5 shadow-2xl mx-auto">
+      <!-- 顶部：阵亡标题 + 击杀者 + 倒计时 + KD（等高对齐，不随内容跳动） -->
       <div class="flex items-start justify-between gap-4">
-        <div>
-          <h2 class="text-2xl font-black text-rose-300 tracking-wide">阵亡</h2>
-          <p id="deathKillerLine" class="text-xs text-slate-400 mt-1">等待重生…</p>
+        <div class="min-w-0">
+          <h2 class="text-2xl font-black text-rose-300 tracking-wide shrink-0">阵亡</h2>
+          <p id="deathKillerLine" class="text-xs text-slate-400 mt-1 truncate">等待重生…</p>
         </div>
-        <div class="text-right">
-          <div id="deathCountdown" class="text-3xl font-mono font-black text-amber-300">0.0</div>
-          <div class="text-[10px] text-slate-500">秒后自动重生</div>
+        <div class="flex items-center gap-4 shrink-0">
+          <!-- KD 统计：固定槽位，数字位数变化不推动布局 -->
+          <div class="flex items-center gap-2.5 rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-1.5">
+            <div class="text-center">
+              <div id="deathKdKills" class="w-[2.4em] text-center text-lg font-mono font-black tabular-nums text-emerald-300">0</div>
+              <div class="text-[9px] text-slate-500 font-bold tracking-wider">击杀</div>
+            </div>
+            <div class="w-px h-7 bg-slate-700"></div>
+            <div class="text-center">
+              <div id="deathKdDeaths" class="w-[2.4em] text-center text-lg font-mono font-black tabular-nums text-rose-300">0</div>
+              <div class="text-[9px] text-slate-500 font-bold tracking-wider">阵亡</div>
+            </div>
+            <div class="w-px h-7 bg-slate-700"></div>
+            <div class="text-center">
+              <div id="deathKdRatio" class="w-[2.8em] text-center text-lg font-mono font-black tabular-nums text-amber-300">0.00</div>
+              <div class="text-[9px] text-slate-500 font-bold tracking-wider">K/D</div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div id="deathCountdown" class="text-3xl font-mono font-black text-amber-300 tabular-nums">0.0</div>
+            <div class="text-[10px] text-slate-500">秒后自动重生</div>
+          </div>
         </div>
       </div>
+
+      <div class="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
+        <div class="min-w-0">
 
       <div class="mt-4 text-[11px] font-bold text-emerald-300 uppercase tracking-wider">重生配装 · 主武器（只有死亡界面才能换枪）</div>
       <div id="deathWeaponGrid" class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -143,6 +166,22 @@
       </div>
 
       <div class="mt-4 text-[10px] text-slate-500">配装在倒计时结束重生时生效；游戏进行中下方 HUD 不再提供换枪。</div>
+        </div>
+
+        <!-- 右侧：实时排行榜（按击杀降序，KD 与阵亡并列；行高固定不抖动） -->
+        <aside class="rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 lg:sticky lg:top-0">
+          <div class="flex items-center justify-between">
+            <h3 class="text-[11px] font-black uppercase tracking-wider text-sky-300">排行榜</h3>
+            <span class="text-[9px] text-slate-500 font-bold">击杀 / 阵亡 / KD</span>
+          </div>
+          <div class="mt-2 h-3 bg-slate-800 rounded-full overflow-hidden">
+            <div id="deathRankSelfBar" class="h-full bg-sky-400/70 transition-all duration-150" style="width: 0%;"></div>
+          </div>
+          <div id="deathRankSelfLine" class="mt-1 text-[10px] text-slate-400">你的排名 —</div>
+          <ol id="deathRankList" class="mt-2 space-y-1 max-h-[240px] overflow-y-auto pr-1">
+          </ol>
+        </aside>
+      </div>
     </div>
   </div>
 
@@ -552,6 +591,6 @@
   <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
   <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=22771f0d35"></script>
+  <script src="./bundle.js?v=d3b171f547"></script>
 </body>
 </html>
