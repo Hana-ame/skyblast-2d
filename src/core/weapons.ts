@@ -158,7 +158,7 @@ export const WEAPONS: WeaponDef[] = [
     id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
     damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24, grazeDamageMin: 20,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
     speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,     // 30/150
-    reloadTime: 2.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高
+    reloadTime: 1.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高；换弹 1.2s
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
     moveSpeedMult: 1.25, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',
     traitDesc: '极高射速 · 机动压制',

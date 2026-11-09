@@ -278,10 +278,10 @@
       magSize: 30,
       maxReserve: 150,
       // 30/150
-      reloadTime: 2.2,
+      reloadTime: 1.2,
       fireDelay: 0.05,
       terrainRadius: 8,
-      // 射速极高
+      // 射速极高；换弹 1.2s
       explosive: false,
       gravityScale: 0.04,
       pierceOnHeadshot: false,
