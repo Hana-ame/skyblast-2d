@@ -32,17 +32,36 @@
     <span id="brushLabel" class="hint">1×20px</span>
   </div>
   <div class="row">
-    <button id="btnSave">保存</button>
-    <button id="btnApply">应用到游戏</button>
-    <button id="btnReset">默认地图</button>
-    <button id="btnClear">清空</button>
+    <span class="hint">工具</span>
+    <button id="toolDraw" class="active" data-tool="draw">绘制</button>
+    <button id="toolSelect" data-tool="select">选择/移动</button>
+    <button id="toolErase" data-tool="erase">擦除</button>
   </div>
   <div class="row">
+    <label class="hint"><input id="snapToggle" type="checkbox" checked /> 吸附 20px</label>
+    <label class="hint"><input id="gridToggle" type="checkbox" checked /> 显示网格</label>
+  </div>
+  <div class="row">
+    <button id="btnUndo" title="Ctrl+Z">撤销</button>
+    <button id="btnRedo" title="Ctrl+Shift+Z">重做</button>
+    <button id="btnSave">保存</button>
+    <button id="btnApply">应用到游戏</button>
+  </div>
+  <div class="row">
+    <button id="btnReset">默认地图</button>
+    <button id="btnClear">清空</button>
     <button id="btnExport">导出 JSON</button>
     <button id="btnImport">导入 JSON</button>
   </div>
+  <div class="row">
+    <button id="btnFit" title="F">适配窗口</button>
+    <button id="btnPlay" title="P">▶ 试玩当前地图</button>
+  </div>
+  <div id="selectionInfo" class="hint" style="color:#fbbf24"></div>
   <div class="hint">
     左键拖拽绘制 · 右键擦除 · 滚轮缩放 · 中键/空格拖拽平移<br />
+    选中工具下：点选方块、拖拽移动、Delete 删除<br />
+    快捷键：1/2/3 切换笔刷，F 适配窗口，P 试玩，Ctrl+Z/Y 撤销重做<br />
     坐标：世界 13200×4400，地面 y=2800；格点 20px
   </div>
 </div>

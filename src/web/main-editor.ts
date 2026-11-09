@@ -18,6 +18,20 @@ const camera = { x: WORLD_W / 2, y: SURFACE_Y - 500, zoom: 0.22 }
 let brushKind: MapSolidKind = 'platform'
 let brushTiles = 1
 let map: MapData = loadInitial()
+
+// ── 编辑器工具状态 ─────────────────────────────────────────
+type Tool = 'draw' | 'select' | 'erase'
+let tool: Tool = 'draw'
+let snapEnabled = true
+let showGrid = true
+/** 撤销/重做栈（存快照，最多 80 步） */
+const undoStack: string[] = []
+const redoStack: string[] = []
+const MAX_HISTORY = 80
+/** 选择工具下选中的方块索引（-1 = 无） */
+let selected = -1
+/** 拖动选中方块时的偏移 */
+let dragging: { startX: number; startY: number; origX: number; origY: number } | null = null
 let drawStart: { x: number; y: number } | null = null
 let drawCur: { x: number; y: number } | null = null
 let erasing = false
@@ -49,12 +63,64 @@ function loadInitial(): MapData {
   return defaultMapData()
 }
 
+function pushHistory(): void {
+  undoStack.push(JSON.stringify(map))
+  if (undoStack.length > MAX_HISTORY) undoStack.shift()
+  redoStack.length = 0
+}
+
+function undo(): void {
+  const prev = undoStack.pop()
+  if (!prev) return
+  redoStack.push(JSON.stringify(map))
+  map = JSON.parse(prev) as MapData
+  selected = -1
+  updateStatus()
+  updateSelectionInfo()
+}
+
+function redo(): void {
+  const next = redoStack.pop()
+  if (!next) return
+  undoStack.push(JSON.stringify(map))
+  map = JSON.parse(next) as MapData
+  selected = -1
+  updateStatus()
+  updateSelectionInfo()
+}
+
+function updateSelectionInfo(): void {
+  const el = document.getElementById('selectionInfo')
+  if (!el) return
+  const s = selected >= 0 ? map.solids[selected] : null
+  el.textContent = s
+    ? `已选中 #${selected} ${KIND_STYLE[s.kind].label} (${Math.round(s.x)}, ${Math.round(s.y)}) ${Math.round(s.w)}×${Math.round(s.h)} · Delete 删除 · 拖拽移动`
+    : ''
+}
+
+function hitTest(wx: number, wy: number): number {
+  for (let i = map.solids.length - 1; i >= 0; i--) {
+    const s = map.solids[i]
+    if (wx >= s.x && wx <= s.x + s.w && wy >= s.y && wy <= s.y + s.h) return i
+  }
+  return -1
+}
+
+function fitToWindow(): void {
+  const margin = 60
+  const zx = (canvas.width - margin * 2) / WORLD_W
+  const zy = (canvas.height - margin * 2) / SURFACE_Y
+  camera.zoom = Math.max(0.05, Math.min(zx, zy))
+  camera.x = WORLD_W / 2
+  camera.y = SURFACE_Y / 2
+}
+
 function updateStatus(): void {
   if (statusEl) statusEl.textContent = `${map.solids.length} 块`
 }
 
 function snap(v: number): number {
-  return Math.round(v / SNAP) * SNAP
+  return snapEnabled ? Math.round(v / SNAP) * SNAP : Math.round(v)
 }
 function clampWorldX(x: number): number { return Math.max(0, Math.min(WORLD_W - SNAP, snap(x))) }
 function clampWorldY(y: number): number { return Math.max(0, Math.min(SURFACE_Y - SNAP, snap(y))) }
@@ -91,7 +157,7 @@ function render(): void {
   ctx.strokeRect(sx(0), sy(0), WORLD_W * camera.zoom, (SURFACE_Y) * camera.zoom)
 
   // 网格
-  if (camera.zoom > 0.16) {
+  if (showGrid && camera.zoom > 0.16) {
     ctx.strokeStyle = 'rgba(51,65,85,0.45)'
     ctx.beginPath()
     for (let x = 0; x <= WORLD_W; x += 200) {
@@ -113,6 +179,17 @@ function render(): void {
     ctx.lineWidth = 1
     ctx.fillRect(sx(s.x), sy(s.y), s.w * camera.zoom, s.h * camera.zoom)
     ctx.strokeRect(sx(s.x), sy(s.y), s.w * camera.zoom, s.h * camera.zoom)
+  }
+
+  // 选中高亮
+  if (selected >= 0 && map.solids[selected]) {
+    const sel = map.solids[selected]
+    ctx.save()
+    ctx.strokeStyle = '#fbbf24'
+    ctx.lineWidth = 2.5
+    ctx.setLineDash([6, 4])
+    ctx.strokeRect(sx(sel.x), sy(sel.y), sel.w * camera.zoom, sel.h * camera.zoom)
+    ctx.restore()
   }
 
   // 出生点参考
@@ -176,11 +253,31 @@ canvas.addEventListener('mousedown', (e) => {
   const wx = clampToWorld(p.x, WORLD_W - SNAP)
   const wy = clampToWorld(p.y, SURFACE_Y - SNAP)
   if (e.button === 2) {
+    // 右键：任何工具下都擦除
+    pushHistory()
     erasing = true
     eraseAt(wx, wy)
     return
   }
   if (e.button === 0) {
+    if (tool === 'erase') {
+      pushHistory()
+      erasing = true
+      eraseAt(wx, wy)
+      return
+    }
+    if (tool === 'select') {
+      const hit = hitTest(wx, wy)
+      selected = hit
+      updateSelectionInfo()
+      if (hit >= 0) {
+        const s2 = map.solids[hit]
+        dragging = { startX: wx, startY: wy, origX: s2.x, origY: s2.y }
+        pushHistory()
+      }
+      return
+    }
+    // 绘制
     drawStart = { x: wx, y: wy }
     drawCur = { x: wx, y: wy }
   }
@@ -197,13 +294,23 @@ canvas.addEventListener('mousemove', (e) => {
     return
   }
   if (erasing) { eraseAt(mouseWorld.x, mouseWorld.y); return }
+  if (dragging && selected >= 0 && map.solids[selected]) {
+    const sel = map.solids[selected]
+    sel.x = Math.max(0, Math.min(WORLD_W - sel.w, dragging.origX + (mouseWorld.x - dragging.startX)))
+    sel.y = Math.max(0, Math.min(SURFACE_Y - sel.h, dragging.origY + (mouseWorld.y - dragging.startY)))
+    if (snapEnabled) { sel.x = snap(sel.x); sel.y = snap(sel.y) }
+    updateSelectionInfo()
+    return
+  }
   if (drawStart) drawCur = { x: mouseWorld.x, y: mouseWorld.y }
 })
 
 window.addEventListener('mouseup', (e) => {
   if (panning) { panning = false; return }
-  if (erasing && e.button === 2) { erasing = false; return }
+  if (dragging) { dragging = null; return }
+  if (erasing) { erasing = false; return }
   if (e.button === 0 && drawStart && drawCur) {
+    pushHistory()
     const x = Math.min(drawStart.x, drawCur.x)
     const y = Math.min(drawStart.y, drawCur.y)
     const w = Math.abs(drawCur.x - drawStart.x) + SNAP * brushTiles
@@ -226,11 +333,49 @@ canvas.addEventListener('wheel', (e) => {
 }, { passive: false })
 
 window.addEventListener('keydown', (e) => {
+  // 输入框内不拦截快捷键
+  const tag = (e.target as HTMLElement | null)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
   if (e.code === 'Space') spaceDown = true
   if (e.code === 'Digit1') selectKind('platform')
   if (e.code === 'Digit2') selectKind('cover')
   if (e.code === 'Digit3') selectKind('block')
-  if (e.code === 'Delete' || e.code === 'Backspace') { /* 不全局删除，避免误删 */ }
+  if (e.code === 'KeyQ') selectTool('draw')
+  if (e.code === 'KeyW') selectTool('select')
+  if (e.code === 'KeyE') selectTool('erase')
+  if (e.code === 'KeyF') fitToWindow()
+
+  // 撤销 / 重做
+  const ctrl = e.ctrlKey || e.metaKey
+  if (ctrl && e.code === 'KeyZ') {
+    e.preventDefault()
+    if (e.shiftKey) redo(); else undo()
+    return
+  }
+  if (ctrl && e.code === 'KeyY') { e.preventDefault(); redo(); return }
+
+  // 删除选中方块
+  if ((e.code === 'Delete' || e.code === 'Backspace') && selected >= 0 && map.solids[selected]) {
+    e.preventDefault()
+    pushHistory()
+    map.solids.splice(selected, 1)
+    selected = -1
+    updateStatus()
+    updateSelectionInfo()
+  }
+
+  // 方向键微调选中方块（Shift 加速）
+  if (selected >= 0 && map.solids[selected] && e.code.startsWith('Arrow')) {
+    e.preventDefault()
+    const step = e.shiftKey ? SNAP * 5 : SNAP
+    const sel = map.solids[selected]
+    if (e.code === 'ArrowLeft') sel.x = Math.max(0, sel.x - step)
+    if (e.code === 'ArrowRight') sel.x = Math.min(WORLD_W - sel.w, sel.x + step)
+    if (e.code === 'ArrowUp') sel.y = Math.max(0, sel.y - step)
+    if (e.code === 'ArrowDown') sel.y = Math.min(SURFACE_Y - sel.h, sel.y + step)
+    updateSelectionInfo()
+  }
 })
 window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') spaceDown = false
@@ -245,6 +390,35 @@ function selectKind(kind: MapSolidKind): void {
 for (const b of document.querySelectorAll('[data-kind]')) {
   b.addEventListener('click', () => selectKind(b.getAttribute('data-kind') as MapSolidKind))
 }
+
+// ── 工具切换 ───────────────────────────────────────────────
+function selectTool(t: Tool): void {
+  tool = t
+  selected = t === 'select' ? selected : -1
+  for (const b of document.querySelectorAll('[data-tool]')) {
+    b.classList.toggle('active', b.getAttribute('data-tool') === t)
+  }
+  updateSelectionInfo()
+}
+for (const b of document.querySelectorAll('[data-tool]')) {
+  b.addEventListener('click', () => selectTool(b.getAttribute('data-tool') as Tool))
+}
+
+// ── 吸附 / 网格开关 ────────────────────────────────────────
+const snapToggle = document.getElementById('snapToggle') as HTMLInputElement | null
+snapToggle?.addEventListener('change', () => { snapEnabled = snapToggle.checked })
+const gridToggle = document.getElementById('gridToggle') as HTMLInputElement | null
+gridToggle?.addEventListener('change', () => { showGrid = gridToggle.checked })
+
+// ── 撤销/重做/适配/试玩按钮 ────────────────────────────────
+document.getElementById('btnUndo')?.addEventListener('click', undo)
+document.getElementById('btnRedo')?.addEventListener('click', redo)
+document.getElementById('btnFit')?.addEventListener('click', fitToWindow)
+document.getElementById('btnPlay')?.addEventListener('click', () => {
+  localStorage.setItem(GAME_KEY, JSON.stringify(map))
+  localStorage.setItem(EDITOR_KEY, JSON.stringify(map))
+  window.location.href = './index.html?play=1'
+})
 
 brushInput?.addEventListener('input', () => {
   brushTiles = Number(brushInput.value)
@@ -263,32 +437,70 @@ document.getElementById('btnApply')?.addEventListener('click', () => {
 })
 
 document.getElementById('btnReset')?.addEventListener('click', () => {
+  pushHistory()
   map = defaultMapData()
+  selected = -1
   updateStatus()
+  updateSelectionInfo()
 })
 
 document.getElementById('btnClear')?.addEventListener('click', () => {
+  pushHistory()
   map = { name: '自定义地图', solids: [] }
+  selected = -1
   updateStatus()
+  updateSelectionInfo()
 })
 
 document.getElementById('btnExport')?.addEventListener('click', () => {
   const json = JSON.stringify(map, null, 2)
-  window.prompt('复制地图 JSON：', json)
+  // 优先触发文件下载；失败再退回 prompt
+  try {
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${map.name || 'map'}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    statusEl.textContent = `${map.solids.length} 块 · 已导出`
+  } catch {
+    window.prompt('复制地图 JSON：', json)
+  }
 })
 
 document.getElementById('btnImport')?.addEventListener('click', () => {
-  const raw = window.prompt('粘贴地图 JSON：')
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'application/json,.json'
+  input.addEventListener('change', () => {
+    const f = input.files?.[0]
+    if (f) {
+      const reader = new FileReader()
+      reader.onload = () => importJson(String(reader.result ?? ''))
+      reader.readAsText(f)
+    } else {
+      const raw = window.prompt('粘贴地图 JSON：')
+      if (raw) importJson(raw)
+    }
+  })
+  input.click()
+})
+
+function importJson(raw: string): void {
   if (!raw) return
   try {
     const m = sanitizeMapData(JSON.parse(raw))
     if (!m) { window.alert('JSON 无效（没有有效 solids）'); return }
+    pushHistory()
     map = m
+    selected = -1
     updateStatus()
+    updateSelectionInfo()
   } catch {
     window.alert('JSON 解析失败')
   }
-})
+}
 
 updateStatus()
 requestAnimationFrame(render)

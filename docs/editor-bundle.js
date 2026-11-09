@@ -117,6 +117,14 @@
   var brushKind = "platform";
   var brushTiles = 1;
   var map = loadInitial();
+  var tool = "draw";
+  var snapEnabled = true;
+  var showGrid = true;
+  var undoStack = [];
+  var redoStack = [];
+  var MAX_HISTORY = 80;
+  var selected = -1;
+  var dragging = null;
   var drawStart = null;
   var drawCur = null;
   var erasing = false;
@@ -146,11 +154,55 @@
     }
     return defaultMapData();
   }
+  function pushHistory() {
+    undoStack.push(JSON.stringify(map));
+    if (undoStack.length > MAX_HISTORY) undoStack.shift();
+    redoStack.length = 0;
+  }
+  function undo() {
+    const prev = undoStack.pop();
+    if (!prev) return;
+    redoStack.push(JSON.stringify(map));
+    map = JSON.parse(prev);
+    selected = -1;
+    updateStatus();
+    updateSelectionInfo();
+  }
+  function redo() {
+    const next = redoStack.pop();
+    if (!next) return;
+    undoStack.push(JSON.stringify(map));
+    map = JSON.parse(next);
+    selected = -1;
+    updateStatus();
+    updateSelectionInfo();
+  }
+  function updateSelectionInfo() {
+    const el = document.getElementById("selectionInfo");
+    if (!el) return;
+    const s = selected >= 0 ? map.solids[selected] : null;
+    el.textContent = s ? `\u5DF2\u9009\u4E2D #${selected} ${KIND_STYLE[s.kind].label} (${Math.round(s.x)}, ${Math.round(s.y)}) ${Math.round(s.w)}\xD7${Math.round(s.h)} \xB7 Delete \u5220\u9664 \xB7 \u62D6\u62FD\u79FB\u52A8` : "";
+  }
+  function hitTest(wx, wy) {
+    for (let i = map.solids.length - 1; i >= 0; i--) {
+      const s = map.solids[i];
+      if (wx >= s.x && wx <= s.x + s.w && wy >= s.y && wy <= s.y + s.h) return i;
+    }
+    return -1;
+  }
+  function fitToWindow() {
+    const margin = 60;
+    const zx = (canvas.width - margin * 2) / WORLD_W;
+    const zy = (canvas.height - margin * 2) / SURFACE_Y;
+    camera.zoom = Math.max(0.05, Math.min(zx, zy));
+    camera.x = WORLD_W / 2;
+    camera.y = SURFACE_Y / 2;
+  }
   function updateStatus() {
     if (statusEl) statusEl.textContent = `${map.solids.length} \u5757`;
   }
   function snap(v) {
-    return Math.round(v / SNAP) * SNAP;
+    return snapEnabled ? Math.round(v / SNAP) * SNAP : Math.round(v);
   }
   function sx(wx) {
     return canvas.width / 2 + (wx - camera.x) * camera.zoom;
@@ -179,7 +231,7 @@
     ctx.strokeStyle = "rgba(100,116,139,0.5)";
     ctx.lineWidth = 1;
     ctx.strokeRect(sx(0), sy(0), WORLD_W * camera.zoom, SURFACE_Y * camera.zoom);
-    if (camera.zoom > 0.16) {
+    if (showGrid && camera.zoom > 0.16) {
       ctx.strokeStyle = "rgba(51,65,85,0.45)";
       ctx.beginPath();
       for (let x = 0; x <= WORLD_W; x += 200) {
@@ -201,6 +253,15 @@
       ctx.lineWidth = 1;
       ctx.fillRect(sx(s.x), sy(s.y), s.w * camera.zoom, s.h * camera.zoom);
       ctx.strokeRect(sx(s.x), sy(s.y), s.w * camera.zoom, s.h * camera.zoom);
+    }
+    if (selected >= 0 && map.solids[selected]) {
+      const sel = map.solids[selected];
+      ctx.save();
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(sx(sel.x), sy(sel.y), sel.w * camera.zoom, sel.h * camera.zoom);
+      ctx.restore();
     }
     for (const sp of SPAWN_POINTS) {
       ctx.fillStyle = sp.team === "ffa" ? "#fde047" : sp.team === "red" ? "#fda4af" : sp.team === "blue" ? "#7dd3fc" : "#6ee7b7";
@@ -250,11 +311,29 @@
     const wx = clampToWorld(p.x, WORLD_W - SNAP);
     const wy = clampToWorld(p.y, SURFACE_Y - SNAP);
     if (e.button === 2) {
+      pushHistory();
       erasing = true;
       eraseAt(wx, wy);
       return;
     }
     if (e.button === 0) {
+      if (tool === "erase") {
+        pushHistory();
+        erasing = true;
+        eraseAt(wx, wy);
+        return;
+      }
+      if (tool === "select") {
+        const hit = hitTest(wx, wy);
+        selected = hit;
+        updateSelectionInfo();
+        if (hit >= 0) {
+          const s2 = map.solids[hit];
+          dragging = { startX: wx, startY: wy, origX: s2.x, origY: s2.y };
+          pushHistory();
+        }
+        return;
+      }
       drawStart = { x: wx, y: wy };
       drawCur = { x: wx, y: wy };
     }
@@ -273,6 +352,17 @@
       eraseAt(mouseWorld.x, mouseWorld.y);
       return;
     }
+    if (dragging && selected >= 0 && map.solids[selected]) {
+      const sel = map.solids[selected];
+      sel.x = Math.max(0, Math.min(WORLD_W - sel.w, dragging.origX + (mouseWorld.x - dragging.startX)));
+      sel.y = Math.max(0, Math.min(SURFACE_Y - sel.h, dragging.origY + (mouseWorld.y - dragging.startY)));
+      if (snapEnabled) {
+        sel.x = snap(sel.x);
+        sel.y = snap(sel.y);
+      }
+      updateSelectionInfo();
+      return;
+    }
     if (drawStart) drawCur = { x: mouseWorld.x, y: mouseWorld.y };
   });
   window.addEventListener("mouseup", (e) => {
@@ -280,11 +370,16 @@
       panning = false;
       return;
     }
-    if (erasing && e.button === 2) {
+    if (dragging) {
+      dragging = null;
+      return;
+    }
+    if (erasing) {
       erasing = false;
       return;
     }
     if (e.button === 0 && drawStart && drawCur) {
+      pushHistory();
       const x = Math.min(drawStart.x, drawCur.x);
       const y = Math.min(drawStart.y, drawCur.y);
       const w = Math.abs(drawCur.x - drawStart.x) + SNAP * brushTiles;
@@ -305,11 +400,45 @@
     camera.y += before.y - after.y;
   }, { passive: false });
   window.addEventListener("keydown", (e) => {
+    const tag = e.target?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
     if (e.code === "Space") spaceDown = true;
     if (e.code === "Digit1") selectKind("platform");
     if (e.code === "Digit2") selectKind("cover");
     if (e.code === "Digit3") selectKind("block");
-    if (e.code === "Delete" || e.code === "Backspace") {
+    if (e.code === "KeyQ") selectTool("draw");
+    if (e.code === "KeyW") selectTool("select");
+    if (e.code === "KeyE") selectTool("erase");
+    if (e.code === "KeyF") fitToWindow();
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.code === "KeyZ") {
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+      return;
+    }
+    if (ctrl && e.code === "KeyY") {
+      e.preventDefault();
+      redo();
+      return;
+    }
+    if ((e.code === "Delete" || e.code === "Backspace") && selected >= 0 && map.solids[selected]) {
+      e.preventDefault();
+      pushHistory();
+      map.solids.splice(selected, 1);
+      selected = -1;
+      updateStatus();
+      updateSelectionInfo();
+    }
+    if (selected >= 0 && map.solids[selected] && e.code.startsWith("Arrow")) {
+      e.preventDefault();
+      const step = e.shiftKey ? SNAP * 5 : SNAP;
+      const sel = map.solids[selected];
+      if (e.code === "ArrowLeft") sel.x = Math.max(0, sel.x - step);
+      if (e.code === "ArrowRight") sel.x = Math.min(WORLD_W - sel.w, sel.x + step);
+      if (e.code === "ArrowUp") sel.y = Math.max(0, sel.y - step);
+      if (e.code === "ArrowDown") sel.y = Math.min(SURFACE_Y - sel.h, sel.y + step);
+      updateSelectionInfo();
     }
   });
   window.addEventListener("keyup", (e) => {
@@ -324,6 +453,33 @@
   for (const b of document.querySelectorAll("[data-kind]")) {
     b.addEventListener("click", () => selectKind(b.getAttribute("data-kind")));
   }
+  function selectTool(t) {
+    tool = t;
+    selected = t === "select" ? selected : -1;
+    for (const b of document.querySelectorAll("[data-tool]")) {
+      b.classList.toggle("active", b.getAttribute("data-tool") === t);
+    }
+    updateSelectionInfo();
+  }
+  for (const b of document.querySelectorAll("[data-tool]")) {
+    b.addEventListener("click", () => selectTool(b.getAttribute("data-tool")));
+  }
+  var snapToggle = document.getElementById("snapToggle");
+  snapToggle?.addEventListener("change", () => {
+    snapEnabled = snapToggle.checked;
+  });
+  var gridToggle = document.getElementById("gridToggle");
+  gridToggle?.addEventListener("change", () => {
+    showGrid = gridToggle.checked;
+  });
+  document.getElementById("btnUndo")?.addEventListener("click", undo);
+  document.getElementById("btnRedo")?.addEventListener("click", redo);
+  document.getElementById("btnFit")?.addEventListener("click", fitToWindow);
+  document.getElementById("btnPlay")?.addEventListener("click", () => {
+    localStorage.setItem(GAME_KEY, JSON.stringify(map));
+    localStorage.setItem(EDITOR_KEY, JSON.stringify(map));
+    window.location.href = "./index.html?play=1";
+  });
   brushInput?.addEventListener("input", () => {
     brushTiles = Number(brushInput.value);
     if (brushLabel) brushLabel.textContent = `${brushTiles}\xD7${brushTiles * SNAP}px`;
@@ -338,19 +494,52 @@
     window.location.href = "./index.html";
   });
   document.getElementById("btnReset")?.addEventListener("click", () => {
+    pushHistory();
     map = defaultMapData();
+    selected = -1;
     updateStatus();
+    updateSelectionInfo();
   });
   document.getElementById("btnClear")?.addEventListener("click", () => {
+    pushHistory();
     map = { name: "\u81EA\u5B9A\u4E49\u5730\u56FE", solids: [] };
+    selected = -1;
     updateStatus();
+    updateSelectionInfo();
   });
   document.getElementById("btnExport")?.addEventListener("click", () => {
     const json = JSON.stringify(map, null, 2);
-    window.prompt("\u590D\u5236\u5730\u56FE JSON\uFF1A", json);
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${map.name || "map"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      statusEl.textContent = `${map.solids.length} \u5757 \xB7 \u5DF2\u5BFC\u51FA`;
+    } catch {
+      window.prompt("\u590D\u5236\u5730\u56FE JSON\uFF1A", json);
+    }
   });
   document.getElementById("btnImport")?.addEventListener("click", () => {
-    const raw = window.prompt("\u7C98\u8D34\u5730\u56FE JSON\uFF1A");
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.addEventListener("change", () => {
+      const f = input.files?.[0];
+      if (f) {
+        const reader = new FileReader();
+        reader.onload = () => importJson(String(reader.result ?? ""));
+        reader.readAsText(f);
+      } else {
+        const raw = window.prompt("\u7C98\u8D34\u5730\u56FE JSON\uFF1A");
+        if (raw) importJson(raw);
+      }
+    });
+    input.click();
+  });
+  function importJson(raw) {
     if (!raw) return;
     try {
       const m = sanitizeMapData(JSON.parse(raw));
@@ -358,12 +547,15 @@
         window.alert("JSON \u65E0\u6548\uFF08\u6CA1\u6709\u6709\u6548 solids\uFF09");
         return;
       }
+      pushHistory();
       map = m;
+      selected = -1;
       updateStatus();
+      updateSelectionInfo();
     } catch {
       window.alert("JSON \u89E3\u6790\u5931\u8D25");
     }
-  });
+  }
   updateStatus();
   requestAnimationFrame(render);
 })();
