@@ -540,15 +540,15 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
       return
     }
-    // 逐发装填：击发时中断装填进程（下次开火若弹匣未满会重新开始装填）
-    if (wep.shellReload && p.reloading) p.reloading = false
+    // 逐发装填：装填过程**不因开火而中断**（打光后开始装填，边打边装、逐发续满）。
+    // 记下开火瞬间是否在装填，用于决定本次射击间隔（边装边打更慢）。
+    const wasReloading = p.reloading
     p.ammo[p.weaponIndex]--
-    p.fireCooldown = wep.fireDelay
-    // 自动装填：弹匣打空必装；逐发装填的武器（霰弹）只要没装满就继续装
-    const needReload = wep.shellReload
-      ? p.ammo[p.weaponIndex] < wep.magSize
-      : p.ammo[p.weaponIndex] <= 0
-    if (needReload && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
+    // 射速：满弹匣（未装填）用正常 fireDelay；「边装边打」期间按倍率放慢
+    const fireDelayMult = (wep.shellReload && wasReloading) ? (wep.shellReloadFireDelayMult ?? 1) : 1
+    p.fireCooldown = wep.fireDelay * fireDelayMult
+    // 自动装填：**打空才装填**（霰弹同样是打光 8 发后才开始逐发装填）
+    if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {
       const rk = recoilDelta(wep.recoil, p.aim)

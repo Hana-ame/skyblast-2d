@@ -241,8 +241,9 @@
       // 后坐力 ×2
       reloadTime: 1.5,
       fireDelay: 0.58,
+      shellReloadFireDelayMult: 1.5,
       terrainRadius: 12,
-      // 射速略微提升（0.72 -> 0.58s）
+      // 满匣 0.58s；边装边打 0.87s（更慢）
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1.08,
@@ -2747,11 +2748,11 @@
         if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
         return;
       }
-      if (wep.shellReload && p.reloading) p.reloading = false;
+      const wasReloading = p.reloading;
       p.ammo[p.weaponIndex]--;
-      p.fireCooldown = wep.fireDelay;
-      const needReload = wep.shellReload ? p.ammo[p.weaponIndex] < wep.magSize : p.ammo[p.weaponIndex] <= 0;
-      if (needReload && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
+      const fireDelayMult = wep.shellReload && wasReloading ? wep.shellReloadFireDelayMult ?? 1 : 1;
+      p.fireCooldown = wep.fireDelay * fireDelayMult;
+      if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
       if (wep.recoil > 0) {
         const rk = recoilDelta(wep.recoil, p.aim);
         if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };

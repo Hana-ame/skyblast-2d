@@ -21,8 +21,9 @@
       // 后坐力 ×2
       reloadTime: 1.5,
       fireDelay: 0.58,
+      shellReloadFireDelayMult: 1.5,
       terrainRadius: 12,
-      // 射速略微提升（0.72 -> 0.58s）
+      // 满匣 0.58s；边装边打 0.87s（更慢）
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1.08,

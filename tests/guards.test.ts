@@ -1100,9 +1100,9 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   assert.ok(w2.projectiles.length - projBefore >= shotgun.pellets,
     `firing one shell produces ${shotgun.pellets} pellets, got ${w2.projectiles.length - projBefore}`)
 
-  // ③ 松手后装填会自动继续，直到装满（或备弹耗尽）
+  // ③ 装填一旦开始就会连续装到满（打光才触发；触发后逐发续满）
+  //   ② 开火后弹匣可能还有存货，会继续自动装填
   for (let i = 0; i < 300; i++) w2.step(DT, new Map([[q.id, input()]]))
-  assert.ok(q.ammo[0] > 1, `reload continues automatically until the magazine is full, ammo=${q.ammo[0]}`)
   assert.equal(q.ammo[0], shotgun.magSize, `magazine fills up to ${shotgun.magSize}, got ${q.ammo[0]}`)
   assert.equal(q.reloading, false, 'reload stops once the magazine is full')
 })
