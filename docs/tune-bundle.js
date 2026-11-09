@@ -2609,6 +2609,7 @@
           p.lastPrimaryIndex = wep.id;
           p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1));
           p.reloading = false;
+          p.reloadTimer = 0;
           p.fireCooldown = Math.max(p.fireCooldown, 0.3);
         }
       }
@@ -2647,8 +2648,14 @@
       if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt);
       if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt);
       stepPlayerTeleport(this, p, dt);
+      if (w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
+        p.reloading = false;
+        p.reloadTimer = 0;
+      }
       if (p.reloading) {
-        p.reloadTimer -= dt;
+        if (!wepCur.shellReload || p.fireCooldown <= 0) {
+          p.reloadTimer -= dt;
+        }
         if (p.reloadTimer <= 0) {
           const wep = WEAPONS[p.weaponIndex];
           const avail = p.reserveAmmo[p.weaponIndex] || 0;
@@ -2658,10 +2665,15 @@
               p.reserveAmmo[p.weaponIndex] = avail - 1;
             }
             const stillNeeds = p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0;
-            if (stillNeeds) p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize);
-            else p.reloading = false;
+            if (stillNeeds) {
+              p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize);
+            } else {
+              p.reloading = false;
+              p.reloadTimer = 0;
+            }
           } else {
             p.reloading = false;
+            p.reloadTimer = 0;
             const needed = wep.magSize - p.ammo[p.weaponIndex];
             const transfer = Math.min(needed, avail);
             p.ammo[p.weaponIndex] += transfer;
@@ -2669,7 +2681,7 @@
           }
         }
       }
-      if (w.reload) this.startReload(p);
+      if (w.reload && !w.fire) this.startReload(p);
       if (p.doll) {
         p.doll.timer -= dt;
         if (p.doll.timer <= 0) recallDollState(this.events, p);
@@ -2748,13 +2760,12 @@
         if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
         return;
       }
-      const wasReloading = p.reloading;
-      if (wep.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
+      if (wep.shellReload && p.reloading) {
         p.reloading = false;
+        p.reloadTimer = 0;
       }
       p.ammo[p.weaponIndex]--;
-      const fireDelayMult = wep.shellReload && wasReloading ? wep.shellReloadFireDelayMult ?? 1 : 1;
-      p.fireCooldown = wep.fireDelay * fireDelayMult;
+      p.fireCooldown = wep.fireDelay;
       if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p);
       if (wep.recoil > 0) {
         const rk = recoilDelta(wep.recoil, p.aim);

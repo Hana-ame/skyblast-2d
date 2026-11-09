@@ -237,7 +237,9 @@ function fakeConnPair(): [PeerConnLike, PeerConnLike] {
   const boxB: { onData: ((d: unknown) => void) | null } = { onData: null }
   const mk = (self: typeof boxA, other: typeof boxB): PeerConnLike => ({
     send(data: string) { queueMicrotask(() => other.onData?.(data)) },
-    on(event: 'data' | 'close', cb: (d?: unknown) => void) { if (event === 'data') self.onData = cb as (d: unknown) => void },
+    on: ((event: 'data' | 'close', cb: ((d: unknown) => void) | (() => void)) => {
+      if (event === 'data') self.onData = cb as (d: unknown) => void
+    }) as PeerConnLike['on'],
     close() {},
   })
   return [mk(boxA, boxB), mk(boxB, boxA)]
@@ -1628,4 +1630,114 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
   assert.equal(decP.deathStreak, 3)
   assert.ok((decP.teleportTimer ?? 0) > 0.25)
   assert.ok(decP.teleportTarget && Math.abs(decP.teleportTarget.x - 6100) <= 1)
+})
+
+
+// ── WebRTC 自定义 KCP 协议栈测试：24B 帧头、乱序重组、丢包 FastResend=2 快速重传、分片重组与无序 DataChannel 适配 ──
+import { KcpBlock, isKcpPacket, IKCP_OVERHEAD, DEFAULT_KCP_CONV } from '../src/net/transport/Kcp.ts'
+import { configureWebRtcUnreliableChannel } from '../src/net/transport/Peer.ts'
+
+test('自定义 KCP 协议栈：24B 标准帧头、大分片重组、乱序送达、丢包 FastResend=2 快速重传与 WebRTC 无序通道适配', () => {
+  const wireA2B: Uint8Array[] = []
+  const wireB2A: Uint8Array[] = []
+  let dropNextPacketFromA = false
+
+  const kcpA = new KcpBlock(DEFAULT_KCP_CONV, (pkt) => {
+    assert.ok(isKcpPacket(pkt, DEFAULT_KCP_CONV), 'output packet has valid 24B KCP header')
+    assert.ok(pkt.byteLength >= IKCP_OVERHEAD)
+    if (dropNextPacketFromA) {
+      dropNextPacketFromA = false
+      return // 模拟 WebRTC 无序不可靠 DataChannel 丢包
+    }
+    wireA2B.push(new Uint8Array(pkt))
+  }, { nodelay: 1, interval: 10, resend: 2, nc: 1, mtu: 400 })
+
+  const kcpB = new KcpBlock(DEFAULT_KCP_CONV, (pkt) => {
+    assert.ok(isKcpPacket(pkt, DEFAULT_KCP_CONV))
+    wireB2A.push(new Uint8Array(pkt))
+  }, { nodelay: 1, interval: 10, resend: 2, nc: 1, mtu: 400 })
+
+  let clock = 1000
+  const pump = (stepMs = 10) => {
+    clock += stepMs
+    kcpA.update(clock)
+    kcpB.update(clock)
+    while (wireA2B.length > 0 || wireB2A.length > 0) {
+      while (wireA2B.length > 0) {
+        const p = wireA2B.shift()!
+        kcpB.input(p, clock)
+      }
+      kcpB.flush(clock)
+      while (wireB2A.length > 0) {
+        const p = wireB2A.shift()!
+        kcpA.input(p, clock)
+      }
+    }
+  }
+
+  // 1) 大报文分片与重组（超过 MTU=400，自动拆分为多段 KCP 分片并在接收端无损重组）
+  const bigPayload = new Uint8Array(1250)
+  for (let i = 0; i < bigPayload.length; i++) bigPayload[i] = (i * 37) & 0xff
+  assert.equal(kcpA.send(bigPayload), 0)
+  kcpA.flush(clock)
+  pump(15)
+  const recvBig = kcpB.recv()
+  assert.ok(recvBig, 'fragmented payload reassembled by KCP receiver')
+  assert.equal(recvBig!.byteLength, 1250)
+  assert.deepEqual(recvBig, bigPayload)
+
+  // 2) 模拟首包丢失 + 后续 2 个包抵达触发 FastResend=2 快速重传（无需傻等漫长 RTO）
+  const msg1 = new Uint8Array([10, 20, 30])
+  const msg2 = new Uint8Array([40, 50, 60])
+  const msg3 = new Uint8Array([70, 80, 90])
+
+  dropNextPacketFromA = true // 丢弃 msg1 的首次发送
+  kcpA.send(msg1)
+  kcpA.flush(clock)
+  assert.equal(wireA2B.length, 0, 'msg1 dropped on the wire')
+
+  // 发送 msg2 和 msg3（不丢弃），B 收到后回复 msg2/msg3 的 ACK，触发 A 的 fastack >= 2 快速重传 msg1
+  kcpA.send(msg2)
+  kcpA.flush(clock + 2)
+  kcpA.send(msg3)
+  kcpA.flush(clock + 4)
+
+  pump(5)
+  kcpA.flush(clock + 6) // 触发 fastack >= 2 立即重传 msg1
+  pump(5)
+
+  const out1 = kcpB.recv()
+  const out2 = kcpB.recv()
+  const out3 = kcpB.recv()
+  assert.deepEqual(out1, msg1, 'lost msg1 recovered via KCP fast retransmit')
+  assert.deepEqual(out2, msg2, 'msg2 delivered in order after msg1 recovery')
+  assert.deepEqual(out3, msg3, 'msg3 delivered in order')
+  assert.ok(kcpA.getStats().fastRetransmits >= 1, `expected fastRetransmits >= 1, got ${kcpA.getStats().fastRetransmits}`)
+
+  // 3) 验证 WebRTC DataChannel 无序不可靠配置（ordered: false, maxRetransmits: 0）
+  let createdLabel = ''
+  let createdInit: Record<string, unknown> | undefined
+  const fakePc = {
+    createDataChannel(label: string, init?: Record<string, unknown>) {
+      createdLabel = label
+      createdInit = init
+      return {
+        label,
+        readyState: 'open',
+        binaryType: 'blob',
+        send() {},
+      }
+    },
+  }
+  const fakeConn: PeerConnLike = {
+    peerConnection: fakePc as unknown as RTCPeerConnection,
+    send() {},
+    on() {},
+    close() {},
+  }
+  const bridge = configureWebRtcUnreliableChannel(fakeConn, () => {})
+  assert.equal(createdLabel, 'skyblast-kcp')
+  assert.equal(createdInit?.ordered, false, 'WebRTC DataChannel configured with ordered: false')
+  assert.equal(createdInit?.maxRetransmits, 0, 'WebRTC DataChannel configured with maxRetransmits: 0 (UDP mode)')
+  assert.equal(bridge.isCustomDataChannel(), true)
 })

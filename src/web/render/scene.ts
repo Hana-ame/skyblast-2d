@@ -30,7 +30,6 @@ export function renderScene(): void {
   camera.fovFactor += (targetFov - camera.fovFactor) * 0.12
 
   // 相机跟随（双轴环形最短位移）：**始终以玩家为屏幕中心**，不随瞄准方向偏移
-  // （旧实现 +cos(aim)*80 / +sin(aim)*55 会让视角中心永久偏离玩家，尤其瞭望塔 200% 视野下更明显）
   if (localPlayer.deployed) {
     const tx = localPlayer.pos.x
     const ty = localPlayer.pos.y - 12
@@ -52,7 +51,6 @@ export function renderScene(): void {
   // ── 背景：与地形同坐标系的世界锚定层（不产生相对滑动） ──
   ctx.save()
   const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height)
-  // 天幕颜色随相机深度变化（地表附近偏夜空蓝，地下渐暗），避免"背景固定"的违和感
   const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1)
   const topR = Math.round(5 + depthT * 4)
   const topB = Math.round(17 - depthT * 10)
@@ -62,8 +60,6 @@ export function renderScene(): void {
   ctx.fillStyle = skyGrad
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  // 顺序必须是先平移后缩放：屏幕 = 中心 + zoom × 世界相对量。
-  // 反了的话（先 scale 后 translate）zoom≠1 时整个世界会缩到偏左上，+30% 武器视角就不居中。
   ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY)
   ctx.scale(zoom, zoom)
 
@@ -82,7 +78,6 @@ export function renderScene(): void {
     ctx.beginPath(); ctx.arc(px, py, st.r, 0, Math.PI * 2); ctx.fill()
   }
   ctx.globalAlpha = 1
-  // 世界固定色光晕（地下掩体/中央浮岛的环境光）
   for (const gl of worldGlows) {
     const gx = sx(gl.x)
     const gy = sy(gl.y)
@@ -94,8 +89,7 @@ export function renderScene(): void {
     ctx.beginPath(); ctx.arc(gx, gy, gl.r, 0, Math.PI * 2); ctx.fill()
   }
 
-  // 1. 地形图元（程序化贴图）——按 ±WORLD_W/±WORLD_H 复制绘制，修复左右/上下接缝处缺块
-  //    每帧把花纹锚点补偿到相机：贴图随世界/方块/物体一起移动（此前花纹固定在屏幕上）
+  // 1. 地形图元（程序化贴图）
   syncTerrainPatterns(camera.x, camera.y)
   for (const r of world.terrain.rects) {
     if (r.kind.startsWith('deco_')) continue
@@ -111,7 +105,6 @@ export function renderScene(): void {
         const pat = getTerrainPattern(ctx, r.kind)
         ctx.fillStyle = pat ?? r.color
         ctx.fillRect(left, top, r.w, r.h)
-        // 顶面高光 + 底面阴影（体积感）
         if (r.kind !== 'tunnel_bg' && r.kind !== 'pipe_bg' && r.kind !== 'building_bg') {
           ctx.fillStyle = 'rgba(255,255,255,0.10)'
           ctx.fillRect(left, top, r.w, 2)
@@ -133,7 +126,7 @@ export function renderScene(): void {
     }
   }
 
-  // 1.5 弹射跳台（可见底座/箭头/光晕；世界锚定）
+  // 1.5 弹射跳台
   for (const pad of JUMP_PADS) {
     const px = sx(pad.x)
     const py = sy(pad.y)
@@ -141,7 +134,7 @@ export function renderScene(): void {
     drawJumpPad(ctx, px, py, world.tick)
   }
 
-  // 2. 可破坏障碍物（受损裂纹 sprite）
+  // 2. 可破坏障碍物
   for (const ob of world.obstacles) {
     const ox = sx(ob.x + ob.w / 2)
     const oy = sy(ob.y + ob.h / 2)
@@ -149,7 +142,7 @@ export function renderScene(): void {
     drawObstacleSprite(ctx, ob, ox, oy)
   }
 
-  // 3. 占领点（旗帜 sprite，旗面飘动）
+  // 3. 占领点
   for (const cp of world.capturePoints) {
     const cx = sx(cp.x)
     const cy = sy(cp.y)
@@ -157,7 +150,7 @@ export function renderScene(): void {
     drawFlagSprite(ctx, cp, cx, cy, world.tick)
   }
 
-  // 4. 传送门（旋转光环）
+  // 4. 传送门
   for (const wp of world.warpPortals) {
     const wx = sx(wp.x)
     const wy = sy(wp.y)
@@ -181,7 +174,7 @@ export function renderScene(): void {
     drawAmmoSprite(ctx, pack, px, py, world.tick)
   }
 
-  // 7. 补给箱（武器/人偶）
+  // 7. 补给箱
   for (const crate of world.supplyCrates) {
     if (!crate.active) continue
     const cx = sx(crate.x)
@@ -207,10 +200,10 @@ export function renderScene(): void {
     drawMineSprite(ctx, m, mx, my, world.tick, world.config.mineTriggerRadius)
   }
 
-  // 10. 玩家 sprite + 头顶标签（含替身人偶幻影）
+  // 10. 玩家 sprite + 头顶标签（含替身人偶幻影与换弹微缩环）
   for (const p of world.players) {
     if (p.respawnTimer > 0 || !p.deployed) continue
-    const w = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
+    const pWep = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
     const pMounted = world.mortars.some(m => m.operatorId === p.id)
 
     // 替身人偶幻影
@@ -239,7 +232,6 @@ export function renderScene(): void {
     const py = sy(p.pos.y)
     if (!inView(px, py)) continue
 
-    // （已取消光束类长瞄准线：不再从枪口画 820px 辅助线）
     drawPlayerSprite(ctx, p, px, py, {
       tick: world.tick,
       isLocal: p.id === localPlayer.id,
@@ -249,6 +241,37 @@ export function renderScene(): void {
     })
     drawPlayerTag(ctx, p, px, py, p.id === localPlayer.id)
 
+    // 玩家头顶精致换弹进度条（CS 逐发塞弹或整匣换弹一目了然）
+    if (p.reloading) {
+      ctx.save()
+      const barW = 42
+      const barH = 4
+      const bx = px - barW / 2
+      const by = py - 60
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+      ctx.beginPath(); ctx.roundRect(bx - 1, by - 1, barW + 2, barH + 2, 2.5); ctx.fill()
+      if (pWep.shellReload) {
+        const curShells = Math.max(0, Math.floor(p.ammo[p.weaponIndex] ?? 0))
+        const perShell = pWep.reloadTime / Math.max(1, pWep.magSize)
+        const curShellPct = p.fireCooldown > 0 ? 0 : clamp(1 - p.reloadTimer / Math.max(1e-6, perShell), 0, 1)
+        const segW = (barW - (pWep.magSize - 1) * 1.2) / pWep.magSize
+        for (let sIdx = 0; sIdx < pWep.magSize; sIdx++) {
+          const segX = bx + sIdx * (segW + 1.2)
+          ctx.fillStyle = sIdx < curShells ? '#fbbf24' : 'rgba(51, 65, 85, 0.85)'
+          ctx.fillRect(segX, by, segW, barH)
+          if (sIdx === curShells && curShellPct > 0) {
+            ctx.fillStyle = '#38bdf8'
+            ctx.fillRect(segX, by, segW * curShellPct, barH)
+          }
+        }
+      } else {
+        const pct = clamp(1 - p.reloadTimer / Math.max(1e-6, pWep.reloadTime), 0, 1)
+        ctx.fillStyle = '#38bdf8'
+        ctx.beginPath(); ctx.roundRect(bx, by, Math.max(2, barW * pct), barH, 2); ctx.fill()
+      }
+      ctx.restore()
+    }
+
     // Teleport 读条进度条 + 右键目标落点信标
     if ((p.teleportTimer ?? 0) > 0 && p.teleportTarget) {
       const castTotal = Math.max(0.1, world.config.teleportCastTime ?? 0.75)
@@ -256,49 +279,46 @@ export function renderScene(): void {
       const tx = sx(p.teleportTarget.x)
       const ty = sy(p.teleportTarget.y)
       ctx.save()
-      // 虚线连接当前位置与右键落点
       ctx.setLineDash([6, 6])
-      ctx.strokeStyle = "rgba(192, 132, 252, 0.55)"
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.55)'
       ctx.lineWidth = 2
       ctx.beginPath()
       ctx.moveTo(px, py - 14)
       ctx.lineTo(tx, ty - 14)
       ctx.stroke()
       ctx.setLineDash([])
-      // 右键目标位置闪烁传送阵
       if (inView(tx, ty, 80)) {
         const pulse = 18 + Math.sin(world.tick * 0.35) * 4
-        ctx.strokeStyle = "#c084fc"
-        ctx.fillStyle = "rgba(192, 132, 252, 0.18)"
+        ctx.strokeStyle = '#c084fc'
+        ctx.fillStyle = 'rgba(192, 132, 252, 0.18)'
         ctx.lineWidth = 2.2
         ctx.beginPath(); ctx.arc(tx, ty - 12, pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
-        ctx.strokeStyle = "#38bdf8"
+        ctx.strokeStyle = '#38bdf8'
         ctx.beginPath(); ctx.arc(tx, ty - 12, pulse * (1 - pct * 0.65), 0, Math.PI * 2); ctx.stroke()
-        ctx.fillStyle = "#e9d5ff"
-        ctx.font = "bold 11px Inter, sans-serif"
-        ctx.textAlign = "center"
-        ctx.fillText("🌀 传送落点", tx, ty - 36)
+        ctx.fillStyle = '#e9d5ff'
+        ctx.font = 'bold 11px Inter, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText('🌀 传送落点', tx, ty - 36)
       }
-      // 玩家头顶读条进度条
       const barW = 58
       const barH = 6
       const bx = px - barW / 2
       const by = py - 72
-      ctx.fillStyle = "rgba(15, 23, 42, 0.88)"
-      ctx.strokeStyle = "#c084fc"
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)'
+      ctx.strokeStyle = '#c084fc'
       ctx.lineWidth = 1.5
       ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 3); ctx.fill(); ctx.stroke()
-      ctx.fillStyle = "#a855f7"
+      ctx.fillStyle = '#a855f7'
       ctx.beginPath(); ctx.roundRect(bx + 1, by + 1, Math.max(2, (barW - 2) * pct), barH - 2, 2); ctx.fill()
-      ctx.fillStyle = "#f3e8ff"
-      ctx.font = "bold 10px Inter, sans-serif"
-      ctx.textAlign = "center"
+      ctx.fillStyle = '#f3e8ff'
+      ctx.font = 'bold 10px Inter, sans-serif'
+      ctx.textAlign = 'center'
       ctx.fillText(`🌀 读条 ${Math.round(pct * 100)}%`, px, by - 4)
       ctx.restore()
     }
   }
 
-  // 10.5 迫击炮瞄准线 + 鼠标准星
+  // 10.5 迫击炮瞄准线 + 鼠标准星（含战术换弹环与蓄力环）
   const mountedNow = world.mortars.find(m => m.operatorId === localPlayer.id)
   if (mountedNow) {
     const mx = sx(mountedNow.x)
@@ -313,7 +333,6 @@ export function renderScene(): void {
     ctx.lineTo(mx + Math.cos(mountedNow.angle) * aimLen, my - 18 + Math.sin(mountedNow.angle) * aimLen)
     ctx.stroke()
     ctx.setLineDash([])
-    // 落点预示（抛物线近似）
     ctx.strokeStyle = 'rgba(251, 146, 60, 0.5)'
     ctx.lineWidth = 2
     ctx.beginPath()
@@ -321,15 +340,12 @@ export function renderScene(): void {
     ctx.stroke()
     ctx.restore()
   }
-  // 鼠标准星（世界坐标 → 屏幕）
   {
     const mx = sx(mouse.worldX)
     const my = sy(mouse.worldY)
-    // mx/my 是世界相对量（用户坐标，乘 zoom 后映射到屏幕）；这里必须用 halfW/halfH 判定可见性。
-    // 旧代码与画布像素比较 → 鼠标在屏幕左半区时被误判为不可见（“准星在左侧显示有问题”）。
     if (mx > -halfW && mx < halfW && my > -halfH && my < halfH) {
       ctx.save()
-      ctx.strokeStyle = mountedNow ? 'rgba(251, 146, 60, 0.95)' : 'rgba(255, 255, 255, 0.8)'
+      ctx.strokeStyle = mountedNow ? 'rgba(251, 146, 60, 0.95)' : 'rgba(255, 255, 255, 0.82)'
       ctx.lineWidth = 1.5
       ctx.beginPath()
       ctx.moveTo(mx - 9, my); ctx.lineTo(mx - 3, my)
@@ -338,7 +354,6 @@ export function renderScene(): void {
       ctx.moveTo(mx, my + 3); ctx.lineTo(mx, my + 9)
       ctx.stroke()
       ctx.beginPath(); ctx.arc(mx, my, 2, 0, Math.PI * 2); ctx.stroke()
-      // 蓄力环：按下后即使松开也会继续蓄满自动击发（避免"点了没反应"）
       const wepNow = WEAPONS[localPlayer.weaponIndex]
       const chargeNeed = wepNow?.chargeSeconds ?? 0
       if (chargeNeed > 0 && localPlayer.chargeTimer > 0) {
@@ -350,11 +365,38 @@ export function renderScene(): void {
         ctx.stroke()
         if (t >= 1) { ctx.fillStyle = 'rgba(253,224,71,0.9)'; ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI * 2); ctx.fill() }
       }
+      // 准星战术换弹圆环（视线无需离开准星即可感知换弹与霰弹装填进度）
+      if (localPlayer.reloading && wepNow) {
+        const ringR = 15
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.65)'
+        ctx.lineWidth = 3.2
+        ctx.beginPath()
+        ctx.arc(mx, my, ringR, 0, Math.PI * 2)
+        ctx.stroke()
+        if (wepNow.shellReload) {
+          const perShell = wepNow.reloadTime / Math.max(1, wepNow.magSize)
+          const shellPct = localPlayer.fireCooldown > 0 ? 0 : clamp(1 - localPlayer.reloadTimer / Math.max(1e-6, perShell), 0, 1)
+          const curAmmo = Math.max(0, Math.floor(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))
+          const totalPct = clamp((curAmmo + shellPct) / Math.max(1, wepNow.magSize), 0, 1)
+          ctx.strokeStyle = '#fbbf24'
+          ctx.lineWidth = 2.6
+          ctx.beginPath()
+          ctx.arc(mx, my, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * totalPct)
+          ctx.stroke()
+        } else {
+          const pct = clamp(1 - localPlayer.reloadTimer / Math.max(1e-6, wepNow.reloadTime), 0, 1)
+          ctx.strokeStyle = '#38bdf8'
+          ctx.lineWidth = 2.6
+          ctx.beginPath()
+          ctx.arc(mx, my, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct)
+          ctx.stroke()
+        }
+      }
       ctx.restore()
     }
   }
 
-  // 11. 动态阴影（瞭望塔视野激活时不遮）——同样按 ±WORLD 复制，修复接缝处漏光/缺遮
+  // 11. 动态阴影
   if (!localPlayer.mountedTowerId) {
     for (const sz of world.terrain.shadows) {
       const cx0 = sx(sz.x + sz.w / 2)
@@ -374,7 +416,7 @@ export function renderScene(): void {
     }
   }
 
-  // 11.5 装饰层（窗户灯/路灯/缆线/天线/蒸汽口/警示条/油桶/管道/梯子/标牌）——画在阴影之后，灯光不被压暗
+  // 11.5 装饰层
   for (const r of world.terrain.rects) {
     if (!r.kind.startsWith('deco_')) continue
     const cx0 = sx(r.x + r.w / 2)
@@ -389,7 +431,7 @@ export function renderScene(): void {
     }
   }
 
-  // 12. 手雷 / 弹丸 / 空袭信标（sprite）
+  // 12. 手雷 / 弹丸 / 空袭信标
   for (const g of world.grenades) {
     const gx = sx(g.pos.x)
     const gy = sy(g.pos.y)
@@ -409,17 +451,13 @@ export function renderScene(): void {
     drawAirstrikeSprite(ctx, st, ax, ay, world.tick)
   }
 
-  // 12.5 高斯枪光束（分段折线，按秒淡出；反射 2 次由权威端算好）
-  // 世界是环形的：**每段从起点画到「起点 + 段向量」**（用最短环形位移），
-  // 绝不能分别 sx(x1)/sx(x2) —— 那样一段跨接缝时光束会朝反方向横穿整张地图（看起来像穿墙）。
+  // 12.5 高斯枪光束
   for (const b of beams) {
     const alpha = Math.max(0, b.life / b.maxLife)
     ctx.save()
     ctx.globalAlpha = alpha
     ctx.lineCap = 'round'
-    // 把每段展开成屏幕坐标折线（跨接缝的段会在 ±WORLD 侧补副本）
     const polys = expandBeamSegments(b.segments, (wx, wy) => ({ x: sx(wx), y: sy(wy) }), halfW, halfH)
-    // 外层辉光
     ctx.strokeStyle = b.color
     ctx.lineWidth = 9
     ctx.globalAlpha = alpha * 0.35
@@ -429,7 +467,6 @@ export function renderScene(): void {
       ctx.lineTo(pl.x2, pl.y2)
       ctx.stroke()
     }
-    // 内芯
     ctx.globalAlpha = alpha
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 2.4
@@ -442,9 +479,8 @@ export function renderScene(): void {
     ctx.restore()
   }
 
-  // 13. 客户端粒子（爆炸/击杀/拾取/喷气/枪口）
+  // 13. 客户端粒子
   effects.render(ctx, (x, y) => ({ x: sx(x), y: sy(y) }), (x, y) => inView(x, y))
 
   ctx.restore()
 }
-

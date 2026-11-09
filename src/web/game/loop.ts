@@ -1,15 +1,15 @@
-// web/game/loop.ts —— 主循环（固定步长推进权威世界 + 渲染 + 死亡界面同步）
+// web/game/loop.ts —— 主循环（固定步长推进权威世界 / KCP 联机同步 + 渲染 + 死亡 KD 界面同步）
 import {
   canvas, world, localPlayer, bots, mode, pendingLoadout, keys, mouse, touchState, inputQueue,
   effects, beams, camera, FIXED,
 } from '../app/context.ts'
 import { updateHudWeaponButtons, updateHudUI, updateScoreboardUI } from '../app/hud.ts'
+import { stepNetworkFrame, broadcastHostKcpSnapshot, netState } from '../app/net.ts'
 import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
-import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput } from '../../core/types.ts'
 import { wrapDeltaX, wrapDeltaY, wrapX, wrapY, clamp } from '../../core/wrap.ts'
@@ -59,31 +59,31 @@ function buildLocalInput(): WorldInput {
 }
 
 function onLocalDeath(): void {
-  // 阵亡：打开死亡界面（唯一可换枪处），默认选中「上次的常规主武器」
+  // 阵亡：打开死亡 KD 战报与配装界面（唯一可换枪处），默认选中「上次的常规主武器」
   const cur = WEAPONS[localPlayer.weaponIndex]
   const lastIdx = localPlayer.lastPrimaryIndex ?? localPlayer.weaponIndex
   const last = WEAPONS[lastIdx]
   pendingLoadout.weaponIndex = cur && !cur.isSupplyOnly
     ? localPlayer.weaponIndex
     : (last && !last.isSupplyOnly ? lastIdx : 0)
-  // 连死阶梯自动解锁并默认预选当前最高阶可用副手（玩家也可在死亡界面手动切换任意已解锁副手）
+  // 连死阶梯自动解锁并默认预选当前最高阶可用副手
   const streak = localPlayer.deathStreak ?? 0
   const highestSec = getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0)
   pendingLoadout.secondaryType = highestSec
   localPlayer.secondary = highestSec
   updateHudWeaponButtons()
+  renderDeathStats()
   const ds = document.getElementById('deathScreen')
   if (ds) { ds.classList.remove('hidden'); ds.classList.add('flex') }
   const secDef = SECONDARIES[highestSec] ?? SECONDARIES.frag
   if (streak > 0 && secDef.unlockStreak > 0) {
     showToast(`💀 连死 ${streak} 次：副手已解锁并预选【${secDef.icon} ${secDef.name}】`)
   } else {
-    showToast('💀 已阵亡：在死亡界面选择重生配装')
+    showToast('💀 已阵亡：查看 KD 战报并选择重生配装')
   }
 }
 
 function onLocalRespawn(): void {
-  // 出生位置已由权威端决定（死斗=随机安全点）；这里只把待定配装套到已重生的玩家上
   const wantW = Number(pendingLoadout.weaponIndex)
   const next = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0
   localPlayer.weaponIndex = next
@@ -105,67 +105,84 @@ export function startGameLoop(): void {
   lastFrame = performance.now()
   requestAnimationFrame(function gameLoop(now: number): void {
     const dt = Math.min(0.05, (now - lastFrame) / 1000)
-  lastFrame = now
-  acc += dt
-  let guard = 0
+    lastFrame = now
+    acc += dt
+    let guard = 0
 
-  while (acc >= FIXED && guard < 5) {
-    playerInput = buildLocalInput()
-    inputQueue.interact = false
-    inputQueue.reload = false
-    inputQueue.secondary = null
+    while (acc >= FIXED && guard < 5) {
+      playerInput = buildLocalInput()
+      inputQueue.interact = false
+      inputQueue.reload = false
+      inputQueue.secondary = null
 
-    const inputs = new Map<number, WorldInput>([[localPlayer.id, playerInput]])
-    for (const b of bots) inputs.set(b.id, botInput(b))
-    world.step(FIXED, inputs)
-    handleEvents(world.drainEvents())
+      const inputs = new Map<number, WorldInput>([[localPlayer.id, playerInput]])
+      for (const b of bots) inputs.set(b.id, botInput(b))
 
-    const dead = localPlayer.respawnTimer > 0
-    if (dead && !wasDead) onLocalDeath()
-    if (!dead && wasDead) {
-      const ds = document.getElementById('deathScreen')
-      if (ds) ds.classList.add('hidden')
-      onLocalRespawn()
-    }
-    wasDead = dead
-    if (dead) {
-      const cd = document.getElementById('deathCountdown')
-      if (cd) cd.textContent = Math.max(0, localPlayer.respawnTimer).toFixed(1)
-      const kl = document.getElementById('deathKillerLine')
-      if (kl) kl.textContent = death.info
-        ? `被 ${death.info.killer} 使用【${death.info.weapon}】击倒`
-        : '已被击倒 · 请选择重生配装'
-      renderDeathStats()
-    }
-
-    // 喷气尾焰粒子
-    for (const p of world.players) {
-      if (p.deployed && p.respawnTimer <= 0 && p.jetpack) {
-        effects.jet(p.pos.x, p.pos.y)
+      const handledAsClient = stepNetworkFrame(FIXED, playerInput, inputs)
+      if (!handledAsClient) {
+        // 本机权威（离线/房主）：KCP 客机输入已由 stepNetworkFrame 合并进 inputs
+        world.step(FIXED, inputs)
+        const evs = world.drainEvents()
+        handleEvents(evs)
+        if (netState.role === 'host') broadcastHostKcpSnapshot(evs)
       }
-    }
-    // 玩家开火枪口火花
-    if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
-      effects.muzzle(
-        wrapX(localPlayer.pos.x + Math.cos(localPlayer.aim) * 26),
-        (localPlayer.pos.y - 12) + Math.sin(localPlayer.aim) * 26,
-        WEAPONS[localPlayer.weaponIndex]?.color ?? '#fde047',
-      )
-    }
-    prevFireCooldown = localPlayer.fireCooldown
-    effects.update(FIXED)
-    for (let i = beams.length - 1; i >= 0; i--) {
-      beams[i].life -= FIXED
-      if (beams[i].life <= 0) beams.splice(i, 1)
-    }
-    acc -= FIXED
-    guard++
-  }
 
-  renderScene()
-  updateHudUI()
-  updateScoreboardUI()
-  requestAnimationFrame(gameLoop)
+      const dead = localPlayer.respawnTimer > 0
+      if (dead && !wasDead) onLocalDeath()
+      if (!dead && wasDead) {
+        const ds = document.getElementById('deathScreen')
+        if (ds) ds.classList.add('hidden')
+        onLocalRespawn()
+      }
+      wasDead = dead
+      if (dead) {
+        const cd = document.getElementById('deathCountdown')
+        if (cd) cd.textContent = Math.max(0, localPlayer.respawnTimer).toFixed(1)
+        const respBar = document.getElementById('deathRespawnProgressBar')
+        if (respBar) {
+          const totalDelay = Math.max(0.1, world.config.respawnDelay ?? 4.0)
+          const pct = clamp((1 - localPlayer.respawnTimer / totalDelay) * 100, 0, 100)
+          respBar.style.width = `${pct}%`
+        }
+        const streakPill = document.getElementById('deathStreakPill')
+        if (streakPill) {
+          streakPill.textContent = `连死 ${localPlayer.deathStreak ?? 0}`
+        }
+        const kl = document.getElementById('deathKillerLine')
+        if (kl) kl.textContent = death.info
+          ? `被 ${death.info.killer} 使用【${death.info.weapon}】击倒`
+          : '已被击倒 · 查看实时 KD 战报并选择重生配装'
+        renderDeathStats()
+      }
+
+      // 喷气尾焰粒子
+      for (const p of world.players) {
+        if (p.deployed && p.respawnTimer <= 0 && p.jetpack) {
+          effects.jet(p.pos.x, p.pos.y)
+        }
+      }
+      // 玩家开火枪口火花
+      if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
+        effects.muzzle(
+          wrapX(localPlayer.pos.x + Math.cos(localPlayer.aim) * 26),
+          (localPlayer.pos.y - 12) + Math.sin(localPlayer.aim) * 26,
+          WEAPONS[localPlayer.weaponIndex]?.color ?? '#fde047',
+        )
+      }
+      prevFireCooldown = localPlayer.fireCooldown
+      effects.update(FIXED)
+      for (let i = beams.length - 1; i >= 0; i--) {
+        beams[i].life -= FIXED
+        if (beams[i].life <= 0) beams.splice(i, 1)
+      }
+      acc -= FIXED
+      guard++
+    }
+
+    renderScene()
+    updateHudUI()
+    updateScoreboardUI()
+    requestAnimationFrame(gameLoop)
   })
 }
 
@@ -188,7 +205,7 @@ function renderDeathStats(): void {
 
   // 排行榜：按击杀降序，击杀相同按阵亡升序，再按名字稳定排序
   const ranked = [...world.players]
-    .filter(p => p.deployed)
+    .filter(p => p.deployed || p.id === me.id)
     .sort((a, b) => {
       const ka = a.kills ?? 0, kb = b.kills ?? 0
       if (kb !== ka) return kb - ka
@@ -208,22 +225,24 @@ function renderDeathStats(): void {
       const d = p.deaths ?? 0
       const kd = d === 0 ? k.toFixed(2) : (k / d).toFixed(2)
       const pct = Math.max(4, Math.round((k / maxKills) * 100))
-      const teamColor = p.team === 'red' ? 'text-rose-300' : p.team === 'blue' ? 'text-sky-300' : 'text-slate-300'
+      const teamColor = p.team === 'red' ? 'text-rose-300' : p.team === 'blue' ? 'text-sky-300' : p.team === 'green' ? 'text-emerald-300' : 'text-amber-200'
+      const aliveDot = p.respawnTimer > 0 || !p.alive ? '💀' : '🟢'
       return `
-        <li class="relative flex items-center gap-2 rounded-lg px-2 py-1 text-[11px] ${isMe ? 'bg-sky-500/15 ring-1 ring-sky-400/40' : 'bg-slate-900/50'}">
+        <li class="relative flex items-center gap-2 rounded-lg px-2 py-1 text-[11px] ${isMe ? 'bg-sky-500/20 ring-1 ring-sky-400/50' : 'bg-slate-900/60'}">
           <span class="absolute inset-y-0 left-0 rounded-lg bg-sky-400/10" style="width:${pct}%"></span>
           <span class="relative w-4 text-right font-mono font-bold text-slate-400 tabular-nums">${i + 1}</span>
-          <span class="relative flex-1 truncate font-bold ${teamColor}">${escapeHudText(p.name ?? '?')}</span>
+          <span class="relative text-[9px]">${aliveDot}</span>
+          <span class="relative flex-1 truncate font-bold ${teamColor}">${escapeHudText(p.name ?? '?')}${isMe ? ' (你)' : ''}</span>
           <span class="relative w-6 text-right font-mono font-bold text-emerald-300 tabular-nums">${k}</span>
-          <span class="relative w-6 text-right font-mono text-slate-400 tabular-nums">${d}</span>
+          <span class="relative w-6 text-right font-mono text-rose-300 tabular-nums">${d}</span>
           <span class="relative w-9 text-right font-mono font-bold text-amber-300 tabular-nums">${kd}</span>
         </li>`
     }).join('')
 
     const selfLine = document.getElementById('deathRankSelfLine')
     const selfBar = document.getElementById('deathRankSelfBar')
-    if (selfLine) selfLine.textContent = myRank > 0 ? `你的排名：#${myRank} / ${ranked.length}` : '你的排名 —'
-    if (selfBar) selfBar.style.width = ranked.length > 0 ? `${Math.max(4, Math.round(((ranked.length - myRank + 1) / ranked.length) * 100))}%` : '0%'
+    if (selfLine) selfLine.textContent = myRank > 0 ? `你的排名：#${myRank} / ${ranked.length} · 当前 K/D ${ratio.toFixed(2)}` : '你的排名 —'
+    if (selfBar) selfBar.style.width = ranked.length > 0 ? `${Math.max(6, Math.round(((ranked.length - myRank + 1) / ranked.length) * 100))}%` : '0%'
   }
 }
 

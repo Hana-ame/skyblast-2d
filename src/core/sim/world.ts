@@ -141,7 +141,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (!wep || p.reloading || p.ammo[p.weaponIndex] >= wep.magSize) return
     if ((p.reserveAmmo[p.weaponIndex] || 0) <= 0) return
     p.reloading = true
-    // 逐发装填（霰弹）：整匣时间平摊到每发；装满一发的耗时 = reloadTime / magSize
+    // CS 风格逐发装填（霰弹）：单发装填耗时 = reloadTime / magSize
     p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime
   }
 
@@ -404,6 +404,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         p.lastPrimaryIndex = wep.id
         p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
         p.reloading = false
+        p.reloadTimer = 0
         p.fireCooldown = Math.max(p.fireCooldown, 0.3)
       }
     }
@@ -442,22 +443,34 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
     stepPlayerTeleport(this, p, dt)
 
+    // CS 风格霰弹换弹：有弹开火立即打断换弹；fireCooldown>0 期间暂停塞弹计时；空仓按住开火装1打1
+    if (w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
+      p.reloading = false
+      p.reloadTimer = 0
+    }
+
     if (p.reloading) {
-      p.reloadTimer -= dt
+      if (!wepCur.shellReload || p.fireCooldown <= 0) {
+        p.reloadTimer -= dt
+      }
       if (p.reloadTimer <= 0) {
         const wep = WEAPONS[p.weaponIndex]
         const avail = p.reserveAmmo[p.weaponIndex] || 0
         if (wep.shellReload) {
-          // 逐发装填：装进 1 发即可击发；若弹匣未满且还有备弹，自动继续装下一发
           if (avail > 0 && p.ammo[p.weaponIndex] < wep.magSize) {
             p.ammo[p.weaponIndex] += 1
             p.reserveAmmo[p.weaponIndex] = avail - 1
           }
           const stillNeeds = p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0
-          if (stillNeeds) p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize)
-          else p.reloading = false
+          if (stillNeeds) {
+            p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize)
+          } else {
+            p.reloading = false
+            p.reloadTimer = 0
+          }
         } else {
           p.reloading = false
+          p.reloadTimer = 0
           const needed = wep.magSize - p.ammo[p.weaponIndex]
           const transfer = Math.min(needed, avail)
           p.ammo[p.weaponIndex] += transfer
@@ -465,7 +478,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         }
       }
     }
-    if (w.reload) this.startReload(p)
+    if (w.reload && !w.fire) this.startReload(p)
 
     if (p.doll) {
       p.doll.timer -= dt
@@ -533,25 +546,20 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       return
     }
     const wep = WEAPONS[p.weaponIndex]
-    // 逐发装填的武器（霰弹）：装填中有子弹就能随时击发（击发会打断装填）
+    // CS 风格逐发装填（霰弹）：装填中有子弹就能随时打断装填并立即击发
     const canFireWhileReloading = !!wep.shellReload && p.ammo[p.weaponIndex] > 0
     if ((p.reloading && !canFireWhileReloading) || p.fireCooldown > 0) return
     if (p.ammo[p.weaponIndex] <= 0) {
       if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
       return
     }
-    // 逐发装填：**按下射击即停止换弹**（弹匣里已有弹药时开火会打断装填）；
-    // 打空后（ammo 归零）才重新开始装填。
-    // 记下开火瞬间是否在装填，用于决定本次射击间隔（边装边打更慢）。
-    const wasReloading = p.reloading
-    if (wep.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
+    if (wep.shellReload && p.reloading) {
       p.reloading = false
+      p.reloadTimer = 0
     }
     p.ammo[p.weaponIndex]--
-    // 射速：满弹匣（未装填）用正常 fireDelay；「边装边打」期间按倍率放慢
-    const fireDelayMult = (wep.shellReload && wasReloading) ? (wep.shellReloadFireDelayMult ?? 1) : 1
-    p.fireCooldown = wep.fireDelay * fireDelayMult
-    // 自动装填：**打空才装填**（霰弹同样是打光 8 发后才开始逐发装填）
+    p.fireCooldown = wep.fireDelay
+    // 自动装填：弹匣打空（ammo 归零）后自动进入换弹（霰弹会在当前射击冷却结束后逐发塞入）
     if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {

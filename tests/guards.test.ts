@@ -1128,6 +1128,40 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   }
   assert.equal(r.ammo[0], 0, 'magazine runs dry')
   assert.equal(r.reloading, true, 'reload restarts once the magazine is empty')
+
+  // ⑤ CS 风格关键护栏：开枪后的泵动冷却 (fireCooldown > 0) 期间绝不偷塞子弹，
+  //    空仓按住开火时严格执行「冷却结束 → 塞入 1 发 → 立即击发这 1 发」
+  const w4 = new World(47003, { name: 'cs-pump-no-free-shells', solids: [] })
+  w4.config.randomSpawn = false
+  const s = w4.addPlayer('S', 'ffa')
+  s.weaponIndex = 0
+  s.ammo[0] = 1
+  s.reserveAmmo[0] = 72
+  s.pos = { x: 6600, y: 2200 }
+  // 打出最后 1 发，触发 fireCooldown (0.58s) 与自动换弹排队
+  w4.step(DT, new Map([[s.id, input({ fire: true, aim: 0 })]]))
+  w4.drainEvents()
+  assert.equal(s.ammo[0], 0, 'last shell fired')
+  assert.equal(s.reloading, true, 'reload queued on empty')
+  assert.ok(s.fireCooldown > 0.5, 'pump fireCooldown active')
+  // 在 fireCooldown 尚未结束的帧内，弹匣必须保持为 0（不能在泵动冷却期偷塞 3 发）
+  while (s.fireCooldown > DT * 1.5) {
+    w4.step(DT, new Map([[s.id, input({ fire: true, aim: 0 })]]))
+    w4.drainEvents()
+    assert.equal(s.ammo[0], 0, `no shell loaded while fireCooldown=${s.fireCooldown.toFixed(3)}s > 0`)
+  }
+  // 泵动冷却结束后，再经过约 perShell 时间塞入 1 发，并在按住开火时立即打出这 1 发（弹匣回到 0）
+  let firedSingleReloadedShell = false
+  for (let i = 0; i < 30; i++) {
+    w4.step(DT, new Map([[s.id, input({ fire: true, aim: 0 })]]))
+    const evs = w4.drainEvents()
+    if (evs.some(e => e.kind === 'projectile_spawn')) {
+      firedSingleReloadedShell = true
+      break
+    }
+  }
+  assert.ok(firedSingleReloadedShell, 'holding fire on empty loads 1 shell and immediately fires it')
+  assert.equal(s.ammo[0], 0, 'magazine returns to 0 right after firing the single loaded shell')
 })
 
 

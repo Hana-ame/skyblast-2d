@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>SkyBlast 2D - 环形大世界战术对战 (服务器权威版)</title>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -20,11 +21,14 @@
 
   <!-- 顶部常驻状态与快捷栏 (HUD Top Bar) -->
   <div id="topHudBar" class="fixed top-2 left-2 right-2 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-    <!-- 左侧：玩家生命、护盾、漂浮能量、当前队伍与积分 -->
-    <div class="glass-panel rounded-xl px-3 py-2 flex items-center gap-3 pointer-events-auto shadow-lg">
-      <div class="flex flex-col gap-1 min-w-[145px] sm:min-w-[175px]">
-        <div class="flex items-center justify-between text-xs font-semibold gap-1">
-          <span id="hudPlayerName" class="truncate max-w-[90px] text-white">特工</span>
+    <!-- 左侧：玩家生命、护盾、漂浮能量、当前队伍、K/D 与积分 -->
+    <div class="glass-panel rounded-xl px-3 py-1.5 flex items-center gap-3 pointer-events-auto shadow-lg">
+      <div class="flex flex-col gap-1 min-w-[155px] sm:min-w-[185px]">
+        <div class="flex items-center justify-between text-xs font-semibold gap-1.5">
+          <span id="hudPlayerName" class="truncate max-w-[86px] text-white">特工</span>
+          <span class="px-1.5 py-0.5 rounded bg-slate-900/90 border border-slate-700/80 text-[10px] font-mono font-bold text-amber-300 tabular-nums" title="当前击杀/阵亡">
+            K/D <span id="hudTopKdText" class="text-white">0/0</span>
+          </span>
           <span id="hudSniperFovBadge" class="hidden px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/25 text-purple-200 border border-purple-400/50">🔭 视野+30%</span>
           <span id="hudTeamBadge" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">红队 ALPHA</span>
         </div>
@@ -61,9 +65,10 @@
         <span id="netStatusDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
         <span id="netStatusText" class="text-slate-300 font-medium hidden sm:inline">本地权威</span>
         <span id="peerCountBadge" class="text-cyan-400 font-bold">单机/AI</span>
+        <span id="kcpRttBadge" class="hidden text-[10px] font-mono text-emerald-300 border-l border-slate-700 pl-1.5">KCP 0ms</span>
       </div>
       <button id="openLobbyBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-xs font-semibold text-white transition flex items-center gap-1">
-        <span>🏠</span><span>待机/配对</span>
+        <span>🏠</span><span>待机/联机</span>
       </button>
       <button id="openParamsBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 active:scale-95 text-xs font-semibold text-amber-300 transition flex items-center gap-1">
         <span>⚙️</span><span>物理调校</span>
@@ -90,44 +95,55 @@
     </button>
   </div>
 
-  <!-- 死亡界面（唯一可换配装的地方；游戏中下方 HUD 只读显示当前武器） -->
-  <div id="deathScreen" class="hidden fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/80 backdrop-blur-sm pointer-events-auto py-6">
-    <div class="w-[min(94vw,1040px)] rounded-2xl border border-rose-500/40 bg-slate-900/95 p-5 shadow-2xl mx-auto">
-      <!-- 顶部：阵亡标题 + 击杀者 + 倒计时 + KD（等高对齐，不随内容跳动） -->
-      <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0">
-          <h2 class="text-2xl font-black text-rose-300 tracking-wide shrink-0">阵亡</h2>
-          <p id="deathKillerLine" class="text-xs text-slate-400 mt-1 truncate">等待重生…</p>
+  <!-- 死亡 KD 战报与重生整备界面（死亡时显示：居中呈现个人 K/D 战报、全场实时 KD 榜与重生配装） -->
+  <div id="deathScreen" class="hidden fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/85 backdrop-blur-md pointer-events-auto py-6">
+    <div class="w-[min(94vw,1060px)] rounded-2xl border border-rose-500/40 bg-slate-900/95 p-5 shadow-2xl mx-auto">
+      <!-- 顶部：阵亡战报横幅 + 个人 K/D 核心指标卡 + 重生倒计时读条 -->
+      <div class="flex flex-wrap items-center justify-between gap-4 pb-3.5 border-b border-slate-800">
+        <div class="min-w-0 flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-xl shadow-inner shrink-0">💀</div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl sm:text-2xl font-black text-rose-300 tracking-wide shrink-0">阵亡 · K/D 战报</h2>
+              <span id="deathStreakPill" class="px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-400/30 text-[10px] font-bold text-rose-200">连死 0</span>
+            </div>
+            <p id="deathKillerLine" class="text-xs text-slate-300 mt-0.5 truncate">等待重生…</p>
+          </div>
         </div>
-        <div class="flex items-center gap-4 shrink-0">
+
+        <div class="flex items-center gap-3 sm:gap-4 shrink-0">
           <!-- KD 统计：固定槽位，数字位数变化不推动布局 -->
-          <div class="flex items-center gap-2.5 rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-1.5">
+          <div class="flex items-center gap-3 rounded-xl border border-slate-700/80 bg-slate-950/80 px-3.5 py-2 shadow-inner">
             <div class="text-center">
-              <div id="deathKdKills" class="w-[2.4em] text-center text-lg font-mono font-black tabular-nums text-emerald-300">0</div>
-              <div class="text-[9px] text-slate-500 font-bold tracking-wider">击杀</div>
+              <div id="deathKdKills" class="w-[2.4em] text-center text-lg sm:text-xl font-mono font-black tabular-nums text-emerald-300">0</div>
+              <div class="text-[9px] text-slate-400 font-bold tracking-wider uppercase">击杀 K</div>
             </div>
-            <div class="w-px h-7 bg-slate-700"></div>
+            <div class="w-px h-7 bg-slate-800"></div>
             <div class="text-center">
-              <div id="deathKdDeaths" class="w-[2.4em] text-center text-lg font-mono font-black tabular-nums text-rose-300">0</div>
-              <div class="text-[9px] text-slate-500 font-bold tracking-wider">阵亡</div>
+              <div id="deathKdDeaths" class="w-[2.4em] text-center text-lg sm:text-xl font-mono font-black tabular-nums text-rose-300">0</div>
+              <div class="text-[9px] text-slate-400 font-bold tracking-wider uppercase">阵亡 D</div>
             </div>
-            <div class="w-px h-7 bg-slate-700"></div>
+            <div class="w-px h-7 bg-slate-800"></div>
             <div class="text-center">
-              <div id="deathKdRatio" class="w-[2.8em] text-center text-lg font-mono font-black tabular-nums text-amber-300">0.00</div>
-              <div class="text-[9px] text-slate-500 font-bold tracking-wider">K/D</div>
+              <div id="deathKdRatio" class="w-[2.8em] text-center text-lg sm:text-xl font-mono font-black tabular-nums text-amber-300">0.00</div>
+              <div class="text-[9px] text-slate-400 font-bold tracking-wider uppercase">K/D 比</div>
             </div>
           </div>
-          <div class="text-right">
-            <div id="deathCountdown" class="text-3xl font-mono font-black text-amber-300 tabular-nums">0.0</div>
-            <div class="text-[10px] text-slate-500">秒后自动重生</div>
+
+          <div class="text-right min-w-[84px]">
+            <div id="deathCountdown" class="text-2xl sm:text-3xl font-mono font-black text-amber-300 tabular-nums">0.0</div>
+            <div class="text-[10px] text-slate-400">秒后自动部署</div>
+            <div class="mt-1 w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden ml-auto">
+              <div id="deathRespawnProgressBar" class="h-full bg-gradient-to-r from-rose-500 to-amber-400 transition-all duration-75" style="width: 0%;"></div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-4 items-start">
+      <div class="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_310px] gap-4 items-start">
         <div class="min-w-0">
 
-      <div class="mt-4 text-[11px] font-bold text-emerald-300 uppercase tracking-wider">重生配装 · 主武器（只有死亡界面才能换枪）</div>
+      <div class="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">重生配装 · 主武器（只有死亡界面才能换枪）</div>
       <div id="deathWeaponGrid" class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
         <button type="button" data-wep="0" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
           <div class="text-xs font-extrabold text-white">霰弹</div>
@@ -165,19 +181,19 @@
         <span id="deathSecNote" class="text-[10px] text-slate-400 w-full mt-0.5">连续阵亡时按平衡性依次解锁：障碍物 → 护盾 → Teleport → 替身人偶（获得击杀重置）</span>
       </div>
 
-      <div class="mt-4 text-[10px] text-slate-500">配装在倒计时结束重生时生效；游戏进行中下方 HUD 不再提供换枪。</div>
+      <div class="mt-3 text-[10px] text-slate-500">配装在倒计时结束重生时生效；游戏进行中下方单行 HUD 专注显示战术弹药与副手冷却状态。</div>
         </div>
 
-        <!-- 右侧：实时排行榜（按击杀降序，KD 与阵亡并列；行高固定不抖动） -->
-        <aside class="rounded-xl border border-slate-700/80 bg-slate-950/60 p-3 lg:sticky lg:top-0">
+        <!-- 右侧：实时全房 KD 战绩排行榜（按击杀降序，KD 与阵亡并列；行高固定不抖动） -->
+        <aside class="rounded-xl border border-slate-700/80 bg-slate-950/75 p-3.5 lg:sticky lg:top-0">
           <div class="flex items-center justify-between">
-            <h3 class="text-[11px] font-black uppercase tracking-wider text-sky-300">排行榜</h3>
-            <span class="text-[9px] text-slate-500 font-bold">击杀 / 阵亡 / KD</span>
+            <h3 class="text-[11px] font-black uppercase tracking-wider text-sky-300">📊 全场实时 KD 榜</h3>
+            <span class="text-[9px] text-slate-400 font-bold">击杀 / 阵亡 / KD</span>
           </div>
-          <div class="mt-2 h-3 bg-slate-800 rounded-full overflow-hidden">
-            <div id="deathRankSelfBar" class="h-full bg-sky-400/70 transition-all duration-150" style="width: 0%;"></div>
+          <div class="mt-2 h-2.5 bg-slate-800 rounded-full overflow-hidden">
+            <div id="deathRankSelfBar" class="h-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-150" style="width: 0%;"></div>
           </div>
-          <div id="deathRankSelfLine" class="mt-1 text-[10px] text-slate-400">你的排名 —</div>
+          <div id="deathRankSelfLine" class="mt-1 text-[10px] text-slate-300 font-medium">你的排名 —</div>
           <ol id="deathRankList" class="mt-2 space-y-1 max-h-[240px] overflow-y-auto pr-1">
           </ol>
         </aside>
@@ -185,52 +201,68 @@
     </div>
   </div>
 
-  <!-- 底部中央：主武器栏、副武器按钮组、有限备弹与换弹进度 (重生后自动锁定配装) -->
-  <div id="bottomWeaponDock" class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 pointer-events-none w-full max-w-3xl px-2">
-    <div class="glass-panel rounded-xl px-3.5 py-1.5 flex flex-wrap items-center justify-center gap-2 pointer-events-auto shadow-lg border border-slate-700/80">
-      <!-- 固定宽度槽位：武器名 + 弹药数字用 tabular-nums 固定字宽，换弹进度条常驻占位，
-           避免数字位数变化 / 进度条显隐导致整条 HUD 宽度跳动 -->
-      <div class="flex items-center gap-2 shrink-0">
-        <span id="currentWeaponName" class="w-[4.5rem] text-xs sm:text-sm font-bold text-amber-300 text-left truncate">霰弹枪</span>
-        <span class="inline-flex items-baseline justify-end gap-0.5 font-mono tabular-nums"
-              title="当前弹匣 / 剩余备弹">
-          <span id="currentAmmoText" class="inline-block w-[1.6em] text-right text-sm sm:text-base font-extrabold text-white">8</span>
-          <span class="text-slate-500 text-xs">/</span>
-          <span id="reserveAmmoText" class="inline-block w-[2.2em] text-right text-sm sm:text-base font-extrabold text-slate-300">72</span>
-        </span>
-      </div>
-      <!-- 换弹进度：常驻占位（隐藏时只隐藏子内容，不改变布局宽度） -->
-      <div id="reloadProgressWrap" class="flex items-center gap-1.5 shrink-0 invisible">
-        <div class="w-20 h-2 bg-slate-800 rounded-full overflow-hidden border border-amber-500/40">
-          <div id="reloadProgressBar" class="h-full bg-amber-400 transition-all duration-75" style="width: 0%;"></div>
+  <!-- 底部中央：单行紧凑战术 HUD Dock（主武器+弹药格+换弹按钮 | 副武器冷却胶囊 | 设施互动键；换弹进度悬浮于正上方，不占行宽） -->
+  <div id="bottomWeaponDock" class="fixed bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center pointer-events-none px-2 max-w-[98vw]">
+    <div class="relative pointer-events-auto">
+      <!-- 悬浮式美学换弹进度胶囊（位于单行 HUD 正上方，平时隐藏不占空间，换弹时平滑浮现） -->
+      <div id="reloadProgressWrap" class="invisible opacity-0 translate-y-1 transition-all duration-150 pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/90 border border-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.25)] backdrop-blur-md whitespace-nowrap">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+        <span id="reloadProgressLabel" class="text-[11px] font-extrabold text-amber-200 tracking-wide">换弹中...</span>
+        <div class="w-24 h-2 bg-slate-800/90 rounded-full overflow-hidden border border-slate-700 p-[1px]">
+          <div id="reloadProgressBar" class="h-full rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-cyan-300 transition-all duration-75" style="width: 0%;"></div>
         </div>
-        <span id="reloadProgressLabel" class="w-[3.2rem] text-[10px] text-amber-300 font-bold animate-pulse">换弹中...</span>
-      </div>
-      <button id="hudReloadBtn" type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-600">
-        [R] 换弹
-      </button>
-      <!-- 当前副武器（只读显示；换配装只在死亡界面） -->
-      <div id="hudSecondaryChip" class="flex items-center gap-1 border-l border-slate-700 pl-2 px-1">
-        <span class="text-[10px] text-slate-400 font-bold">副武器</span>
-        <span id="hudSecondaryChipText" class="text-[11px] font-extrabold text-rose-200">💣 手榴弹</span>
-      </div>
-      <button id="hudQuickMortarBtn" type="button" class="px-2 py-0.5 rounded bg-orange-500/20 hover:bg-orange-500/35 text-[11px] font-bold text-orange-300 border border-orange-500/40" title="靠近迫击炮/瞭望塔/传送门互动">
-        🎯 迫击炮 [E]
-      </button>
-    </div>
-
-    <!-- 当前主武器（只读牌，不可点击换枪；换配装只在死亡界面） + 副武器释放键 -->
-    <div class="flex items-center gap-1.5 pointer-events-auto flex-wrap justify-center">
-      <div id="hudWeaponPlate" class="glass-panel px-3 py-1.5 rounded-lg border border-slate-700/80 text-left flex flex-col min-w-[116px]">
-        <span class="text-[10px] text-slate-400 font-bold">当前主武器</span>
-        <span id="hudCurrentWeaponName" class="text-xs font-extrabold text-white truncate">霰弹</span>
+        <span id="reloadProgressPct" class="w-[2.6em] text-right font-mono text-[10px] font-bold text-cyan-300 tabular-nums">0%</span>
       </div>
 
-      <button id="hudGrenadeBtn" type="button" class="glass-panel px-3 py-1.5 rounded-lg border border-rose-500/50 bg-rose-500/15 hover:bg-rose-500/25 text-left transition flex flex-col min-w-[104px] relative overflow-hidden">
-        <div id="grenadeCdOverlay" class="absolute inset-0 bg-slate-950/80 pointer-events-none transition-all" style="height: 0%;"></div>
-        <span id="hudSecondaryTitle" class="text-[10px] text-rose-300 font-bold relative z-10">[G/右键] 副武器</span>
-        <span id="hudGrenadeLabel" class="text-xs font-extrabold text-white relative z-10">💣 就绪</span>
-      </button>
+      <!-- 单行战术底栏主体 -->
+      <div class="glass-panel rounded-2xl px-3 py-1.5 flex items-center gap-2 sm:gap-2.5 shadow-2xl border border-slate-700/80 relative overflow-hidden">
+        <!-- 底部边缘微缩换弹流光条 -->
+        <div class="absolute bottom-0 left-0 right-0 h-[2px] bg-transparent pointer-events-none">
+          <div id="reloadDockBottomBar" class="h-full bg-gradient-to-r from-amber-400 via-cyan-300 to-emerald-400 transition-all duration-75" style="width: 0%;"></div>
+        </div>
+
+        <!-- 1. 主武器与弹药一体槽 -->
+        <div id="hudWeaponPlate" class="flex items-center gap-2 pr-2 border-r border-slate-700/80 shrink-0">
+          <div class="flex flex-col min-w-[68px]">
+            <div class="flex items-center gap-1">
+              <span class="text-[9px] uppercase tracking-wider text-slate-400 font-bold">主武</span>
+              <span id="hudCurrentWeaponName" class="hidden text-[10px] text-slate-300 font-bold">霰弹</span>
+            </div>
+            <span id="currentWeaponName" class="text-xs sm:text-sm font-extrabold text-amber-300 truncate max-w-[92px]">霰弹枪</span>
+          </div>
+
+          <div class="flex flex-col items-end min-w-[78px]">
+            <div class="inline-flex items-baseline justify-end gap-0.5 font-mono tabular-nums leading-none" title="当前弹匣 / 剩余备弹">
+              <span id="currentAmmoText" class="inline-block w-[1.7em] text-right text-base sm:text-lg font-black text-white">8</span>
+              <span class="text-slate-500 text-xs font-bold">/</span>
+              <span id="reserveAmmoText" class="inline-block w-[2.3em] text-right text-xs sm:text-sm font-bold text-slate-300">72</span>
+            </div>
+            <!-- 弹药格/容量微缩条（霰弹显示 8 颗分格弹壳，连发枪显示紧凑能量条） -->
+            <div id="hudAmmoPips" class="w-full flex items-center gap-0.5 mt-1"></div>
+          </div>
+
+          <button id="hudReloadBtn" type="button" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-[11px] font-bold text-amber-200 border border-slate-600/80 transition shrink-0" title="按 R 装填弹药">
+            [R] 换弹
+          </button>
+        </div>
+
+        <!-- 2. 副武器状态与释放一体键（收纳至同一行） -->
+        <button id="hudGrenadeBtn" type="button" class="px-2.5 py-1 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 active:scale-95 text-left transition flex items-center gap-2 relative overflow-hidden shrink-0">
+          <div id="grenadeCdOverlay" class="absolute inset-x-0 bottom-0 bg-slate-950/80 pointer-events-none transition-all" style="height: 0%;"></div>
+          <div class="flex flex-col relative z-10 min-w-[96px]">
+            <span id="hudSecondaryTitle" class="text-[9px] text-rose-300 font-bold leading-tight">[G/右键] 手榴弹</span>
+            <span id="hudGrenadeLabel" class="text-xs font-extrabold text-white leading-tight mt-0.5">💣 就绪</span>
+          </div>
+          <span id="hudSecondaryChip" class="hidden">
+            <span id="hudSecondaryChipText">💣 手榴弹</span>
+          </span>
+        </button>
+
+        <!-- 3. 战场设施快速互动键 -->
+        <button id="hudQuickMortarBtn" type="button" class="px-2.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/30 active:scale-95 text-[11px] font-extrabold text-orange-300 border border-orange-500/40 transition shrink-0" title="靠近迫击炮/瞭望塔/传送门按 E 互动">
+          🎯 互动 [E]
+        </button>
+      </div>
     </div>
   </div>
 
@@ -277,12 +309,12 @@
           <div>
             <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white flex items-center flex-wrap gap-2">
               <span>SkyBlast 2D · 环形大世界战术整备大厅</span>
-              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">服务器权威 · 确定性模拟</span>
+              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">服务器权威 · PeerJS + WebRTC KCP</span>
               <button id="inputDeviceDetectBadge" type="button" class="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition">
                 💻 已自动识别：PC 键鼠模式 (点击可切触屏)
               </button>
             </h1>
-            <p class="text-xs text-slate-400">13200×4400 双轴环形地图 · 对战模式(自由混战/双队对抗·随机出生) · 高斯枪即时光束(反射2次·全段自伤) · 狙击/火箭无限射程 · 手枪移速最快 · 100HP不溢出护盾</p>
+            <p class="text-xs text-slate-400">13200×4400 双轴环形地图 · CS 逐发霰弹装填 · WebRTC DataChannel 自定义 KCP 低延迟同步 · 100HP不溢出护盾</p>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -437,22 +469,84 @@
           </div>
         </div>
 
-        <!-- 右栏 (6列)：架构说明 -->
+        <!-- 右栏 (6列)：PeerJS + WebRTC 自定义 KCP 联机控制台 & 架构说明 -->
         <div class="lg:col-span-6 flex flex-col gap-3">
-          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2.5 flex-1">
+          <!-- 3. PeerJS + WebRTC 自定义 KCP 联机编排面板 -->
+          <div id="peerNetPanel" class="bg-slate-900/90 border border-cyan-500/40 rounded-xl p-3.5 flex flex-col gap-2.5 shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <h2 class="text-xs font-extrabold uppercase tracking-wider text-cyan-300">⚡ PeerJS 联机 & WebRTC 自定义 KCP 协议栈</h2>
+                <span id="peerRoleBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">本地单机</span>
+              </div>
+              <span class="text-[10px] font-mono text-emerald-300">NoDelay=1 · Interval=10ms · FastResend=2 · NC=1</span>
+            </div>
+
+            <!-- 房间创建 / 加入操作行 -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="rounded-xl bg-slate-950/75 border border-slate-800 p-2.5 flex flex-col gap-1.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-emerald-300">👑 作为房主创建 (Host)</span>
+                  <button id="peerHostBtn" type="button" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-extrabold text-[11px] transition">
+                    创建 KCP 房间
+                  </button>
+                </div>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <input id="peerLocalIdInput" type="text" readonly placeholder="点击「创建 KCP 房间」生成房间码" class="flex-1 min-w-0 px-2 py-1 rounded bg-slate-900 border border-slate-700 text-[11px] font-mono text-cyan-200 focus:outline-none" />
+                  <button id="peerCopyIdBtn" type="button" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-200 border border-slate-700 shrink-0">
+                    复制
+                  </button>
+                </div>
+              </div>
+
+              <div class="rounded-xl bg-slate-950/75 border border-slate-800 p-2.5 flex flex-col gap-1.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-sky-300">🚀 加入房主房间 (Client)</span>
+                  <button id="peerLeaveBtn" type="button" class="hidden px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 font-bold text-[10px] transition">
+                    断开联机
+                  </button>
+                </div>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <input id="peerRemoteIdInput" type="text" placeholder="输入房主房间码 (Peer ID)" class="flex-1 min-w-0 px-2 py-1 rounded bg-slate-900 border border-slate-700 text-[11px] font-mono text-white focus:outline-none focus:border-cyan-400" />
+                  <button id="peerJoinBtn" type="button" class="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 font-extrabold text-[11px] transition shrink-0">
+                    连接 KCP
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- KCP + WebRTC DataChannel 实时传输遥测 -->
+            <div class="grid grid-cols-4 gap-1.5 text-center bg-slate-950/60 border border-slate-800/90 rounded-lg p-2 font-mono text-[10px]">
+              <div>
+                <div class="text-slate-500">WebRTC 通道</div>
+                <div id="kcpStatChannel" class="font-bold text-cyan-300 mt-0.5">Unordered/UDP</div>
+              </div>
+              <div>
+                <div class="text-slate-500">KCP RTT / Jitter</div>
+                <div id="kcpStatRtt" class="font-bold text-emerald-300 tabular-nums mt-0.5">0 ms</div>
+              </div>
+              <div>
+                <div class="text-slate-500">KCP 收发包 / 快速重传</div>
+                <div id="kcpStatPkts" class="font-bold text-amber-300 tabular-nums mt-0.5">0 / 0 (0)</div>
+              </div>
+              <div>
+                <div class="text-slate-500">本机回环联机自测</div>
+                <button id="peerLoopbackTestBtn" type="button" class="mt-0.5 px-2 py-0.5 rounded bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-400/50 text-indigo-200 font-sans font-bold text-[10px] transition">
+                  ⚡ 双端KCP实测
+                </button>
+              </div>
+            </div>
+            <div id="peerStatusLog" class="text-[10px] text-slate-400 truncate">
+              就绪：WebRTC DataChannel 配置 ordered:false, maxRetransmits:0 模拟底层 UDP，由自定义 KCP 协议栈负责极速 ARQ 重传与低延迟状态同步。
+            </div>
+          </div>
+
+          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2 flex-1">
             <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300">🌐 架构与补给说明（合并版）</h2>
             <div class="text-[11px] text-slate-300 leading-relaxed space-y-1.5">
-              <p>· <strong class="text-white">服务器权威</strong>：所有命中/副武器/占点/补给全部在权威 core 结算，客户端只发送意图（Intent）。</p>
-              <p>· <strong class="text-white">快照同步</strong>：障碍物/地雷/占点/弹药点/补给箱全量进快照，多端一致（v2 的平行宇宙问题已消除）。</p>
-              <p>· <strong class="text-white">环形世界</strong>：13200×4400 双轴无缝循环（上下也 wrap），跨缝瞄准/弹道/插值全部连续。</p>
-              <p>· <strong class="text-white">补给与连死阶梯</strong>：高斯枪/M249/引力枪只能从空投特武箱获得；副手按连续阵亡依次解锁：手榴弹(默认) → 障碍物(连死1) → 100HP不溢出护盾(连死2) → Teleport(连死3) → 替身人偶(连死4或特殊补给拾取)。</p>
-              <p>· <strong class="text-white">友军伤害</strong>：默认只有 <span class="text-amber-300">手榴弹 / 高斯枪 / 引力枪 / 火箭筒</span> 会伤害队友与自己，其余枪械友伤/自伤关闭；
-                两者均为可选项（数值后台可逐武器开关，手雷在全局配置里）。</p>
-              <p>· <strong class="text-white">高斯反射与自伤</strong>：高斯枪反射次数=2，碰到障碍物沿表面反射并扣 1 次反射，穿过地图缝隙时方向不变且反射次数 -1，归零后不再反射也不再穿透地图缝隙；发射时不伤自己，反射或跨缝绕回命中自身会造成自伤。</p>
-              <p class="text-slate-400">· PeerJS 配对面板将接入 net/transport/Peer.ts（联机入口为下一里程碑）。</p>
-            </div>
-            <div class="mt-2 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-              <strong class="text-slate-200">战术规则：</strong>主武器重生前选定（重生后锁定）| 副武器默认手榴弹（连死解锁障碍物/100HP护盾/Teleport/替身人偶）| 狙击/火箭无限射程 | 高斯枪即时光束、反射2次、全段自伤 | 手枪移速最快 | 靠近🗼瞭望塔/🌀传送门/🔥迫击炮按 E 互动
+              <p>· <strong class="text-white">CS 风格霰弹逐发装填</strong>：打空或按 R 后逐颗塞入霰弹，泵动冷却期间不偷塞子弹；换弹途中只要枪膛有弹，按下开火立即打断装填并瞬发。</p>
+              <p>· <strong class="text-white">WebRTC 自定义 KCP 协议栈</strong>：基于 WebRTC 非可靠无序 DataChannel（UDP 语义）实现完整 KCP 24 字节帧头、PUSH/ACK/WASK/WINS 指令、UNA+ACK 双重确认、FastResend=2 快速重传与 Unreliable-KCP 快照通道。</p>
+              <p>· <strong class="text-white">服务器权威与客户端预测</strong>：60Hz 权威物理 + 0 RTT 本地移动预测与服务器回滚重放（Reconciliation）+ 远端环形平滑插值。</p>
+              <p>· <strong class="text-white">补给与连死阶梯</strong>：高斯枪/M249/引力枪从空投特武箱获得；副手按连续阵亡依次解锁：手榴弹(默认) → 障碍物(连死1) → 100HP不溢出护盾(连死2) → Teleport(连死3) → 替身人偶(连死4或特殊补给)。</p>
             </div>
           </div>
         </div>
@@ -591,6 +685,6 @@
   <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
   <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=bf9ab545b0"></script>
+  <script src="./bundle.js?v=7cbf435167"></script>
 </body>
 </html>

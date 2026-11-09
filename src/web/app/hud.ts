@@ -177,6 +177,12 @@ export function updateHudUI(): void {
     teamEl.textContent = label
     teamEl.className = `px-1.5 py-0.5 rounded text-[10px] font-bold ${cls}`
   }
+  const topKdEl = document.getElementById('hudTopKdText')
+  if (topKdEl) {
+    const k = localPlayer.kills ?? 0
+    const d = localPlayer.deaths ?? 0
+    topKdEl.textContent = `${k}/${d}`
+  }
   const fovBadge = document.getElementById('hudSniperFovBadge')
   if (fovBadge) {
     const wepForFov = WEAPONS[localPlayer.weaponIndex]
@@ -187,7 +193,7 @@ export function updateHudUI(): void {
       const charge = (wepForFov?.chargeSeconds ?? 0) > 0
         ? (localPlayer.chargeTimer > 0
           ? ` · 蓄力 ${Math.min(100, Math.round(localPlayer.chargeTimer / (wepForFov?.chargeSeconds ?? 1) * 100))}%`
-          : ' · 按住蓄力')
+          : ' · 按一下读条')
         : ''
       fovBadge.textContent = `🔭 ${wepForFov.shortName} 视野+30%${charge}`
       fovBadge.classList.remove('hidden')
@@ -206,7 +212,7 @@ export function updateHudUI(): void {
   const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
   const wNameEl = document.getElementById('currentWeaponName')
-  if (wNameEl) wNameEl.textContent = mounted ? '🎯 公共迫击炮操控中' : `${wep.name} ${localPlayer.deployed ? '🔒' : ''}`
+  if (wNameEl) wNameEl.textContent = mounted ? '🎯 迫击炮' : wep.name
   const plateEl = document.getElementById('hudCurrentWeaponName')
   if (plateEl) plateEl.textContent = wep.shortName
   const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag
@@ -224,17 +230,44 @@ export function updateHudUI(): void {
     }
   }
   // 弹药显示：当前弹匣与备弹分列在固定宽度槽里（tabular-nums），位数变化不会让 HUD 抖动
+  const curAmmo = Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))
   const ammoEl = document.getElementById('currentAmmoText')
   const reserveEl = document.getElementById('reserveAmmoText')
   if (ammoEl) {
-    ammoEl.textContent = mounted
-      ? '∞'
-      : String(Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0)))
+    ammoEl.textContent = mounted ? '∞' : String(curAmmo)
   }
   if (reserveEl) {
-    reserveEl.textContent = mounted
-      ? ''
-      : String(localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0)
+    reserveEl.textContent = mounted ? '' : String(localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0)
+  }
+
+  // 弹药格/进度条微缩指示（霰弹显示 8 颗独立弹壳格，其他武器显示平滑弹量条）
+  const ammoPipsEl = document.getElementById('hudAmmoPips')
+  if (ammoPipsEl) {
+    if (wep.shellReload && wep.magSize <= 12) {
+      let html = ''
+      for (let i = 0; i < wep.magSize; i++) {
+        const filled = i < curAmmo
+        const isLoadingThis = localPlayer.reloading && i === curAmmo
+        html += `<span class="h-1.5 flex-1 rounded-xs transition-all duration-75 ${
+          filled
+            ? 'bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.7)]'
+            : isLoadingThis
+              ? 'bg-cyan-400/80 animate-pulse'
+              : 'bg-slate-800'
+        }"></span>`
+      }
+      if (ammoPipsEl.getAttribute('data-sig') !== `shell:${curAmmo}:${localPlayer.reloading ? 1 : 0}:${wep.magSize}`) {
+        ammoPipsEl.setAttribute('data-sig', `shell:${curAmmo}:${localPlayer.reloading ? 1 : 0}:${wep.magSize}`)
+        ammoPipsEl.innerHTML = html
+      }
+    } else {
+      const pct = Math.round(clamp((curAmmo / Math.max(1, wep.magSize)) * 100, 0, 100))
+      const sig = `bar:${pct}`
+      if (ammoPipsEl.getAttribute('data-sig') !== sig) {
+        ammoPipsEl.setAttribute('data-sig', sig)
+        ammoPipsEl.innerHTML = `<span class="block h-1.5 w-full rounded-full bg-slate-800 overflow-hidden"><span class="block h-full bg-gradient-to-r from-amber-400 to-cyan-300 transition-all duration-75" style="width:${pct}%"></span></span>`
+      }
+    }
   }
 
   const gOverlay = document.getElementById('grenadeCdOverlay')
@@ -242,9 +275,9 @@ export function updateHudUI(): void {
   const gTitle = document.getElementById('hudSecondaryTitle')
   if (gTitle) {
     if (localPlayer.secondary === 'doll') {
-      gTitle.textContent = `[G/右键] 替身人偶 [充能${localPlayer.dollCharges}]`
+      gTitle.textContent = `[G/右键] 替身人偶`
     } else if (localPlayer.secondary === 'frag') {
-      gTitle.textContent = `[G/右键] 手榴弹 [${localPlayer.fragCharges}/${world.config.fragMaxCharges}]`
+      gTitle.textContent = `[G/右键] 手榴弹`
     } else {
       gTitle.textContent = `[G/右键] ${secDef.name}`
     }
@@ -252,16 +285,16 @@ export function updateHudUI(): void {
   if (gOverlay && gLabel) {
     if (localPlayer.secondary === 'doll') {
       gOverlay.style.height = localPlayer.dollCharges > 0 ? '0%' : '100%'
-      gLabel.textContent = localPlayer.dollCharges > 0 ? '🎎 就绪' : '🎎 无充能'
+      gLabel.textContent = localPlayer.dollCharges > 0 ? `🎎 就绪 ×${localPlayer.dollCharges}` : '🎎 无充能'
     } else if (localPlayer.secondary === 'frag') {
       const need = localPlayer.fragCharges >= world.config.fragMaxCharges
       if (need) {
         gOverlay.style.height = '0%'
-        gLabel.textContent = '💣 就绪'
+        gLabel.textContent = `💣 就绪 (${localPlayer.fragCharges}/${world.config.fragMaxCharges})`
       } else {
         const pct = Math.min(100, (localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds) * 100)
-        gOverlay.style.height = pct + '%'
-        gLabel.textContent = `💣 ${localPlayer.fragCharges}/${world.config.fragMaxCharges} 回复中`
+        gOverlay.style.height = (100 - pct) + '%'
+        gLabel.textContent = `💣 ${(world.config.fragRechargeSeconds - localPlayer.fragRechargeTimer).toFixed(1)}s`
       }
     } else if (localPlayer.secondary === 'teleport' && (localPlayer.teleportTimer ?? 0) > 0) {
       const castTotal = Math.max(0.05, world.config.teleportCastTime ?? 0.35)
@@ -280,26 +313,38 @@ export function updateHudUI(): void {
     }
   }
 
+  // 换弹进度胶囊（悬浮在单行 HUD 正上方，不挤占底栏横向空间，彻底告别突兀占坑）
   const reloadWrap = document.getElementById('reloadProgressWrap')
   const reloadBar = document.getElementById('reloadProgressBar')
   const reloadLabel = document.getElementById('reloadProgressLabel')
+  const reloadPctEl = document.getElementById('reloadProgressPct')
+  const reloadDockBottomBar = document.getElementById('reloadDockBottomBar')
   if (reloadWrap && reloadBar) {
     if (localPlayer.reloading) {
-      // 常驻占位：只去掉 invisible，不切换 display，避免整条 HUD 宽度跳动
-      reloadWrap.classList.remove('invisible')
+      reloadWrap.classList.remove('invisible', 'opacity-0', 'translate-y-1')
+      reloadWrap.classList.add('opacity-100', 'translate-y-0')
       const wep2 = WEAPONS[localPlayer.weaponIndex]
       if (wep2.shellReload) {
-        // 逐发装填：进度按「当前这一发」的装填进度显示，并标出已装发数
+        // CS 风格逐发装填：进度按「当前这一发」的塞弹进度显示（若在泵动冷却中则显示准备装填），并标出已装发数
         const perShell = wep2.reloadTime / Math.max(1, wep2.magSize)
-        const pct = clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, perShell)), 0, 100)
+        const pct = localPlayer.fireCooldown > 0
+          ? 0
+          : clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, perShell)), 0, 100)
         reloadBar.style.width = pct + '%'
-        if (reloadLabel) reloadLabel.textContent = `装填 ${localPlayer.ammo[localPlayer.weaponIndex]}/${wep2.magSize}`
+        if (reloadDockBottomBar) reloadDockBottomBar.style.width = clamp(((curAmmo + pct / 100) / Math.max(1, wep2.magSize)) * 100, 0, 100) + '%'
+        if (reloadLabel) reloadLabel.textContent = `逐发装填 ${curAmmo}/${wep2.magSize}`
+        if (reloadPctEl) reloadPctEl.textContent = localPlayer.fireCooldown > 0 ? '泵动' : `${Math.round(pct)}%`
       } else {
-        reloadBar.style.width = clamp(100 * (1 - localPlayer.reloadTimer / wep2.reloadTime), 0, 100) + '%'
-        if (reloadLabel) reloadLabel.textContent = '换弹中...'
+        const pct = clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, wep2.reloadTime)), 0, 100)
+        reloadBar.style.width = pct + '%'
+        if (reloadDockBottomBar) reloadDockBottomBar.style.width = pct + '%'
+        if (reloadLabel) reloadLabel.textContent = `换弹中 · ${wep2.shortName}`
+        if (reloadPctEl) reloadPctEl.textContent = `${Math.round(pct)}%`
       }
     } else {
-      reloadWrap.classList.add('invisible')
+      reloadWrap.classList.add('invisible', 'opacity-0', 'translate-y-1')
+      reloadWrap.classList.remove('opacity-100', 'translate-y-0')
+      if (reloadDockBottomBar) reloadDockBottomBar.style.width = '0%'
     }
   }
 

@@ -1,4 +1,4 @@
-// web/input/bindings.ts —— 全部 DOM 事件绑定（键鼠/触屏/大厅/死亡界面/参数台/按钮）
+// web/input/bindings.ts —— 全部 DOM 事件绑定（键鼠/触屏/大厅/死亡界面/参数台/PeerJS+KCP联机按钮）
 import {
   canvas, world, localPlayer, bots, pendingLoadout, mode,
   keys, mouse, touchState, inputQueue, camera, resizeCanvas,
@@ -8,14 +8,15 @@ import {
   updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI,
   tryChangePrimaryWeapon, tryChangeSecondaryWeapon, updateHudUI,
 } from '../app/hud.ts'
+import {
+  startHostRoom, joinHostRoom, leaveMultiplayerRoom, runDualWebRtcKcpSelfTest, updateNetStatusUI,
+} from '../app/net.ts'
 import { syncParamsToUI, bindRangeParam, paramState } from '../app/params.ts'
-import { updateInputModeBadge, setTouchLayerVisible, autoDetectDeviceInput } from './device.ts'
+import { setTouchLayerVisible } from './device.ts'
 import { syncBotsCount } from '../game/bots.ts'
-import { applyPendingLoadoutAndSpawn, getSpawnCoords } from '../game/loadout.ts'
-import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../../core/sim/physics.ts'
-import { WEAPONS, SECONDARIES, DEFAULT_CONFIG } from '../../core/weapons.ts'
-import { SPAWN_POINTS } from '../../core/sim/world.ts'
-import { clamp } from '../../core/wrap.ts'
+import { applyPendingLoadoutAndSpawn } from '../game/loadout.ts'
+import { setPhysicsParams, resetPhysicsParams } from '../../core/sim/physics.ts'
+import { WEAPONS, DEFAULT_CONFIG } from '../../core/weapons.ts'
 import type { TeamId } from '../../core/types.ts'
 
 // ── 事件绑定 ──
@@ -85,12 +86,50 @@ export function bindAllEvents(): void {
     btn.addEventListener('click', () => {
       const cnt = Number(btn.getAttribute('data-bots') || 0)
       syncBotsCount(cnt)
+      updateNetStatusUI()
       document.querySelectorAll('.bot-count-btn').forEach((b) => {
         b.className = Number(b.getAttribute('data-bots')) === cnt
           ? 'bot-count-btn px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs'
           : 'bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700'
       })
     })
+  })
+
+  // PeerJS + WebRTC 自定义 KCP 联机控制台事件绑定
+  document.getElementById('peerHostBtn')?.addEventListener('click', () => {
+    startHostRoom()
+  })
+  document.getElementById('peerCopyIdBtn')?.addEventListener('click', () => {
+    const inp = document.getElementById('peerLocalIdInput') as HTMLInputElement | null
+    const val = inp?.value?.trim() || ''
+    if (!val) {
+      showToast('⚠️ 请先点击「创建 KCP 房间」生成房间码')
+      return
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(val).catch(() => {})
+      } else if (inp) {
+        inp.select()
+        document.execCommand('copy')
+      }
+    } catch {
+      if (inp) {
+        inp.select()
+        try { document.execCommand('copy') } catch { /* ignore */ }
+      }
+    }
+    showToast(`📋 已复制 KCP 房间码：${val}`)
+  })
+  document.getElementById('peerJoinBtn')?.addEventListener('click', () => {
+    const inp = document.getElementById('peerRemoteIdInput') as HTMLInputElement | null
+    void joinHostRoom(inp?.value || '')
+  })
+  document.getElementById('peerLeaveBtn')?.addEventListener('click', () => {
+    leaveMultiplayerRoom()
+  })
+  document.getElementById('peerLoopbackTestBtn')?.addEventListener('click', () => {
+    void runDualWebRtcKcpSelfTest()
   })
 
   document.querySelectorAll('.param-wep-tab').forEach((btn) => {
@@ -139,7 +178,6 @@ export function bindAllEvents(): void {
       b.className = 'mode-btn px-3 py-2 rounded-xl text-left transition border ' +
         (sel ? 'border-2 border-emerald-400 bg-emerald-500/20' : 'border border-slate-700 bg-slate-950/60 hover:border-slate-500')
     })
-    // FFA：全员混战；2 队：默认红队（可再点蓝）
     if (nextMode === 'ffa') localPlayer.team = 'ffa'
     else if (localPlayer.team !== 'blue') localPlayer.team = 'red'
     syncBotsCount(bots.length)
@@ -274,7 +312,6 @@ export function bindAllEvents(): void {
   bindJoystick(document.getElementById('touchMoveZone'), document.getElementById('touchMoveStick'), false)
   bindJoystick(document.getElementById('touchAimZone'), document.getElementById('touchAimStick'), true)
 
-  // 初始化死斗模式 UI（默认 FFA）
   applyTeamButtons()
   document.querySelectorAll('.mode-btn').forEach((b) => {
     const sel = b.getAttribute('data-mode') === mode.current
@@ -290,5 +327,5 @@ export function bindAllEvents(): void {
   })
   document.getElementById('touchReloadBtn')?.addEventListener('click', () => { inputQueue.reload = true })
   document.getElementById('touchInteractBtn')?.addEventListener('click', () => { inputQueue.interact = true })
+  updateNetStatusUI()
 }
-
