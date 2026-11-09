@@ -1202,3 +1202,27 @@ test('护栏·阵亡 HUD：居中布局 + KD 统计 + 排行榜元素齐全且�
   assert.ok(loopSrc.includes("localeCompare"), 'leaderboard has a deterministic tie-break')
   assert.ok(loopSrc.includes('escapeHudText'), 'names are escaped before being injected as HTML')
 })
+
+
+test('护栏·补给拾取广播带完整身份信息（playerId/playerName/weaponId/weaponName）', () => {
+  const w = new World(49000, { name: 'supply-pickup', solids: [] })
+  w.config.randomSpawn = false
+  const a = w.addPlayer('Alice', 'red')
+  const b = w.addPlayer('Bob', 'blue')
+  // 找一个补给箱，把 Alice 放上去
+  const crate = w.supplyCrates[0]
+  assert.ok(crate, 'world has a supply crate')
+  a.pos = { x: crate.x, y: crate.y }
+  b.pos = { x: crate.x + 400, y: crate.y }
+  let ev: WorldEvent | null = null
+  for (let i = 0; i < 10 && !ev; i++) {
+    w.step(DT, new Map([[a.id, input()], [b.id, input()]]))
+    ev = w.drainEvents().find(e => e.kind === 'supply_pickup') ?? null
+  }
+  assert.ok(ev, 'supply pickup event emitted')
+  assert.equal(ev!.playerId, a.id, 'event carries the picker playerId')
+  assert.equal(ev!.playerName, 'Alice', 'event carries the picker name (so clients can show it without lookup)')
+  assert.equal(typeof ev!.weaponId, 'number', 'event carries the weaponId')
+  assert.ok(ev!.weaponName, 'event carries the weaponName')
+  assert.ok(ev!.x !== undefined && ev!.y !== undefined, 'event carries the crate position for the sparkle effect')
+})

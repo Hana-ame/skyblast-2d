@@ -255,6 +255,8 @@ export interface WorldEvent {
   victimId?: number
   headshot?: boolean
   playerId?: number
+  /** 事件主体玩家名（拾取/命中广播用，客机无需反查也能显示） */
+  playerName?: string
   weaponLabel?: string
   weaponName?: string
   pointCode?: string

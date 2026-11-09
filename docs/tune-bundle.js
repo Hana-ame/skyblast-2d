@@ -2189,7 +2189,16 @@
             p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize;
             p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve;
           }
-          ctx2.events.push({ kind: "supply_pickup", playerId: p.id, weaponName: crate.weaponName, x: crate.x, y: crate.y });
+          ctx2.events.push({
+            kind: "supply_pickup",
+            playerId: p.id,
+            playerName: p.name,
+            // 事件自带名字：客机即使反查不到也能正确显示
+            weaponId: crate.kind === "doll" ? -1 : crate.weaponId,
+            weaponName: crate.weaponName,
+            x: crate.x,
+            y: crate.y
+          });
           break;
         }
       }

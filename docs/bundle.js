@@ -2265,7 +2265,16 @@
             p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize;
             p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve;
           }
-          ctx2.events.push({ kind: "supply_pickup", playerId: p.id, weaponName: crate.weaponName, x: crate.x, y: crate.y });
+          ctx2.events.push({
+            kind: "supply_pickup",
+            playerId: p.id,
+            playerName: p.name,
+            // 事件自带名字：客机即使反查不到也能正确显示
+            weaponId: crate.kind === "doll" ? -1 : crate.weaponId,
+            weaponName: crate.weaponName,
+            x: crate.x,
+            y: crate.y
+          });
           break;
         }
       }
@@ -7515,7 +7524,10 @@
         if (e.x !== void 0 && e.y !== void 0) effects.debris(e.x, e.y, 50, 60, "#9a3412", "#f97316");
       } else if (e.kind === "capture") showToast(`\u{1F6A9} \u636E\u70B9 ${e.pointCode} \u88AB ${e.team} \u5360\u9886\uFF01`);
       else if (e.kind === "supply_pickup") {
-        showToast(`\u{1F4E6} \u62FE\u53D6\u3010${e.weaponName}\u3011`);
+        const picker = e.playerId !== void 0 ? world.players.find((p) => p.id === e.playerId) : void 0;
+        const who = e.playerName ?? picker?.name;
+        const isSelf = e.playerId !== void 0 && e.playerId === localPlayer.id;
+        showToast(who ? `\u{1F4E6} ${isSelf ? "\u4F60" : who} \u62FE\u53D6\u4E86\u3010${e.weaponName}\u3011` : `\u{1F4E6} \u62FE\u53D6\u3010${e.weaponName}\u3011`);
         if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#a5f3fc");
       } else if (e.kind === "ammo_pickup") {
         if (e.x !== void 0 && e.y !== void 0) effects.sparkle(e.x, e.y, "#4ade80");

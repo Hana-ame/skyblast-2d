@@ -30,7 +30,14 @@ export function handleEvents(evs: WorldEvent[]): void {
       if (e.x !== undefined && e.y !== undefined) effects.debris(e.x, e.y, 50, 60, '#9a3412', '#f97316')
     } else if (e.kind === 'capture') showToast(`🚩 据点 ${e.pointCode} 被 ${e.team} 占领！`)
     else if (e.kind === 'supply_pickup') {
-      showToast(`📦 拾取【${e.weaponName}】`)
+      // 显示是谁拾取的（联机时按 playerId 从本地快照反查，缺失则退化为"某玩家"）
+      // 名字来源优先级：事件自带 playerName（服务端权威，联机最可靠）> 本地快照反查
+      const picker = e.playerId !== undefined ? world.players.find(p => p.id === e.playerId) : undefined
+      const who = e.playerName ?? picker?.name
+      const isSelf = e.playerId !== undefined && e.playerId === localPlayer.id
+      showToast(who
+        ? `📦 ${isSelf ? '你' : who} 拾取了【${e.weaponName}】`
+        : `📦 拾取【${e.weaponName}】`)
       if (e.x !== undefined && e.y !== undefined) effects.sparkle(e.x, e.y, '#a5f3fc')
     } else if (e.kind === 'ammo_pickup') {
       if (e.x !== undefined && e.y !== undefined) effects.sparkle(e.x, e.y, '#4ade80')
