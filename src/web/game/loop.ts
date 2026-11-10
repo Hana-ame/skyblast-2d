@@ -1,15 +1,16 @@
 // web/game/loop.ts —— 主循环（固定步长推进权威世界 / KCP 联机同步 + 渲染 + 死亡 KD 界面同步）
 import {
-  canvas, world, localPlayer, bots, mode, pendingLoadout, keys, mouse, touchState, inputQueue,
+  canvas, world, localPlayer, bots, pendingLoadout, keys, mouse, touchState, inputQueue,
   effects, beams, camera, FIXED,
 } from '../app/context.ts'
-import { updateHudWeaponButtons, updateHudUI, updateScoreboardUI } from '../app/hud.ts'
+import { updateHudWeaponButtons, updateSpawnPointButtonsUI, updateHudUI, updateScoreboardUI } from '../app/hud.ts'
 import { stepNetworkFrame, broadcastHostKcpSnapshot, netState } from '../app/net.ts'
 import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
+import { isCapturePointSelectable } from '../../core/sim/world.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput } from '../../core/types.ts'
 import { wrapDeltaX, wrapDeltaY, wrapX, wrapY, clamp } from '../../core/wrap.ts'
@@ -72,6 +73,7 @@ function onLocalDeath(): void {
   pendingLoadout.secondaryType = highestSec
   localPlayer.secondary = highestSec
   updateHudWeaponButtons()
+  updateSpawnPointButtonsUI()
   renderDeathStats()
   const ds = document.getElementById('deathScreen')
   if (ds) { ds.classList.remove('hidden'); ds.classList.add('flex') }
@@ -79,7 +81,7 @@ function onLocalDeath(): void {
   if (streak > 0 && secDef.unlockStreak > 0) {
     showToast(`💀 连死 ${streak} 次：副手已解锁并预选【${secDef.icon} ${secDef.name}】`)
   } else {
-    showToast('💀 已阵亡：查看 KD 战报并选择重生配装')
+    showToast('💀 已阵亡：查看 KD 战报并选择重生配装与复活点')
   }
 }
 
@@ -97,8 +99,13 @@ function onLocalRespawn(): void {
   if (validSec === 'doll' && streak >= SECONDARIES.doll.unlockStreak && localPlayer.dollCharges <= 0) {
     localPlayer.dollCharges = 1
   }
+  localPlayer.selectedSpawnId = pendingLoadout.spawnPointId
   updateHudWeaponButtons()
-  showToast(world.config.randomSpawn ? '🔄 已在随机安全点重生' : '🔄 已在队伍基地重生')
+  updateSpawnPointButtonsUI()
+  const cp = pendingLoadout.spawnPointId !== 'base'
+    ? world.capturePoints.find(c => c.id === pendingLoadout.spawnPointId && isCapturePointSelectable(c, localPlayer.team))
+    : null
+  showToast(cp ? `🔄 已在【${cp.name}】重生` : (world.config.randomSpawn ? '🔄 已在随机安全点重生' : '🔄 已在队伍基地重生'))
 }
 
 export function startGameLoop(): void {
@@ -115,6 +122,9 @@ export function startGameLoop(): void {
       inputQueue.reload = false
       inputQueue.secondary = null
 
+      // 将 UI 选中的复活点实时同步到权威玩家状态，以便倒计时结束瞬间在选定复活点重生
+      localPlayer.selectedSpawnId = pendingLoadout.spawnPointId
+
       const inputs = new Map<number, WorldInput>([[localPlayer.id, playerInput]])
       for (const b of bots) inputs.set(b.id, botInput(b))
 
@@ -125,6 +135,11 @@ export function startGameLoop(): void {
         const evs = world.drainEvents()
         handleEvents(evs)
         if (netState.role === 'host') broadcastHostKcpSnapshot(evs)
+      }
+
+      if (localPlayer.selectedSpawnId && localPlayer.selectedSpawnId !== pendingLoadout.spawnPointId) {
+        pendingLoadout.spawnPointId = localPlayer.selectedSpawnId
+        updateSpawnPointButtonsUI()
       }
 
       const dead = localPlayer.respawnTimer > 0

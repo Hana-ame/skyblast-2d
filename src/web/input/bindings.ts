@@ -1,12 +1,16 @@
+import { defaultMapData, carveTunnelInSolids, MAIN_DECK_TOP, UNIFIED_EDGE_HIGHLIGHT } from '../../core/map.ts'
+import type { MapSolid } from '../../core/map.ts'
+import { FFA_SPAWN_POINTS, AMMO_SPOTS, CENTER_RESPAWN_POINT } from '../../core/sim/world.ts'
+import { getTerrainPattern } from '../textures.ts'
 // web/input/bindings.ts —— 全部 DOM 事件绑定（键鼠/触屏/大厅/死亡界面/参数台/PeerJS+KCP联机按钮）
 import {
   canvas, world, localPlayer, bots, pendingLoadout, mode,
-  keys, mouse, touchState, inputQueue, camera, resizeCanvas,
+  keys, mouse, touchState, inputQueue, resizeCanvas,
 } from '../app/context.ts'
 import { showToast } from '../app/toast.ts'
 import {
   updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI,
-  tryChangePrimaryWeapon, tryChangeSecondaryWeapon, updateHudUI,
+  tryChangePrimaryWeapon, tryChangeSecondaryWeapon,
 } from '../app/hud.ts'
 import {
   startHostRoom, joinHostRoom, leaveMultiplayerRoom, runDualWebRtcKcpSelfTest, updateNetStatusUI,
@@ -16,8 +20,21 @@ import { setTouchLayerVisible } from './device.ts'
 import { syncBotsCount } from '../game/bots.ts'
 import { applyPendingLoadoutAndSpawn } from '../game/loadout.ts'
 import { setPhysicsParams, resetPhysicsParams } from '../../core/sim/physics.ts'
+import { isCapturePointSelectable } from '../../core/sim/world.ts'
 import { WEAPONS, DEFAULT_CONFIG } from '../../core/weapons.ts'
 import type { TeamId } from '../../core/types.ts'
+
+/** 尝试通过按 E 或快捷交互选中已占领的正中旗帜复活点 */
+export function trySelectCapturedFlagSpawnByKey(): boolean {
+  const cp = world.capturePoints.find(c => c.id === 'cp_c' && isCapturePointSelectable(c, localPlayer.team))
+    ?? world.capturePoints.find(c => isCapturePointSelectable(c, localPlayer.team))
+  if (!cp) return false
+  pendingLoadout.spawnPointId = cp.id
+  localPlayer.selectedSpawnId = cp.id
+  updateSpawnPointButtonsUI()
+  showToast(`🚩 已选中【${cp.name}】作为复活点！`)
+  return true
+}
 
 // ── 事件绑定 ──
 export function bindAllEvents(): void {
@@ -30,7 +47,10 @@ export function bindAllEvents(): void {
     keys[e.code] = true
     if (e.code === 'KeyR') inputQueue.reload = true
     else if (e.code === 'KeyG' || e.code === 'KeyQ') inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
-    else if (e.code === 'KeyE') inputQueue.interact = true
+    else if (e.code === 'KeyE') {
+      inputQueue.interact = true
+      trySelectCapturedFlagSpawnByKey()
+    }
     else if (e.code === 'Digit1') tryChangePrimaryWeapon(0)
     else if (e.code === 'Digit2') tryChangePrimaryWeapon(1)
     else if (e.code === 'Digit3') tryChangePrimaryWeapon(2)
@@ -72,13 +92,15 @@ export function bindAllEvents(): void {
       const spId = btn.getAttribute('data-spawn') || 'base'
       if (spId !== 'base') {
         const cp = world.capturePoints.find(c => c.id === spId)
-        if (!cp || (cp.ownerTeam !== localPlayer.team && localPlayer.team !== 'ffa')) {
-          showToast('⚠️ 该占领点尚未被我方队伍占领，暂不可作为重生点！')
+        if (!isCapturePointSelectable(cp, localPlayer.team)) {
+          showToast('⚠️ 该旗帜复活点尚未占领，占领后即可选中（也可按 E 选中）！')
           return
         }
       }
       pendingLoadout.spawnPointId = spId
+      localPlayer.selectedSpawnId = spId
       updateSpawnPointButtonsUI()
+      showToast(spId === 'base' ? '🏠 已切换复活点为【队伍主基地】' : '🚩 已选中【正中复活点】！')
     })
   })
 
@@ -143,8 +165,226 @@ export function bindAllEvents(): void {
   document.getElementById('hudGrenadeBtn')?.addEventListener('click', () => {
     inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
   })
-  document.getElementById('hudQuickMortarBtn')?.addEventListener('click', () => { inputQueue.interact = true })
-  document.getElementById('openEditorBtn')?.addEventListener('click', () => { window.open('./editor.html', '_blank') })
+  document.getElementById('hudQuickMortarBtn')?.addEventListener('click', () => {
+    inputQueue.interact = true
+    trySelectCapturedFlagSpawnByKey()
+  })
+  // 内嵌增强版地图编辑器逻辑
+  const igeModal = document.getElementById('inGameEditorModal')
+  const igeCanvas = document.getElementById('igeCanvas') as HTMLCanvasElement | null
+  let igeSolids: MapSolid[] = defaultMapData().solids.map(s => ({ ...s }))
+  const igeHistory: string[] = []
+  let igeTool: 'draw' | 'select' | 'carve' | 'erase' = 'draw'
+  let igeSelected = -1
+  const igeCam = { x: 6600, y: 1550, zoom: 0.09 }
+  let igeDragStart: { x: number; y: number } | null = null
+  let igeDragCur: { x: number; y: number } | null = null
+  let igePanning = false
+  let igePanLast = { x: 0, y: 0 }
+  let igeSpace = false
+
+  function renderIge(): void {
+    if (!igeCanvas || !igeModal || igeModal.classList.contains('hidden')) return
+    const c = igeCanvas.getContext('2d')
+    if (!c) return
+    if (igeCanvas.width !== igeCanvas.clientWidth || igeCanvas.height !== igeCanvas.clientHeight) {
+      igeCanvas.width = igeCanvas.clientWidth || 1100
+      igeCanvas.height = igeCanvas.clientHeight || 640
+    }
+    const W = igeCanvas.width, H = igeCanvas.height
+    c.fillStyle = '#040812'
+    c.fillRect(0, 0, W, H)
+    const sx = (wx: number) => W / 2 + (wx - igeCam.x) * igeCam.zoom
+    const sy = (wy: number) => H / 2 + (wy - igeCam.y) * igeCam.zoom
+    c.fillStyle = 'rgba(7, 11, 20, 0.7)'
+    c.fillRect(sx(0), sy(MAIN_DECK_TOP), 13200 * igeCam.zoom, (2800 - MAIN_DECK_TOP) * igeCam.zoom)
+    c.strokeStyle = 'rgba(56,189,248,0.45)'
+    c.setLineDash([6, 4])
+    c.beginPath(); c.moveTo(sx(0), sy(MAIN_DECK_TOP)); c.lineTo(sx(13200), sy(MAIN_DECK_TOP)); c.stroke()
+    c.setLineDash([])
+    const pat = getTerrainPattern(c, 'block')
+    for (let i = 0; i < igeSolids.length; i++) {
+      const s = igeSolids[i]
+      c.fillStyle = pat ?? '#162032'
+      c.fillRect(sx(s.x), sy(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom)
+      c.strokeStyle = i === igeSelected ? '#fbbf24' : UNIFIED_EDGE_HIGHLIGHT
+      c.lineWidth = i === igeSelected ? 2.5 : 1.5
+      c.strokeRect(sx(s.x), sy(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom)
+    }
+    for (const sp of FFA_SPAWN_POINTS) {
+      c.fillStyle = '#facc15'
+      c.beginPath(); c.arc(sx(sp.x), sy(sp.y), 4.5, 0, Math.PI * 2); c.fill()
+    }
+    for (const am of AMMO_SPOTS) {
+      c.fillStyle = '#22c55e'
+      c.fillRect(sx(am.x) - 4, sy(am.y) - 4, 8, 8)
+    }
+    c.fillStyle = '#10b981'
+    c.beginPath(); c.arc(sx(CENTER_RESPAWN_POINT.x), sy(CENTER_RESPAWN_POINT.y), 6, 0, Math.PI * 2); c.fill()
+    if (igeDragStart && igeDragCur) {
+      const x = Math.min(igeDragStart.x, igeDragCur.x)
+      const y = Math.min(igeDragStart.y, igeDragCur.y)
+      const w = Math.max(40, Math.abs(igeDragCur.x - igeDragStart.x))
+      const h = Math.max(40, Math.abs(igeDragCur.y - igeDragStart.y))
+      c.fillStyle = igeTool === 'carve' ? 'rgba(244,63,94,0.28)' : 'rgba(56,189,248,0.25)'
+      c.strokeStyle = igeTool === 'carve' ? '#fb7185' : UNIFIED_EDGE_HIGHLIGHT
+      c.fillRect(sx(x), sy(y), w * igeCam.zoom, h * igeCam.zoom)
+      c.strokeRect(sx(x), sy(y), w * igeCam.zoom, h * igeCam.zoom)
+    }
+    const st = document.getElementById('igeStatus')
+    if (st) st.textContent = `${igeSolids.length} 块 · 统一高亮 ${UNIFIED_EDGE_HIGHLIGHT}`
+  }
+
+  document.getElementById('openEditorBtn')?.addEventListener('click', () => {
+    if (igeModal) {
+      igeModal.classList.remove('hidden')
+      igeModal.classList.add('flex')
+      setTimeout(renderIge, 20)
+    } else {
+      window.open('./editor.html', '_blank')
+    }
+  })
+  document.getElementById('igeCloseBtn')?.addEventListener('click', () => {
+    igeModal?.classList.add('hidden')
+    igeModal?.classList.remove('flex')
+  })
+  document.querySelectorAll('.ige-tool-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      igeTool = (btn.getAttribute('data-ige-tool') || 'draw') as typeof igeTool
+      document.querySelectorAll('.ige-tool-btn').forEach(b => {
+        const active = b.getAttribute('data-ige-tool') === igeTool
+        b.className = 'ige-tool-btn px-2.5 py-1 rounded font-bold border ' + (active ? 'bg-sky-600 text-white border-sky-400' : 'bg-slate-800 text-slate-200 border-slate-700')
+      })
+      renderIge()
+    })
+  })
+  const pushIgeHist = () => { igeHistory.push(JSON.stringify(igeSolids)); if (igeHistory.length > 40) igeHistory.shift() }
+  document.getElementById('igeUndo')?.addEventListener('click', () => {
+    const prev = igeHistory.pop()
+    if (prev) { igeSolids = JSON.parse(prev); renderIge() }
+  })
+  document.getElementById('igeReset')?.addEventListener('click', () => {
+    pushIgeHist()
+    igeSolids = defaultMapData().solids.map(s => ({ ...s }))
+    renderIge()
+  })
+  document.getElementById('igeStampTunnel')?.addEventListener('click', () => {
+    pushIgeHist()
+    const cx = Math.round((igeCam.x - 400) / 20) * 20
+    const cy = Math.max(MAIN_DECK_TOP + 40, Math.round((igeCam.y - 100) / 20) * 20)
+    igeSolids.push({ x: cx, y: cy, w: 800, h: 60, kind: 'block' }, { x: cx, y: cy + 200, w: 800, h: 60, kind: 'block' })
+    renderIge()
+  })
+  document.getElementById('igeStampShaft')?.addEventListener('click', () => {
+    pushIgeHist()
+    const cx = Math.round((igeCam.x - 140) / 20) * 20
+    const cy = Math.max(MAIN_DECK_TOP + 40, Math.round((igeCam.y - 200) / 20) * 20)
+    igeSolids.push({ x: cx, y: cy, w: 60, h: 400, kind: 'block' }, { x: cx + 220, y: cy, w: 60, h: 400, kind: 'block' })
+    renderIge()
+  })
+  document.getElementById('igeStampIsland')?.addEventListener('click', () => {
+    pushIgeHist()
+    igeSolids.push({ x: Math.round((igeCam.x - 320) / 20) * 20, y: Math.min(1400, Math.round((igeCam.y - 110) / 20) * 20), w: 640, h: 220, kind: 'block' })
+    renderIge()
+  })
+  document.getElementById('igeSymmetrize')?.addEventListener('click', () => {
+    pushIgeHist()
+    const mid = 6600
+    const kept: MapSolid[] = []
+    const mirrored: MapSolid[] = []
+    for (const s of igeSolids) {
+      if (s.x <= mid && s.x + s.w >= mid) kept.push({ ...s })
+      else if (s.x + s.w <= mid) {
+        kept.push({ ...s })
+        mirrored.push({ x: 13200 - s.x - s.w, y: s.y, w: s.w, h: s.h, kind: s.kind })
+      }
+    }
+    igeSolids = [...kept, ...mirrored]
+    renderIge()
+  })
+  document.getElementById('igeApplyBtn')?.addEventListener('click', () => {
+    world.terrain.build(igeSolids)
+    localStorage.setItem('pvp-custom-map', JSON.stringify({ name: '自定义地图', solids: igeSolids }))
+    igeModal?.classList.add('hidden')
+    igeModal?.classList.remove('flex')
+    showToast(`✅ 已将编辑器地图（${igeSolids.length} 块）实时应用到当前对局！`)
+  })
+  document.getElementById('igeExportPng')?.addEventListener('click', () => {
+    const off = document.createElement('canvas')
+    off.width = 2640; off.height = 880
+    const c = off.getContext('2d')!
+    c.fillStyle = '#040812'; c.fillRect(0, 0, off.width, off.height)
+    c.save(); c.scale(off.width / 13200, off.height / 4400)
+    const pat = getTerrainPattern(c, 'block')
+    c.fillStyle = pat ?? '#162032'
+    c.fillRect(0, 2800, 13200, 1600)
+    for (const s of igeSolids) {
+      c.fillStyle = pat ?? '#162032'
+      c.fillRect(s.x, s.y, s.w, s.h)
+      c.strokeStyle = UNIFIED_EDGE_HIGHLIGHT; c.lineWidth = 5
+      c.strokeRect(s.x, s.y, s.w, s.h)
+    }
+    c.restore()
+    const a = document.createElement('a')
+    a.href = off.toDataURL('image/png')
+    a.download = 'skyblast-2d-panorama.png'
+    a.click()
+  })
+  igeCanvas?.addEventListener('contextmenu', e => e.preventDefault())
+  igeCanvas?.addEventListener('mousedown', e => {
+    if (!igeCanvas) return
+    const rect = igeCanvas.getBoundingClientRect()
+    const wx = Math.round((igeCam.x + (e.clientX - rect.left - igeCanvas.width / 2) / igeCam.zoom) / 20) * 20
+    const wy = Math.round((igeCam.y + (e.clientY - rect.top - igeCanvas.height / 2) / igeCam.zoom) / 20) * 20
+    if (e.button === 1 || (e.button === 0 && igeSpace)) {
+      igePanning = true; igePanLast = { x: e.clientX, y: e.clientY }; return
+    }
+    if (e.button === 2 || igeTool === 'erase') {
+      pushIgeHist()
+      igeSolids = igeSolids.filter(s => !(wx >= s.x && wx <= s.x + s.w && wy >= s.y && wy <= s.y + s.h))
+      renderIge(); return
+    }
+    if (igeTool === 'select') {
+      igeSelected = igeSolids.findIndex(s => wx >= s.x && wx <= s.x + s.w && wy >= s.y && wy <= s.y + s.h)
+      renderIge(); return
+    }
+    igeDragStart = { x: wx, y: wy }; igeDragCur = { x: wx, y: wy }
+    renderIge()
+  })
+  igeCanvas?.addEventListener('mousemove', e => {
+    if (!igeCanvas) return
+    if (igePanning) {
+      igeCam.x -= (e.clientX - igePanLast.x) / igeCam.zoom
+      igeCam.y -= (e.clientY - igePanLast.y) / igeCam.zoom
+      igePanLast = { x: e.clientX, y: e.clientY }
+      renderIge(); return
+    }
+    if (!igeDragStart) return
+    const rect = igeCanvas.getBoundingClientRect()
+    const wx = Math.round((igeCam.x + (e.clientX - rect.left - igeCanvas.width / 2) / igeCam.zoom) / 20) * 20
+    const wy = Math.round((igeCam.y + (e.clientY - rect.top - igeCanvas.height / 2) / igeCam.zoom) / 20) * 20
+    igeDragCur = { x: wx, y: wy }
+    renderIge()
+  })
+  window.addEventListener('mouseup', () => {
+    igePanning = false
+    if (igeDragStart && igeDragCur) {
+      pushIgeHist()
+      const x = Math.min(igeDragStart.x, igeDragCur.x)
+      const y = Math.min(igeDragStart.y, igeDragCur.y)
+      const w = Math.max(40, Math.abs(igeDragCur.x - igeDragStart.x))
+      const h = Math.max(40, Math.abs(igeDragCur.y - igeDragStart.y))
+      if (igeTool === 'carve') igeSolids = carveTunnelInSolids(igeSolids, { x, y, w, h }, 20)
+      else igeSolids.push({ x, y, w, h, kind: 'block' })
+      igeDragStart = null; igeDragCur = null
+      renderIge()
+    }
+  })
+  igeCanvas?.addEventListener('wheel', e => {
+    e.preventDefault()
+    igeCam.zoom = Math.max(0.05, Math.min(0.8, igeCam.zoom * Math.exp(-e.deltaY * 0.0012)))
+    renderIge()
+  }, { passive: false })
   document.getElementById('openAdminBtn')?.addEventListener('click', () => { window.open('./admin.html', '_blank') })
   document.getElementById('interactBannerBtn')?.addEventListener('click', () => {
     if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {
@@ -152,7 +392,10 @@ export function bindAllEvents(): void {
       lobby?.classList.remove('hidden')
       lobby?.classList.add('flex')
       updateSpawnPointButtonsUI()
-    } else inputQueue.interact = true
+    } else {
+      inputQueue.interact = true
+      trySelectCapturedFlagSpawnByKey()
+    }
   })
 
   // ── 对战模式按钮组：自由混战 / 双队对抗 ──
@@ -183,9 +426,10 @@ export function bindAllEvents(): void {
     syncBotsCount(bots.length)
     applyTeamButtons()
     updateTeamCountUI()
+    updateSpawnPointButtonsUI()
     showToast(nextMode === 'ffa'
-      ? '🟡 自由混战：全员皆敌，随机出生点'
-      : '⚔️ 双队对抗（红队 vs 蓝队）：随机出生点')
+      ? '🟡 自由混战：全员皆敌（占领正中旗帜后可选中正中复活点）'
+      : '⚔️ 双队对抗（红队 vs 蓝队）：左右基地部署，占领正中旗帜后可按 E 选中复活点')
   }
   document.querySelectorAll('.mode-btn').forEach((b) => {
     b.addEventListener('click', () => applyMode((b.getAttribute('data-mode') || 'ffa') as 'ffa' | '2teams'))
@@ -221,7 +465,10 @@ export function bindAllEvents(): void {
   document.getElementById('toggleTouchBtn')?.addEventListener('click', () => setTouchLayerVisible(!touchState.enabled, false))
   document.getElementById('resetTerrainBtn')?.addEventListener('click', () => {
     world.resetMatch()
-    showToast('全图可破坏障碍物、地雷与弹药补给已全部重置')
+    pendingLoadout.spawnPointId = 'base'
+    localPlayer.selectedSpawnId = 'base'
+    updateSpawnPointButtonsUI()
+    showToast('全图可破坏障碍物与正中旗帜状态已重置')
   })
 
   const paramsModal = document.getElementById('paramsModal')
@@ -326,6 +573,9 @@ export function bindAllEvents(): void {
     inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
   })
   document.getElementById('touchReloadBtn')?.addEventListener('click', () => { inputQueue.reload = true })
-  document.getElementById('touchInteractBtn')?.addEventListener('click', () => { inputQueue.interact = true })
+  document.getElementById('touchInteractBtn')?.addEventListener('click', () => {
+    inputQueue.interact = true
+    trySelectCapturedFlagSpawnByKey()
+  })
   updateNetStatusUI()
 }

@@ -181,6 +181,12 @@
         <span id="deathSecNote" class="text-[10px] text-slate-400 w-full mt-0.5">连续阵亡时按平衡性依次解锁：障碍物 → 护盾 → Teleport → 替身人偶（获得击杀重置）</span>
       </div>
 
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <span class="text-[11px] font-bold text-cyan-300">🚩 重生复活点（占领正中旗帜后可点击或按 [E] 选中）：</span>
+        <button type="button" data-spawn="base" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold">🏠 队伍主基地</button>
+        <button type="button" data-spawn="cp_c" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed">🚩 正中复活点 [按E可选]</button>
+      </div>
+
       <div class="mt-3 text-[10px] text-slate-500">配装在倒计时结束重生时生效；游戏进行中下方单行 HUD 专注显示战术弹药与副手冷却状态。</div>
         </div>
 
@@ -386,14 +392,10 @@
 
             <!-- 占领点重生点按钮组 -->
             <div>
-              <div class="text-[11px] text-slate-300 mb-1 font-medium">🚩 选择部署/重生点（占领地图据点 A~E 后可直接在对应据点重生）：</div>
+              <div class="text-[11px] text-slate-300 mb-1 font-medium">🚩 选择部署/重生点（正中复活点与旗帜同位，占领后可点击或按 [E] 选中）：</div>
               <div id="spawnPointBtnGroup" class="flex flex-wrap gap-1.5">
                 <button type="button" data-spawn="base" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold">🏠 队伍主基地</button>
-                <button type="button" data-spawn="cp_a" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 text-[11px] font-semibold">🚩 据点A(西楼)</button>
-                <button type="button" data-spawn="cp_b" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩 据点B(西地底)</button>
-                <button type="button" data-spawn="cp_c" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 text-[11px] font-semibold">🚩 据点C(中央桥)</button>
-                <button type="button" data-spawn="cp_d" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩 据点D(地核掩体)</button>
-                <button type="button" data-spawn="cp_e" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 text-[11px] font-semibold">🚩 据点E(东要塞)</button>
+                <button type="button" data-spawn="cp_c" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩 正中复活点 [按E可选]</button>
               </div>
             </div>
           </div>
@@ -681,10 +683,42 @@
     </div>
   </div>
 
+  <!-- ==================== 内嵌增强版战术地图编辑器弹窗 ==================== -->
+  <div id="inGameEditorModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex-col">
+    <div class="px-4 py-2.5 bg-slate-900 border-b border-sky-400/40 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-3">
+        <span class="text-sm font-extrabold text-sky-300">🛠️ 战术地图编辑器 Pro（内嵌实时版）</span>
+        <span id="igeStatus" class="text-xs font-mono text-cyan-300 bg-slate-950 px-2.5 py-1 rounded border border-slate-700">0 块 · 统一高亮 #38bdf8</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-1.5 text-xs">
+        <button type="button" data-ige-tool="draw" class="ige-tool-btn px-2.5 py-1 rounded bg-sky-600 text-white font-bold border border-sky-400">✏️ 绘制</button>
+        <button type="button" data-ige-tool="select" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-bold border border-slate-700">✋ 选择/缩放</button>
+        <button type="button" data-ige-tool="carve" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-rose-200 font-bold border border-slate-700">⛏️ 挖狭窄地道</button>
+        <button type="button" data-ige-tool="erase" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-bold border border-slate-700">🧹 擦除</button>
+        <span class="text-slate-600">|</span>
+        <button type="button" id="igeStampTunnel" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 狭窄横道</button>
+        <button type="button" id="igeStampShaft" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 狭窄竖井</button>
+        <button type="button" id="igeStampIsland" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 拱顶浮岛</button>
+        <button type="button" id="igeSymmetrize" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-200 border border-slate-700">⚖️ 左右对称</button>
+        <button type="button" id="igeUndo" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">↩ 撤销</button>
+        <button type="button" id="igeReset" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">🔄 默认图</button>
+        <button type="button" id="igeExportPng" class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold">🖼️ 导出全景 PNG</button>
+        <button type="button" id="igeApplyBtn" class="px-3 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold">✅ 应用到当前对局</button>
+        <button type="button" id="igeCloseBtn" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">✕ 关闭</button>
+      </div>
+    </div>
+    <div class="relative flex-1 overflow-hidden bg-slate-950">
+      <canvas id="igeCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+      <div class="absolute bottom-3 left-3 pointer-events-none bg-slate-900/90 border border-sky-500/40 rounded-lg px-3 py-1.5 text-[11px] text-slate-300">
+        左键拖拽绘制/选择/挖狭窄地道 · 右键擦除 · 滚轮缩放 · 空格+左键平移 · 黄色=均匀FFA出生点 · 绿色=近中心弹药点 · y=1760以下为地下狭窄地道区
+      </div>
+    </div>
+  </div>
+
   <!-- 顶部轻提示 Toast -->
   <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
   <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=a164115b47"></script>
+  <script src="./bundle.js?v=e0f2071a0e"></script>
 </body>
 </html>

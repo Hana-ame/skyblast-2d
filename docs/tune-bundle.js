@@ -100,30 +100,116 @@
   // src/core/map.ts
   var CEILING_TOP = 280;
   var CEILING_THICK = 80;
-  var CEILING_HOLE_X0 = 5600;
-  var CEILING_HOLE_X1 = 7600;
+  var WALL_THICK = 60;
+  var MAIN_DECK_TOP = 1760;
+  var MAIN_DECK_THICK = 40;
+  var ARCH_CENTER_TOP = 680;
+  var UNIFIED_EDGE_HIGHLIGHT = "#38bdf8";
   function defaultMapData() {
     const solids = [
-      // 天花板左板（环形 x 0~5600）
-      { x: 0, y: CEILING_TOP, w: CEILING_HOLE_X0, h: CEILING_THICK, kind: "platform" },
-      // 天花板右板（环形 x 7600~13200）
-      { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: "platform" },
-      // 空口拱形方块落脚点：正方形 160×160，不可摧毁（block=实心地形），中间高两侧低、相邻一高一低
-      ...ARCH_BLOCKS()
+      // ── 1. 四面封闭边界（顶部完整无入口天花板 + 左右全高封闭墙；底部由世界内置 SURFACE_Y=2800 封闭） ──
+      { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: "platform" },
+      { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
+      { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
+      // ── 2. 天空拱形浮空方块群（有上有下高低交错，正中 x=6600 放置复活点与旗帜） ──
+      ...SKY_ARCH_BLOCKS(),
+      // ── 3. 中层地表主平台（y=1760，出生点所在平面）+ 左翼高掩体柱 ──
+      // 左翼出生台与主平台（x=500..680 留 180px 狭窄竖井通往地下地道）
+      { x: WALL_THICK, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 680, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
+      // 左翼出生点旁高耸掩体柱（对应设计图左侧出生点旁高框）
+      { x: 740, y: 1440, w: 120, h: 320, kind: "cover" },
+      // 右翼主平台与出生台（x=12520..12700 留 180px 狭窄竖井通往地下地道）
+      { x: 8e3, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 12700, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
+      // ── 4. 地下区域（y > 1760）：全部采用实心岩体围合成狭窄地道（高 120~160px，竖井宽 160~260px） ──
+      ...UNDERGROUND_NARROW_TUNNEL_SOLIDS()
     ];
-    return { name: "\u5929\u82B1\u677F\u7ADE\u6280\u573A", solids };
+    return { name: "\u5C01\u95ED\u62F1\u9876\xB7\u5730\u4E0B\u72ED\u9053\u7ADE\u6280\u573A", solids };
   }
-  function ARCH_BLOCKS() {
-    const SIDE = 160;
-    const xs = [5700, 6e3, 6300, 6600, 6900, 7200, 7500];
-    const tops = [2700, 2500, 2620, 2400, 2620, 2500, 2700];
-    return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" }));
+  function SKY_ARCH_BLOCKS() {
+    return [
+      // 左侧阶梯上升段
+      { x: 1200, y: 1280, w: 200, h: 360, kind: "block" },
+      { x: 1680, y: 1080, w: 420, h: 240, kind: "block" },
+      { x: 2740, y: 700, w: 720, h: 220, kind: "block" },
+      // 拱顶左峰（高）
+      { x: 3940, y: 560, w: 880, h: 220, kind: "block" },
+      // 左中交错块（下沉，体现“有上有下”）
+      { x: 5220, y: 760, w: 560, h: 220, kind: "block" },
+      // 正中央主方块（x=6200..7000，中心 x=6600，顶面 y=680：放置正中旗帜与复活点）
+      { x: 6200, y: ARCH_CENTER_TOP, w: 800, h: 220, kind: "block" },
+      // 拱顶右峰（高，体现“有上有下”）
+      { x: 7420, y: 560, w: 720, h: 220, kind: "block" },
+      // 右中交错块（下沉）
+      { x: 8580, y: 740, w: 720, h: 240, kind: "block" },
+      // 右侧阶梯下降段
+      { x: 9700, y: 920, w: 580, h: 260, kind: "block" },
+      { x: 10680, y: 1080, w: 440, h: 280, kind: "block" },
+      { x: 11480, y: 1240, w: 200, h: 360, kind: "block" },
+      { x: 12020, y: 1320, w: 200, h: 340, kind: "block" }
+    ];
+  }
+  function UNDERGROUND_NARROW_TUNNEL_SOLIDS() {
+    return [
+      // ── A. 左右浅层狭道顶部悬挂掩体块（对应设计图主平台横线下方的掩体块） ──
+      { x: 1800, y: 1800, w: 260, h: 60, kind: "cover" },
+      { x: 3e3, y: 1800, w: 260, h: 70, kind: "cover" },
+      { x: 4100, y: 1800, w: 220, h: 60, kind: "cover" },
+      { x: 9e3, y: 1800, w: 180, h: 60, kind: "cover" },
+      { x: 1e4, y: 1800, w: 240, h: 60, kind: "cover" },
+      { x: 11100, y: 1800, w: 340, h: 70, kind: "block" },
+      // ── B. 左右两侧地下实心岩层（围合出左侧 x=500..680 与右侧 x=12520..12700 的 L 型狭窄地道） ──
+      // 左端外侧全高地下实心墙（x=60..500, y=1800..2660，底部预留 y=2660..2800 底层贯通狭道）
+      { x: WALL_THICK, y: 1800, w: 440, h: 860, kind: "block" },
+      // 左侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=1280..1440 联络竖井）
+      { x: 680, y: 2040, w: 600, h: 320, kind: "block" },
+      { x: 1440, y: 2040, w: 1060, h: 320, kind: "block" },
+      // 左侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
+      { x: 680, y: 2500, w: 1820, h: 160, kind: "block" },
+      // 右端外侧全高地下实心墙（x=12700..13140, y=1800..2660）
+      { x: 12700, y: 1800, w: 440, h: 860, kind: "block" },
+      // 右侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=11760..11920 联络竖井）
+      { x: 10700, y: 2040, w: 1060, h: 320, kind: "block" },
+      { x: 11920, y: 2040, w: 600, h: 320, kind: "block" },
+      // 右侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
+      { x: 10700, y: 2500, w: 1820, h: 160, kind: "block" },
+      // ── C. 中央地下顶盖与中央下沉狭窄井道（y=1800..2160） ──
+      // 左中顶盖岩层（x=2500..5200, y=2040..2160，厚 120px，上方为浅层狭道，下方为 y=2160..2280 地下上层狭道）
+      { x: 2500, y: 2040, w: 2700, h: 120, kind: "platform" },
+      // 右中顶盖岩层（x=8000..10700, y=2040..2160，厚 120px）
+      { x: 8e3, y: 2040, w: 2700, h: 120, kind: "platform" },
+      // 中央咽喉区左肩巨石（x=5380..6260, y=1800..2160，留出 x=5200..5380 宽 180px 的西侧下沉竖井）
+      { x: 5380, y: 1800, w: 880, h: 360, kind: "block" },
+      // 中央咽喉区右肩巨石（留出 x=6260..6660 中央竖井、x=7020..7360 东侧竖井及 x=7820..8000 边缘竖井）
+      { x: 6660, y: 1800, w: 360, h: 360, kind: "block" },
+      { x: 7360, y: 1800, w: 460, h: 360, kind: "block" },
+      // ── D. 中央地下迷宫核心岩体群（围合出上 y=2160..2280、中 y=2380..2500、下 y=2660..2800 三层狭窄横道与多条狭窄竖井） ──
+      // 1. 左侧竖直巨岩（左留 x=2500..2660 竖井，右留 x=3220..3380 竖井）
+      { x: 2660, y: 2280, w: 560, h: 380, kind: "block" },
+      // 2. 左中上层横岩（上留 y=2160..2280 狭道，下留 y=2380..2500 狭道）
+      { x: 3380, y: 2280, w: 2240, h: 100, kind: "block" },
+      // 3. 左中下层横岩（上留 y=2380..2500 狭道，下留 y=2660..2800 底层狭道）
+      { x: 3380, y: 2500, w: 2240, h: 160, kind: "block" },
+      // 4. 正中竖直巨柱（左留 x=5620..5820 竖井，右留 x=6380..6640 核心中央竖井）
+      { x: 5820, y: 2280, w: 560, h: 380, kind: "block" },
+      // 5. 右中上层横岩（预留 x=7020..7180 狭窄竖井供垂直机动与射击）
+      { x: 6640, y: 2280, w: 380, h: 100, kind: "block" },
+      { x: 7180, y: 2280, w: 1920, h: 100, kind: "block" },
+      // 6. 右中下层横岩（预留 x=7020..7180 狭窄竖井）
+      { x: 6640, y: 2500, w: 380, h: 160, kind: "block" },
+      { x: 7180, y: 2500, w: 1920, h: 160, kind: "block" },
+      // 7. 右侧竖直巨岩（左留 x=9100..9260 竖井，右留 x=10540..10700 竖井）
+      { x: 9260, y: 2280, w: 1280, h: 380, kind: "block" }
+    ];
   }
 
   // src/core/terrain.ts
   var TILE_SIZE = 20;
   var GRID_W = Math.floor(WORLD_W / TILE_SIZE);
   var GRID_H = Math.floor(WORLD_H / TILE_SIZE);
+  var UNIFIED_FILL = "#1e293b";
+  var UNIFIED_BORDER = UNIFIED_EDGE_HIGHLIGHT;
   var Terrain = class {
     grid = new Uint8Array(GRID_W * GRID_H);
     rects = [];
@@ -146,27 +232,21 @@
     addDeco(x, y, w, h, kind, color, borderColor = "") {
       this.rects.push({ x, y, w, h, color, borderColor, kind, label: "" });
     }
-    /** 挖空（保留供未来扩展；当前平地地图未使用） */
+    /** 挖空（保留供扩展） */
     carveTunnel(x, y, w, h, label = "\u5730\u4E0B\u5730\u9053") {
       this.setGridRect(x, y, w, h, 0);
-      this.rects.push({ x, y, w, h, color: "#090d16", borderColor: "#1e293b", kind: "tunnel_bg", label });
+      this.rects.push({ x, y, w, h, color: "#090d16", borderColor: UNIFIED_BORDER, kind: "tunnel_bg", label });
       this.shadows.push({ x, y, w, h, label, alpha: 0.76 });
     }
     build(customSolids) {
       this.grid.fill(0);
       this.rects.length = 0;
       this.shadows.length = 0;
-      this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, "#1e293b", "#334155", "earth");
-      if (customSolids) {
-        for (const r of customSolids) {
-          const style = r.kind === "platform" ? { color: "#334155", border: "#38bdf8", kind: "platform", label: "\u5E73\u53F0" } : r.kind === "block" ? { color: "#334155", border: "#a855f7", kind: "block", label: "\u65B9\u5757" } : { color: "#1f2937", border: "#f97316", kind: "cover", label: "\u65B9\u5F62\u63A9\u4F53" };
-          this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label);
-        }
-        return;
-      }
-      for (const r of defaultMapData().solids) {
-        const style = r.kind === "platform" ? { color: "#334155", border: "#38bdf8", kind: "platform", label: "\u5E73\u53F0" } : r.kind === "block" ? { color: "#334155", border: "#a855f7", kind: "block", label: "\u65B9\u5757" } : { color: "#1f2937", border: "#f97316", kind: "cover", label: "\u8857\u533A\u5EFA\u7B51" };
-        this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label);
+      this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, UNIFIED_FILL, UNIFIED_BORDER, "earth");
+      const list = customSolids ?? defaultMapData().solids;
+      for (const r of list) {
+        const label = r.kind === "platform" ? "\u5E73\u53F0" : r.kind === "block" ? "\u65B9\u5757" : "\u63A9\u4F53";
+        this.addSolidBlock(r.x, r.y, r.w, r.h, UNIFIED_FILL, UNIFIED_BORDER, r.kind, label);
       }
     }
     /** 点是否被原始地形挡住（双轴环形 x/y） */
@@ -183,13 +263,13 @@
     }
   };
   var OBSTACLE_PRESETS = [
-    { id: "obs_1", x: 1600, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_2", x: 3400, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_3", x: 4600, y: 240, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
-    { id: "obs_box_1", x: 5400, y: 238, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_5", x: 7800, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_6", x: 11200, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_7", x: 12500, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
+    { id: "obs_1", x: 1600, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_2", x: 3400, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_3", x: 4600, y: 240, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_box_1", x: 5400, y: 238, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_5", x: 7800, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_6", x: 11200, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_7", x: 12500, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER }
   ];
 
   // src/core/rng.ts
@@ -650,28 +730,43 @@
   var BODY_TOP = 26;
   var BODY_BOTTOM = 16;
   var CEILING_STAND = 264;
-  var GROUND_STAND = 2740;
+  var MAIN_DECK_STAND = MAIN_DECK_TOP - 16;
+  var CENTER_RESPAWN_X = 6600;
+  var CENTER_RESPAWN_Y = ARCH_CENTER_TOP - 16;
+  var FFA_SPAWN_POINTS = [
+    { x: 1180, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u7FFC\u5E73\u53F0" },
+    { x: 2400, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u5E73\u53F0" },
+    { x: 3100, y: 700 - 16, team: "ffa", label: "FFA\xB7\u897F\u62F1\u6D6E\u5C9B" },
+    { x: 4380, y: 560 - 16, team: "ffa", label: "FFA\xB7\u5DE6\u5CF0\u62F1\u5C9B" },
+    { x: 4500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u5730\u9053" },
+    { x: 5500, y: 760 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u62F1\u5C9B" },
+    { x: 7780, y: 560 - 16, team: "ffa", label: "FFA\xB7\u53F3\u5CF0\u62F1\u5C9B" },
+    { x: 8500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u5730\u9053" },
+    { x: 9990, y: 920 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u62F1\u6D6E\u5C9B" },
+    { x: 10800, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u5E73\u53F0" },
+    { x: 12020, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u7FFC\u5E73\u53F0" }
+  ];
   var SPAWN_POINTS = [
-    { x: 1100, y: GROUND_STAND, team: "red" },
-    { x: 12100, y: GROUND_STAND, team: "blue" },
-    { x: 3300, y: GROUND_STAND, team: "green" },
-    { x: 9900, y: GROUND_STAND, team: "ffa" }
+    { x: 260, y: MAIN_DECK_STAND, team: "red" },
+    { x: 12940, y: MAIN_DECK_STAND, team: "blue" },
+    { x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y, team: "green" },
+    ...FFA_SPAWN_POINTS.map(({ x, y, team }) => ({ x, y, team }))
   ];
   var AMMO_SPOTS = [
-    { x: 1300, y: GROUND_STAND, area: "\u897F\u533A\u5E73\u5730" },
-    { x: 2100, y: GROUND_STAND, area: "\u897F\u533A\u5E73\u53F0\u4E0B" },
-    { x: 2900, y: GROUND_STAND, area: "\u4E2D\u897F\u5E73\u5730" },
-    { x: 4600, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F" },
-    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u5DE6" },
-    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u53F3" },
-    { x: 10200, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A" }
+    { x: 4950, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u897F\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 5500, y: 760 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
+    { x: 6320, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u897F\u4FA7\u5F39\u836F\u70B9" },
+    { x: 6880, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u4E1C\u4FA7\u5F39\u836F\u70B9" },
+    { x: 7780, y: 560 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
+    { x: 8250, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 6500, y: 2800 - 16, area: "\u5730\u4E0B\u4E2D\u592E\u72ED\u9053\xB7\u6838\u5FC3\u5F39\u836F\u70B9" }
   ];
   var SUPPLY_SPOTS = [
-    { x: 1500, y: GROUND_STAND, area: "\u897F\u533A\u8865\u7ED9\u70B9" },
-    { x: 3100, y: GROUND_STAND, area: "\u4E2D\u897F\u8865\u7ED9\u70B9" },
+    { x: 1500, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u897F\u533A\u8865\u7ED9\u70B9" },
+    { x: 3100, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u897F\u8865\u7ED9\u70B9" },
     { x: 4300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F\u8865\u7ED9\u70B9" },
-    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u5DE6\u8865\u7ED9\u70B9" },
-    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u53F3\u8865\u7ED9\u70B9" },
+    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u533A\u5DE6\u8865\u7ED9\u70B9" },
+    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u533A\u53F3\u8865\u7ED9\u70B9" },
     { x: 10300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A\u8865\u7ED9\u70B9" }
   ];
   var DOLL_SUPPLY_SPOTS = [
@@ -707,12 +802,26 @@
     { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 5400, y: CEILING_STAND, targetId: "warp_6", color: "#10b981" },
     { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: CEILING_STAND, targetId: "warp_5", color: "#10b981" }
   ];
-  var RANDOM_SPAWN_CANDIDATES = (() => {
-    const out = [];
-    for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 });
-    for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 });
-    return out;
-  })();
+  var RANDOM_SPAWN_CANDIDATES = [
+    { x: 1180, y: MAIN_DECK_STAND - 20 },
+    { x: 2400, y: MAIN_DECK_STAND - 20 },
+    { x: 3600, y: MAIN_DECK_STAND - 20 },
+    { x: 4700, y: MAIN_DECK_STAND - 20 },
+    { x: 3100, y: 700 - 36 },
+    { x: 4380, y: 560 - 36 },
+    { x: 5500, y: 760 - 36 },
+    { x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y - 24 },
+    { x: 7780, y: 560 - 36 },
+    { x: 8940, y: 740 - 36 },
+    { x: 9990, y: 920 - 36 },
+    { x: 8500, y: MAIN_DECK_STAND - 20 },
+    { x: 9600, y: MAIN_DECK_STAND - 20 },
+    { x: 10800, y: MAIN_DECK_STAND - 20 },
+    { x: 12020, y: MAIN_DECK_STAND - 20 },
+    { x: 4500, y: 2500 - 24 },
+    { x: 6500, y: 2800 - 24 },
+    { x: 8500, y: 2500 - 24 }
+  ];
   var JUMP_PADS = [
     { x: 1e3, y: 280, vx: 210, vy: -810 },
     { x: 4300, y: 280, vx: 180, vy: -870 },
@@ -720,11 +829,11 @@
     { x: 13050, y: 280, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
-    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: CEILING_STAND, ownerTeam: "red" },
+    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: CEILING_STAND, ownerTeam: null },
     { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 3900, y: CEILING_STAND, ownerTeam: null },
-    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E", x: 5400, y: CEILING_STAND, ownerTeam: "green" },
+    { id: "cp_c", code: "C", name: "\u6B63\u4E2D\u590D\u6D3B\u70B9", x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y, ownerTeam: null },
     { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 7800, y: CEILING_STAND, ownerTeam: null },
-    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: CEILING_STAND, ownerTeam: "blue" }
+    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: CEILING_STAND, ownerTeam: null }
   ];
 
   // src/core/sim/spatial.ts
@@ -920,7 +1029,7 @@
         }
       }
     }
-    const base = SPAWN_POINTS.find((s) => s.team === p.team) ?? SPAWN_POINTS[3];
+    const base = SPAWN_POINTS.find((s) => s.team === p.team) ?? SPAWN_POINTS[0];
     p.pos = { x: wrapX(base.x), y: base.y };
     p.vel = { x: 0, y: 0 };
     return true;
@@ -2063,6 +2172,11 @@
   }
 
   // src/core/sim/interactables.ts
+  function isCapturePointSelectable(cp, team) {
+    if (!cp) return false;
+    if (cp.ownerTeam === null || cp.progress < 100) return false;
+    return cp.ownerTeam === team || team === "ffa";
+  }
   function recallDollState(events, p) {
     if (!p.doll) return;
     const d = p.doll;
@@ -2127,6 +2241,21 @@
         return;
       }
     }
+    const nearCaptured = ctx2.capturePoints.find(
+      (cp) => isCapturePointSelectable(cp, p.team) && wrapDist(p.pos.x, p.pos.y, cp.x, cp.y) < Math.max(150, ctx2.config.captureRadius + 40)
+    );
+    const targetCp = nearCaptured ?? ctx2.capturePoints.find((cp) => isCapturePointSelectable(cp, p.team));
+    if (targetCp) {
+      p.selectedSpawnId = targetCp.id;
+      ctx2.events.push({
+        kind: "warp",
+        x: targetCp.x,
+        y: targetCp.y,
+        playerId: p.id,
+        pointCode: targetCp.code,
+        weaponName: `\u5DF2\u9009\u4E2D\u3010${targetCp.name}\u3011\u4F5C\u4E3A\u590D\u6D3B\u70B9`
+      });
+    }
   }
   function spawnSingleAmmoPack(ctx2) {
     if (ctx2.ammoPacks.length >= ctx2.config.ammoPackMaxActive) return;
@@ -2155,7 +2284,10 @@
       if (teams.length === 1) {
         const t = teams[0];
         if (cp.ownerTeam !== t) {
-          cp.capturingTeam = t;
+          if (cp.capturingTeam !== t) {
+            cp.capturingTeam = t;
+            if (cp.ownerTeam !== null) cp.progress = 0;
+          }
           cp.progress += ctx2.config.captureRate * dt * (presence[t] || 0);
           if (cp.progress >= 100) {
             cp.progress = 100;
@@ -2267,7 +2399,6 @@
       this.terrain.build(map?.solids);
       this.resetMatch();
     }
-    // ── 子系统接口方法 ──
     nextProjId() {
       return this.prj++;
     }
@@ -2421,6 +2552,7 @@
       this.airstrikes = [];
       this.ammoSpawnTimer = 0;
       this.scores = { red: 0, blue: 0, green: 0, ffa: 0 };
+      for (const p of this.players) p.selectedSpawnId = "base";
       this.rebuildSpatialBuckets();
     }
     addPlayer(name = "Player", team = "ffa") {
@@ -2436,6 +2568,7 @@
         alive: true,
         deployed: true,
         onGround: true,
+        selectedSpawnId: "base",
         weaponIndex: 1,
         lastPrimaryIndex: 1,
         ammo: WEAPONS.map((w) => w.magSize),
@@ -2483,16 +2616,23 @@
         p.lastPrimaryIndex = p.weaponIndex;
       }
       let sx, sy;
-      if (this.config.randomSpawn) {
+      const wantedCp = p.selectedSpawnId && p.selectedSpawnId !== "base" ? this.capturePoints.find((c) => c.id === p.selectedSpawnId && isCapturePointSelectable(c, team)) : null;
+      if (wantedCp) {
+        sx = wantedCp.x;
+        sy = wantedCp.y;
+      } else if (this.config.randomSpawn) {
         const spot = RANDOM_SPAWN_CANDIDATES[this.rng.int(RANDOM_SPAWN_CANDIDATES.length)];
-        sx = spot.x + this.rng.range(-60, 60);
+        sx = spot.x + this.rng.range(-45, 45);
+        sy = spot.y;
+      } else if (team === "ffa") {
+        const spot = FFA_SPAWN_POINTS[this.rng.int(FFA_SPAWN_POINTS.length)];
+        sx = spot.x;
         sy = spot.y;
       } else {
-        const owned = this.capturePoints.filter((c) => c.ownerTeam === team && c.progress >= 100);
-        const cp = owned.length > 0 ? owned[this.rng.int(owned.length)] : null;
-        const base = SPAWN_POINTS.find((s) => s.team === team) ?? SPAWN_POINTS[3];
-        sx = cp ? cp.x : base.x;
-        sy = cp ? cp.y - 60 : base.y;
+        if (team === "red" || team === "blue" || team === "green") this.rng.int(1);
+        const base = SPAWN_POINTS.find((s) => s.team === team) ?? SPAWN_POINTS[0];
+        sx = base.x;
+        sy = base.y;
       }
       p.pos = { x: wrapX(sx + this.rng.range(-45, 45)), y: sy };
       p.vel = { x: 0, y: 0 };
@@ -2526,7 +2666,6 @@
       resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
       ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
     }
-    // ── 主 step：按子系统顺序编排 ──────────────────────────────
     step(dt, inputs) {
       this.tick++;
       this.events.length = 0;

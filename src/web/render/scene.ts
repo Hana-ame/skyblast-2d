@@ -1,24 +1,18 @@
 // web/render.ts —— 场景渲染（地形/精灵/光束/粒子/背景），只读上下文状态
 import {
-  ctx, canvas, camera, screenFx, world, localPlayer, effects, beams, mouse,
+  ctx, canvas, camera, screenFx, world, localPlayer, pendingLoadout, effects, beams, mouse,
   worldStars, worldGlows,
 } from '../app/context.ts'
 import { WEAPONS } from '../../core/weapons.ts'
-import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, clamp } from '../../core/wrap.ts'
-import { JUMP_PADS } from '../../core/sim/world.ts'
+import { JUMP_PADS, SPAWN_POINTS, isCapturePointSelectable } from '../../core/sim/world.ts'
 import { expandBeamSegments } from './beamGeometry.ts'
 import { getTerrainPattern, syncTerrainPatterns } from '../textures.ts'
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
   drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, drawMineSprite,
   drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, drawJumpPad,
-  TEAM_PALETTE,
 } from '../sprites.ts'
-
-// ── 渲染：相机居中 + 双轴环形最短位移（跨缝自动走最近象限） ──
-const TEAM_COLOR: Record<string, string> = { red: '#f43f5e', blue: '#0ea5e9', green: '#10b981', ffa: '#eab308' }
-const TEAM_LIGHT2: Record<string, string> = { red: '#fda4af', blue: '#7dd3fc', green: '#6ee7b7', ffa: '#fde047' }
 
 export function renderScene(): void {
   if (!ctx || !canvas) return
@@ -106,16 +100,15 @@ export function renderScene(): void {
         ctx.fillStyle = pat ?? r.color
         ctx.fillRect(left, top, r.w, r.h)
         if (r.kind !== 'tunnel_bg' && r.kind !== 'pipe_bg' && r.kind !== 'building_bg') {
-          ctx.fillStyle = 'rgba(255,255,255,0.10)'
-          ctx.fillRect(left, top, r.w, 2)
-          ctx.fillStyle = 'rgba(0,0,0,0.22)'
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.28)'
+          ctx.fillRect(left, top, r.w, 2.5)
+          ctx.fillStyle = 'rgba(2, 6, 23, 0.45)'
           ctx.fillRect(left, top + r.h - 3, r.w, 3)
         }
-        if (r.borderColor) {
-          ctx.strokeStyle = r.borderColor
-          ctx.lineWidth = r.kind === 'pipe_wall' ? 3 : 2
-          ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2)
-        }
+        // 全图所有方块边缘高亮色严格保持一致 (#38bdf8)
+        ctx.strokeStyle = '#38bdf8'
+        ctx.lineWidth = 2
+        ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2)
         if (r.label && (r.kind === 'building_roof' || r.kind === 'pipe_wall' || r.kind === 'bridge')) {
           ctx.fillStyle = 'rgba(226, 232, 240, 0.75)'
           ctx.font = 'bold 12px Inter, sans-serif'
@@ -124,6 +117,47 @@ export function renderScene(): void {
         }
       }
     }
+  }
+
+  // 1.2 左右基地出生点光环与全图均匀分布的 FFA 出生点信标
+  for (const sp of SPAWN_POINTS) {
+    if (sp.team === 'green') continue // 正中复活点在占领点层与旗帜一起绘制
+    const px = sx(sp.x)
+    const py = sy(sp.y)
+    if (!inView(px, py, 120)) continue
+    ctx.save()
+    if (sp.team === 'ffa') {
+      ctx.translate(px, py + 12)
+      ctx.fillStyle = 'rgba(234, 179, 8, 0.22)'
+      ctx.strokeStyle = '#facc15'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 22, 6, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.font = 'bold 10px Inter, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = '#fde047'
+      ctx.fillText('🟡 FFA出生点', 0, 16)
+    } else {
+      ctx.translate(px, py - 42)
+      // 对应设计图左蓝椭圆、右红椭圆基地传送门
+      const isLeft = sp.x < WORLD_W / 2
+      const fillCol = isLeft ? 'rgba(14, 165, 233, 0.32)' : 'rgba(244, 63, 94, 0.32)'
+      const strokeCol = isLeft ? '#0ea5e9' : '#f43f5e'
+      ctx.fillStyle = fillCol
+      ctx.strokeStyle = strokeCol
+      ctx.lineWidth = 3.5
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 38, 56, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.font = 'bold 11px Inter, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = isLeft ? '#7dd3fc' : '#fda4af'
+      ctx.fillText(isLeft ? '🔵 左翼基地出生点' : '🔴 右翼基地出生点', 0, -66)
+    }
+    ctx.restore()
   }
 
   // 1.5 弹射跳台
@@ -142,11 +176,42 @@ export function renderScene(): void {
     drawObstacleSprite(ctx, ob, ox, oy)
   }
 
-  // 3. 占领点
+  // 3. 占领点（正中 cp_c 同时绘制旗帜与复活点信标）
   for (const cp of world.capturePoints) {
     const cx = sx(cp.x)
     const cy = sy(cp.y)
-    if (!inView(cx, cy, 140)) continue
+    if (!inView(cx, cy, 160)) continue
+    if (cp.id === 'cp_c') {
+      const selectable = isCapturePointSelectable(cp, localPlayer.team)
+      const isSelected = selectable && (localPlayer.selectedSpawnId === cp.id || pendingLoadout.spawnPointId === cp.id)
+      ctx.save()
+      ctx.translate(cx, cy + 12)
+      const pulse = 0.65 + 0.35 * Math.sin(world.tick * 0.1)
+      ctx.fillStyle = isSelected
+        ? `rgba(16, 185, 129, ${0.28 * pulse})`
+        : selectable
+          ? `rgba(56, 189, 248, ${0.24 * pulse})`
+          : 'rgba(148, 163, 184, 0.14)'
+      ctx.strokeStyle = isSelected ? '#10b981' : selectable ? '#38bdf8' : '#64748b'
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 44, 11, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.font = 'bold 11px Inter, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillStyle = isSelected ? '#6ee7b7' : selectable ? '#7dd3fc' : '#cbd5e1'
+      ctx.fillText(
+        isSelected
+          ? '✅ 已选中正中复活点'
+          : selectable
+            ? '⚡ 正中复活点 [按 E 选中]'
+            : '🔒 正中复活点（占领旗帜后可选）',
+        0,
+        24,
+      )
+      ctx.restore()
+    }
     drawFlagSprite(ctx, cp, cx, cy, world.tick)
   }
 
@@ -241,7 +306,7 @@ export function renderScene(): void {
     })
     drawPlayerTag(ctx, p, px, py, p.id === localPlayer.id)
 
-    // 玩家头顶精致换弹进度条（CS 逐发塞弹或整匣换弹一目了然）
+    // 玩家头顶精致换弹进度条
     if (p.reloading) {
       ctx.save()
       const barW = 42
@@ -365,7 +430,6 @@ export function renderScene(): void {
         ctx.stroke()
         if (t >= 1) { ctx.fillStyle = 'rgba(253,224,71,0.9)'; ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI * 2); ctx.fill() }
       }
-      // 准星战术换弹圆环（视线无需离开准星即可感知换弹与霰弹装填进度）
       if (localPlayer.reloading && wepNow) {
         const ringR = 15
         ctx.strokeStyle = 'rgba(15, 23, 42, 0.65)'

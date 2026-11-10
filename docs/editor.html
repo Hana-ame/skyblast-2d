@@ -3,66 +3,120 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>SkyBlast 2D · 地图编辑器</title>
+<title>SkyBlast 2D · 增强版战术地图编辑器</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #020617; color: #e2e8f0; font-family: system-ui, sans-serif; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #020617; color: #e2e8f0; font-family: Inter, system-ui, sans-serif; }
   #editorCanvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
-  #toolbar { position: fixed; top: 12px; left: 12px; z-index: 10; background: rgba(15,23,42,.94); border: 1px solid #334155; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-width: 360px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  #toolbar {
+    position: fixed; top: 12px; left: 12px; z-index: 10;
+    background: rgba(15,23,42,.95); border: 1px solid #38bdf8;
+    border-radius: 14px; padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    width: 390px; max-height: calc(100vh - 28px); overflow-y: auto;
+    box-shadow: 0 12px 36px rgba(0,0,0,.65);
+  }
+  .section-title { font-size: 11px; font-weight: 800; color: #7dd3fc; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
-  button:hover { border-color: #64748b; background: #273449; }
-  button.active { background: #0e7490; border-color: #22d3ee; color: #ecfeff; }
-  .hint { font-size: 11px; color: #94a3b8; line-height: 1.5; }
-  #status { font-size: 11px; color: #67e8f9; font-weight: 700; }
-  input[type=range] { width: 120px; }
+  button {
+    background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+    border-radius: 8px; padding: 5px 9px; font-size: 11.5px; font-weight: 700; cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  button:hover { border-color: #38bdf8; background: #273449; }
+  button.active { background: #0284c7; border-color: #38bdf8; color: #f0f9ff; box-shadow: 0 0 10px rgba(56,189,248,.35); }
+  .hint { font-size: 11px; color: #94a3b8; line-height: 1.45; }
+  #status { font-size: 11px; color: #38bdf8; font-weight: 700; margin-left: auto; }
+  input[type=range] { width: 110px; accent-color: #38bdf8; }
+  input[type=number], input[type=text], select {
+    background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+    border-radius: 6px; padding: 3px 6px; font-size: 11px; width: 62px;
+  }
+  .inspector-box {
+    background: rgba(2,6,23,.65); border: 1px solid #1e293b;
+    border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
+  }
 </style>
 </head>
 <body>
 <canvas id="editorCanvas"></canvas>
 <div id="toolbar">
-  <div class="row"><strong style="font-size:13px;color:#fbbf24">地图编辑器</strong><span id="status">0 块</span></div>
   <div class="row">
-    <button id="kindPlatform" class="active" data-kind="platform">平台</button>
-    <button id="kindCover" data-kind="cover">掩体</button>
-    <button id="kindBlock" data-kind="block">方块</button>
+    <strong style="font-size:14px;color:#38bdf8">🛠️ 战术地图编辑器 Pro</strong>
+    <span id="status">0 块</span>
   </div>
+
+  <div class="section-title">1. 工具模式（支持地下狭窄地道开挖 & 8向缩放）</div>
   <div class="row">
-    <span class="hint">笔刷</span>
+    <button id="toolDraw" class="active" data-tool="draw" title="快捷键 Q">✏️ 绘制 (Q)</button>
+    <button id="toolSelect" data-tool="select" title="快捷键 W">✋ 选择/缩放 (W)</button>
+    <button id="toolCarve" data-tool="carve" title="快捷键 T：在地下实心岩层中直接拉框切割出狭窄地道">⛏️ 挖狭窄地道 (T)</button>
+    <button id="toolErase" data-tool="erase" title="快捷键 E">🧹 擦除 (E)</button>
+  </div>
+
+  <div class="section-title">2. 构件类型（统一标志性装甲贴图 + #38bdf8 边缘高亮）</div>
+  <div class="row">
+    <button id="kindPlatform" class="active" data-kind="platform">平台 (1)</button>
+    <button id="kindCover" data-kind="cover">掩体 (2)</button>
+    <button id="kindBlock" data-kind="block">岩块 (3)</button>
+    <span class="hint" style="margin-left:4px">笔刷</span>
     <input id="brushSize" type="range" min="1" max="10" step="1" value="1" />
     <span id="brushLabel" class="hint">1×20px</span>
   </div>
+
+  <div class="section-title">3. 快速预设印章 & 对称工具</div>
   <div class="row">
-    <span class="hint">工具</span>
-    <button id="toolDraw" class="active" data-tool="draw">绘制</button>
-    <button id="toolSelect" data-tool="select">选择/移动</button>
-    <button id="toolErase" data-tool="erase">擦除</button>
+    <button id="stampTunnelH" title="在视野中心插入一段净高140px的地下狭窄横道">➕ 狭窄横地道</button>
+    <button id="stampShaftV" title="在视野中心插入一段宽160px的地下狭窄竖井">➕ 狭窄竖井</button>
+    <button id="stampArchBlock" title="在视野中心插入一块天空拱形浮岛">➕ 拱顶浮岛</button>
+    <button id="stampPillar" title="在视野中心插入高耸掩体柱">➕ 高掩体柱</button>
   </div>
   <div class="row">
-    <label class="hint"><input id="snapToggle" type="checkbox" checked /> 吸附 20px</label>
-    <label class="hint"><input id="gridToggle" type="checkbox" checked /> 显示网格</label>
+    <button id="btnMirrorSel" title="将选中块以 x=6600 为轴镜像复制">🔁 镜像选中块</button>
+    <button id="btnSymmetrize" title="将左半场(x<6600)镜像同步到右半场">⚖️ 全图左右对称</button>
+    <button id="btnDuplicate" title="Ctrl+D 复制选中块">📋 复制块</button>
+  </div>
+
+  <div class="section-title">4. 选中块属性精调 (Inspector)</div>
+  <div class="inspector-box">
+    <div id="selectionInfo" class="hint" style="color:#38bdf8">未选中方块（切换“选择/缩放”点选方块，可拖拽 8 个边缘手柄缩放）</div>
+    <div class="row" id="inspectorInputs">
+      <label class="hint">X <input id="inspX" type="number" step="20" /></label>
+      <label class="hint">Y <input id="inspY" type="number" step="20" /></label>
+      <label class="hint">W <input id="inspW" type="number" step="20" min="20" /></label>
+      <label class="hint">H <input id="inspH" type="number" step="20" min="20" /></label>
+    </div>
+  </div>
+
+  <div class="section-title">5. 图层与视图辅助</div>
+  <div class="row">
+    <label class="hint"><input id="snapToggle" type="checkbox" checked /> 吸附20px</label>
+    <label class="hint"><input id="gridToggle" type="checkbox" checked /> 网格</label>
+    <label class="hint"><input id="texToggle" type="checkbox" checked /> 统一装甲贴图</label>
+    <label class="hint"><input id="landmarkToggle" type="checkbox" checked /> 出生点/中心弹药</label>
+  </div>
+
+  <div class="section-title">6. 历史、存取与全景导出</div>
+  <div class="row">
+    <button id="btnUndo" title="Ctrl+Z">↩ 撤销</button>
+    <button id="btnRedo" title="Ctrl+Y">↪ 重做</button>
+    <button id="btnFit" title="F">🔍 适配全景 (F)</button>
+    <button id="btnExportPng">🖼️ 导出全景 PNG</button>
   </div>
   <div class="row">
-    <button id="btnUndo" title="Ctrl+Z">撤销</button>
-    <button id="btnRedo" title="Ctrl+Shift+Z">重做</button>
-    <button id="btnSave">保存</button>
-    <button id="btnApply">应用到游戏</button>
+    <button id="btnSave">💾 保存</button>
+    <button id="btnApply">✅ 应用到游戏</button>
+    <button id="btnPlay" title="P">▶ 立即试玩</button>
   </div>
   <div class="row">
-    <button id="btnReset">默认地图</button>
-    <button id="btnClear">清空</button>
-    <button id="btnExport">导出 JSON</button>
-    <button id="btnImport">导入 JSON</button>
+    <button id="btnReset">🔄 恢复默认狭窄地道图</button>
+    <button id="btnClear">🗑️ 清空</button>
+    <button id="btnExport">📤 导出 JSON</button>
+    <button id="btnImport">📥 导入 JSON</button>
   </div>
-  <div class="row">
-    <button id="btnFit" title="F">适配窗口</button>
-    <button id="btnPlay" title="P">▶ 试玩当前地图</button>
-  </div>
-  <div id="selectionInfo" class="hint" style="color:#fbbf24"></div>
+
   <div class="hint">
-    左键拖拽绘制 · 右键擦除 · 滚轮缩放 · 中键/空格拖拽平移<br />
-    选中工具下：点选方块、拖拽移动、Delete 删除<br />
-    快捷键：1/2/3 切换笔刷，F 适配窗口，P 试玩，Ctrl+Z/Y 撤销重做<br />
-    坐标：世界 13200×4400，地面 y=2800；格点 20px
+    • 左键绘制/选择/挖狭窄地道 · 右键擦除 · 滚轮缩放 · 空格/中键平移 · 右下角全景小地图点击跳转<br />
+    • 黄色标记为全图均匀分布的 FFA 出生点，绿色标记为靠近中心的弹药刷新点，y=1760 以下为地下狭窄地道区
   </div>
 </div>
 <script src="./editor-bundle.js"></script>

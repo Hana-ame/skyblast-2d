@@ -842,7 +842,7 @@ test('护栏·高斯枪设计：有反射、有自伤、穿过地图缝反射次
   {
     const w = new World(53000, defaultMapData())
     w.config.randomSpawn = false
-    const { p, segments } = fireOnce(w, { x: 1500, y: 2784 }, -Math.PI / 2)
+    const { p, segments } = fireOnce(w, { x: 7100, y: 2784 }, -Math.PI / 2)
     assert.equal(segments.length, 3, '地面朝天花板射击反射 2 次共 3 段')
     const cam = { x: p.pos.x, y: p.pos.y }
     const downwardSeg = segments[1]

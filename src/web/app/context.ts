@@ -12,7 +12,7 @@ import type { PlayerState, TeamId } from '../../core/types.ts'
 // ── 画布与相机 ──
 export const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement
 export const ctx = canvas ? canvas.getContext('2d')! : null
-export const camera = { x: 6600, y: 2380, fovFactor: 1.0 }
+export const camera = { x: 6600, y: 1500, fovFactor: 1.0 }
 export const screenFx = { shake: 0 }
 
 export function resizeCanvas(): void {
@@ -48,7 +48,7 @@ export const world = new World(20261106, customMap)
 applyConfigOverrides(world.config, balanceOverrides?.config)
 export const localPlayer = world.addPlayer('SkyHunter', 'red')
 localPlayer.deployed = false   // 待机整备中（大厅点「立即进入战场」部署）
-world.config.randomSpawn = true
+world.config.randomSpawn = false
 
 // AI 机器人（经权威输入驱动）
 export const botNames = ['AlphaBot-7', 'Valkyrie-AI', 'Titan-09', 'NovaStriker', 'ZeroGrav-X', 'OmegaHound', 'Phantom-AI', 'IronClad-8']
@@ -58,11 +58,11 @@ export const bots: PlayerState[] = []
 
 // ── 待部署配装 / 对战模式 ──
 export const pendingLoadout = { weaponIndex: 0, secondaryType: 'frag', spawnPointId: 'base' }
-export const mode = { current: 'ffa' as 'ffa' | '2teams' }
+export const mode = { current: '2teams' as 'ffa' | '2teams' }
 
 // ── 输入状态 ──
 export const keys: Record<string, boolean> = {}
-export const mouse = { x: 0, y: 0, worldX: 6600, worldY: 2380, down: false }
+export const mouse = { x: 0, y: 0, worldX: 6600, worldY: 1500, down: false }
 export const touchState = {
   enabled: false,
   moveActive: false, moveId: -1, moveX: 0, moveY: 0,
@@ -98,9 +98,9 @@ export const worldStars = (() => {
   return out
 })()
 export const worldGlows = [
-  { x: 6600, y: 1080, r: 620, c: '56,189,248', a: 0.09 },
-  { x: 4150, y: 3560, r: 520, c: '16,185,129', a: 0.07 },
-  { x: 10150, y: 3520, r: 520, c: '244,63,94', a: 0.07 },
+  { x: 6600, y: 720, r: 620, c: '56,189,248', a: 0.11 },
+  { x: 260, y: 1700, r: 520, c: '244,63,94', a: 0.09 },
+  { x: 12940, y: 1700, r: 520, c: '14,165,233', a: 0.09 },
 ]
 export const FIXED = 1 / 60
 export { JUMP_PADS }

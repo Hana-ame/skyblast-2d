@@ -100,24 +100,143 @@
   // src/core/map.ts
   var CEILING_TOP = 280;
   var CEILING_THICK = 80;
-  var CEILING_HOLE_X0 = 5600;
-  var CEILING_HOLE_X1 = 7600;
+  var WALL_THICK = 60;
+  var MAIN_DECK_TOP = 1760;
+  var MAIN_DECK_THICK = 40;
+  var ARCH_CENTER_TOP = 680;
+  var UNIFIED_EDGE_HIGHLIGHT = "#38bdf8";
   function defaultMapData() {
     const solids = [
-      // 天花板左板（环形 x 0~5600）
-      { x: 0, y: CEILING_TOP, w: CEILING_HOLE_X0, h: CEILING_THICK, kind: "platform" },
-      // 天花板右板（环形 x 7600~13200）
-      { x: CEILING_HOLE_X1, y: CEILING_TOP, w: WORLD_W - CEILING_HOLE_X1, h: CEILING_THICK, kind: "platform" },
-      // 空口拱形方块落脚点：正方形 160×160，不可摧毁（block=实心地形），中间高两侧低、相邻一高一低
-      ...ARCH_BLOCKS()
+      // ── 1. 四面封闭边界（顶部完整无入口天花板 + 左右全高封闭墙；底部由世界内置 SURFACE_Y=2800 封闭） ──
+      { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: "platform" },
+      { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
+      { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
+      // ── 2. 天空拱形浮空方块群（有上有下高低交错，正中 x=6600 放置复活点与旗帜） ──
+      ...SKY_ARCH_BLOCKS(),
+      // ── 3. 中层地表主平台（y=1760，出生点所在平面）+ 左翼高掩体柱 ──
+      // 左翼出生台与主平台（x=500..680 留 180px 狭窄竖井通往地下地道）
+      { x: WALL_THICK, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 680, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
+      // 左翼出生点旁高耸掩体柱（对应设计图左侧出生点旁高框）
+      { x: 740, y: 1440, w: 120, h: 320, kind: "cover" },
+      // 右翼主平台与出生台（x=12520..12700 留 180px 狭窄竖井通往地下地道）
+      { x: 8e3, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 12700, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
+      // ── 4. 地下区域（y > 1760）：全部采用实心岩体围合成狭窄地道（高 120~160px，竖井宽 160~260px） ──
+      ...UNDERGROUND_NARROW_TUNNEL_SOLIDS()
     ];
-    return { name: "\u5929\u82B1\u677F\u7ADE\u6280\u573A", solids };
+    return { name: "\u5C01\u95ED\u62F1\u9876\xB7\u5730\u4E0B\u72ED\u9053\u7ADE\u6280\u573A", solids };
   }
-  function ARCH_BLOCKS() {
-    const SIDE = 160;
-    const xs = [5700, 6e3, 6300, 6600, 6900, 7200, 7500];
-    const tops = [2700, 2500, 2620, 2400, 2620, 2500, 2700];
-    return xs.map((x, i) => ({ x: x - SIDE / 2, y: tops[i], w: SIDE, h: SIDE, kind: "block" }));
+  function SKY_ARCH_BLOCKS() {
+    return [
+      // 左侧阶梯上升段
+      { x: 1200, y: 1280, w: 200, h: 360, kind: "block" },
+      { x: 1680, y: 1080, w: 420, h: 240, kind: "block" },
+      { x: 2740, y: 700, w: 720, h: 220, kind: "block" },
+      // 拱顶左峰（高）
+      { x: 3940, y: 560, w: 880, h: 220, kind: "block" },
+      // 左中交错块（下沉，体现“有上有下”）
+      { x: 5220, y: 760, w: 560, h: 220, kind: "block" },
+      // 正中央主方块（x=6200..7000，中心 x=6600，顶面 y=680：放置正中旗帜与复活点）
+      { x: 6200, y: ARCH_CENTER_TOP, w: 800, h: 220, kind: "block" },
+      // 拱顶右峰（高，体现“有上有下”）
+      { x: 7420, y: 560, w: 720, h: 220, kind: "block" },
+      // 右中交错块（下沉）
+      { x: 8580, y: 740, w: 720, h: 240, kind: "block" },
+      // 右侧阶梯下降段
+      { x: 9700, y: 920, w: 580, h: 260, kind: "block" },
+      { x: 10680, y: 1080, w: 440, h: 280, kind: "block" },
+      { x: 11480, y: 1240, w: 200, h: 360, kind: "block" },
+      { x: 12020, y: 1320, w: 200, h: 340, kind: "block" }
+    ];
+  }
+  function UNDERGROUND_NARROW_TUNNEL_SOLIDS() {
+    return [
+      // ── A. 左右浅层狭道顶部悬挂掩体块（对应设计图主平台横线下方的掩体块） ──
+      { x: 1800, y: 1800, w: 260, h: 60, kind: "cover" },
+      { x: 3e3, y: 1800, w: 260, h: 70, kind: "cover" },
+      { x: 4100, y: 1800, w: 220, h: 60, kind: "cover" },
+      { x: 9e3, y: 1800, w: 180, h: 60, kind: "cover" },
+      { x: 1e4, y: 1800, w: 240, h: 60, kind: "cover" },
+      { x: 11100, y: 1800, w: 340, h: 70, kind: "block" },
+      // ── B. 左右两侧地下实心岩层（围合出左侧 x=500..680 与右侧 x=12520..12700 的 L 型狭窄地道） ──
+      // 左端外侧全高地下实心墙（x=60..500, y=1800..2660，底部预留 y=2660..2800 底层贯通狭道）
+      { x: WALL_THICK, y: 1800, w: 440, h: 860, kind: "block" },
+      // 左侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=1280..1440 联络竖井）
+      { x: 680, y: 2040, w: 600, h: 320, kind: "block" },
+      { x: 1440, y: 2040, w: 1060, h: 320, kind: "block" },
+      // 左侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
+      { x: 680, y: 2500, w: 1820, h: 160, kind: "block" },
+      // 右端外侧全高地下实心墙（x=12700..13140, y=1800..2660）
+      { x: 12700, y: 1800, w: 440, h: 860, kind: "block" },
+      // 右侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=11760..11920 联络竖井）
+      { x: 10700, y: 2040, w: 1060, h: 320, kind: "block" },
+      { x: 11920, y: 2040, w: 600, h: 320, kind: "block" },
+      // 右侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
+      { x: 10700, y: 2500, w: 1820, h: 160, kind: "block" },
+      // ── C. 中央地下顶盖与中央下沉狭窄井道（y=1800..2160） ──
+      // 左中顶盖岩层（x=2500..5200, y=2040..2160，厚 120px，上方为浅层狭道，下方为 y=2160..2280 地下上层狭道）
+      { x: 2500, y: 2040, w: 2700, h: 120, kind: "platform" },
+      // 右中顶盖岩层（x=8000..10700, y=2040..2160，厚 120px）
+      { x: 8e3, y: 2040, w: 2700, h: 120, kind: "platform" },
+      // 中央咽喉区左肩巨石（x=5380..6260, y=1800..2160，留出 x=5200..5380 宽 180px 的西侧下沉竖井）
+      { x: 5380, y: 1800, w: 880, h: 360, kind: "block" },
+      // 中央咽喉区右肩巨石（留出 x=6260..6660 中央竖井、x=7020..7360 东侧竖井及 x=7820..8000 边缘竖井）
+      { x: 6660, y: 1800, w: 360, h: 360, kind: "block" },
+      { x: 7360, y: 1800, w: 460, h: 360, kind: "block" },
+      // ── D. 中央地下迷宫核心岩体群（围合出上 y=2160..2280、中 y=2380..2500、下 y=2660..2800 三层狭窄横道与多条狭窄竖井） ──
+      // 1. 左侧竖直巨岩（左留 x=2500..2660 竖井，右留 x=3220..3380 竖井）
+      { x: 2660, y: 2280, w: 560, h: 380, kind: "block" },
+      // 2. 左中上层横岩（上留 y=2160..2280 狭道，下留 y=2380..2500 狭道）
+      { x: 3380, y: 2280, w: 2240, h: 100, kind: "block" },
+      // 3. 左中下层横岩（上留 y=2380..2500 狭道，下留 y=2660..2800 底层狭道）
+      { x: 3380, y: 2500, w: 2240, h: 160, kind: "block" },
+      // 4. 正中竖直巨柱（左留 x=5620..5820 竖井，右留 x=6380..6640 核心中央竖井）
+      { x: 5820, y: 2280, w: 560, h: 380, kind: "block" },
+      // 5. 右中上层横岩（预留 x=7020..7180 狭窄竖井供垂直机动与射击）
+      { x: 6640, y: 2280, w: 380, h: 100, kind: "block" },
+      { x: 7180, y: 2280, w: 1920, h: 100, kind: "block" },
+      // 6. 右中下层横岩（预留 x=7020..7180 狭窄竖井）
+      { x: 6640, y: 2500, w: 380, h: 160, kind: "block" },
+      { x: 7180, y: 2500, w: 1920, h: 160, kind: "block" },
+      // 7. 右侧竖直巨岩（左留 x=9100..9260 竖井，右留 x=10540..10700 竖井）
+      { x: 9260, y: 2280, w: 1280, h: 380, kind: "block" }
+    ];
+  }
+  function carveTunnelInSolids(solids, carve, minSize = 20) {
+    const cx0 = carve.x;
+    const cy0 = carve.y;
+    const cx1 = carve.x + carve.w;
+    const cy1 = carve.y + carve.h;
+    const out = [];
+    for (const s of solids) {
+      const sx0 = s.x;
+      const sy0 = s.y;
+      const sx1 = s.x + s.w;
+      const sy1 = s.y + s.h;
+      if (sx1 <= cx0 || sx0 >= cx1 || sy1 <= cy0 || sy0 >= cy1) {
+        out.push(s);
+        continue;
+      }
+      if (cy0 - sy0 >= minSize) {
+        out.push({ x: sx0, y: sy0, w: s.w, h: cy0 - sy0, kind: s.kind });
+      }
+      if (sy1 - cy1 >= minSize) {
+        out.push({ x: sx0, y: cy1, w: s.w, h: sy1 - cy1, kind: s.kind });
+      }
+      const midY0 = Math.max(sy0, cy0);
+      const midY1 = Math.min(sy1, cy1);
+      const midH = midY1 - midY0;
+      if (midH >= minSize) {
+        if (cx0 - sx0 >= minSize) {
+          out.push({ x: sx0, y: midY0, w: cx0 - sx0, h: midH, kind: s.kind });
+        }
+        if (sx1 - cx1 >= minSize) {
+          out.push({ x: cx1, y: midY0, w: sx1 - cx1, h: midH, kind: s.kind });
+        }
+      }
+    }
+    return out;
   }
   function sanitizeMapData(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -142,6 +261,8 @@
   var TILE_SIZE = 20;
   var GRID_W = Math.floor(WORLD_W / TILE_SIZE);
   var GRID_H = Math.floor(WORLD_H / TILE_SIZE);
+  var UNIFIED_FILL = "#1e293b";
+  var UNIFIED_BORDER = UNIFIED_EDGE_HIGHLIGHT;
   var Terrain = class {
     grid = new Uint8Array(GRID_W * GRID_H);
     rects = [];
@@ -164,27 +285,21 @@
     addDeco(x, y, w, h, kind, color, borderColor = "") {
       this.rects.push({ x, y, w, h, color, borderColor, kind, label: "" });
     }
-    /** 挖空（保留供未来扩展；当前平地地图未使用） */
+    /** 挖空（保留供扩展） */
     carveTunnel(x, y, w, h, label = "\u5730\u4E0B\u5730\u9053") {
       this.setGridRect(x, y, w, h, 0);
-      this.rects.push({ x, y, w, h, color: "#090d16", borderColor: "#1e293b", kind: "tunnel_bg", label });
+      this.rects.push({ x, y, w, h, color: "#090d16", borderColor: UNIFIED_BORDER, kind: "tunnel_bg", label });
       this.shadows.push({ x, y, w, h, label, alpha: 0.76 });
     }
     build(customSolids) {
       this.grid.fill(0);
       this.rects.length = 0;
       this.shadows.length = 0;
-      this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, "#1e293b", "#334155", "earth");
-      if (customSolids) {
-        for (const r of customSolids) {
-          const style = r.kind === "platform" ? { color: "#334155", border: "#38bdf8", kind: "platform", label: "\u5E73\u53F0" } : r.kind === "block" ? { color: "#334155", border: "#a855f7", kind: "block", label: "\u65B9\u5757" } : { color: "#1f2937", border: "#f97316", kind: "cover", label: "\u65B9\u5F62\u63A9\u4F53" };
-          this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label);
-        }
-        return;
-      }
-      for (const r of defaultMapData().solids) {
-        const style = r.kind === "platform" ? { color: "#334155", border: "#38bdf8", kind: "platform", label: "\u5E73\u53F0" } : r.kind === "block" ? { color: "#334155", border: "#a855f7", kind: "block", label: "\u65B9\u5757" } : { color: "#1f2937", border: "#f97316", kind: "cover", label: "\u8857\u533A\u5EFA\u7B51" };
-        this.addSolidBlock(r.x, r.y, r.w, r.h, style.color, style.border, style.kind, style.label);
+      this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, UNIFIED_FILL, UNIFIED_BORDER, "earth");
+      const list = customSolids ?? defaultMapData().solids;
+      for (const r of list) {
+        const label = r.kind === "platform" ? "\u5E73\u53F0" : r.kind === "block" ? "\u65B9\u5757" : "\u63A9\u4F53";
+        this.addSolidBlock(r.x, r.y, r.w, r.h, UNIFIED_FILL, UNIFIED_BORDER, r.kind, label);
       }
     }
     /** 点是否被原始地形挡住（双轴环形 x/y） */
@@ -201,13 +316,13 @@
     }
   };
   var OBSTACLE_PRESETS = [
-    { id: "obs_1", x: 1600, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_2", x: 3400, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_3", x: 4600, y: 240, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#78350f", borderColor: "#f59e0b" },
-    { id: "obs_box_1", x: 5400, y: 238, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#365314", borderColor: "#84cc16" },
-    { id: "obs_5", x: 7800, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#7c2d12", borderColor: "#fb923c" },
-    { id: "obs_6", x: 11200, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" },
-    { id: "obs_7", x: 12500, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#9a3412", borderColor: "#f97316" }
+    { id: "obs_1", x: 1600, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_2", x: 3400, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_3", x: 4600, y: 240, w: 60, h: 80, hp: 240, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_box_1", x: 5400, y: 238, w: 68, h: 70, hp: 170, label: "\u91CD\u88C5\u63A9\u4F53\u7BB1", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_5", x: 7800, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_6", x: 11200, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER },
+    { id: "obs_7", x: 12500, y: 240, w: 60, h: 80, hp: 260, label: "\u65B9\u5F62\u63A9\u4F53", color: "#1e293b", borderColor: UNIFIED_BORDER }
   ];
 
   // src/core/rng.ts
@@ -688,28 +803,50 @@
   var BODY_TOP = 26;
   var BODY_BOTTOM = 16;
   var CEILING_STAND = 264;
-  var GROUND_STAND = 2740;
+  var MAIN_DECK_STAND = MAIN_DECK_TOP - 16;
+  var CENTER_RESPAWN_X = 6600;
+  var CENTER_RESPAWN_Y = ARCH_CENTER_TOP - 16;
+  var CENTER_RESPAWN_POINT = {
+    id: "cp_c",
+    code: "C",
+    name: "\u6B63\u4E2D\u590D\u6D3B\u70B9",
+    x: CENTER_RESPAWN_X,
+    y: CENTER_RESPAWN_Y
+  };
+  var FFA_SPAWN_POINTS = [
+    { x: 1180, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u7FFC\u5E73\u53F0" },
+    { x: 2400, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u5E73\u53F0" },
+    { x: 3100, y: 700 - 16, team: "ffa", label: "FFA\xB7\u897F\u62F1\u6D6E\u5C9B" },
+    { x: 4380, y: 560 - 16, team: "ffa", label: "FFA\xB7\u5DE6\u5CF0\u62F1\u5C9B" },
+    { x: 4500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u5730\u9053" },
+    { x: 5500, y: 760 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u62F1\u5C9B" },
+    { x: 7780, y: 560 - 16, team: "ffa", label: "FFA\xB7\u53F3\u5CF0\u62F1\u5C9B" },
+    { x: 8500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u5730\u9053" },
+    { x: 9990, y: 920 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u62F1\u6D6E\u5C9B" },
+    { x: 10800, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u5E73\u53F0" },
+    { x: 12020, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u7FFC\u5E73\u53F0" }
+  ];
   var SPAWN_POINTS = [
-    { x: 1100, y: GROUND_STAND, team: "red" },
-    { x: 12100, y: GROUND_STAND, team: "blue" },
-    { x: 3300, y: GROUND_STAND, team: "green" },
-    { x: 9900, y: GROUND_STAND, team: "ffa" }
+    { x: 260, y: MAIN_DECK_STAND, team: "red" },
+    { x: 12940, y: MAIN_DECK_STAND, team: "blue" },
+    { x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y, team: "green" },
+    ...FFA_SPAWN_POINTS.map(({ x, y, team }) => ({ x, y, team }))
   ];
   var AMMO_SPOTS = [
-    { x: 1300, y: GROUND_STAND, area: "\u897F\u533A\u5E73\u5730" },
-    { x: 2100, y: GROUND_STAND, area: "\u897F\u533A\u5E73\u53F0\u4E0B" },
-    { x: 2900, y: GROUND_STAND, area: "\u4E2D\u897F\u5E73\u5730" },
-    { x: 4600, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F" },
-    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u5DE6" },
-    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u53F3" },
-    { x: 10200, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A" }
+    { x: 4950, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u897F\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 5500, y: 760 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
+    { x: 6320, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u897F\u4FA7\u5F39\u836F\u70B9" },
+    { x: 6880, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u4E1C\u4FA7\u5F39\u836F\u70B9" },
+    { x: 7780, y: 560 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
+    { x: 8250, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 6500, y: 2800 - 16, area: "\u5730\u4E0B\u4E2D\u592E\u72ED\u9053\xB7\u6838\u5FC3\u5F39\u836F\u70B9" }
   ];
   var SUPPLY_SPOTS = [
-    { x: 1500, y: GROUND_STAND, area: "\u897F\u533A\u8865\u7ED9\u70B9" },
-    { x: 3100, y: GROUND_STAND, area: "\u4E2D\u897F\u8865\u7ED9\u70B9" },
+    { x: 1500, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u897F\u533A\u8865\u7ED9\u70B9" },
+    { x: 3100, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u897F\u8865\u7ED9\u70B9" },
     { x: 4300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F\u8865\u7ED9\u70B9" },
-    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u5DE6\u8865\u7ED9\u70B9" },
-    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u7A7A\u53E3\u53F3\u8865\u7ED9\u70B9" },
+    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u533A\u5DE6\u8865\u7ED9\u70B9" },
+    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u533A\u53F3\u8865\u7ED9\u70B9" },
     { x: 10300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A\u8865\u7ED9\u70B9" }
   ];
   var DOLL_SUPPLY_SPOTS = [
@@ -745,12 +882,26 @@
     { id: "warp_5", name: "W5 \u4E2D\u592E\u4E1C\u4F20\u9001\u95E8", x: 5400, y: CEILING_STAND, targetId: "warp_6", color: "#10b981" },
     { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: CEILING_STAND, targetId: "warp_5", color: "#10b981" }
   ];
-  var RANDOM_SPAWN_CANDIDATES = (() => {
-    const out = [];
-    for (let x = 400; x < WORLD_W; x += 620) out.push({ x, y: SURFACE_Y - 60 });
-    for (const sp of SPAWN_POINTS) out.push({ x: sp.x, y: sp.y - 60 });
-    return out;
-  })();
+  var RANDOM_SPAWN_CANDIDATES = [
+    { x: 1180, y: MAIN_DECK_STAND - 20 },
+    { x: 2400, y: MAIN_DECK_STAND - 20 },
+    { x: 3600, y: MAIN_DECK_STAND - 20 },
+    { x: 4700, y: MAIN_DECK_STAND - 20 },
+    { x: 3100, y: 700 - 36 },
+    { x: 4380, y: 560 - 36 },
+    { x: 5500, y: 760 - 36 },
+    { x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y - 24 },
+    { x: 7780, y: 560 - 36 },
+    { x: 8940, y: 740 - 36 },
+    { x: 9990, y: 920 - 36 },
+    { x: 8500, y: MAIN_DECK_STAND - 20 },
+    { x: 9600, y: MAIN_DECK_STAND - 20 },
+    { x: 10800, y: MAIN_DECK_STAND - 20 },
+    { x: 12020, y: MAIN_DECK_STAND - 20 },
+    { x: 4500, y: 2500 - 24 },
+    { x: 6500, y: 2800 - 24 },
+    { x: 8500, y: 2500 - 24 }
+  ];
   var JUMP_PADS = [
     { x: 1e3, y: 280, vx: 210, vy: -810 },
     { x: 4300, y: 280, vx: 180, vy: -870 },
@@ -758,11 +909,11 @@
     { x: 13050, y: 280, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
-    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: CEILING_STAND, ownerTeam: "red" },
+    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: CEILING_STAND, ownerTeam: null },
     { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 3900, y: CEILING_STAND, ownerTeam: null },
-    { id: "cp_c", code: "C", name: "\u636E\u70B9C\xB7\u4E2D\u592E", x: 5400, y: CEILING_STAND, ownerTeam: "green" },
+    { id: "cp_c", code: "C", name: "\u6B63\u4E2D\u590D\u6D3B\u70B9", x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y, ownerTeam: null },
     { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 7800, y: CEILING_STAND, ownerTeam: null },
-    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: CEILING_STAND, ownerTeam: "blue" }
+    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: CEILING_STAND, ownerTeam: null }
   ];
 
   // src/core/sim/spatial.ts
@@ -958,7 +1109,7 @@
         }
       }
     }
-    const base = SPAWN_POINTS.find((s) => s.team === p.team) ?? SPAWN_POINTS[3];
+    const base = SPAWN_POINTS.find((s) => s.team === p.team) ?? SPAWN_POINTS[0];
     p.pos = { x: wrapX(base.x), y: base.y };
     p.vel = { x: 0, y: 0 };
     return true;
@@ -2139,6 +2290,11 @@
   }
 
   // src/core/sim/interactables.ts
+  function isCapturePointSelectable(cp, team) {
+    if (!cp) return false;
+    if (cp.ownerTeam === null || cp.progress < 100) return false;
+    return cp.ownerTeam === team || team === "ffa";
+  }
   function recallDollState(events, p) {
     if (!p.doll) return;
     const d = p.doll;
@@ -2203,6 +2359,21 @@
         return;
       }
     }
+    const nearCaptured = ctx2.capturePoints.find(
+      (cp) => isCapturePointSelectable(cp, p.team) && wrapDist(p.pos.x, p.pos.y, cp.x, cp.y) < Math.max(150, ctx2.config.captureRadius + 40)
+    );
+    const targetCp = nearCaptured ?? ctx2.capturePoints.find((cp) => isCapturePointSelectable(cp, p.team));
+    if (targetCp) {
+      p.selectedSpawnId = targetCp.id;
+      ctx2.events.push({
+        kind: "warp",
+        x: targetCp.x,
+        y: targetCp.y,
+        playerId: p.id,
+        pointCode: targetCp.code,
+        weaponName: `\u5DF2\u9009\u4E2D\u3010${targetCp.name}\u3011\u4F5C\u4E3A\u590D\u6D3B\u70B9`
+      });
+    }
   }
   function spawnSingleAmmoPack(ctx2) {
     if (ctx2.ammoPacks.length >= ctx2.config.ammoPackMaxActive) return;
@@ -2231,7 +2402,10 @@
       if (teams.length === 1) {
         const t = teams[0];
         if (cp.ownerTeam !== t) {
-          cp.capturingTeam = t;
+          if (cp.capturingTeam !== t) {
+            cp.capturingTeam = t;
+            if (cp.ownerTeam !== null) cp.progress = 0;
+          }
           cp.progress += ctx2.config.captureRate * dt * (presence[t] || 0);
           if (cp.progress >= 100) {
             cp.progress = 100;
@@ -2343,7 +2517,6 @@
       this.terrain.build(map?.solids);
       this.resetMatch();
     }
-    // ── 子系统接口方法 ──
     nextProjId() {
       return this.prj++;
     }
@@ -2497,6 +2670,7 @@
       this.airstrikes = [];
       this.ammoSpawnTimer = 0;
       this.scores = { red: 0, blue: 0, green: 0, ffa: 0 };
+      for (const p of this.players) p.selectedSpawnId = "base";
       this.rebuildSpatialBuckets();
     }
     addPlayer(name = "Player", team = "ffa") {
@@ -2512,6 +2686,7 @@
         alive: true,
         deployed: true,
         onGround: true,
+        selectedSpawnId: "base",
         weaponIndex: 1,
         lastPrimaryIndex: 1,
         ammo: WEAPONS.map((w) => w.magSize),
@@ -2559,16 +2734,23 @@
         p.lastPrimaryIndex = p.weaponIndex;
       }
       let sx, sy;
-      if (this.config.randomSpawn) {
+      const wantedCp = p.selectedSpawnId && p.selectedSpawnId !== "base" ? this.capturePoints.find((c) => c.id === p.selectedSpawnId && isCapturePointSelectable(c, team)) : null;
+      if (wantedCp) {
+        sx = wantedCp.x;
+        sy = wantedCp.y;
+      } else if (this.config.randomSpawn) {
         const spot = RANDOM_SPAWN_CANDIDATES[this.rng.int(RANDOM_SPAWN_CANDIDATES.length)];
-        sx = spot.x + this.rng.range(-60, 60);
+        sx = spot.x + this.rng.range(-45, 45);
+        sy = spot.y;
+      } else if (team === "ffa") {
+        const spot = FFA_SPAWN_POINTS[this.rng.int(FFA_SPAWN_POINTS.length)];
+        sx = spot.x;
         sy = spot.y;
       } else {
-        const owned = this.capturePoints.filter((c) => c.ownerTeam === team && c.progress >= 100);
-        const cp = owned.length > 0 ? owned[this.rng.int(owned.length)] : null;
-        const base = SPAWN_POINTS.find((s) => s.team === team) ?? SPAWN_POINTS[3];
-        sx = cp ? cp.x : base.x;
-        sy = cp ? cp.y - 60 : base.y;
+        if (team === "red" || team === "blue" || team === "green") this.rng.int(1);
+        const base = SPAWN_POINTS.find((s) => s.team === team) ?? SPAWN_POINTS[0];
+        sx = base.x;
+        sy = base.y;
       }
       p.pos = { x: wrapX(sx + this.rng.range(-45, 45)), y: sy };
       p.vel = { x: 0, y: 0 };
@@ -2602,7 +2784,6 @@
       resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
       ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
     }
-    // ── 主 step：按子系统顺序编排 ──────────────────────────────
     step(dt, inputs) {
       this.tick++;
       this.events.length = 0;
@@ -3260,7 +3441,7 @@
   // src/web/app/context.ts
   var canvas = document.getElementById("gameCanvas");
   var ctx = canvas ? canvas.getContext("2d") : null;
-  var camera = { x: 6600, y: 2380, fovFactor: 1 };
+  var camera = { x: 6600, y: 1500, fovFactor: 1 };
   var screenFx = { shake: 0 };
   function resizeCanvas() {
     if (!canvas) return;
@@ -3293,14 +3474,14 @@
   applyConfigOverrides(world.config, balanceOverrides?.config);
   var localPlayer = world.addPlayer("SkyHunter", "red");
   localPlayer.deployed = false;
-  world.config.randomSpawn = true;
+  world.config.randomSpawn = false;
   var botNames = ["AlphaBot-7", "Valkyrie-AI", "Titan-09", "NovaStriker", "ZeroGrav-X", "OmegaHound", "Phantom-AI", "IronClad-8"];
   var botSecs = ["frag", "doll", "frag", "frag", "doll", "frag", "frag", "frag"];
   var bots = [];
   var pendingLoadout = { weaponIndex: 0, secondaryType: "frag", spawnPointId: "base" };
-  var mode = { current: "ffa" };
+  var mode = { current: "2teams" };
   var keys = {};
-  var mouse = { x: 0, y: 0, worldX: 6600, worldY: 2380, down: false };
+  var mouse = { x: 0, y: 0, worldX: 6600, worldY: 1500, down: false };
   var touchState = {
     enabled: false,
     moveActive: false,
@@ -3334,11 +3515,104 @@
     return out;
   })();
   var worldGlows = [
-    { x: 6600, y: 1080, r: 620, c: "56,189,248", a: 0.09 },
-    { x: 4150, y: 3560, r: 520, c: "16,185,129", a: 0.07 },
-    { x: 10150, y: 3520, r: 520, c: "244,63,94", a: 0.07 }
+    { x: 6600, y: 720, r: 620, c: "56,189,248", a: 0.11 },
+    { x: 260, y: 1700, r: 520, c: "244,63,94", a: 0.09 },
+    { x: 12940, y: 1700, r: 520, c: "14,165,233", a: 0.09 }
   ];
   var FIXED = 1 / 60;
+
+  // src/web/textures.ts
+  var cache = /* @__PURE__ */ new Map();
+  function makeTex(size, paint) {
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = size;
+    const c = cv.getContext("2d");
+    paint(c);
+    return cv;
+  }
+  function paintUnifiedTechPanel(c) {
+    const S = 96;
+    const half = S / 2;
+    c.fillStyle = "#162032";
+    c.fillRect(0, 0, S, S);
+    c.fillStyle = "#1b273d";
+    c.fillRect(2, 2, half - 4, half - 4);
+    c.fillRect(half + 2, half + 2, half - 4, half - 4);
+    c.fillStyle = "#182337";
+    c.fillRect(half + 2, 2, half - 4, half - 4);
+    c.fillRect(2, half + 2, half - 4, half - 4);
+    c.strokeStyle = "rgba(10, 15, 26, 0.85)";
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(0, half);
+    c.lineTo(S, half);
+    c.moveTo(half, 0);
+    c.lineTo(half, S);
+    c.stroke();
+    c.strokeStyle = "rgba(56, 189, 248, 0.14)";
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(0, 1);
+    c.lineTo(S, 1);
+    c.moveTo(0, half + 1);
+    c.lineTo(S, half + 1);
+    c.moveTo(1, 0);
+    c.lineTo(1, S);
+    c.moveTo(half + 1, 0);
+    c.lineTo(half + 1, S);
+    c.stroke();
+    for (const [ox, oy] of [[0, 0], [half, 0], [0, half], [half, half]]) {
+      c.strokeStyle = "rgba(56, 189, 248, 0.08)";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(ox + half / 2 - 5, oy + half / 2);
+      c.lineTo(ox + half / 2 + 5, oy + half / 2);
+      c.moveTo(ox + half / 2, oy + half / 2 - 5);
+      c.lineTo(ox + half / 2, oy + half / 2 + 5);
+      c.stroke();
+      for (const [rx, ry] of [[7, 7], [half - 7, 7], [7, half - 7], [half - 7, half - 7]]) {
+        c.fillStyle = "rgba(8, 13, 23, 0.8)";
+        c.beginPath();
+        c.arc(ox + rx, oy + ry, 1.8, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = "rgba(125, 211, 252, 0.35)";
+        c.beginPath();
+        c.arc(ox + rx - 0.4, oy + ry - 0.4, 1, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+  }
+  function paintTunnelBg(c) {
+    const S = 96;
+    c.fillStyle = "#090e18";
+    c.fillRect(0, 0, S, S);
+    c.strokeStyle = "rgba(56, 189, 248, 0.06)";
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(0, S / 2);
+    c.lineTo(S, S / 2);
+    c.moveTo(S / 2, 0);
+    c.lineTo(S / 2, S);
+    c.stroke();
+  }
+  function texKindOf(kind) {
+    if (kind === "tunnel_bg" || kind === "pipe_bg" || kind === "building_bg") return "tunnel";
+    return "unifiedPanel";
+  }
+  function getTerrainPattern(ctx2, kind) {
+    const key = texKindOf(kind);
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const cv = key === "tunnel" ? makeTex(96, paintTunnelBg) : makeTex(96, paintUnifiedTechPanel);
+    const pat = ctx2.createPattern(cv, "repeat");
+    if (pat) cache.set(key, pat);
+    return pat;
+  }
+  function syncTerrainPatterns(camX, camY) {
+    if (typeof DOMMatrix === "undefined") return;
+    const m = new DOMMatrix().translate(-camX, -camY);
+    for (const pat of cache.values()) pat.setTransform(m);
+  }
 
   // src/web/app/toast.ts
   function escapeHtml(str) {
@@ -3441,14 +3715,12 @@
     });
   }
   function updateSpawnPointButtonsUI() {
-    const container = document.getElementById("spawnPointBtnGroup");
-    if (!container) return;
-    container.querySelectorAll(".spawn-select-btn").forEach((btn) => {
+    document.querySelectorAll(".spawn-select-btn").forEach((btn) => {
       const spId = btn.getAttribute("data-spawn") || "base";
       let unlocked = spId === "base";
       if (spId !== "base") {
         const cp = world.capturePoints.find((c) => c.id === spId);
-        unlocked = Boolean(cp && (cp.ownerTeam === localPlayer.team || localPlayer.team === "ffa"));
+        unlocked = isCapturePointSelectable(cp, localPlayer.team);
       }
       const isSelected = pendingLoadout.spawnPointId === spId;
       if (!unlocked) btn.className = "spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed";
@@ -3672,10 +3944,26 @@
     } else if (mounted) {
       promptMsg = "\u{1F3AF} \u8FEB\u51FB\u70AE\u64CD\u63A7\u4E2D\uFF1A\u79FB\u52A8\u9F20\u6807\u8C03\u8282\u843D\u70B9\uFF0C\u6309\u4F4F\u5F00\u706B\u53D1\u5C04 | \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u79BB\u5F00";
     } else {
-      for (const m of world.mortars) {
-        if (m.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, m.x, m.y) < 115) {
-          promptMsg = `\u{1F525} \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u64CD\u63A7\u3010${m.name}\u3011`;
+      for (const cp of world.capturePoints) {
+        if (wrapDist(localPlayer.pos.x, localPlayer.pos.y, cp.x, cp.y) < Math.max(140, world.config.captureRadius + 30)) {
+          if (isCapturePointSelectable(cp, localPlayer.team)) {
+            if (localPlayer.selectedSpawnId === cp.id || pendingLoadout.spawnPointId === cp.id) {
+              promptMsg = `\u2705 \u5DF2\u9009\u4E2D\u3010${cp.name}\u3011\u4F5C\u4E3A\u590D\u6D3B\u70B9\uFF08\u9635\u4EA1\u540E\u5C06\u5728\u6B64\u5904\u590D\u6D3B\uFF09`;
+            } else {
+              promptMsg = `\u{1F6A9} \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u9009\u4E2D\u3010${cp.name}\u3011\u4F5C\u4E3A\u590D\u6D3B\u70B9`;
+            }
+          } else {
+            promptMsg = `\u{1F6A9} \u6B63\u5728\u5360\u9886\u3010${cp.name}\u3011(${Math.round(cp.progress)}%) \xB7 \u5360\u9886\u540E\u53EF\u6309 [E] \u9009\u4E3A\u590D\u6D3B\u70B9`;
+          }
           break;
+        }
+      }
+      if (!promptMsg) {
+        for (const m of world.mortars) {
+          if (m.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, m.x, m.y) < 115) {
+            promptMsg = `\u{1F525} \u6309 [E] \u6216\u70B9\u51FB\u6B64\u5904\u64CD\u63A7\u3010${m.name}\u3011`;
+            break;
+          }
         }
       }
       if (localPlayer.mountedTowerId) {
@@ -4957,8 +5245,8 @@
   }
   function decodeWorldEvent(r) {
     const kIdx = r.u8();
-    const mode3 = r.u8();
-    if (mode3 === 1) {
+    const mode2 = r.u8();
+    if (mode2 === 1) {
       const x = uPosX(r.u16());
       const y = uPosY(r.u16());
       const duration = uTimerMs(r.u16());
@@ -4975,7 +5263,7 @@
       }
       return { kind: "laser", x, y, duration, color, playerId, weaponLabel, segments };
     }
-    if (mode3 === 2) {
+    if (mode2 === 2) {
       const kind = EVENT_KINDS[kIdx] === "projectile_bounce" ? "projectile_bounce" : "projectile_spawn";
       return {
         kind,
@@ -4989,7 +5277,7 @@
         bounces: r.u8()
       };
     }
-    if (mode3 === 3) {
+    if (mode2 === 3) {
       return {
         kind: "projectile_destroy",
         projectileId: r.u32()
@@ -8231,8 +8519,6 @@
       b.weaponIndex = idx % 4;
       b.lastPrimaryIndex = idx % 4;
       b.secondary = botSecs[idx % botSecs.length];
-      const cp = world.capturePoints[idx % world.capturePoints.length];
-      b.pos = { x: wrapX(cp.x + (idx - 4) * 47), y: cp.y - 50 };
       bots.push(b);
     }
     bots.forEach((b, idx) => {
@@ -8274,6 +8560,16 @@
   }
 
   // src/web/game/loadout.ts
+  function getSpawnCoords() {
+    if (pendingLoadout.spawnPointId && pendingLoadout.spawnPointId !== "base") {
+      const cp = world.capturePoints.find((c) => c.id === pendingLoadout.spawnPointId);
+      if (cp && isCapturePointSelectable(cp, localPlayer.team)) {
+        return { x: cp.x, y: cp.y, label: cp.name };
+      }
+    }
+    const sp = SPAWN_POINTS.find((s) => s.team === localPlayer.team) ?? SPAWN_POINTS[0];
+    return { x: sp.x, y: sp.y, label: "\u961F\u4F0D\u4E3B\u57FA\u5730" };
+  }
   function applyPendingLoadoutAndSpawn() {
     const want = Number(pendingLoadout.weaponIndex);
     const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0;
@@ -8282,15 +8578,27 @@
     const streak = localPlayer.deathStreak ?? 0;
     const wantSec = pendingLoadout.secondaryType;
     localPlayer.secondary = isSecondaryUnlocked(wantSec, streak, localPlayer.dollCharges ?? 0) ? wantSec : getHighestUnlockedSecondary(streak, localPlayer.dollCharges ?? 0);
+    localPlayer.selectedSpawnId = pendingLoadout.spawnPointId;
     localPlayer.deployed = true;
     localPlayer.alive = true;
     world.deploy(localPlayer);
     updateHudWeaponButtons();
-    const spLabel = world.config.randomSpawn ? "\u968F\u673A\u5B89\u5168\u70B9" : "\u961F\u4F0D\u4E3B\u57FA\u5730";
+    updateSpawnPointButtonsUI();
+    const { label } = getSpawnCoords();
+    const spLabel = world.config.randomSpawn && label === "\u961F\u4F0D\u4E3B\u57FA\u5730" ? "\u968F\u673A\u5B89\u5168\u70B9" : label;
     showToast(`\u26A1 \u5DF2\u5728\u3010${spLabel}\u3011\u90E8\u7F72\uFF01\u914D\u88C5\u5DF2\u9501\u5B9A\uFF1A${WEAPONS[wIdx].name} + ${(SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag).name}`);
   }
 
   // src/web/input/bindings.ts
+  function trySelectCapturedFlagSpawnByKey() {
+    const cp = world.capturePoints.find((c) => c.id === "cp_c" && isCapturePointSelectable(c, localPlayer.team)) ?? world.capturePoints.find((c) => isCapturePointSelectable(c, localPlayer.team));
+    if (!cp) return false;
+    pendingLoadout.spawnPointId = cp.id;
+    localPlayer.selectedSpawnId = cp.id;
+    updateSpawnPointButtonsUI();
+    showToast(`\u{1F6A9} \u5DF2\u9009\u4E2D\u3010${cp.name}\u3011\u4F5C\u4E3A\u590D\u6D3B\u70B9\uFF01`);
+    return true;
+  }
   function bindAllEvents() {
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
@@ -8300,8 +8608,10 @@
       keys[e.code] = true;
       if (e.code === "KeyR") inputQueue.reload = true;
       else if (e.code === "KeyG" || e.code === "KeyQ") inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
-      else if (e.code === "KeyE") inputQueue.interact = true;
-      else if (e.code === "Digit1") tryChangePrimaryWeapon(0);
+      else if (e.code === "KeyE") {
+        inputQueue.interact = true;
+        trySelectCapturedFlagSpawnByKey();
+      } else if (e.code === "Digit1") tryChangePrimaryWeapon(0);
       else if (e.code === "Digit2") tryChangePrimaryWeapon(1);
       else if (e.code === "Digit3") tryChangePrimaryWeapon(2);
       else if (e.code === "Digit4") tryChangePrimaryWeapon(3);
@@ -8338,13 +8648,15 @@
         const spId = btn.getAttribute("data-spawn") || "base";
         if (spId !== "base") {
           const cp = world.capturePoints.find((c) => c.id === spId);
-          if (!cp || cp.ownerTeam !== localPlayer.team && localPlayer.team !== "ffa") {
-            showToast("\u26A0\uFE0F \u8BE5\u5360\u9886\u70B9\u5C1A\u672A\u88AB\u6211\u65B9\u961F\u4F0D\u5360\u9886\uFF0C\u6682\u4E0D\u53EF\u4F5C\u4E3A\u91CD\u751F\u70B9\uFF01");
+          if (!isCapturePointSelectable(cp, localPlayer.team)) {
+            showToast("\u26A0\uFE0F \u8BE5\u65D7\u5E1C\u590D\u6D3B\u70B9\u5C1A\u672A\u5360\u9886\uFF0C\u5360\u9886\u540E\u5373\u53EF\u9009\u4E2D\uFF08\u4E5F\u53EF\u6309 E \u9009\u4E2D\uFF09\uFF01");
             return;
           }
         }
         pendingLoadout.spawnPointId = spId;
+        localPlayer.selectedSpawnId = spId;
         updateSpawnPointButtonsUI();
+        showToast(spId === "base" ? "\u{1F3E0} \u5DF2\u5207\u6362\u590D\u6D3B\u70B9\u4E3A\u3010\u961F\u4F0D\u4E3B\u57FA\u5730\u3011" : "\u{1F6A9} \u5DF2\u9009\u4E2D\u3010\u6B63\u4E2D\u590D\u6D3B\u70B9\u3011\uFF01");
       });
     });
     document.querySelectorAll(".bot-count-btn").forEach((btn) => {
@@ -8410,10 +8722,245 @@
     });
     document.getElementById("hudQuickMortarBtn")?.addEventListener("click", () => {
       inputQueue.interact = true;
+      trySelectCapturedFlagSpawnByKey();
     });
+    const igeModal = document.getElementById("inGameEditorModal");
+    const igeCanvas = document.getElementById("igeCanvas");
+    let igeSolids = defaultMapData().solids.map((s) => ({ ...s }));
+    const igeHistory = [];
+    let igeTool = "draw";
+    let igeSelected = -1;
+    const igeCam = { x: 6600, y: 1550, zoom: 0.09 };
+    let igeDragStart = null;
+    let igeDragCur = null;
+    let igePanning = false;
+    let igePanLast = { x: 0, y: 0 };
+    let igeSpace = false;
+    function renderIge() {
+      if (!igeCanvas || !igeModal || igeModal.classList.contains("hidden")) return;
+      const c = igeCanvas.getContext("2d");
+      if (!c) return;
+      if (igeCanvas.width !== igeCanvas.clientWidth || igeCanvas.height !== igeCanvas.clientHeight) {
+        igeCanvas.width = igeCanvas.clientWidth || 1100;
+        igeCanvas.height = igeCanvas.clientHeight || 640;
+      }
+      const W = igeCanvas.width, H = igeCanvas.height;
+      c.fillStyle = "#040812";
+      c.fillRect(0, 0, W, H);
+      const sx = (wx) => W / 2 + (wx - igeCam.x) * igeCam.zoom;
+      const sy = (wy) => H / 2 + (wy - igeCam.y) * igeCam.zoom;
+      c.fillStyle = "rgba(7, 11, 20, 0.7)";
+      c.fillRect(sx(0), sy(MAIN_DECK_TOP), 13200 * igeCam.zoom, (2800 - MAIN_DECK_TOP) * igeCam.zoom);
+      c.strokeStyle = "rgba(56,189,248,0.45)";
+      c.setLineDash([6, 4]);
+      c.beginPath();
+      c.moveTo(sx(0), sy(MAIN_DECK_TOP));
+      c.lineTo(sx(13200), sy(MAIN_DECK_TOP));
+      c.stroke();
+      c.setLineDash([]);
+      const pat = getTerrainPattern(c, "block");
+      for (let i = 0; i < igeSolids.length; i++) {
+        const s = igeSolids[i];
+        c.fillStyle = pat ?? "#162032";
+        c.fillRect(sx(s.x), sy(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom);
+        c.strokeStyle = i === igeSelected ? "#fbbf24" : UNIFIED_EDGE_HIGHLIGHT;
+        c.lineWidth = i === igeSelected ? 2.5 : 1.5;
+        c.strokeRect(sx(s.x), sy(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom);
+      }
+      for (const sp of FFA_SPAWN_POINTS) {
+        c.fillStyle = "#facc15";
+        c.beginPath();
+        c.arc(sx(sp.x), sy(sp.y), 4.5, 0, Math.PI * 2);
+        c.fill();
+      }
+      for (const am of AMMO_SPOTS) {
+        c.fillStyle = "#22c55e";
+        c.fillRect(sx(am.x) - 4, sy(am.y) - 4, 8, 8);
+      }
+      c.fillStyle = "#10b981";
+      c.beginPath();
+      c.arc(sx(CENTER_RESPAWN_POINT.x), sy(CENTER_RESPAWN_POINT.y), 6, 0, Math.PI * 2);
+      c.fill();
+      if (igeDragStart && igeDragCur) {
+        const x = Math.min(igeDragStart.x, igeDragCur.x);
+        const y = Math.min(igeDragStart.y, igeDragCur.y);
+        const w = Math.max(40, Math.abs(igeDragCur.x - igeDragStart.x));
+        const h = Math.max(40, Math.abs(igeDragCur.y - igeDragStart.y));
+        c.fillStyle = igeTool === "carve" ? "rgba(244,63,94,0.28)" : "rgba(56,189,248,0.25)";
+        c.strokeStyle = igeTool === "carve" ? "#fb7185" : UNIFIED_EDGE_HIGHLIGHT;
+        c.fillRect(sx(x), sy(y), w * igeCam.zoom, h * igeCam.zoom);
+        c.strokeRect(sx(x), sy(y), w * igeCam.zoom, h * igeCam.zoom);
+      }
+      const st = document.getElementById("igeStatus");
+      if (st) st.textContent = `${igeSolids.length} \u5757 \xB7 \u7EDF\u4E00\u9AD8\u4EAE ${UNIFIED_EDGE_HIGHLIGHT}`;
+    }
     document.getElementById("openEditorBtn")?.addEventListener("click", () => {
-      window.open("./editor.html", "_blank");
+      if (igeModal) {
+        igeModal.classList.remove("hidden");
+        igeModal.classList.add("flex");
+        setTimeout(renderIge, 20);
+      } else {
+        window.open("./editor.html", "_blank");
+      }
     });
+    document.getElementById("igeCloseBtn")?.addEventListener("click", () => {
+      igeModal?.classList.add("hidden");
+      igeModal?.classList.remove("flex");
+    });
+    document.querySelectorAll(".ige-tool-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        igeTool = btn.getAttribute("data-ige-tool") || "draw";
+        document.querySelectorAll(".ige-tool-btn").forEach((b) => {
+          const active = b.getAttribute("data-ige-tool") === igeTool;
+          b.className = "ige-tool-btn px-2.5 py-1 rounded font-bold border " + (active ? "bg-sky-600 text-white border-sky-400" : "bg-slate-800 text-slate-200 border-slate-700");
+        });
+        renderIge();
+      });
+    });
+    const pushIgeHist = () => {
+      igeHistory.push(JSON.stringify(igeSolids));
+      if (igeHistory.length > 40) igeHistory.shift();
+    };
+    document.getElementById("igeUndo")?.addEventListener("click", () => {
+      const prev = igeHistory.pop();
+      if (prev) {
+        igeSolids = JSON.parse(prev);
+        renderIge();
+      }
+    });
+    document.getElementById("igeReset")?.addEventListener("click", () => {
+      pushIgeHist();
+      igeSolids = defaultMapData().solids.map((s) => ({ ...s }));
+      renderIge();
+    });
+    document.getElementById("igeStampTunnel")?.addEventListener("click", () => {
+      pushIgeHist();
+      const cx = Math.round((igeCam.x - 400) / 20) * 20;
+      const cy = Math.max(MAIN_DECK_TOP + 40, Math.round((igeCam.y - 100) / 20) * 20);
+      igeSolids.push({ x: cx, y: cy, w: 800, h: 60, kind: "block" }, { x: cx, y: cy + 200, w: 800, h: 60, kind: "block" });
+      renderIge();
+    });
+    document.getElementById("igeStampShaft")?.addEventListener("click", () => {
+      pushIgeHist();
+      const cx = Math.round((igeCam.x - 140) / 20) * 20;
+      const cy = Math.max(MAIN_DECK_TOP + 40, Math.round((igeCam.y - 200) / 20) * 20);
+      igeSolids.push({ x: cx, y: cy, w: 60, h: 400, kind: "block" }, { x: cx + 220, y: cy, w: 60, h: 400, kind: "block" });
+      renderIge();
+    });
+    document.getElementById("igeStampIsland")?.addEventListener("click", () => {
+      pushIgeHist();
+      igeSolids.push({ x: Math.round((igeCam.x - 320) / 20) * 20, y: Math.min(1400, Math.round((igeCam.y - 110) / 20) * 20), w: 640, h: 220, kind: "block" });
+      renderIge();
+    });
+    document.getElementById("igeSymmetrize")?.addEventListener("click", () => {
+      pushIgeHist();
+      const mid = 6600;
+      const kept = [];
+      const mirrored = [];
+      for (const s of igeSolids) {
+        if (s.x <= mid && s.x + s.w >= mid) kept.push({ ...s });
+        else if (s.x + s.w <= mid) {
+          kept.push({ ...s });
+          mirrored.push({ x: 13200 - s.x - s.w, y: s.y, w: s.w, h: s.h, kind: s.kind });
+        }
+      }
+      igeSolids = [...kept, ...mirrored];
+      renderIge();
+    });
+    document.getElementById("igeApplyBtn")?.addEventListener("click", () => {
+      world.terrain.build(igeSolids);
+      localStorage.setItem("pvp-custom-map", JSON.stringify({ name: "\u81EA\u5B9A\u4E49\u5730\u56FE", solids: igeSolids }));
+      igeModal?.classList.add("hidden");
+      igeModal?.classList.remove("flex");
+      showToast(`\u2705 \u5DF2\u5C06\u7F16\u8F91\u5668\u5730\u56FE\uFF08${igeSolids.length} \u5757\uFF09\u5B9E\u65F6\u5E94\u7528\u5230\u5F53\u524D\u5BF9\u5C40\uFF01`);
+    });
+    document.getElementById("igeExportPng")?.addEventListener("click", () => {
+      const off = document.createElement("canvas");
+      off.width = 2640;
+      off.height = 880;
+      const c = off.getContext("2d");
+      c.fillStyle = "#040812";
+      c.fillRect(0, 0, off.width, off.height);
+      c.save();
+      c.scale(off.width / 13200, off.height / 4400);
+      const pat = getTerrainPattern(c, "block");
+      c.fillStyle = pat ?? "#162032";
+      c.fillRect(0, 2800, 13200, 1600);
+      for (const s of igeSolids) {
+        c.fillStyle = pat ?? "#162032";
+        c.fillRect(s.x, s.y, s.w, s.h);
+        c.strokeStyle = UNIFIED_EDGE_HIGHLIGHT;
+        c.lineWidth = 5;
+        c.strokeRect(s.x, s.y, s.w, s.h);
+      }
+      c.restore();
+      const a = document.createElement("a");
+      a.href = off.toDataURL("image/png");
+      a.download = "skyblast-2d-panorama.png";
+      a.click();
+    });
+    igeCanvas?.addEventListener("contextmenu", (e) => e.preventDefault());
+    igeCanvas?.addEventListener("mousedown", (e) => {
+      if (!igeCanvas) return;
+      const rect = igeCanvas.getBoundingClientRect();
+      const wx = Math.round((igeCam.x + (e.clientX - rect.left - igeCanvas.width / 2) / igeCam.zoom) / 20) * 20;
+      const wy = Math.round((igeCam.y + (e.clientY - rect.top - igeCanvas.height / 2) / igeCam.zoom) / 20) * 20;
+      if (e.button === 1 || e.button === 0 && igeSpace) {
+        igePanning = true;
+        igePanLast = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      if (e.button === 2 || igeTool === "erase") {
+        pushIgeHist();
+        igeSolids = igeSolids.filter((s) => !(wx >= s.x && wx <= s.x + s.w && wy >= s.y && wy <= s.y + s.h));
+        renderIge();
+        return;
+      }
+      if (igeTool === "select") {
+        igeSelected = igeSolids.findIndex((s) => wx >= s.x && wx <= s.x + s.w && wy >= s.y && wy <= s.y + s.h);
+        renderIge();
+        return;
+      }
+      igeDragStart = { x: wx, y: wy };
+      igeDragCur = { x: wx, y: wy };
+      renderIge();
+    });
+    igeCanvas?.addEventListener("mousemove", (e) => {
+      if (!igeCanvas) return;
+      if (igePanning) {
+        igeCam.x -= (e.clientX - igePanLast.x) / igeCam.zoom;
+        igeCam.y -= (e.clientY - igePanLast.y) / igeCam.zoom;
+        igePanLast = { x: e.clientX, y: e.clientY };
+        renderIge();
+        return;
+      }
+      if (!igeDragStart) return;
+      const rect = igeCanvas.getBoundingClientRect();
+      const wx = Math.round((igeCam.x + (e.clientX - rect.left - igeCanvas.width / 2) / igeCam.zoom) / 20) * 20;
+      const wy = Math.round((igeCam.y + (e.clientY - rect.top - igeCanvas.height / 2) / igeCam.zoom) / 20) * 20;
+      igeDragCur = { x: wx, y: wy };
+      renderIge();
+    });
+    window.addEventListener("mouseup", () => {
+      igePanning = false;
+      if (igeDragStart && igeDragCur) {
+        pushIgeHist();
+        const x = Math.min(igeDragStart.x, igeDragCur.x);
+        const y = Math.min(igeDragStart.y, igeDragCur.y);
+        const w = Math.max(40, Math.abs(igeDragCur.x - igeDragStart.x));
+        const h = Math.max(40, Math.abs(igeDragCur.y - igeDragStart.y));
+        if (igeTool === "carve") igeSolids = carveTunnelInSolids(igeSolids, { x, y, w, h }, 20);
+        else igeSolids.push({ x, y, w, h, kind: "block" });
+        igeDragStart = null;
+        igeDragCur = null;
+        renderIge();
+      }
+    });
+    igeCanvas?.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      igeCam.zoom = Math.max(0.05, Math.min(0.8, igeCam.zoom * Math.exp(-e.deltaY * 12e-4)));
+      renderIge();
+    }, { passive: false });
     document.getElementById("openAdminBtn")?.addEventListener("click", () => {
       window.open("./admin.html", "_blank");
     });
@@ -8423,7 +8970,10 @@
         lobby?.classList.remove("hidden");
         lobby?.classList.add("flex");
         updateSpawnPointButtonsUI();
-      } else inputQueue.interact = true;
+      } else {
+        inputQueue.interact = true;
+        trySelectCapturedFlagSpawnByKey();
+      }
     });
     function applyTeamButtons() {
       document.querySelectorAll(".team-select-btn").forEach((b) => {
@@ -8449,7 +8999,8 @@
       syncBotsCount(bots.length);
       applyTeamButtons();
       updateTeamCountUI();
-      showToast(nextMode === "ffa" ? "\u{1F7E1} \u81EA\u7531\u6DF7\u6218\uFF1A\u5168\u5458\u7686\u654C\uFF0C\u968F\u673A\u51FA\u751F\u70B9" : "\u2694\uFE0F \u53CC\u961F\u5BF9\u6297\uFF08\u7EA2\u961F vs \u84DD\u961F\uFF09\uFF1A\u968F\u673A\u51FA\u751F\u70B9");
+      updateSpawnPointButtonsUI();
+      showToast(nextMode === "ffa" ? "\u{1F7E1} \u81EA\u7531\u6DF7\u6218\uFF1A\u5168\u5458\u7686\u654C\uFF08\u5360\u9886\u6B63\u4E2D\u65D7\u5E1C\u540E\u53EF\u9009\u4E2D\u6B63\u4E2D\u590D\u6D3B\u70B9\uFF09" : "\u2694\uFE0F \u53CC\u961F\u5BF9\u6297\uFF08\u7EA2\u961F vs \u84DD\u961F\uFF09\uFF1A\u5DE6\u53F3\u57FA\u5730\u90E8\u7F72\uFF0C\u5360\u9886\u6B63\u4E2D\u65D7\u5E1C\u540E\u53EF\u6309 E \u9009\u4E2D\u590D\u6D3B\u70B9");
     }
     document.querySelectorAll(".mode-btn").forEach((b) => {
       b.addEventListener("click", () => applyMode(b.getAttribute("data-mode") || "ffa"));
@@ -8482,7 +9033,10 @@
     document.getElementById("toggleTouchBtn")?.addEventListener("click", () => setTouchLayerVisible(!touchState.enabled, false));
     document.getElementById("resetTerrainBtn")?.addEventListener("click", () => {
       world.resetMatch();
-      showToast("\u5168\u56FE\u53EF\u7834\u574F\u969C\u788D\u7269\u3001\u5730\u96F7\u4E0E\u5F39\u836F\u8865\u7ED9\u5DF2\u5168\u90E8\u91CD\u7F6E");
+      pendingLoadout.spawnPointId = "base";
+      localPlayer.selectedSpawnId = "base";
+      updateSpawnPointButtonsUI();
+      showToast("\u5168\u56FE\u53EF\u7834\u574F\u969C\u788D\u7269\u4E0E\u6B63\u4E2D\u65D7\u5E1C\u72B6\u6001\u5DF2\u91CD\u7F6E");
     });
     const paramsModal = document.getElementById("paramsModal");
     const openParams = () => {
@@ -8637,6 +9191,7 @@
     });
     document.getElementById("touchInteractBtn")?.addEventListener("click", () => {
       inputQueue.interact = true;
+      trySelectCapturedFlagSpawnByKey();
     });
     updateNetStatusUI();
   }
@@ -8665,347 +9220,6 @@
       }
     }
     return out;
-  }
-
-  // src/web/textures.ts
-  function mulberry32(seed) {
-    let s = seed >>> 0;
-    return () => {
-      s = s + 1831565813 | 0;
-      let t = s;
-      t = Math.imul(t ^ t >>> 15, t | 1);
-      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-  var cache = /* @__PURE__ */ new Map();
-  function makeTex(size, seed, paint) {
-    const cv = document.createElement("canvas");
-    cv.width = cv.height = size;
-    const c = cv.getContext("2d");
-    paint(c, mulberry32(seed));
-    return cv;
-  }
-  function speckle(c, rnd, size, count, colors, rMin = 1, rMax = 3) {
-    for (let i = 0; i < count; i++) {
-      c.fillStyle = colors[Math.floor(rnd() * colors.length)];
-      c.globalAlpha = 0.25 + rnd() * 0.5;
-      const r = rMin + rnd() * (rMax - rMin);
-      c.beginPath();
-      c.arc(rnd() * size, rnd() * size, r, 0, Math.PI * 2);
-      c.fill();
-    }
-    c.globalAlpha = 1;
-  }
-  function paintEarth(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#1b2436";
-    c.fillRect(0, 0, S, S);
-    for (let y = 0; y < S; y += 10) {
-      c.fillStyle = rnd() > 0.5 ? "rgba(51, 65, 85, 0.38)" : "rgba(15, 23, 42, 0.42)";
-      c.fillRect(0, y + rnd() * 3, S, 2 + rnd() * 3);
-    }
-    speckle(c, rnd, S, 48, ["#243044", "#2c3a52", "#141c2b", "#334155", "#475569"], 1, 3.4);
-    speckle(c, rnd, S, 10, ["#94a3b8"], 0.6, 1.4);
-    for (let i = 0; i < 4; i++) {
-      let x = rnd() * S;
-      let y = rnd() * S;
-      c.strokeStyle = "rgba(8, 12, 20, 0.7)";
-      c.lineWidth = 1.2;
-      c.beginPath();
-      c.moveTo(x, y);
-      for (let k = 0; k < 5; k++) {
-        x += (rnd() - 0.5) * 26;
-        y += (rnd() - 0.2) * 14;
-        c.lineTo(x, y);
-      }
-      c.stroke();
-    }
-  }
-  function paintBedrock(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#0b111e";
-    c.fillRect(0, 0, S, S);
-    speckle(c, rnd, S, 64, ["#080d16", "#131c2b", "#1c2738", "#263449"], 1, 4.2);
-    c.strokeStyle = "rgba(56, 189, 248, 0.12)";
-    c.lineWidth = 1.2;
-    for (let i = 0; i < 5; i++) {
-      c.beginPath();
-      c.moveTo(rnd() * S, rnd() * S);
-      c.lineTo(rnd() * S, rnd() * S);
-      c.stroke();
-    }
-  }
-  function paintBrick(c, rnd) {
-    const S = 96;
-    const rowH = 24;
-    c.fillStyle = "#0b111c";
-    c.fillRect(0, 0, S, S);
-    for (let row = 0; row < Math.ceil(S / rowH); row++) {
-      const off = row % 2 === 0 ? 0 : -18;
-      for (let x = off; x < S; x += 36) {
-        const shade = 0.88 + rnd() * 0.28;
-        c.fillStyle = `rgb(${Math.round(44 * shade)},${Math.round(56 * shade)},${Math.round(74 * shade)})`;
-        c.fillRect(x + 2, row * rowH + 2, 32, rowH - 4);
-        c.fillStyle = "rgba(255,255,255,0.11)";
-        c.fillRect(x + 2, row * rowH + 2, 32, 2);
-        c.fillStyle = "rgba(0,0,0,0.28)";
-        c.fillRect(x + 2, row * rowH + rowH - 4, 32, 2);
-      }
-    }
-    speckle(c, rnd, S, 22, ["#1a2334", "#38465c"], 0.8, 2);
-  }
-  function paintConcrete(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#3a4658";
-    c.fillRect(0, 0, S, S);
-    speckle(c, rnd, S, 54, ["#334155", "#475569", "#2c3849", "#5a6b82"], 0.9, 2.5);
-    c.strokeStyle = "rgba(15, 23, 42, 0.6)";
-    c.lineWidth = 1.2;
-    c.beginPath();
-    c.moveTo(0, S / 2);
-    c.lineTo(S, S / 2);
-    c.moveTo(S / 2, 0);
-    c.lineTo(S / 2, S);
-    c.stroke();
-    c.fillStyle = "rgba(255,255,255,0.08)";
-    c.fillRect(0, 0, S, 2);
-    c.fillRect(0, S / 2 + 1, S, 1.5);
-    for (const [bx, by] of [[10, 10], [S / 2 - 10, 10], [S / 2 + 10, S / 2 + 10], [S - 10, S / 2 + 10]]) {
-      c.fillStyle = "rgba(15,23,42,0.65)";
-      c.beginPath();
-      c.arc(bx, by, 2, 0, Math.PI * 2);
-      c.fill();
-    }
-  }
-  function paintMetal(c, rnd) {
-    const S = 96;
-    const g = c.createLinearGradient(0, 0, S, 0);
-    g.addColorStop(0, "#123f52");
-    g.addColorStop(0.45, "#1e6b85");
-    g.addColorStop(0.55, "#1e6b85");
-    g.addColorStop(1, "#0e3545");
-    c.fillStyle = g;
-    c.fillRect(0, 0, S, S);
-    for (let i = 0; i < 30; i++) {
-      c.strokeStyle = `rgba(255,255,255,${0.025 + rnd() * 0.055})`;
-      c.lineWidth = 1;
-      c.beginPath();
-      const y = rnd() * S;
-      c.moveTo(0, y);
-      c.lineTo(S, y);
-      c.stroke();
-    }
-    c.strokeStyle = "rgba(8, 20, 28, 0.85)";
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(0, 6);
-    c.lineTo(S, 6);
-    c.stroke();
-    for (let x = 8; x < S; x += 16) {
-      c.fillStyle = "rgba(0,0,0,0.45)";
-      c.beginPath();
-      c.arc(x, 13.2, 2.2, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = "rgba(165, 243, 252, 0.65)";
-      c.beginPath();
-      c.arc(x, 12, 2, 0, Math.PI * 2);
-      c.fill();
-    }
-    c.fillStyle = "rgba(34, 211, 238, 0.16)";
-    c.fillRect(0, 0, S, 3);
-  }
-  function paintPipeInner(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#0a1420";
-    c.fillRect(0, 0, S, S);
-    for (let i = 0; i < 20; i++) {
-      c.strokeStyle = `rgba(56, 189, 248, ${0.03 + rnd() * 0.05})`;
-      c.lineWidth = 1;
-      c.beginPath();
-      const y = rnd() * S;
-      c.moveTo(0, y);
-      c.lineTo(S, y);
-      c.stroke();
-    }
-    speckle(c, rnd, S, 12, ["#0f2233", "#123044"], 1, 2.4);
-  }
-  function paintTunnel(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#070b12";
-    c.fillRect(0, 0, S, S);
-    speckle(c, rnd, S, 34, ["#0c1119", "#101722", "#131b26"], 1.5, 4);
-    c.strokeStyle = "rgba(90, 110, 130, 0.12)";
-    c.lineWidth = 1;
-    for (let i = 0; i < 3; i++) {
-      c.beginPath();
-      let x = rnd() * S;
-      c.moveTo(x, 0);
-      for (let y = 0; y < S; y += 12) {
-        x += (rnd() - 0.5) * 10;
-        c.lineTo(x, y);
-      }
-      c.stroke();
-    }
-  }
-  function paintIsland(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#2d394b";
-    c.fillRect(0, 0, S, S);
-    speckle(c, rnd, S, 42, ["#25303d", "#3b4a5e", "#202a38", "#475569"], 1, 3.2);
-    c.fillStyle = "#15803d";
-    c.fillRect(0, 0, S, 8);
-    c.fillStyle = "#4ade80";
-    for (let x = 0; x < S; x += 3) {
-      c.fillRect(x, 0, 2, 2 + rnd() * 4.5);
-    }
-    c.fillStyle = "rgba(10, 14, 22, 0.42)";
-    for (let x = 0; x < S; x += 8) c.fillRect(x + rnd() * 3, S - 10, 2.2, 8);
-  }
-  function paintGrate(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#1e2a38";
-    c.fillRect(0, 0, S, S);
-    c.strokeStyle = "rgba(148, 163, 184, 0.4)";
-    c.lineWidth = 2;
-    for (let i = 0; i < S; i += 12) {
-      c.beginPath();
-      c.moveTo(i, 0);
-      c.lineTo(i, S);
-      c.stroke();
-    }
-    c.strokeStyle = "rgba(0,0,0,0.55)";
-    c.lineWidth = 1;
-    for (let i = 6; i < S; i += 12) {
-      c.beginPath();
-      c.moveTo(i, 0);
-      c.lineTo(i, S);
-      c.stroke();
-    }
-    speckle(c, rnd, S, 10, ["#2c3a4d"], 1, 2);
-  }
-  function paintPlate(c, rnd) {
-    const S = 96;
-    c.fillStyle = "#2b3747";
-    c.fillRect(0, 0, S, S);
-    c.strokeStyle = "rgba(100, 116, 139, 0.42)";
-    c.lineWidth = 1;
-    for (let y = 0; y < S; y += 24) {
-      c.beginPath();
-      c.moveTo(0, y);
-      c.lineTo(S, y);
-      c.stroke();
-    }
-    for (let x = 0; x < S; x += 32) {
-      c.strokeStyle = "rgba(15, 23, 42, 0.65)";
-      c.beginPath();
-      c.moveTo(x, 0);
-      c.lineTo(x, S);
-      c.stroke();
-      c.fillStyle = "rgba(186, 230, 253, 0.38)";
-      c.beginPath();
-      c.arc(x + 8, 12, 1.7, 0, Math.PI * 2);
-      c.fill();
-      c.beginPath();
-      c.arc(x + 8, S - 12, 1.7, 0, Math.PI * 2);
-      c.fill();
-    }
-    speckle(c, rnd, S, 16, ["#364457", "#1e293b"], 1, 2);
-  }
-  function texKindOf(kind) {
-    switch (kind) {
-      case "earth":
-        return "earth";
-      case "bedrock":
-        return "bedrock";
-      case "wall":
-        return "brick";
-      case "building_roof":
-      case "floor_slab":
-      case "building_bg":
-        return "concrete";
-      case "pipe_wall":
-        return "metal";
-      case "pipe_bg":
-        return "pipeInner";
-      case "tunnel_bg":
-        return "tunnel";
-      case "sky_island":
-        return "island";
-      case "step":
-        return "grate";
-      case "bunker_floor":
-        return "plate";
-      case "bridge":
-        return "metal";
-      case "platform":
-        return "island";
-      case "ledge":
-        return "concrete";
-      case "cliff":
-        return "brick";
-      case "ruin_pillar":
-      case "ruin_lintel":
-        return "brick";
-      case "cave_floor":
-      case "cave_shelf":
-        return "plate";
-      case "container":
-        return "plate";
-      case "cover":
-        return "brick";
-      case "pillar":
-        return "concrete";
-      default:
-        return "earth";
-    }
-  }
-  function getTerrainPattern(ctx2, kind) {
-    const key = texKindOf(kind);
-    const hit = cache.get(key);
-    if (hit) return hit;
-    let cv;
-    switch (key) {
-      case "earth":
-        cv = makeTex(96, 11, paintEarth);
-        break;
-      case "bedrock":
-        cv = makeTex(96, 17, paintBedrock);
-        break;
-      case "brick":
-        cv = makeTex(96, 23, paintBrick);
-        break;
-      case "concrete":
-        cv = makeTex(96, 29, paintConcrete);
-        break;
-      case "metal":
-        cv = makeTex(96, 37, paintMetal);
-        break;
-      case "pipeInner":
-        cv = makeTex(96, 41, paintPipeInner);
-        break;
-      case "tunnel":
-        cv = makeTex(96, 47, paintTunnel);
-        break;
-      case "island":
-        cv = makeTex(96, 53, paintIsland);
-        break;
-      case "grate":
-        cv = makeTex(96, 59, paintGrate);
-        break;
-      case "plate":
-        cv = makeTex(96, 67, paintPlate);
-        break;
-      default:
-        cv = makeTex(96, 11, paintEarth);
-    }
-    const pat = ctx2.createPattern(cv, "repeat");
-    if (pat) cache.set(key, pat);
-    return pat;
-  }
-  function syncTerrainPatterns(camX, camY) {
-    const m = new DOMMatrix().translate(-camX, -camY);
-    for (const pat of cache.values()) pat.setTransform(m);
   }
 
   // src/web/render/scene.ts
@@ -9084,16 +9298,14 @@
           ctx.fillStyle = pat ?? r.color;
           ctx.fillRect(left, top, r.w, r.h);
           if (r.kind !== "tunnel_bg" && r.kind !== "pipe_bg" && r.kind !== "building_bg") {
-            ctx.fillStyle = "rgba(255,255,255,0.10)";
-            ctx.fillRect(left, top, r.w, 2);
-            ctx.fillStyle = "rgba(0,0,0,0.22)";
+            ctx.fillStyle = "rgba(56, 189, 248, 0.28)";
+            ctx.fillRect(left, top, r.w, 2.5);
+            ctx.fillStyle = "rgba(2, 6, 23, 0.45)";
             ctx.fillRect(left, top + r.h - 3, r.w, 3);
           }
-          if (r.borderColor) {
-            ctx.strokeStyle = r.borderColor;
-            ctx.lineWidth = r.kind === "pipe_wall" ? 3 : 2;
-            ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2);
-          }
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2);
           if (r.label && (r.kind === "building_roof" || r.kind === "pipe_wall" || r.kind === "bridge")) {
             ctx.fillStyle = "rgba(226, 232, 240, 0.75)";
             ctx.font = "bold 12px Inter, sans-serif";
@@ -9102,6 +9314,44 @@
           }
         }
       }
+    }
+    for (const sp of SPAWN_POINTS) {
+      if (sp.team === "green") continue;
+      const px = sx(sp.x);
+      const py = sy(sp.y);
+      if (!inView(px, py, 120)) continue;
+      ctx.save();
+      if (sp.team === "ffa") {
+        ctx.translate(px, py + 12);
+        ctx.fillStyle = "rgba(234, 179, 8, 0.22)";
+        ctx.strokeStyle = "#facc15";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 22, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = "bold 10px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#fde047";
+        ctx.fillText("\u{1F7E1} FFA\u51FA\u751F\u70B9", 0, 16);
+      } else {
+        ctx.translate(px, py - 42);
+        const isLeft = sp.x < WORLD_W / 2;
+        const fillCol = isLeft ? "rgba(14, 165, 233, 0.32)" : "rgba(244, 63, 94, 0.32)";
+        const strokeCol = isLeft ? "#0ea5e9" : "#f43f5e";
+        ctx.fillStyle = fillCol;
+        ctx.strokeStyle = strokeCol;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 38, 56, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = "bold 11px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = isLeft ? "#7dd3fc" : "#fda4af";
+        ctx.fillText(isLeft ? "\u{1F535} \u5DE6\u7FFC\u57FA\u5730\u51FA\u751F\u70B9" : "\u{1F534} \u53F3\u7FFC\u57FA\u5730\u51FA\u751F\u70B9", 0, -66);
+      }
+      ctx.restore();
     }
     for (const pad of JUMP_PADS) {
       const px = sx(pad.x);
@@ -9118,7 +9368,30 @@
     for (const cp of world.capturePoints) {
       const cx = sx(cp.x);
       const cy = sy(cp.y);
-      if (!inView(cx, cy, 140)) continue;
+      if (!inView(cx, cy, 160)) continue;
+      if (cp.id === "cp_c") {
+        const selectable = isCapturePointSelectable(cp, localPlayer.team);
+        const isSelected = selectable && (localPlayer.selectedSpawnId === cp.id || pendingLoadout.spawnPointId === cp.id);
+        ctx.save();
+        ctx.translate(cx, cy + 12);
+        const pulse = 0.65 + 0.35 * Math.sin(world.tick * 0.1);
+        ctx.fillStyle = isSelected ? `rgba(16, 185, 129, ${0.28 * pulse})` : selectable ? `rgba(56, 189, 248, ${0.24 * pulse})` : "rgba(148, 163, 184, 0.14)";
+        ctx.strokeStyle = isSelected ? "#10b981" : selectable ? "#38bdf8" : "#64748b";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 44, 11, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = "bold 11px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = isSelected ? "#6ee7b7" : selectable ? "#7dd3fc" : "#cbd5e1";
+        ctx.fillText(
+          isSelected ? "\u2705 \u5DF2\u9009\u4E2D\u6B63\u4E2D\u590D\u6D3B\u70B9" : selectable ? "\u26A1 \u6B63\u4E2D\u590D\u6D3B\u70B9 [\u6309 E \u9009\u4E2D]" : "\u{1F512} \u6B63\u4E2D\u590D\u6D3B\u70B9\uFF08\u5360\u9886\u65D7\u5E1C\u540E\u53EF\u9009\uFF09",
+          0,
+          24
+        );
+        ctx.restore();
+      }
       drawFlagSprite(ctx, cp, cx, cy, world.tick);
     }
     for (const wp of world.warpPortals) {
@@ -9500,6 +9773,7 @@
     pendingLoadout.secondaryType = highestSec;
     localPlayer.secondary = highestSec;
     updateHudWeaponButtons();
+    updateSpawnPointButtonsUI();
     renderDeathStats();
     const ds = document.getElementById("deathScreen");
     if (ds) {
@@ -9510,7 +9784,7 @@
     if (streak > 0 && secDef.unlockStreak > 0) {
       showToast(`\u{1F480} \u8FDE\u6B7B ${streak} \u6B21\uFF1A\u526F\u624B\u5DF2\u89E3\u9501\u5E76\u9884\u9009\u3010${secDef.icon} ${secDef.name}\u3011`);
     } else {
-      showToast("\u{1F480} \u5DF2\u9635\u4EA1\uFF1A\u67E5\u770B KD \u6218\u62A5\u5E76\u9009\u62E9\u91CD\u751F\u914D\u88C5");
+      showToast("\u{1F480} \u5DF2\u9635\u4EA1\uFF1A\u67E5\u770B KD \u6218\u62A5\u5E76\u9009\u62E9\u91CD\u751F\u914D\u88C5\u4E0E\u590D\u6D3B\u70B9");
     }
   }
   function onLocalRespawn() {
@@ -9525,8 +9799,11 @@
     if (validSec === "doll" && streak >= SECONDARIES.doll.unlockStreak && localPlayer.dollCharges <= 0) {
       localPlayer.dollCharges = 1;
     }
+    localPlayer.selectedSpawnId = pendingLoadout.spawnPointId;
     updateHudWeaponButtons();
-    showToast(world.config.randomSpawn ? "\u{1F504} \u5DF2\u5728\u968F\u673A\u5B89\u5168\u70B9\u91CD\u751F" : "\u{1F504} \u5DF2\u5728\u961F\u4F0D\u57FA\u5730\u91CD\u751F");
+    updateSpawnPointButtonsUI();
+    const cp = pendingLoadout.spawnPointId !== "base" ? world.capturePoints.find((c) => c.id === pendingLoadout.spawnPointId && isCapturePointSelectable(c, localPlayer.team)) : null;
+    showToast(cp ? `\u{1F504} \u5DF2\u5728\u3010${cp.name}\u3011\u91CD\u751F` : world.config.randomSpawn ? "\u{1F504} \u5DF2\u5728\u968F\u673A\u5B89\u5168\u70B9\u91CD\u751F" : "\u{1F504} \u5DF2\u5728\u961F\u4F0D\u57FA\u5730\u91CD\u751F");
   }
   function startGameLoop() {
     lastFrame = performance.now();
@@ -9540,6 +9817,7 @@
         inputQueue.interact = false;
         inputQueue.reload = false;
         inputQueue.secondary = null;
+        localPlayer.selectedSpawnId = pendingLoadout.spawnPointId;
         const inputs = /* @__PURE__ */ new Map([[localPlayer.id, playerInput]]);
         for (const b of bots) inputs.set(b.id, botInput(b));
         const handledAsClient = stepNetworkFrame(FIXED, playerInput, inputs);
@@ -9548,6 +9826,10 @@
           const evs = world.drainEvents();
           handleEvents(evs);
           if (netState.role === "host") broadcastHostKcpSnapshot(evs);
+        }
+        if (localPlayer.selectedSpawnId && localPlayer.selectedSpawnId !== pendingLoadout.spawnPointId) {
+          pendingLoadout.spawnPointId = localPlayer.selectedSpawnId;
+          updateSpawnPointButtonsUI();
         }
         const dead = localPlayer.respawnTimer > 0;
         if (dead && !wasDead) onLocalDeath();
@@ -9656,7 +9938,7 @@
   // src/web/main-web.ts
   bindAllEvents();
   autoDetectDeviceInput();
-  localPlayer.team = "ffa";
+  localPlayer.team = "red";
   syncBotsCount(4);
   updateHudWeaponButtons();
   updateSpawnPointButtonsUI();

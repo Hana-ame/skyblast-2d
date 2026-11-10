@@ -10,6 +10,7 @@ import {
   formatSecondaryCardSubtitle,
 } from '../../core/weapons.ts'
 import { getPhysicsParams } from '../../core/sim/physics.ts'
+import { isCapturePointSelectable } from '../../core/sim/world.ts'
 import { clamp, wrapDist } from '../../core/wrap.ts'
 import { showToast } from './toast.ts'
 
@@ -102,14 +103,12 @@ export function updateHudWeaponButtons(): void {
 }
 
 export function updateSpawnPointButtonsUI(): void {
-  const container = document.getElementById('spawnPointBtnGroup')
-  if (!container) return
-  container.querySelectorAll('.spawn-select-btn').forEach((btn) => {
+  document.querySelectorAll('.spawn-select-btn').forEach((btn) => {
     const spId = btn.getAttribute('data-spawn') || 'base'
     let unlocked = spId === 'base'
     if (spId !== 'base') {
       const cp = world.capturePoints.find(c => c.id === spId)
-      unlocked = Boolean(cp && (cp.ownerTeam === localPlayer.team || localPlayer.team === 'ffa'))
+      unlocked = isCapturePointSelectable(cp, localPlayer.team)
     }
     const isSelected = pendingLoadout.spawnPointId === spId
     if (!unlocked) btn.className = 'spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed'
@@ -229,7 +228,6 @@ export function updateHudUI(): void {
       secChipEl.textContent = `${secDef.icon} ${secDef.name}${cdStr}`
     }
   }
-  // 弹药显示：当前弹匣与备弹分列在固定宽度槽里（tabular-nums），位数变化不会让 HUD 抖动
   const curAmmo = Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))
   const ammoEl = document.getElementById('currentAmmoText')
   const reserveEl = document.getElementById('reserveAmmoText')
@@ -240,7 +238,6 @@ export function updateHudUI(): void {
     reserveEl.textContent = mounted ? '' : String(localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0)
   }
 
-  // 弹药格/进度条微缩指示（霰弹显示 8 颗独立弹壳格，其他武器显示平滑弹量条）
   const ammoPipsEl = document.getElementById('hudAmmoPips')
   if (ammoPipsEl) {
     if (wep.shellReload && wep.magSize <= 12) {
@@ -313,7 +310,6 @@ export function updateHudUI(): void {
     }
   }
 
-  // 换弹进度胶囊（悬浮在单行 HUD 正上方，不挤占底栏横向空间，彻底告别突兀占坑）
   const reloadWrap = document.getElementById('reloadProgressWrap')
   const reloadBar = document.getElementById('reloadProgressBar')
   const reloadLabel = document.getElementById('reloadProgressLabel')
@@ -325,7 +321,6 @@ export function updateHudUI(): void {
       reloadWrap.classList.add('opacity-100', 'translate-y-0')
       const wep2 = WEAPONS[localPlayer.weaponIndex]
       if (wep2.shellReload) {
-        // CS 风格逐发装填：进度按「当前这一发」的塞弹进度显示（若在泵动冷却中则显示准备装填），并标出已装发数
         const perShell = wep2.reloadTime / Math.max(1, wep2.magSize)
         const pct = localPlayer.fireCooldown > 0
           ? 0
@@ -359,10 +354,26 @@ export function updateHudUI(): void {
   } else if (mounted) {
     promptMsg = '🎯 迫击炮操控中：移动鼠标调节落点，按住开火发射 | 按 [E] 或点击此处离开'
   } else {
-    for (const m of world.mortars) {
-      if (m.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, m.x, m.y) < 115) {
-        promptMsg = `🔥 按 [E] 或点击此处操控【${m.name}】`
+    for (const cp of world.capturePoints) {
+      if (wrapDist(localPlayer.pos.x, localPlayer.pos.y, cp.x, cp.y) < Math.max(140, world.config.captureRadius + 30)) {
+        if (isCapturePointSelectable(cp, localPlayer.team)) {
+          if (localPlayer.selectedSpawnId === cp.id || pendingLoadout.spawnPointId === cp.id) {
+            promptMsg = `✅ 已选中【${cp.name}】作为复活点（阵亡后将在此处复活）`
+          } else {
+            promptMsg = `🚩 按 [E] 或点击此处选中【${cp.name}】作为复活点`
+          }
+        } else {
+          promptMsg = `🚩 正在占领【${cp.name}】(${Math.round(cp.progress)}%) · 占领后可按 [E] 选为复活点`
+        }
         break
+      }
+    }
+    if (!promptMsg) {
+      for (const m of world.mortars) {
+        if (m.operatorId === null && wrapDist(localPlayer.pos.x, localPlayer.pos.y, m.x, m.y) < 115) {
+          promptMsg = `🔥 按 [E] 或点击此处操控【${m.name}】`
+          break
+        }
       }
     }
     if (localPlayer.mountedTowerId) {

@@ -17,7 +17,7 @@ import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/
 // ── 启动 ──
 bindAllEvents()
 autoDetectDeviceInput()
-localPlayer.team = 'ffa'   // 自由混战默认
+localPlayer.team = 'red'   // 默认红队基地部署（FFA 出生点已移除）
 syncBotsCount(4)
 updateHudWeaponButtons()
 updateSpawnPointButtonsUI()

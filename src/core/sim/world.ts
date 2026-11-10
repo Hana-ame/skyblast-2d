@@ -1,11 +1,4 @@
 // core/sim/world.ts —— 服务器权威世界容器与子系统编排器（确定性，零 IO，可在服务端复用）
-// 架构重构：消除 1600 行 God Class，将物理与玩法拆分为 6 个独立纯函数子系统模块：
-//   - landmarks.ts       静态地标、出生点与跳台预设
-//   - spatial.ts         一维环形空间哈希桶与几何查询
-//   - playerPhysics.ts   玩家运动学、采样碰撞、穿模解算、重叠分离与客户端预测纯函数
-//   - projectiles.ts     弹丸子步进、高斯枪 2 次反射光线追踪、引力场弯折与牵引
-//   - throwables.ts      副武器、手雷、地雷、空袭与爆炸伤害结算 (stepExplosionsAndThrowables)
-//   - interactables.ts   占领点、迫击炮、瞭望塔、传送门、补给箱与弹药经济 (stepMapInteractables)
 import { jetpack, jump, updateJetpackFuel, getPhysicsParams, recoilDelta } from './physics.ts'
 import { Terrain, OBSTACLE_PRESETS } from '../terrain.ts'
 import type { MapData } from '../map.ts'
@@ -19,9 +12,8 @@ import type {
   Airstrike, Obstacle, CapturePoint, AmmoPack, SupplyCrate, Mortar, Watchtower, WarpPortal, TeamId,
 } from '../types.ts'
 import type { WorldSnapshot } from '../snap.ts'
-
 import {
-  SPAWN_POINTS, AMMO_SPOTS, SUPPLY_SPOTS, DOLL_SUPPLY_SPOTS,
+  SPAWN_POINTS, FFA_SPAWN_POINTS, CENTER_RESPAWN_POINT, AMMO_SPOTS, SUPPLY_SPOTS, DOLL_SUPPLY_SPOTS,
   MORTARS_INIT, MINE_PRESETS, WATCHTOWERS, WARP_PORTALS,
   RANDOM_SPAWN_CANDIDATES, JUMP_PADS, CP_INITS,
 } from './landmarks.ts'
@@ -41,11 +33,11 @@ import {
 } from './throwables.ts'
 import type { ThrowablesContext } from './throwables.ts'
 import {
-  recallDollState, handlePlayerInteract, spawnSingleAmmoPack, stepMapInteractables,
+  recallDollState, handlePlayerInteract, spawnSingleAmmoPack, stepMapInteractables, isCapturePointSelectable,
 } from './interactables.ts'
 import type { InteractablesContext } from './interactables.ts'
 
-export { SPAWN_POINTS, AMMO_SPOTS, JUMP_PADS }
+export { SPAWN_POINTS, FFA_SPAWN_POINTS, CENTER_RESPAWN_POINT, AMMO_SPOTS, JUMP_PADS, isCapturePointSelectable }
 
 export class World implements ProjectileContext, ThrowablesContext, InteractablesContext {
   terrain = new Terrain()
@@ -91,7 +83,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     this.resetMatch()
   }
 
-  // ── 子系统接口方法 ──
   nextProjId(): number { return this.prj++ }
   nextGrenadeId(): number { return this.gren++ }
   nextObstacleSeq(): number { return this.obsSeq++ }
@@ -141,7 +132,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (!wep || p.reloading || p.ammo[p.weaponIndex] >= wep.magSize) return
     if ((p.reserveAmmo[p.weaponIndex] || 0) <= 0) return
     p.reloading = true
-    // CS 风格逐发装填（霰弹）：单发装填耗时 = reloadTime / magSize
     p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime
   }
 
@@ -226,6 +216,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     this.airstrikes = []
     this.ammoSpawnTimer = 0
     this.scores = { red: 0, blue: 0, green: 0, ffa: 0 }
+    for (const p of this.players) p.selectedSpawnId = 'base'
     this.rebuildSpatialBuckets()
   }
 
@@ -236,6 +227,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       aim: 0, team, name,
       hp: this.config.maxHp, maxHp: this.config.maxHp,
       alive: true, deployed: true, onGround: true,
+      selectedSpawnId: 'base',
       weaponIndex: 1,
       lastPrimaryIndex: 1,
       ammo: WEAPONS.map(w => w.magSize),
@@ -270,16 +262,25 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       p.lastPrimaryIndex = p.weaponIndex
     }
     let sx: number, sy: number
-    if (this.config.randomSpawn) {
+    const wantedCp = p.selectedSpawnId && p.selectedSpawnId !== 'base'
+      ? this.capturePoints.find(c => c.id === p.selectedSpawnId && isCapturePointSelectable(c, team))
+      : null
+    if (wantedCp) {
+      sx = wantedCp.x
+      sy = wantedCp.y
+    } else if (this.config.randomSpawn) {
       const spot = RANDOM_SPAWN_CANDIDATES[this.rng.int(RANDOM_SPAWN_CANDIDATES.length)]
-      sx = spot.x + this.rng.range(-60, 60)
+      sx = spot.x + this.rng.range(-45, 45)
+      sy = spot.y
+    } else if (team === "ffa") {
+      const spot = FFA_SPAWN_POINTS[this.rng.int(FFA_SPAWN_POINTS.length)]
+      sx = spot.x
       sy = spot.y
     } else {
-      const owned = this.capturePoints.filter(c => c.ownerTeam === team && c.progress >= 100)
-      const cp = owned.length > 0 ? owned[this.rng.int(owned.length)] : null
-      const base = SPAWN_POINTS.find(s => s.team === team) ?? SPAWN_POINTS[3]
-      sx = cp ? cp.x : base.x
-      sy = cp ? cp.y - 60 : base.y
+      if (team === "red" || team === "blue" || team === "green") this.rng.int(1);
+      const base = SPAWN_POINTS.find(s => s.team === team) ?? SPAWN_POINTS[0]
+      sx = base.x
+      sy = base.y
     }
     p.pos = { x: wrapX(sx + this.rng.range(-45, 45)), y: sy }
     p.vel = { x: 0, y: 0 }
@@ -303,7 +304,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
   }
 
-  // ── 主 step：按子系统顺序编排 ──────────────────────────────
   step(dt: number, inputs: Map<number, WorldInput>): void {
     this.tick++
     this.events.length = 0
@@ -315,7 +315,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (pr.isGravityOrb && pr.life > 0 && pr.damage > 0) this.activeGravityOrbs.push(pr)
     }
 
-    // 1. 玩家输入与物理子系统
     for (const p of this.players) {
       const w = inputs.get(p.id) ?? defaultWorldInput()
       this.applyPlayerInput(p, w, dt)
@@ -349,16 +348,10 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     separateOverlappingPlayers(this.players, this.playerBroadBuckets, this.terrain, this.obstacles, this.obstacleBroadBuckets)
     this.rebuildPlayerBucketsOnly()
 
-    // 2. 弹道与力场子系统
     stepProjectilesSubsystem(this, dt)
-
-    // 3. 投掷物、地雷、空袭与爆炸子系统
     stepExplosionsAndThrowables(this, dt)
-
-    // 4. 地图互动设施子系统
     stepMapInteractables(this, dt)
 
-    // 5. 原地双指针清理失效实体
     let pw = 0
     for (let i = 0; i < this.projectiles.length; i++) {
       const pr = this.projectiles[i]
@@ -443,7 +436,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
     stepPlayerTeleport(this, p, dt)
 
-    // CS 风格霰弹换弹：有弹开火立即打断换弹；fireCooldown>0 期间暂停塞弹计时；空仓按住开火装1打1
     if (w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
       p.reloading = false
       p.reloadTimer = 0
@@ -500,13 +492,11 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (w.fire) updateContinuousBeam(this, p, wepNow, dt)
       p.chargeTimer = 0
     } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
-      // 蓄力武器（狙击）：**按下沿**开始读条，不需要按住；
-      // 发射方向锁定为「按下那一刻」的瞄准方向，读条期间不再跟随鼠标。
       const firePressed = w.fire && !p.prevFireHeld
       if (firePressed && p.chargeTimer <= 0 && p.fireCooldown <= 0) {
         if (p.ammo[p.weaponIndex] > 0) {
-          p.chargeAim = p.aim          // 锁定按下瞬间的方向
-          p.chargeTimer = 1e-4         // 开始读条
+          p.chargeAim = p.aim
+          p.chargeTimer = 1e-4
         } else if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) {
           this.startReload(p)
         }
@@ -514,7 +504,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (p.chargeTimer > 0) {
         p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
-          this.fire(p)                 // 读条完成自动发射（方向用锁定的 chargeAim）
+          this.fire(p)
           p.chargeTimer = 0
           p.chargeAim = undefined
         }
@@ -522,7 +512,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     } else if (w.fire) {
       this.fire(p)
     }
-    // 记录本帧开火键状态，供下一帧做按下沿检测（所有武器共用）
     p.prevFireHeld = w.fire
   }
 
@@ -546,7 +535,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       return
     }
     const wep = WEAPONS[p.weaponIndex]
-    // CS 风格逐发装填（霰弹）：装填中有子弹就能随时打断装填并立即击发
     const canFireWhileReloading = !!wep.shellReload && p.ammo[p.weaponIndex] > 0
     if ((p.reloading && !canFireWhileReloading) || p.fireCooldown > 0) return
     if (p.ammo[p.weaponIndex] <= 0) {
@@ -559,7 +547,6 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     }
     p.ammo[p.weaponIndex]--
     p.fireCooldown = wep.fireDelay
-    // 自动装填：弹匣打空（ammo 归零）后自动进入换弹（霰弹会在当前射击冷却结束后逐发塞入）
     if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {

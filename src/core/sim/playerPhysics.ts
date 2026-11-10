@@ -119,7 +119,7 @@ export function ensureFreePosition(
       }
     }
   }
-  const base = SPAWN_POINTS.find(s => s.team === p.team) ?? SPAWN_POINTS[3]
+  const base = SPAWN_POINTS.find(s => s.team === p.team) ?? SPAWN_POINTS[0]
   p.pos = { x: wrapX(base.x), y: base.y }
   p.vel = { x: 0, y: 0 }
   return true

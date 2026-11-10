@@ -1,12 +1,11 @@
 // core/sim/interactables.ts —— 地图互动设施子系统 (stepMapInteractables)：
-//   占领点、迫击炮、瞭望塔、量子传送门、特武/人偶补给箱、弹药包经济与替身人偶回溯
+//   占领点、复活点按 E 选中、迫击炮、瞭望塔、量子传送门、特武/人偶补给箱、弹药包经济与替身人偶回溯
 import { getPhysicsParams } from './physics.ts'
 import type { Rng } from '../rng.ts'
 import { WEAPONS } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX, wrapDeltaX, wrapDist } from '../wrap.ts'
 import { AMMO_SPOTS } from './landmarks.ts'
-import { bucketIdx } from './spatial.ts'
 import type {
   PlayerState, CapturePoint, AmmoPack, SupplyCrate, Mortar, Watchtower, WarpPortal, WorldEvent, TeamId,
 } from '../types.ts'
@@ -28,6 +27,13 @@ export interface InteractablesContext {
   setAmmoTimer: (t: number) => void
 }
 
+/** 判定旗帜据点是否已被占领且可供该队伍玩家选作复活点（未占领时绝不可选） */
+export function isCapturePointSelectable(cp: CapturePoint | undefined | null, team: TeamId): boolean {
+  if (!cp) return false
+  if (cp.ownerTeam === null || cp.progress < 100) return false
+  return cp.ownerTeam === team || team === 'ffa'
+}
+
 /** 替身人偶回溯（死亡触发 或 10s 到期触发） */
 export function recallDollState(events: WorldEvent[], p: PlayerState): void {
   if (!p.doll) return
@@ -47,7 +53,7 @@ export function recallDollState(events: WorldEvent[], p: PlayerState): void {
   events.push({ kind: 'doll_recall', x: p.pos.x, y: p.pos.y, playerId: p.id })
 }
 
-/** 玩家按 E 交互：迫击炮 / 瞭望塔 / 量子传送门 */
+/** 玩家按 E 交互：迫击炮 / 瞭望塔 / 量子传送门 / 占领后的旗帜复活点选中 */
 export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState): void {
   if (p.respawnTimer > 0 || !p.alive) return
   // 退出迫击炮
@@ -100,6 +106,22 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
       return
     }
   }
+  // 旗帜复活点：占领后按 E 即可选中该复活点（优先就近已占领旗帜，其次场内已占领的正中旗帜复活点）
+  const nearCaptured = ctx.capturePoints.find(
+    cp => isCapturePointSelectable(cp, p.team) && wrapDist(p.pos.x, p.pos.y, cp.x, cp.y) < Math.max(150, ctx.config.captureRadius + 40),
+  )
+  const targetCp = nearCaptured ?? ctx.capturePoints.find(cp => isCapturePointSelectable(cp, p.team))
+  if (targetCp) {
+    p.selectedSpawnId = targetCp.id
+    ctx.events.push({
+      kind: 'warp',
+      x: targetCp.x,
+      y: targetCp.y,
+      playerId: p.id,
+      pointCode: targetCp.code,
+      weaponName: `已选中【${targetCp.name}】作为复活点`,
+    })
+  }
 }
 
 export function spawnSingleAmmoPack(ctx: InteractablesContext): void {
@@ -131,7 +153,10 @@ export function stepMapInteractables(ctx: InteractablesContext, dt: number): voi
     if (teams.length === 1) {
       const t = teams[0]
       if (cp.ownerTeam !== t) {
-        cp.capturingTeam = t
+        if (cp.capturingTeam !== t) {
+          cp.capturingTeam = t
+          if (cp.ownerTeam !== null) cp.progress = 0
+        }
         cp.progress += ctx.config.captureRate * dt * (presence[t] || 0)
         if (cp.progress >= 100) {
           cp.progress = 100

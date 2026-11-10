@@ -1,9 +1,7 @@
 // web/game/bots.ts —— AI 机器人（数量同步 / 目标选择 / 权威输入）
-import { botNames, botTeams, botSecs, bots, world, localPlayer, mode } from '../app/context.ts'
+import { botNames, botSecs, bots, world, localPlayer, mode } from '../app/context.ts'
 import { updateTeamCountUI } from '../app/hud.ts'
-import { WEAPONS, SECONDARIES } from '../../core/weapons.ts'
-import { wrapDist, wrapDeltaX, wrapDeltaY, wrapX, clamp } from '../../core/wrap.ts'
-import { getPhysicsParams } from '../../core/sim/physics.ts'
+import { wrapDist, wrapDeltaX, wrapDeltaY } from '../../core/wrap.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput, PlayerState, TeamId } from '../../core/types.ts'
 
@@ -26,8 +24,6 @@ export function syncBotsCount(target: number): void {
     b.weaponIndex = idx % 4
     b.lastPrimaryIndex = idx % 4
     b.secondary = botSecs[idx % botSecs.length]
-    const cp = world.capturePoints[idx % world.capturePoints.length]
-    b.pos = { x: wrapX(cp.x + (idx - 4) * 47), y: cp.y - 50 }
     bots.push(b)
   }
   // 模式变更时同步既有 bot 队伍：FFA 全员混战；2 队按红蓝均衡（避开玩家队伍）
@@ -71,4 +67,3 @@ export function botInput(bot: PlayerState): WorldInput {
   w.jetpack = target.pos.y + 80 < bot.pos.y
   return w
 }
-

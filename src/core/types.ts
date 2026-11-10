@@ -27,6 +27,8 @@ export interface PlayerState {
   alive: boolean
   onGround: boolean
   deployed: boolean      // false = 待机整备（未部署/等待重生）
+  /** 当前选中的复活点 id（'base' 或已占领的旗帜据点 id 如 'cp_c'；占领后可在 UI 选中或按 E 选中） */
+  selectedSpawnId?: string | null
   // 武器经济（有限弹匣 + 有限备弹，v2 核心）
   weaponIndex: number
   /** 上次使用的常规主武器（补给特武是临时的；重生时回退到它）。旧协议解码可能缺失 → 视为当前武器 */

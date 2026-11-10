@@ -11,7 +11,9 @@ import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
 import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, getUnlockedSecondaries, getHighestUnlockedSecondary, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
-import { defaultMapData, sanitizeMapData } from '../src/core/map.ts'
+import { defaultMapData, sanitizeMapData, carveTunnelInSolids, UNIFIED_EDGE_HIGHLIGHT } from '../src/core/map.ts'
+import { FFA_SPAWN_POINTS, AMMO_SPOTS } from '../src/core/sim/world.ts'
+import { texKindOf } from '../src/web/textures.ts'
 import { sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides } from '../src/core/balanceOverrides.ts'
 import { runDuelSim } from '../src/balance/duelSim.ts'
 import { getPhysicsParams } from '../src/core/sim/physics.ts'
@@ -1079,16 +1081,52 @@ test('引力枪防御：引力场让子弹明显偏转（不吞弹）', () => {
 
 test('地图编辑器数据：默认地图/清洗/自定义地图可被 World 使用', () => {
   const def = defaultMapData()
-  assert.ok(def.solids.length === 9, `default map = 2 ceiling slabs + 7 arch blocks, got ${def.solids.length}`)
-  // 天花板：左右两块实心板，正中 x 5600~7600 留空
+  assert.ok(def.solids.length >= 25, `default enclosed arch map solids count: ${def.solids.length}`)
+  // 四面全封闭：完整天花板（无入口）+ 左右边界墙 + 底部基岩
   const w0 = new World(310, def)
-  assert.ok(w0.terrain.isSolidAt(1000, 320), 'left ceiling slab solid')
-  assert.ok(w0.terrain.isSolidAt(10000, 320), 'right ceiling slab solid')
-  assert.ok(!w0.terrain.isSolidAt(6600, 320), 'ceiling hole open at center (above middle block)')
-  // 拱形方块：中块 6600 顶面 2400（最高），侧块 5700 顶面 2700（最低），方块间空隙可通行
-  assert.ok(w0.terrain.isSolidAt(6600, 2460), 'arch middle block solid (top 2400)')
-  assert.ok(w0.terrain.isSolidAt(5700, 2760), 'arch side block solid (top 2700)')
-  assert.ok(!w0.terrain.isSolidAt(6450, 2460), 'arch gap between blocks is open')
+  assert.ok(w0.terrain.isSolidAt(1000, 320), 'left ceiling solid')
+  assert.ok(w0.terrain.isSolidAt(6600, 320), 'center ceiling sealed (no hole)')
+  assert.ok(w0.terrain.isSolidAt(10000, 320), 'right ceiling solid')
+  assert.ok(w0.terrain.isSolidAt(20, 1500), 'left boundary wall solid')
+  assert.ok(w0.terrain.isSolidAt(13180, 1500), 'right boundary wall solid')
+  // 天空拱形方块（有上有下）：正中方块 x=6600 顶面 680，左峰 3940..4820 顶面 560，左中 5220..5780 顶面 760
+  assert.ok(w0.terrain.isSolidAt(6600, 740), 'sky arch center block solid (top 680)')
+  assert.ok(w0.terrain.isSolidAt(4300, 620), 'sky arch left peak solid (top 560)')
+  assert.ok(w0.terrain.isSolidAt(5500, 820), 'sky arch left-mid dip solid (top 760)')
+  assert.ok(!w0.terrain.isSolidAt(6000, 740), 'sky arch gap between blocks is open')
+  // 正中复活点与旗帜 cp_c 同在 (6600, 664)，所有旗帜初始未占领，且已移除 FFA 出生点
+  assert.ok(w0.capturePoints.every(c => c.ownerTeam === null && c.progress === 0), 'all flags start uncaptured')
+  const cpC = w0.capturePoints.find(c => c.id === 'cp_c')!
+  assert.equal(cpC.x, 6600, 'central flag at x=6600')
+  assert.equal(cpC.y, 664, 'central flag on top of central sky arch block')
+  // FFA 出生点均匀分布在全图（左、中、右及地下地道）
+  assert.ok(FFA_SPAWN_POINTS.length >= 10, `expected >= 10 uniform FFA spawn points, got ${FFA_SPAWN_POINTS.length}`)
+  assert.ok(FFA_SPAWN_POINTS.some(s => s.x < 3000), 'FFA spawn exists in west zone')
+  assert.ok(FFA_SPAWN_POINTS.some(s => s.x >= 4000 && s.x <= 9000), 'FFA spawn exists in central zone')
+  assert.ok(FFA_SPAWN_POINTS.some(s => s.x > 10000), 'FFA spawn exists in east zone')
+  assert.ok(FFA_SPAWN_POINTS.some(s => s.y > 1800), 'FFA spawn exists in underground narrow tunnels')
+  // 靠近中间的位置设置弹药刷新点
+  assert.ok(AMMO_SPOTS.every(a => a.x >= 4800 && a.x <= 8400), 'all ammo spots are positioned near the center of the map')
+  // 贴图统一为 unifiedPanel（无 brick 纹理），所有方块边缘高亮色保持一致 (#38bdf8)
+  assert.ok(w0.terrain.rects.every(r => r.borderColor === UNIFIED_EDGE_HIGHLIGHT), 'all terrain rects share unified edge highlight color')
+  assert.equal(texKindOf('platform'), 'unifiedPanel')
+  assert.equal(texKindOf('cover'), 'unifiedPanel')
+  assert.equal(texKindOf('block'), 'unifiedPanel')
+  // 地下狭窄地道切割工具验证
+  const carved = carveTunnelInSolids([{ x: 1000, y: 2000, w: 1000, h: 500, kind: 'block' }], { x: 1000, y: 2200, w: 1000, h: 120 })
+  assert.equal(carved.length, 2, 'horizontal narrow tunnel splits solid block into top and bottom slabs')
+  // 占领正中旗帜后按 E 可选中正中复活点并在重生时生效
+  const p = w0.addPlayer('CapTester', 'red')
+  w0.config.randomSpawn = false
+  p.pos = { x: cpC.x, y: cpC.y }
+  for (let i = 0; i < 300 && cpC.ownerTeam !== 'red'; i++) {
+    w0.step(DT, new Map([[p.id, input()]]))
+  }
+  assert.equal(cpC.ownerTeam, 'red', 'central flag captured')
+  w0.step(DT, new Map([[p.id, input({ interact: true })]]))
+  assert.equal(p.selectedSpawnId, 'cp_c', 'pressing E selects central flag respawn point')
+  w0.deploy(p)
+  assert.ok(Math.abs(p.pos.x - 6600) <= 60 && Math.abs(p.pos.y - 664) <= 20, `respawns at central respawn point: (${p.pos.x}, ${p.pos.y})`)
   // 清洗：非法项丢弃、kind 回退
   const clean = sanitizeMapData({ name: 't', solids: [
     { x: 100, y: 2500, w: 60, h: 20, kind: 'platform' },
