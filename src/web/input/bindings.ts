@@ -6,7 +6,7 @@ import { getTerrainPattern } from '../textures.ts'
 // web/input/bindings.ts —— DOM 事件绑定（纯房间码 String + 房主下发参数 + 双队FFA许可配置 + 精简HUD）
 import {
   canvas, world, localPlayer, bots, pendingLoadout, mode, uiState,
-  keys, mouse, touchState, inputQueue, resizeCanvas,
+  keys, mouse, touchState, inputQueue, resizeCanvas, requestResizeCanvas,
 } from '../app/context.ts'
 import { showToast } from '../app/toast.ts'
 import {
@@ -73,16 +73,20 @@ export function trySelectCapturedFlagSpawnByKey(): boolean {
 }
 
 export function bindAllEvents(): void {
-  window.addEventListener('resize', () => {
-    resizeCanvas()
+  // resize / ResizeObserver / visualViewport 都可能因地址栏收放、工具栏折叠、缩放而连续触发；
+  // 统一走去抖版本，避免短时间内反复重建 canvas 后备缓冲（周期性卡顿来源之一）。
+  const onViewportChange = (): void => {
+    requestResizeCanvas()
     renderIge()
-  })
+  }
+  window.addEventListener('resize', onViewportChange)
   if (typeof ResizeObserver !== 'undefined' && document.documentElement) {
-    const ro = new ResizeObserver(() => {
-      resizeCanvas()
-      renderIge()
-    })
+    const ro = new ResizeObserver(onViewportChange)
     if (document.documentElement instanceof Element) ro.observe(document.documentElement)
+  }
+  // visualViewport 能捕获移动端地址栏收放引起的视口高度变化（innerHeight 抖动）
+  if (typeof window !== 'undefined' && window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onViewportChange)
   }
   resizeCanvas()
 

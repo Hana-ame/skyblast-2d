@@ -70,15 +70,47 @@ export const ctx = canvas ? canvas.getContext('2d')! : null
 export const camera = { x: 6600, y: 1500, fovFactor: 1.0 }
 export const screenFx = { shake: 0 }
 
-export function resizeCanvas(): void {
-  if (!canvas) return
-  const rect = typeof canvas.getBoundingClientRect === 'function'
+/** 画布后备缓冲尺寸只在真正需要时改写：每次赋值都会重建后备缓冲与 GPU 纹理，
+ *  成本随面积线性增长。尺寸来源优先级：visualViewport（不受移动端地址栏收放影响）
+ *  > innerWidth/innerHeight > 布局尺寸。抖动 <2px 的变化直接忽略，避免地址栏
+ *  收放导致的周期性全量重建（曾造成"隔一段时间卡一下"）。 */
+const resizeDebounceMs = 120
+let resizeTimer: ReturnType<typeof setTimeout> | null = null
+let pendingResize = false
+
+function computeCanvasSize(): { w: number; h: number } {
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null
+  const rect = canvas && typeof canvas.getBoundingClientRect === 'function'
     ? canvas.getBoundingClientRect()
     : { width: 0, height: 0 }
-  const w = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || rect.width || 1024))
-  const h = Math.max(240, Math.round(window.innerHeight || document.documentElement?.clientHeight || rect.height || 640))
+  const iw = window.innerWidth || document.documentElement?.clientWidth || rect.width || 1024
+  const ih = window.innerHeight || document.documentElement?.clientHeight || rect.height || 640
+  // visualViewport 在移动端能规避地址栏收放的 innerHeight 抖动；但它有时只反映布局视口，
+  // 因此取 Math.min 兜底：既不会被放大，也能跟随真实缩小。
+  const rawW = vv?.width ? Math.min(iw, vv.width) : iw
+  const rawH = vv?.height ? Math.min(ih, vv.height) : ih
+  return { w: Math.max(320, Math.round(rawW)), h: Math.max(240, Math.round(rawH)) }
+}
+
+export function resizeCanvas(): void {
+  if (!canvas) return
+  const { w, h } = computeCanvasSize()
+  // 亚像素/地址栏级别的轻微抖动一律不改写画布
+  if (Math.abs(canvas.width - w) < 2 && Math.abs(canvas.height - h) < 2) return
   if (canvas.width !== w) canvas.width = w
   if (canvas.height !== h) canvas.height = h
+}
+
+/** 去抖版本：resize/ResizeObserver 连续触发时合并为一次真正的画布重建 */
+export function requestResizeCanvas(): void {
+  pendingResize = true
+  if (resizeTimer !== null) return
+  resizeTimer = setTimeout(() => {
+    resizeTimer = null
+    if (!pendingResize) return
+    pendingResize = false
+    resizeCanvas()
+  }, resizeDebounceMs)
 }
 
 // ── 世界（服务器权威；本页 = 主机） ──

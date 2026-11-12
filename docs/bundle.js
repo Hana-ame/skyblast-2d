@@ -3773,13 +3773,34 @@
   var ctx = canvas ? canvas.getContext("2d") : null;
   var camera = { x: 6600, y: 1500, fovFactor: 1 };
   var screenFx = { shake: 0 };
+  var resizeDebounceMs = 120;
+  var resizeTimer = null;
+  var pendingResize = false;
+  function computeCanvasSize() {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const rect = canvas && typeof canvas.getBoundingClientRect === "function" ? canvas.getBoundingClientRect() : { width: 0, height: 0 };
+    const iw = window.innerWidth || document.documentElement?.clientWidth || rect.width || 1024;
+    const ih = window.innerHeight || document.documentElement?.clientHeight || rect.height || 640;
+    const rawW = vv?.width ? Math.min(iw, vv.width) : iw;
+    const rawH = vv?.height ? Math.min(ih, vv.height) : ih;
+    return { w: Math.max(320, Math.round(rawW)), h: Math.max(240, Math.round(rawH)) };
+  }
   function resizeCanvas() {
     if (!canvas) return;
-    const rect = typeof canvas.getBoundingClientRect === "function" ? canvas.getBoundingClientRect() : { width: 0, height: 0 };
-    const w = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || rect.width || 1024));
-    const h = Math.max(240, Math.round(window.innerHeight || document.documentElement?.clientHeight || rect.height || 640));
+    const { w, h } = computeCanvasSize();
+    if (Math.abs(canvas.width - w) < 2 && Math.abs(canvas.height - h) < 2) return;
     if (canvas.width !== w) canvas.width = w;
     if (canvas.height !== h) canvas.height = h;
+  }
+  function requestResizeCanvas() {
+    pendingResize = true;
+    if (resizeTimer !== null) return;
+    resizeTimer = setTimeout(() => {
+      resizeTimer = null;
+      if (!pendingResize) return;
+      pendingResize = false;
+      resizeCanvas();
+    }, resizeDebounceMs);
   }
   function loadCustomMap() {
     try {
@@ -10808,16 +10829,17 @@
     return true;
   }
   function bindAllEvents() {
-    window.addEventListener("resize", () => {
-      resizeCanvas();
+    const onViewportChange = () => {
+      requestResizeCanvas();
       renderIge();
-    });
+    };
+    window.addEventListener("resize", onViewportChange);
     if (typeof ResizeObserver !== "undefined" && document.documentElement) {
-      const ro = new ResizeObserver(() => {
-        resizeCanvas();
-        renderIge();
-      });
+      const ro = new ResizeObserver(onViewportChange);
       if (document.documentElement instanceof Element) ro.observe(document.documentElement);
+    }
+    if (typeof window !== "undefined" && window.visualViewport) {
+      window.visualViewport.addEventListener("resize", onViewportChange);
     }
     resizeCanvas();
     window.addEventListener("keydown", (e) => {
@@ -11597,12 +11619,6 @@
   var cachedSkyDepthQuant = -1;
   function renderScene() {
     if (!ctx || !canvas) return;
-    const targetW = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || canvas.clientWidth || 1024));
-    const targetH = Math.max(240, Math.round(window.innerHeight || document.documentElement?.clientHeight || canvas.clientHeight || 640));
-    if (canvas.width !== targetW || canvas.height !== targetH) {
-      canvas.width = targetW;
-      canvas.height = targetH;
-    }
     const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
     const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
     const targetFov = localPlayer.mountedTowerId ? 2 : mounted ? 1 : wep.fovMult || 1;

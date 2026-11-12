@@ -23,12 +23,11 @@ let cachedSkyDepthQuant = -1
 
 export function renderScene(): void {
   if (!ctx || !canvas) return
-  const targetW = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || canvas.clientWidth || 1024))
-  const targetH = Math.max(240, Math.round(window.innerHeight || document.documentElement?.clientHeight || canvas.clientHeight || 640))
-  if (canvas.width !== targetW || canvas.height !== targetH) {
-    canvas.width = targetW
-    canvas.height = targetH
-  }
+  // 画布尺寸只由 resizeCanvas()（window resize / ResizeObserver 事件驱动）维护。
+  // 绝不能每帧比较 window.innerWidth/innerHeight 并重设 canvas.width/height：
+  // 移动端地址栏收放、桌面动态工具栏、页面缩放都会让 innerHeight 抖动 1-2px，
+  // 每抖动一次就重建 canvas 后备缓冲 + GPU 纹理（成本随画布面积线性增长，真机十几~几十 ms），
+  // 在游戏里表现为"隔一段时间明显卡一下"。这段每帧检查正是该周期性卡顿的来源。
   const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
   const targetFov = localPlayer.mountedTowerId
