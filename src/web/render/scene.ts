@@ -14,6 +14,9 @@ import {
   drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, drawJumpPad,
 } from '../sprites.ts'
 
+// 天空渐变缓存：仅当画布高度或量化深度值变化时重建，避免每帧 createLinearGradient
+let skyGradCache: { g: CanvasGradient; h: number; k: number } | null = null
+
 export function renderScene(): void {
   if (!ctx || !canvas) return
   const targetW = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || canvas.clientWidth || 1024))
@@ -50,14 +53,19 @@ export function renderScene(): void {
 
   // ── 背景：与地形同坐标系的世界锚定层（不产生相对滑动） ──
   ctx.save()
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height)
+  // 天空渐变按 (canvas.height, 量化 depthT) 缓存，避免每帧重建渐变对象
   const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1)
-  const topR = Math.round(5 + depthT * 4)
-  const topB = Math.round(17 - depthT * 10)
-  skyGrad.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`)
-  skyGrad.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`)
-  skyGrad.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`)
-  ctx.fillStyle = skyGrad
+  const depthKey = Math.round(depthT * 64)
+  if (!skyGradCache || skyGradCache.h !== canvas.height || skyGradCache.k !== depthKey) {
+    const g = ctx.createLinearGradient(0, 0, 0, canvas.height)
+    const topR = Math.round(5 + depthT * 4)
+    const topB = Math.round(17 - depthT * 10)
+    g.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`)
+    g.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`)
+    g.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`)
+    skyGradCache = { g, h: canvas.height, k: depthKey }
+  }
+  ctx.fillStyle = skyGradCache.g
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY)

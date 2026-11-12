@@ -95,6 +95,7 @@ export function texKindOf(kind: string): string {
 
 let lastPatternCamX = 0
 let lastPatternCamY = 0
+let patternMatrix: DOMMatrix | null = null
 
 export function getTerrainPattern(ctx: CanvasRenderingContext2D, kind: string): CanvasPattern | null {
   const key = texKindOf(kind)
@@ -113,10 +114,13 @@ export function getTerrainPattern(ctx: CanvasRenderingContext2D, kind: string): 
 
 /** 把地形贴图的锚点补偿到相机世界坐标：贴图随世界一起移动 */
 export function syncTerrainPatterns(camX: number, camY: number): void {
+  if (typeof DOMMatrix === 'undefined') return
+  // 复用同一个矩阵对象：只增量平移相机移动量（上次已平移 -lastCamX/-lastCamY），避免每帧 new DOMMatrix 分配
+  if (!patternMatrix) patternMatrix = new DOMMatrix()
+  patternMatrix.translateSelf(-(camX - lastPatternCamX), -(camY - lastPatternCamY))
   lastPatternCamX = camX
   lastPatternCamY = camY
-  if (typeof DOMMatrix === 'undefined') return
-  const m = new DOMMatrix().translate(-camX, -camY)
+  const m = patternMatrix
   for (const pat of cache.values()) {
     if (typeof pat.setTransform === 'function') pat.setTransform(m)
   }

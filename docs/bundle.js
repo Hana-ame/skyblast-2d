@@ -3118,7 +3118,7 @@
         }
       }
       this.rebuildPlayerBucketsOnly();
-      recordPlayerLagHistory(this.lagHistory, this.tick, this.players);
+      if (this.lagCompensationEnabled && this.playerLagMs.size > 0) recordPlayerLagHistory(this.lagHistory, this.tick, this.players);
       separateOverlappingPlayers(this.players, this.playerBroadBuckets, this.terrain, this.obstacles, this.obstacleBroadBuckets);
       this.rebuildPlayerBucketsOnly();
       stepProjectilesSubsystem(this, dt);
@@ -3965,6 +3965,7 @@
   }
   var lastPatternCamX = 0;
   var lastPatternCamY = 0;
+  var patternMatrix = null;
   function getTerrainPattern(ctx2, kind) {
     const key = texKindOf(kind);
     const hit = cache.get(key);
@@ -3980,10 +3981,12 @@
     return pat;
   }
   function syncTerrainPatterns(camX, camY) {
+    if (typeof DOMMatrix === "undefined") return;
+    if (!patternMatrix) patternMatrix = new DOMMatrix();
+    patternMatrix.translateSelf(-(camX - lastPatternCamX), -(camY - lastPatternCamY));
     lastPatternCamX = camX;
     lastPatternCamY = camY;
-    if (typeof DOMMatrix === "undefined") return;
-    const m = new DOMMatrix().translate(-camX, -camY);
+    const m = patternMatrix;
     for (const pat of cache.values()) {
       if (typeof pat.setTransform === "function") pat.setTransform(m);
     }
@@ -11489,6 +11492,7 @@
   }
 
   // src/web/render/scene.ts
+  var skyGradCache = null;
   function renderScene() {
     if (!ctx || !canvas) return;
     const targetW = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || canvas.clientWidth || 1024));
@@ -11517,14 +11521,18 @@
     const halfW = canvas.width * camera.fovFactor / 2 + 160;
     const halfH = canvas.height * camera.fovFactor / 2 + 160;
     ctx.save();
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
     const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1);
-    const topR = Math.round(5 + depthT * 4);
-    const topB = Math.round(17 - depthT * 10);
-    skyGrad.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`);
-    skyGrad.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`);
-    skyGrad.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`);
-    ctx.fillStyle = skyGrad;
+    const depthKey = Math.round(depthT * 64);
+    if (!skyGradCache || skyGradCache.h !== canvas.height || skyGradCache.k !== depthKey) {
+      const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      const topR = Math.round(5 + depthT * 4);
+      const topB = Math.round(17 - depthT * 10);
+      g.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`);
+      g.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`);
+      g.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`);
+      skyGradCache = { g, h: canvas.height, k: depthKey };
+    }
+    ctx.fillStyle = skyGradCache.g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
     ctx.scale(zoom, zoom);

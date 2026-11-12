@@ -354,7 +354,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     }
 
     this.rebuildPlayerBucketsOnly()
-    recordPlayerLagHistory(this.lagHistory, this.tick, this.players)
+    // 仅延迟补偿启用且实际有远端延迟数据时记录（离线时 playerLagMs 为空，避免每 tick 分配 Map）
+    if (this.lagCompensationEnabled && this.playerLagMs.size > 0) recordPlayerLagHistory(this.lagHistory, this.tick, this.players)
     separateOverlappingPlayers(this.players, this.playerBroadBuckets, this.terrain, this.obstacles, this.obstacleBroadBuckets)
     this.rebuildPlayerBucketsOnly()
 
