@@ -8,6 +8,7 @@ import { stepNetworkFrame, broadcastHostKcpSnapshot, netState, sendClientLoadout
 import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { playProceduralSound } from '../app/audio.ts'
+import { installDiag, diagRecordFrame, diagMark } from '../app/diag.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
@@ -161,7 +162,9 @@ function onLocalRespawn(): void {
 
 export function startGameLoop(): void {
   lastFrame = performance.now()
+  installDiag()
   function stepLoopTick(now: number, shouldRender: boolean): void {
+    const tFrameStart = now
     const rawDt = (now - lastFrame) / 1000
     if (rawDt > 0.001) {
       smoothFps = smoothFps * 0.9 + (1 / rawDt) * 0.1
@@ -171,6 +174,7 @@ export function startGameLoop(): void {
     lastFrame = now
     acc += snappedDt
     let guard = 0
+    const tStepsBegin = performance.now()
 
     while (acc >= FIXED && guard < 5) {
       playerInput = buildLocalInput()
@@ -197,11 +201,15 @@ export function startGameLoop(): void {
       }
 
       const dead = localPlayer.respawnTimer > 0
-      if (dead && !wasDead) onLocalDeath()
+      if (dead && !wasDead) {
+        onLocalDeath()
+        diagMark('local-death', { tick: world.tick })
+      }
       if (!dead && wasDead) {
         const ds = document.getElementById('deathScreen')
         if (ds) ds.classList.add('hidden')
         onLocalRespawn()
+        diagMark('local-respawn', { tick: world.tick })
       }
       wasDead = dead
       if (dead) {
@@ -250,10 +258,32 @@ export function startGameLoop(): void {
     }
 
     if (shouldRender) {
+      const tRender = performance.now()
+      const stepMs = tRender - tStepsBegin
       renderScene()
+      const tHud = performance.now()
       updateHudUI()
       updateScoreboardUI()
       updateDebugHudTelemetry(smoothFps)
+      const tEnd = performance.now()
+      diagRecordFrame(tFrameStart, {
+        steps: guard,
+        stepMs,
+        renderMs: tHud - tRender,
+        hudMs: tEnd - tHud,
+      }, {
+        world, localPlayer, camera, netState, canvas,
+      })
+    } else {
+      // 后台 keepalive 帧（无渲染）也记录间隔，能看出 rAF 是否被浏览器挂起
+      diagRecordFrame(tFrameStart, {
+        steps: guard,
+        stepMs: performance.now() - tStepsBegin,
+        renderMs: 0,
+        hudMs: 0,
+      }, {
+        world, localPlayer, camera, netState, canvas,
+      })
     }
   }
   requestAnimationFrame(function gameLoop(now: number): void {

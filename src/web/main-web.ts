@@ -17,6 +17,10 @@ import {
 import { syncParamsToUI } from './app/params.ts'
 import { mode } from './app/context.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
+import {
+  installDiag, diagExport, reportToText, buildReport, diagFrames, diagTable,
+  diagReset, diagSetEnabled, diagIsEnabled, diagStats, diagMark,
+} from './app/diag.ts'
 
 // ── 启动 ──
 bindAllEvents()
@@ -63,6 +67,28 @@ startGameLoop()
   set: (p: Record<string, number>) => setPhysicsParams(p),
   get: () => getPhysicsParams(),
   reset: () => resetPhysicsParams(),
+}
+
+// ── 性能诊断句柄（控制台：__diag.dump() 导出日志；__diag.table() 看最差帧） ──
+installDiag()
+;(window as unknown as { __diag: unknown }).__diag = {
+  /** 导出 json+txt 并返回文本摘要（可直接复制） */
+  dump: () => diagExport(),
+  /** 仅取文本摘要，不下载 */
+  text: () => reportToText(),
+  /** 完整报告对象 */
+  report: () => buildReport(),
+  /** 最近帧（时间顺序） */
+  frames: () => diagFrames(),
+  /** 控制台表格：最差 N 帧 */
+  table: (n?: number) => diagTable(n),
+  /** 统计 */
+  stats: () => ({ ...diagStats }),
+  reset: () => diagReset(),
+  enable: () => diagSetEnabled(true),
+  disable: () => diagSetEnabled(false),
+  enabled: () => diagIsEnabled(),
+  mark: (kind: string, detail?: Record<string, unknown>) => diagMark(kind, detail),
 }
 ;(function loadSavedParams(): void {
   try {

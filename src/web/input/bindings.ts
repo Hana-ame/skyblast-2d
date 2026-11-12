@@ -3,6 +3,7 @@ import { defaultMapData, carveTunnelInSolids, MAIN_DECK_TOP, BEDROCK_TOP, UNIFIE
 import type { MapSolid } from '../../core/map.ts'
 import { AMMO_SPOTS, CENTER_RESPAWN_POINT } from '../../core/sim/world.ts'
 import { getTerrainPattern } from '../textures.ts'
+import { diagExport } from '../app/diag.ts'
 // web/input/bindings.ts —— DOM 事件绑定（纯房间码 String + 房主下发参数 + 双队FFA许可配置 + 精简HUD）
 import {
   canvas, world, localPlayer, bots, pendingLoadout, mode, uiState,
@@ -275,6 +276,23 @@ export function bindAllEvents(): void {
   document.getElementById('peerLoopbackTestBtn')?.addEventListener('click', () => {
     if (!isHostAuthority()) return
     void runDualWebRtcKcpSelfTest()
+  })
+
+  // ── 诊断日志：导出按钮 + Ctrl/Cmd+Shift+L 快捷键 ──
+  const dumpDiag = (): void => {
+    try {
+      diagExport()
+      showToast('📥 诊断日志已导出（json + txt）')
+    } catch {
+      showToast('⚠️ 导出失败，请开控制台用 __diag.dump()')
+    }
+  }
+  document.getElementById('diagDumpBtn')?.addEventListener('click', dumpDiag)
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === 'KeyL' || e.key === 'L')) {
+      e.preventDefault()
+      dumpDiag()
+    }
   })
 
   document.querySelectorAll('.param-wep-tab').forEach((btn) => {

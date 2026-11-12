@@ -4,6 +4,7 @@ import {
   featureFlags, toggleFeatureFlag, resetAllFeatureFlags,
 } from './context.ts'
 import type { FeatureFlags } from './context.ts'
+import { diagStats } from './diag.ts'
 import type { PlayerState } from '../../core/types.ts'
 import {
   WEAPONS,
@@ -207,6 +208,13 @@ export function updateDebugHudTelemetry(fps = 60): void {
   if (entEl) {
     const activeCrates = world.supplyCrates.filter(c => c.active).length
     entEl.textContent = `弹丸 ${world.projectiles.length} · 掩体 ${world.obstacles.length} · 弹药 ${world.ammoPacks.length} · 特武 ${activeCrates}`
+  }
+  // 诊断摘要：常开记录器的实时掉帧统计（点「导出诊断日志」可拿走完整日志）
+  const diagEl = document.getElementById('diagQuickStatus')
+  if (diagEl) {
+    diagEl.textContent =
+      `记录中 · 掉帧>24ms ${diagStats.gapsOver24} · >50ms ${diagStats.gapsOver50} · >100ms ${diagStats.gapsOver100}` +
+      ` · 最差 ${diagStats.worstGapMs}ms · CPU峰值 ${Math.round(diagStats.maxBusyMs * 10) / 10}ms`
   }
 }
 

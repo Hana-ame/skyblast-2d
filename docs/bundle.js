@@ -1118,8 +1118,8 @@
     }
     history.push(entry);
   }
-  function withRewoundPlayersForShooter(enabled, history, playerLagMs, shooterId, players, rebuildBuckets, fn) {
-    if (!enabled || history.length === 0) return fn();
+  function withRewoundPlayersForShooter(enabled2, history, playerLagMs, shooterId, players, rebuildBuckets, fn) {
+    if (!enabled2 || history.length === 0) return fn();
     const lagMs = playerLagMs.get(shooterId) ?? 0;
     if (lagMs < 16) return fn();
     const rewindTicks = Math.min(30, Math.max(1, Math.round(lagMs / (1e3 / 60))));
@@ -4038,6 +4038,432 @@
     for (const pat of cache.values()) {
       if (typeof pat.setTransform === "function") pat.setTransform(sharedPatternMatrix);
     }
+  }
+
+  // src/web/app/diag.ts
+  var RING = 1800;
+  var MAX_STUTTERS = 400;
+  var MAX_MARKS = 200;
+  var FRAME_GAP_MS = 24;
+  var SEVERE_GAP_MS = 50;
+  var frames = [];
+  var frameCursor = 0;
+  var frameCount = 0;
+  var currentIndex = 0;
+  var stutters = [];
+  var marks = [];
+  var enabled = true;
+  var installed = false;
+  var lastFrameTs = 0;
+  var lastFrameHidden = 0;
+  var observers = [];
+  var diagStats = {
+    frames: 0,
+    gapsOver24: 0,
+    gapsOver50: 0,
+    gapsOver100: 0,
+    /** 后台节流导致的 gap（非真卡顿） */
+    throttledGaps: 0,
+    worstGapMs: 0,
+    worstGapAt: 0,
+    worstGapIndex: 0,
+    totalBusyMs: 0,
+    maxBusyMs: 0
+  };
+  function heapMB() {
+    try {
+      const m = performance.memory;
+      return m ? Math.round(m.usedJSHeapSize / 1048576 * 10) / 10 : -1;
+    } catch {
+      return -1;
+    }
+  }
+  function overlayVisible(id) {
+    try {
+      const el = typeof document !== "undefined" ? document.getElementById(id) : null;
+      if (!el) return 0;
+      const cs = getComputedStyle(el);
+      return cs.display !== "none" && cs.visibility !== "hidden" ? 1 : 0;
+    } catch {
+      return 0;
+    }
+  }
+  function slot(index) {
+    let r = frames[index];
+    if (!r) {
+      r = {
+        i: 0,
+        t: 0,
+        dt: 0,
+        steps: 0,
+        stepMs: 0,
+        renderMs: 0,
+        hudMs: 0,
+        busyMs: 0,
+        tick: 0,
+        players: 0,
+        projectiles: 0,
+        role: "offline",
+        peers: 0,
+        hp: 0,
+        alive: 0,
+        deployed: 0,
+        wep: 0,
+        camX: 0,
+        camY: 0,
+        canvasW: 0,
+        canvasH: 0,
+        dpr: 0,
+        ovDeath: 0,
+        ovLobby: 0,
+        ovParams: 0,
+        ovEditor: 0,
+        hidden: 0,
+        heapMB: -1
+      };
+      frames[index] = r;
+    }
+    return r;
+  }
+  function diagRecordFrame(now, parts, ctx2) {
+    currentIndex++;
+    if (!enabled) return currentIndex;
+    const dt = lastFrameTs ? now - lastFrameTs : 0;
+    lastFrameTs = now;
+    const busyMs = parts.stepMs + parts.renderMs + parts.hudMs;
+    const idx = frameCursor;
+    const r = slot(idx);
+    frameCursor = (frameCursor + 1) % RING;
+    if (frameCount < RING) frameCount++;
+    r.i = currentIndex;
+    r.t = Math.round(now * 100) / 100;
+    r.dt = Math.round(dt * 100) / 100;
+    r.steps = parts.steps;
+    r.stepMs = Math.round(parts.stepMs * 1e3) / 1e3;
+    r.renderMs = Math.round(parts.renderMs * 1e3) / 1e3;
+    r.hudMs = Math.round(parts.hudMs * 1e3) / 1e3;
+    r.busyMs = Math.round(busyMs * 1e3) / 1e3;
+    r.tick = ctx2.world.tick;
+    r.players = ctx2.world.players.length;
+    r.projectiles = ctx2.world.projectiles.length;
+    r.role = ctx2.netState.role;
+    r.peers = ctx2.netState.peerCount;
+    r.hp = Math.round(ctx2.localPlayer.hp);
+    r.alive = ctx2.localPlayer.alive ? 1 : 0;
+    r.deployed = ctx2.localPlayer.deployed ? 1 : 0;
+    r.wep = ctx2.localPlayer.weaponIndex;
+    r.camX = Math.round(ctx2.camera.x);
+    r.camY = Math.round(ctx2.camera.y);
+    r.canvasW = ctx2.canvas?.width ?? 0;
+    r.canvasH = ctx2.canvas?.height ?? 0;
+    r.dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+    r.ovDeath = overlayVisible("deathScreen");
+    r.ovLobby = overlayVisible("lobbyModal");
+    r.ovParams = overlayVisible("paramsModal");
+    r.ovEditor = overlayVisible("inGameEditorModal");
+    r.hidden = typeof document !== "undefined" && document.hidden ? 1 : 0;
+    r.heapMB = heapMB();
+    diagStats.frames++;
+    diagStats.totalBusyMs += busyMs;
+    if (busyMs > diagStats.maxBusyMs) diagStats.maxBusyMs = busyMs;
+    const pageHidden = typeof document !== "undefined" && document.hidden;
+    const justVisible = r.hidden === 0 && lastFrameHidden === 1;
+    lastFrameHidden = r.hidden;
+    if (dt > FRAME_GAP_MS) {
+      if (pageHidden || justVisible) {
+        diagStats.throttledGaps++;
+      } else {
+        if (dt > 100) diagStats.gapsOver100++;
+        else if (dt > 50) diagStats.gapsOver50++;
+        else diagStats.gapsOver24++;
+        if (dt > diagStats.worstGapMs) {
+          diagStats.worstGapMs = Math.round(dt * 100) / 100;
+          diagStats.worstGapAt = Math.round(now);
+          diagStats.worstGapIndex = currentIndex;
+        }
+      }
+      if (stutters.length < MAX_STUTTERS) {
+        stutters.push({
+          i: currentIndex,
+          t: Math.round(now),
+          dt: Math.round(dt * 100) / 100,
+          kind: "frame-gap",
+          detail: {
+            severity: dt >= SEVERE_GAP_MS ? "severe" : "mild",
+            steps: parts.steps,
+            stepMs: r.stepMs,
+            renderMs: r.renderMs,
+            hudMs: r.hudMs,
+            tick: r.tick,
+            players: r.players,
+            projectiles: r.projectiles,
+            role: r.role,
+            peers: r.peers,
+            hp: r.hp,
+            alive: r.alive,
+            deployed: r.deployed,
+            cam: `${r.camX},${r.camY}`,
+            canvas: `${r.canvasW}x${r.canvasH}@${r.dpr}`,
+            overlays: `death=${r.ovDeath} lobby=${r.ovLobby} params=${r.ovParams} editor=${r.ovEditor}`,
+            hidden: r.hidden,
+            heapMB: r.heapMB
+          }
+        });
+      }
+    }
+    return currentIndex;
+  }
+  function diagMark(kind, detail) {
+    if (!enabled) return;
+    marks.push({ t: Math.round(performance.now()), i: currentIndex, kind, detail });
+    if (marks.length > MAX_MARKS) marks.shift();
+  }
+  function installDiag(ctx2) {
+    if (installed) return;
+    installed = true;
+    if (typeof window === "undefined" || typeof PerformanceObserver === "undefined") return;
+    const pushStutter = (rec) => {
+      if (!enabled) return;
+      if (stutters.length >= MAX_STUTTERS) stutters.shift();
+      stutters.push(rec);
+    };
+    try {
+      const po = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          pushStutter({
+            i: currentIndex,
+            t: Math.round(e.startTime),
+            dt: Math.round(e.duration),
+            kind: "long-task",
+            detail: {
+              durationMs: Math.round(e.duration),
+              name: e.name,
+              entryType: e.entryType,
+              // 交叉定位：落到哪个帧
+              frameAt: currentIndex
+            }
+          });
+        }
+      });
+      po.observe({ type: "longtask", buffered: false });
+      observers.push(po);
+    } catch {
+    }
+    try {
+      const po = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          const ev = e;
+          const renderMs = ev.renderStart ? ev.startTime + ev.duration - ev.renderStart : -1;
+          const styleMs = ev.styleAndLayoutStart ? ev.duration - (ev.styleAndLayoutStart - ev.startTime) : -1;
+          pushStutter({
+            i: currentIndex,
+            t: Math.round(ev.startTime),
+            dt: Math.round(ev.duration),
+            kind: "loaf",
+            detail: {
+              durationMs: Math.round(ev.duration),
+              renderMs: Math.round(renderMs),
+              styleAndLayoutMs: Math.round(styleMs),
+              blockedMs: Math.round(ev.blockedDuration ?? -1),
+              scripts: (ev.scripts ?? []).slice(0, 5).map((s) => ({
+                invoker: s.invoker,
+                src: s.sourceURL,
+                fn: s.functionName,
+                ms: s.duration ? Math.round(s.duration) : void 0
+              }))
+            }
+          });
+        }
+      });
+      po.observe({ type: "long-animation-frame", buffered: false });
+      observers.push(po);
+    } catch {
+    }
+    try {
+      document.addEventListener("visibilitychange", () => {
+        diagMark(document.hidden ? "page-hidden" : "page-visible");
+      });
+    } catch {
+    }
+    try {
+      window.addEventListener("error", (ev) => {
+        diagMark("error", { message: String(ev.message).slice(0, 200) });
+      });
+      window.addEventListener("unhandledrejection", (ev) => {
+        diagMark("unhandledrejection", { reason: String(ev.reason).slice(0, 200) });
+      });
+    } catch {
+    }
+    diagMark("env", collectEnv());
+    void ctx2;
+  }
+  function collectEnv() {
+    try {
+      return {
+        ua: typeof navigator !== "undefined" ? navigator.userAgent : "n/a",
+        dpr: typeof devicePixelRatio === "number" ? devicePixelRatio : 1,
+        screen: typeof screen !== "undefined" ? `${screen.width}x${screen.height}` : "n/a",
+        innerW: typeof window !== "undefined" ? window.innerWidth : 0,
+        innerH: typeof window !== "undefined" ? window.innerHeight : 0,
+        cores: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 0,
+        deviceMemory: typeof navigator !== "undefined" ? navigator.deviceMemory ?? -1 : -1,
+        heapLimitMB: (() => {
+          try {
+            const m = performance.memory;
+            return m ? Math.round(m.jsHeapSizeLimit / 1048576) : -1;
+          } catch {
+            return -1;
+          }
+        })(),
+        hasVisualViewport: typeof window !== "undefined" && !!window.visualViewport,
+        hardwareConcurrency: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 0
+      };
+    } catch {
+      return {};
+    }
+  }
+  function percentile(sorted, p) {
+    if (sorted.length === 0) return 0;
+    const i = Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * p)));
+    return sorted[i];
+  }
+  function diagFrames() {
+    if (frameCount < RING) return frames.slice(0, frameCount);
+    return [...frames.slice(frameCursor), ...frames.slice(0, frameCursor)];
+  }
+  function buildReport() {
+    const fs = diagFrames();
+    const buses = fs.map((f) => f.busyMs).sort((a, b) => a - b);
+    const dts = fs.map((f) => f.dt).filter((d) => d > 0);
+    const totalDt = dts.reduce((a, b) => a + b, 0);
+    const hist = {
+      "<=16.9": 0,
+      "17-24": 0,
+      "24-33": 0,
+      "33-50": 0,
+      "50-100": 0,
+      "100-250": 0,
+      ">250": 0
+    };
+    for (const d of dts) {
+      if (d <= 16.9) hist["<=16.9"]++;
+      else if (d <= 24) hist["17-24"]++;
+      else if (d <= 33) hist["24-33"]++;
+      else if (d <= 50) hist["33-50"]++;
+      else if (d <= 100) hist["50-100"]++;
+      else if (d <= 250) hist["100-250"]++;
+      else hist[">250"]++;
+    }
+    return {
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      env: collectEnv(),
+      stats: {
+        ...diagStats,
+        busyP50: Math.round(percentile(buses, 0.5) * 1e3) / 1e3,
+        busyP95: Math.round(percentile(buses, 0.95) * 1e3) / 1e3,
+        busyMax: Math.round((buses[buses.length - 1] ?? 0) * 1e3) / 1e3,
+        fpsAvg: totalDt > 0 ? Math.round(dts.length / totalDt * 1e3 * 100) / 100 : 0,
+        gapHistogram: hist,
+        durationSec: Math.round(totalDt / 1e3 * 10) / 10
+      },
+      stutters,
+      marks,
+      frames: fs
+    };
+  }
+  function reportToText(rep = buildReport()) {
+    const s = rep.stats;
+    const lines = [];
+    lines.push("=== SkyBlast 2D \u8BCA\u65AD\u65E5\u5FD7 ===");
+    lines.push(`\u65F6\u95F4: ${rep.generatedAt}`);
+    lines.push(`\u73AF\u5883: ${JSON.stringify(rep.env)}`);
+    lines.push("");
+    lines.push(`\u91C7\u6837: ${s.frames} \u5E27 / ${s.durationSec}s\uFF0C\u5E73\u5747 ${s.fpsAvg} FPS`);
+    lines.push(`\u6389\u5E27\u8BA1\u6570: >24ms ${s.gapsOver24} \u6B21\uFF0C>50ms ${s.gapsOver50} \u6B21\uFF0C>100ms ${s.gapsOver100} \u6B21`);
+    lines.push(`\u540E\u53F0\u8282\u6D41(\u975E\u5361\u987F): ${s.throttledGaps} \u6B21\uFF08\u6807\u7B7E\u9875\u5207\u540E\u53F0/\u5207\u56DE\u65F6\u7684\u6B63\u5E38 rAF \u8282\u6D41\uFF0C\u5DF2\u6392\u9664\uFF09`);
+    lines.push(`\u6700\u5DEE\u5E27\u95F4\u9694: ${s.worstGapMs}ms\uFF08\u7B2C ${s.worstGapIndex} \u5E27\uFF0Ct=${s.worstGapAt}ms\uFF09`);
+    lines.push(`CPU \u5FD9\u65F6: p50 ${s.busyP50}ms / p95 ${s.busyP95}ms / max ${s.busyMax}ms`);
+    lines.push(`\u5E27\u95F4\u9694\u5206\u5E03: ${JSON.stringify(s.gapHistogram)}`);
+    lines.push("");
+    lines.push(`--- \u6389\u5E27\u73B0\u573A\uFF08\u524D 25 \u6761\uFF0C\u5171 ${rep.stutters.length}\uFF09 ---`);
+    for (const st of rep.stutters.slice(0, 25)) {
+      lines.push(`[#${st.i} t=${st.t} ${st.kind} ${st.dt}ms] ${JSON.stringify(st.detail)}`);
+    }
+    if (rep.marks.length) {
+      lines.push("");
+      lines.push(`--- \u4E8B\u4EF6\u6807\u8BB0\uFF08${rep.marks.length} \u6761\uFF09 ---`);
+      for (const m of rep.marks.slice(-30)) {
+        lines.push(`[#${m.i} t=${m.t}] ${m.kind} ${m.detail ? JSON.stringify(m.detail) : ""}`);
+      }
+    }
+    return lines.join("\n");
+  }
+  function download(name, mime, content) {
+    try {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4e3);
+    } catch {
+    }
+  }
+  function diagExport() {
+    const rep = buildReport();
+    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const txt = reportToText(rep);
+    download(`skyblast-diag-${stamp}.json`, "application/json", JSON.stringify(rep, null, 1));
+    download(`skyblast-diag-${stamp}.txt`, "text/plain", txt);
+    return txt;
+  }
+  function diagSetEnabled(v) {
+    enabled = v;
+  }
+  function diagIsEnabled() {
+    return enabled;
+  }
+  function diagReset() {
+    frames.length = 0;
+    frameCursor = 0;
+    frameCount = 0;
+    lastFrameTs = 0;
+    currentIndex = 0;
+    stutters.length = 0;
+    marks.length = 0;
+    diagStats.frames = 0;
+    diagStats.gapsOver24 = 0;
+    diagStats.gapsOver50 = 0;
+    diagStats.gapsOver100 = 0;
+    diagStats.throttledGaps = 0;
+    lastFrameHidden = 0;
+    diagStats.worstGapMs = 0;
+    diagStats.worstGapAt = 0;
+    diagStats.worstGapIndex = 0;
+    diagStats.totalBusyMs = 0;
+    diagStats.maxBusyMs = 0;
+  }
+  function diagTable(n = 15) {
+    const fs = diagFrames();
+    const worst = [...fs].sort((a, b) => b.dt - a.dt).slice(0, n);
+    console.table(worst.map((f) => ({
+      \u5E27: f.i,
+      \u95F4\u9694ms: f.dt,
+      \u6B65\u6570: f.steps,
+      stepMs: f.stepMs,
+      renderMs: f.renderMs,
+      hudMs: f.hudMs,
+      tick: f.tick,
+      \u73A9\u5BB6: f.players,
+      \u5F39\u4E38: f.projectiles,
+      \u6A21\u5F0F: f.role,
+      \u906E\u7F69: `d${f.ovDeath}l${f.ovLobby}`,
+      \u753B\u5E03: `${f.canvasW}x${f.canvasH}`,
+      \u5806MB: f.heapMB
+    })));
   }
 
   // src/web/app/toast.ts
@@ -7663,8 +8089,8 @@
     setTerrain(terrain) {
       this.terrain = terrain;
     }
-    setProjectileDeadReckoning(enabled) {
-      this.enableProjectileDeadReckoning = enabled;
+    setProjectileDeadReckoning(enabled2) {
+      this.enableProjectileDeadReckoning = enabled2;
     }
     /** 客户端本地立即预测输入（无需等待 RTT 与插值缓冲，按下即响应） */
     applyLocalInput(input, dt = 1 / 60) {
@@ -8150,8 +8576,8 @@
     });
     if (mode.current === "2teams" && !mode.allowFfaInTeams) {
       if (localPlayer.team === "ffa") localPlayer.team = "red";
-      for (const slot of netState.hostGuests.values()) {
-        const gp = world.players.find((p) => p.id === slot.playerId);
+      for (const slot2 of netState.hostGuests.values()) {
+        const gp = world.players.find((p) => p.id === slot2.playerId);
         if (gp && gp.team === "ffa") {
           gp.team = "blue";
         }
@@ -8159,9 +8585,9 @@
       syncTeamButtonsUI();
       updateTeamCountUI();
     }
-    for (const slot of netState.hostGuests.values()) {
+    for (const slot2 of netState.hostGuests.values()) {
       try {
-        slot.conn.send(ctrlMsg);
+        slot2.conn.send(ctrlMsg);
       } catch {
       }
     }
@@ -8274,8 +8700,8 @@
     let rx = 0;
     let fast = 0;
     if (netState.role === "host") {
-      for (const slot of netState.hostGuests.values()) {
-        const st = slot.transport.getKcpStats?.();
+      for (const slot2 of netState.hostGuests.values()) {
+        const st = slot2.transport.getKcpStats?.();
         if (st) {
           if (st.srtt > 0) srtt = st.srtt;
           tx += st.txPackets;
@@ -8360,7 +8786,7 @@
     guestPlayer.deployed = true;
     guestPlayer.alive = true;
     world.deploy(guestPlayer);
-    const slot = {
+    const slot2 = {
       playerId: guestPlayer.id,
       conn,
       transport: srvTransport,
@@ -8368,10 +8794,10 @@
       lastAckSeq: 0
     };
     srvTransport.onClient((msg) => {
-      if (typeof msg.seq === "number" && msg.seq > slot.lastAckSeq) {
-        slot.lastAckSeq = msg.seq;
+      if (typeof msg.seq === "number" && msg.seq > slot2.lastAckSeq) {
+        slot2.lastAckSeq = msg.seq;
       }
-      slot.input = applyIntents(slot.input, msg.intents);
+      slot2.input = applyIntents(slot2.input, msg.intents);
     });
     conn.on("data", (raw) => {
       if (typeof raw !== "string" || !raw.includes("__sb2Ctrl")) return;
@@ -8403,7 +8829,7 @@
       } catch {
       }
     });
-    netState.hostGuests.set(guestPlayer.id, slot);
+    netState.hostGuests.set(guestPlayer.id, slot2);
     netState.peerCount = netState.hostGuests.size;
     resetBinaryCodecState();
     srvTransport.send({
@@ -8894,8 +9320,8 @@
     }
   }
   function leaveMultiplayerRoom() {
-    for (const slot of netState.hostGuests.values()) {
-      world.players = world.players.filter((p) => p.id !== slot.playerId);
+    for (const slot2 of netState.hostGuests.values()) {
+      world.players = world.players.filter((p) => p.id !== slot2.playerId);
     }
     for (const fn of netState.cleanupFns) {
       try {
@@ -9088,24 +9514,24 @@
       return true;
     }
     if (netState.role === "host") {
-      for (const slot of netState.hostGuests.values()) {
-        allInputs.set(slot.playerId, {
-          ...slot.input,
-          secondary: slot.input.secondary ? { ...slot.input.secondary } : null
+      for (const slot2 of netState.hostGuests.values()) {
+        allInputs.set(slot2.playerId, {
+          ...slot2.input,
+          secondary: slot2.input.secondary ? { ...slot2.input.secondary } : null
         });
-        slot.input.jump = false;
-        slot.input.interact = false;
-        slot.input.secondary = null;
-        slot.input.switchWeapon = null;
-        slot.input.reload = false;
-        slot.transport.tickKcp?.(now);
-        const st = slot.transport.getKcpStats?.();
-        world.setPlayerLagMs(slot.playerId, featureFlags.lagCompensation && st ? st.srtt : 0);
+        slot2.input.jump = false;
+        slot2.input.interact = false;
+        slot2.input.secondary = null;
+        slot2.input.switchWeapon = null;
+        slot2.input.reload = false;
+        slot2.transport.tickKcp?.(now);
+        const st = slot2.transport.getKcpStats?.();
+        world.setPlayerLagMs(slot2.playerId, featureFlags.lagCompensation && st ? st.srtt : 0);
       }
       if (now - netState.lastPingMs > 400) {
         netState.lastPingMs = now;
-        for (const slot of netState.hostGuests.values()) {
-          slot.transport.kcp?.sendPing(now);
+        for (const slot2 of netState.hostGuests.values()) {
+          slot2.transport.kcp?.sendPing(now);
         }
         updateNetStatusUI();
       }
@@ -9127,32 +9553,32 @@
     pendingHostEvents.length = 0;
     const snap = world.snapshot();
     const ackSeqs = {};
-    for (const slot of netState.hostGuests.values()) {
-      ackSeqs[slot.playerId] = slot.lastAckSeq;
+    for (const slot2 of netState.hostGuests.values()) {
+      ackSeqs[slot2.playerId] = slot2.lastAckSeq;
     }
     snap.ackSeqs = ackSeqs;
     const isKeyframe = hasCriticalEvents || snap.tick % 30 === 0;
     if (featureFlags.adaptiveNetAoi) {
-      for (const slot of netState.hostGuests.values()) {
-        const aoiSnap = filterSnapshotAOI(snap, slot.playerId, 2800, 1800);
-        if (!hasCriticalEvents && slot.transport.sendRawFrame) {
+      for (const slot2 of netState.hostGuests.values()) {
+        const aoiSnap = filterSnapshotAOI(snap, slot2.playerId, 2800, 1800);
+        if (!hasCriticalEvents && slot2.transport.sendRawFrame) {
           const wire = encodeServerMsgBinary(
             { snap: aoiSnap, events: outEvents },
             { deltaFacilities: !isKeyframe, deltaProjectiles: !isKeyframe }
           );
-          slot.transport.sendRawFrame(wire);
+          slot2.transport.sendRawFrame(wire);
         } else {
-          slot.transport.send({ snap: aoiSnap, events: outEvents });
+          slot2.transport.send({ snap: aoiSnap, events: outEvents });
         }
       }
       return;
     }
     const sharedFrame = !hasCriticalEvents ? encodeServerWireFrame({ snap, events: outEvents }, true) : null;
-    for (const slot of netState.hostGuests.values()) {
-      if (!hasCriticalEvents && sharedFrame && slot.transport.sendRawFrame) {
-        slot.transport.sendRawFrame(sharedFrame);
+    for (const slot2 of netState.hostGuests.values()) {
+      if (!hasCriticalEvents && sharedFrame && slot2.transport.sendRawFrame) {
+        slot2.transport.sendRawFrame(sharedFrame);
       } else {
-        slot.transport.send({ snap, events: outEvents });
+        slot2.transport.send({ snap, events: outEvents });
       }
     }
   }
@@ -9173,11 +9599,11 @@
     }
     document.querySelectorAll(".team-select-btn").forEach((b) => {
       const t = b.getAttribute("data-team");
-      const enabled = mode.current === "2teams" ? t === "red" || t === "blue" || t === "ffa" && ffaAllowed : t === "ffa";
+      const enabled2 = mode.current === "2teams" ? t === "red" || t === "blue" || t === "ffa" && ffaAllowed : t === "ffa";
       const sel = t === localPlayer.team;
-      b.disabled = !enabled;
+      b.disabled = !enabled2;
       const activeBorder = t === "red" ? "border-2 border-rose-400 bg-rose-500/20 " : t === "blue" ? "border-2 border-sky-400 bg-sky-500/20 " : "border-2 border-amber-400 bg-amber-500/20 ";
-      b.className = "team-select-btn px-3 py-2 rounded-xl text-left transition flex items-center justify-between " + (sel ? activeBorder : "border border-slate-700 bg-slate-950/60 hover:border-slate-500 ") + (enabled ? "" : "opacity-35 cursor-not-allowed");
+      b.className = "team-select-btn px-3 py-2 rounded-xl text-left transition flex items-center justify-between " + (sel ? activeBorder : "border border-slate-700 bg-slate-950/60 hover:border-slate-500 ") + (enabled2 ? "" : "opacity-35 cursor-not-allowed");
     });
     const isClient = !isHostAuthority();
     document.querySelectorAll(".ffa-allow-btn").forEach((btn) => {
@@ -9296,6 +9722,10 @@
       const activeCrates = world.supplyCrates.filter((c) => c.active).length;
       entEl.textContent = `\u5F39\u4E38 ${world.projectiles.length} \xB7 \u63A9\u4F53 ${world.obstacles.length} \xB7 \u5F39\u836F ${world.ammoPacks.length} \xB7 \u7279\u6B66 ${activeCrates}`;
     }
+    const diagEl = document.getElementById("diagQuickStatus");
+    if (diagEl) {
+      diagEl.textContent = `\u8BB0\u5F55\u4E2D \xB7 \u6389\u5E27>24ms ${diagStats.gapsOver24} \xB7 >50ms ${diagStats.gapsOver50} \xB7 >100ms ${diagStats.gapsOver100} \xB7 \u6700\u5DEE ${diagStats.worstGapMs}ms \xB7 CPU\u5CF0\u503C ${Math.round(diagStats.maxBusyMs * 10) / 10}ms`;
+    }
   }
   function syncLobbyRoleUI(nextRole) {
     if (nextRole) {
@@ -9353,16 +9783,16 @@
   }
   function syncLoadoutTextFromSingleSource() {
     document.querySelectorAll(".death-wep-btn").forEach((btn) => {
-      const slot = Number(btn.getAttribute("data-wep") || 0);
-      const wep = WEAPONS[slot];
+      const slot2 = Number(btn.getAttribute("data-wep") || 0);
+      const wep = WEAPONS[slot2];
       if (!wep) return;
       const divs = btn.querySelectorAll("div");
       if (divs[0]) divs[0].textContent = wep.shortName;
       if (divs[1]) divs[1].textContent = formatWeaponCardSubtitle(wep);
     });
     document.querySelectorAll(".lobby-wep-btn").forEach((btn, idx) => {
-      const slot = Number(btn.getAttribute("data-wep") || 0);
-      const wep = WEAPONS[slot];
+      const slot2 = Number(btn.getAttribute("data-wep") || 0);
+      const wep = WEAPONS[slot2];
       if (!wep) return;
       const divs = btn.querySelectorAll("div");
       if (divs[0]) divs[0].textContent = `${idx + 1}. ${wep.shortName}`;
@@ -9393,8 +9823,8 @@
       localPlayer.secondary = "frag";
     }
     document.querySelectorAll(".death-wep-btn").forEach((btn) => {
-      const slot = Number(btn.getAttribute("data-wep") || 0);
-      btn.className = slot === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+      const slot2 = Number(btn.getAttribute("data-wep") || 0);
+      btn.className = slot2 === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
     });
     document.querySelectorAll(".death-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
@@ -9408,8 +9838,8 @@
       streakNote.textContent = wepIdx === 8 ? `+1\u6321` : "";
     }
     document.querySelectorAll(".lobby-wep-btn").forEach((btn) => {
-      const slot = Number(btn.getAttribute("data-wep") || 0);
-      btn.className = slot === wepIdx ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+      const slot2 = Number(btn.getAttribute("data-wep") || 0);
+      btn.className = slot2 === wepIdx ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
     });
     document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
@@ -11014,6 +11444,21 @@
       if (!isHostAuthority()) return;
       void runDualWebRtcKcpSelfTest();
     });
+    const dumpDiag = () => {
+      try {
+        diagExport();
+        showToast("\u{1F4E5} \u8BCA\u65AD\u65E5\u5FD7\u5DF2\u5BFC\u51FA\uFF08json + txt\uFF09");
+      } catch {
+        showToast("\u26A0\uFE0F \u5BFC\u51FA\u5931\u8D25\uFF0C\u8BF7\u5F00\u63A7\u5236\u53F0\u7528 __diag.dump()");
+      }
+    };
+    document.getElementById("diagDumpBtn")?.addEventListener("click", dumpDiag);
+    window.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.code === "KeyL" || e.key === "L")) {
+        e.preventDefault();
+        dumpDiag();
+      }
+    });
     document.querySelectorAll(".param-wep-tab").forEach((btn) => {
       btn.addEventListener("click", () => {
         paramState.weaponIdx = Number(btn.getAttribute("data-pwep") || 0);
@@ -12273,7 +12718,9 @@
   }
   function startGameLoop() {
     lastFrame = performance.now();
+    installDiag();
     function stepLoopTick(now, shouldRender) {
+      const tFrameStart = now;
       const rawDt = (now - lastFrame) / 1e3;
       if (rawDt > 1e-3) {
         smoothFps = smoothFps * 0.9 + 1 / rawDt * 0.1;
@@ -12282,6 +12729,7 @@
       lastFrame = now;
       acc += snappedDt;
       let guard = 0;
+      const tStepsBegin = performance.now();
       while (acc >= FIXED && guard < 5) {
         playerInput = buildLocalInput();
         inputQueue.interact = false;
@@ -12302,11 +12750,15 @@
           updateSpawnPointButtonsUI();
         }
         const dead = localPlayer.respawnTimer > 0;
-        if (dead && !wasDead) onLocalDeath();
+        if (dead && !wasDead) {
+          onLocalDeath();
+          diagMark("local-death", { tick: world.tick });
+        }
         if (!dead && wasDead) {
           const ds = document.getElementById("deathScreen");
           if (ds) ds.classList.add("hidden");
           onLocalRespawn();
+          diagMark("local-respawn", { tick: world.tick });
         }
         wasDead = dead;
         if (dead) {
@@ -12349,10 +12801,39 @@
         guard++;
       }
       if (shouldRender) {
+        const tRender = performance.now();
+        const stepMs = tRender - tStepsBegin;
         renderScene();
+        const tHud = performance.now();
         updateHudUI();
         updateScoreboardUI();
         updateDebugHudTelemetry(smoothFps);
+        const tEnd = performance.now();
+        diagRecordFrame(tFrameStart, {
+          steps: guard,
+          stepMs,
+          renderMs: tHud - tRender,
+          hudMs: tEnd - tHud
+        }, {
+          world,
+          localPlayer,
+          camera,
+          netState,
+          canvas
+        });
+      } else {
+        diagRecordFrame(tFrameStart, {
+          steps: guard,
+          stepMs: performance.now() - tStepsBegin,
+          renderMs: 0,
+          hudMs: 0
+        }, {
+          world,
+          localPlayer,
+          camera,
+          netState,
+          canvas
+        });
       }
     }
     requestAnimationFrame(function gameLoop(now) {
@@ -12497,6 +12978,26 @@
     set: (p) => setPhysicsParams(p),
     get: () => getPhysicsParams(),
     reset: () => resetPhysicsParams()
+  };
+  installDiag();
+  window.__diag = {
+    /** 导出 json+txt 并返回文本摘要（可直接复制） */
+    dump: () => diagExport(),
+    /** 仅取文本摘要，不下载 */
+    text: () => reportToText(),
+    /** 完整报告对象 */
+    report: () => buildReport(),
+    /** 最近帧（时间顺序） */
+    frames: () => diagFrames(),
+    /** 控制台表格：最差 N 帧 */
+    table: (n) => diagTable(n),
+    /** 统计 */
+    stats: () => ({ ...diagStats }),
+    reset: () => diagReset(),
+    enable: () => diagSetEnabled(true),
+    disable: () => diagSetEnabled(false),
+    enabled: () => diagIsEnabled(),
+    mark: (kind, detail) => diagMark(kind, detail)
   };
   (function loadSavedParams() {
     try {

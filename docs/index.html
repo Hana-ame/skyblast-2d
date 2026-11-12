@@ -182,6 +182,10 @@
       <button id="peerLoopbackTestBtn" type="button" class="col-span-2 px-2 py-1.5 rounded-lg bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-400/50 text-indigo-200 font-bold text-xs transition">
         ⚡ 双端自测
       </button>
+      <button id="diagDumpBtn" type="button" class="col-span-2 px-2 py-1.5 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 border border-rose-400/50 text-rose-200 font-bold text-xs transition flex items-center justify-center gap-1">
+        📥 导出诊断日志 <span class="text-[9px] opacity-70">(Ctrl+Shift+L)</span>
+      </button>
+      <div id="diagQuickStatus" class="col-span-2 font-mono text-[10px] text-slate-400 leading-tight">诊断记录中… 掉帧 0 / 最差 0ms</div>
     </div>
   </div>
 
@@ -825,6 +829,6 @@
   <!-- 轻提示 Toast -->
   <div id="toastBanner" class="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
-  <script src="./bundle.js?v=96609efecf"></script>
+  <script src="./bundle.js?v=c52d2f18e4"></script>
 </body>
 </html>
