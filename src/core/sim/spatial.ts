@@ -177,15 +177,21 @@ export interface LagHistoryEntry {
 const MAX_LAG_HISTORY_TICKS = 36
 
 export function recordPlayerLagHistory(history: LagHistoryEntry[], tick: number, players: PlayerState[]): void {
-  const map = new Map<number, { x: number; y: number }>()
+  let entry: LagHistoryEntry
+  if (history.length >= MAX_LAG_HISTORY_TICKS) {
+    entry = history.shift()!
+    entry.tick = tick
+    entry.positions.clear()
+  } else {
+    entry = { tick, positions: new Map<number, { x: number; y: number }>() }
+  }
   for (let i = 0; i < players.length; i++) {
     const p = players[i]
     if (p.deployed && p.alive && p.respawnTimer <= 0) {
-      map.set(p.id, { x: p.pos.x, y: p.pos.y })
+      entry.positions.set(p.id, { x: p.pos.x, y: p.pos.y })
     }
   }
-  history.push({ tick, positions: map })
-  if (history.length > MAX_LAG_HISTORY_TICKS) history.shift()
+  history.push(entry)
 }
 
 export function withRewoundPlayersForShooter<T>(

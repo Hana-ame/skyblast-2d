@@ -1022,15 +1022,21 @@
   }
   var MAX_LAG_HISTORY_TICKS = 36;
   function recordPlayerLagHistory(history, tick, players) {
-    const map = /* @__PURE__ */ new Map();
+    let entry;
+    if (history.length >= MAX_LAG_HISTORY_TICKS) {
+      entry = history.shift();
+      entry.tick = tick;
+      entry.positions.clear();
+    } else {
+      entry = { tick, positions: /* @__PURE__ */ new Map() };
+    }
     for (let i = 0; i < players.length; i++) {
       const p = players[i];
       if (p.deployed && p.alive && p.respawnTimer <= 0) {
-        map.set(p.id, { x: p.pos.x, y: p.pos.y });
+        entry.positions.set(p.id, { x: p.pos.x, y: p.pos.y });
       }
     }
-    history.push({ tick, positions: map });
-    if (history.length > MAX_LAG_HISTORY_TICKS) history.shift();
+    history.push(entry);
   }
   function withRewoundPlayersForShooter(enabled, history, playerLagMs, shooterId, players, rebuildBuckets, fn) {
     if (!enabled || history.length === 0) return fn();
@@ -2916,7 +2922,7 @@
         }
       }
       this.rebuildPlayerBucketsOnly();
-      recordPlayerLagHistory(this.lagHistory, this.tick, this.players);
+      if (this.lagCompensationEnabled && this.playerLagMs.size > 0) recordPlayerLagHistory(this.lagHistory, this.tick, this.players);
       separateOverlappingPlayers(this.players, this.playerBroadBuckets, this.terrain, this.obstacles, this.obstacleBroadBuckets);
       this.rebuildPlayerBucketsOnly();
       stepProjectilesSubsystem(this, dt);

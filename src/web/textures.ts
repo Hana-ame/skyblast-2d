@@ -93,9 +93,9 @@ export function texKindOf(kind: string): string {
   return 'unifiedPanel'
 }
 
-let lastPatternCamX = 0
-let lastPatternCamY = 0
-let patternMatrix: DOMMatrix | null = null
+let lastPatternCamX = Number.NaN
+let lastPatternCamY = Number.NaN
+let sharedPatternMatrix: DOMMatrix | null = null
 
 export function getTerrainPattern(ctx: CanvasRenderingContext2D, kind: string): CanvasPattern | null {
   const key = texKindOf(kind)
@@ -105,23 +105,28 @@ export function getTerrainPattern(ctx: CanvasRenderingContext2D, kind: string): 
   const pat = ctx.createPattern(cv, 'repeat')
   if (pat) {
     if (typeof DOMMatrix !== 'undefined' && typeof pat.setTransform === 'function') {
-      pat.setTransform(new DOMMatrix().translate(-lastPatternCamX, -lastPatternCamY))
+      if (!sharedPatternMatrix) sharedPatternMatrix = new DOMMatrix()
+      sharedPatternMatrix.a = 1; sharedPatternMatrix.b = 0; sharedPatternMatrix.c = 0; sharedPatternMatrix.d = 1
+      sharedPatternMatrix.e = Number.isFinite(lastPatternCamX) ? -lastPatternCamX : 0
+      sharedPatternMatrix.f = Number.isFinite(lastPatternCamY) ? -lastPatternCamY : 0
+      pat.setTransform(sharedPatternMatrix)
     }
     cache.set(key, pat)
   }
   return pat
 }
 
-/** 把地形贴图的锚点补偿到相机世界坐标：贴图随世界一起移动 */
+/** 把地形贴图的锚点补偿到相机世界坐标：复用单一 DOMMatrix 且相机未移动时零开销 */
 export function syncTerrainPatterns(camX: number, camY: number): void {
-  if (typeof DOMMatrix === 'undefined') return
-  // 复用同一个矩阵对象：只增量平移相机移动量（上次已平移 -lastCamX/-lastCamY），避免每帧 new DOMMatrix 分配
-  if (!patternMatrix) patternMatrix = new DOMMatrix()
-  patternMatrix.translateSelf(-(camX - lastPatternCamX), -(camY - lastPatternCamY))
+  if (Math.abs(camX - lastPatternCamX) < 0.05 && Math.abs(camY - lastPatternCamY) < 0.05) return
   lastPatternCamX = camX
   lastPatternCamY = camY
-  const m = patternMatrix
+  if (typeof DOMMatrix === 'undefined' || cache.size === 0) return
+  if (!sharedPatternMatrix) sharedPatternMatrix = new DOMMatrix()
+  sharedPatternMatrix.a = 1; sharedPatternMatrix.b = 0; sharedPatternMatrix.c = 0; sharedPatternMatrix.d = 1
+  sharedPatternMatrix.e = -camX
+  sharedPatternMatrix.f = -camY
   for (const pat of cache.values()) {
-    if (typeof pat.setTransform === 'function') pat.setTransform(m)
+    if (typeof pat.setTransform === 'function') pat.setTransform(sharedPatternMatrix)
   }
 }

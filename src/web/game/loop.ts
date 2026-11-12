@@ -166,9 +166,10 @@ export function startGameLoop(): void {
     if (rawDt > 0.001) {
       smoothFps = smoothFps * 0.9 + (1 / rawDt) * 0.1
     }
-    const dt = Math.min(0.05, rawDt)
+    // 消除 60Hz 显示器垂直同步微小抖动（15.2~18.2ms）导致的偶发双 Tick / 空 Tick 节拍顿挫
+    const snappedDt = (shouldRender && rawDt > 0.0145 && rawDt < 0.019) ? FIXED : Math.min(0.05, rawDt)
     lastFrame = now
-    acc += dt
+    acc += snappedDt
     let guard = 0
 
     while (acc >= FIXED && guard < 5) {
@@ -220,7 +221,7 @@ export function startGameLoop(): void {
         if (kl) kl.textContent = death.info
           ? `${death.info.killer} · ${death.info.weapon}`
           : ''
-        renderDeathStats()
+        if (world.tick % 6 === 0) renderDeathStats()
       }
 
       // 喷气尾焰粒子
@@ -262,16 +263,18 @@ export function startGameLoop(): void {
   // 后台标签页保活时钟：当作为 Host/Client 的标签页切到后台导致 rAF 被浏览器挂起时，由 16ms 定时器维持权威物理与 KCP 收发不断连
   window.setInterval(() => {
     const now = performance.now()
-    if (document.hidden || (now - lastFrame > 45 && netState.role !== 'offline')) {
+    // 仅在标签页处于后台或 rAF 挂起 (>120ms) 时接管，避免前台与 rAF 抢跑冲突
+    if (document.hidden || (now - lastFrame > 120 && netState.role !== 'offline')) {
       stepLoopTick(now, false)
     }
-  }, 16)
+  }, 32)
 }
 
 /**
  * 阵亡界面的 KD + 排行榜渲染。
  * 数字全部走固定宽度槽位（tabular-nums + 定宽 span），避免位数变化推动布局。
  */
+let lastDeathRankSig = ''
 function renderDeathStats(): void {
   renderDeathMinimap()
   const me = localPlayer
@@ -301,7 +304,10 @@ function renderDeathStats(): void {
     const top = ranked.slice(0, 10)
     const myRank = ranked.findIndex(p => p.id === me.id) + 1
     const maxKills = Math.max(1, ...ranked.map(p => p.kills ?? 0))
-    list.innerHTML = top.map((p, i) => {
+    const rankSig = `${me.id}:${kills}:${deaths}:` + top.map(p => `${p.id}:${p.kills ?? 0}:${p.deaths ?? 0}:${p.respawnTimer > 0 || !p.alive ? 0 : 1}:${p.team}:${p.name}`).join('|')
+    if (rankSig !== lastDeathRankSig) {
+      lastDeathRankSig = rankSig
+      list.innerHTML = top.map((p, i) => {
       const isMe = p.id === me.id
       const k = p.kills ?? 0
       const d = p.deaths ?? 0
@@ -319,7 +325,8 @@ function renderDeathStats(): void {
           <span class="relative w-6 text-right font-mono text-rose-300 tabular-nums">${d}</span>
           <span class="relative w-9 text-right font-mono font-bold text-amber-300 tabular-nums">${kd}</span>
         </li>`
-    }).join('')
+      }).join('')
+    }
 
     const selfLine = document.getElementById('deathRankSelfLine')
     const selfBar = document.getElementById('deathRankSelfBar')

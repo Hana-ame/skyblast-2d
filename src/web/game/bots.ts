@@ -376,6 +376,9 @@ export function getEnemyOriginalBaseSpawn(bot: PlayerState): { x: number; y: num
     : { x: 260, y: MAIN_DECK_TOP - 16, team: 'red' }
 }
 
+let cachedTerrainCoverRects: typeof world.terrain.rects | null = null
+let cachedTerrainRectsLen = -1
+
 /** 扫描并返回机器人在面对敌方威胁时最近的可躲避掩体背弹侧坐标（支持可破坏掩体与地形矮墙） */
 export function findNearestCoverPosition(
   bot: PlayerState,
@@ -402,10 +405,15 @@ export function findNearestCoverPosition(
     }
   }
 
-  // 2) 扫描附近实心矮墙/掩体柱 (world.terrain.rects)
-  for (const r of world.terrain.rects) {
-    if (r.kind.startsWith('deco_') || r.kind.endsWith('_bg')) continue
-    if (r.h < 34 || r.h > 260 || r.w > 320) continue
+  // 2) 扫描附近实心矮墙/掩体柱（预过滤缓存静态掩体块，避免每帧每个 AI 重复遍历全部 77 个地形图元）
+  if (!cachedTerrainCoverRects || cachedTerrainRectsLen !== world.terrain.rects.length) {
+    cachedTerrainRectsLen = world.terrain.rects.length
+    cachedTerrainCoverRects = world.terrain.rects.filter(
+      r => !r.kind.startsWith('deco_') && !r.kind.endsWith('_bg') && r.h >= 34 && r.h <= 260 && r.w <= 320,
+    )
+  }
+  for (let i = 0; i < cachedTerrainCoverRects.length; i++) {
+    const r = cachedTerrainCoverRects[i]
     if (Math.abs((r.y + r.h) - (by + 16)) > 95) continue
     const cx = r.x + r.w / 2
     const d = Math.abs(cx - bx)

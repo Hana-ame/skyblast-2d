@@ -1,6 +1,9 @@
 // web/render/beamGeometry.ts —— 光束段（高斯枪）→ 屏幕折线的纯几何（可单测，避免“跨接缝画成横穿全图”或“跨半世界反射段被误裁消失”）
 import { WORLD_W, WORLD_H, wrapDeltaX, wrapDeltaY } from '../../core/wrap.ts'
 
+const WRAP_OFFSETS_X = [-WORLD_W, 0, WORLD_W] as const
+const WRAP_OFFSETS_Y = [-WORLD_H, 0, WORLD_H] as const
+
 export interface WorldSeg { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }
 export interface ScreenSeg { x1: number; y1: number; x2: number; y2: number }
 
@@ -29,8 +32,10 @@ export function expandBeamSegments(
     const dx = seg.dx ?? wrapDeltaX(seg.x1, seg.x2)
     const dy = seg.dy ?? wrapDeltaY(seg.y1, seg.y2)
     out.push({ x1: from.x, y1: from.y, x2: from.x + dx, y2: from.y + dy })
-    for (const ox of [-WORLD_W, 0, WORLD_W]) {
-      for (const oy of [-WORLD_H, 0, WORLD_H]) {
+    for (let ix = 0; ix < 3; ix++) {
+      const ox = WRAP_OFFSETS_X[ix]
+      for (let iy = 0; iy < 3; iy++) {
+        const oy = WRAP_OFFSETS_Y[iy]
         if (ox === 0 && oy === 0) continue
         const x1 = from.x + ox
         const y1 = from.y + oy

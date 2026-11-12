@@ -134,16 +134,31 @@ export class Effects {
   }
 
   /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
-  render(ctx: CanvasRenderingContext2D, screenOf: (x: number, y: number) => { x: number; y: number }, inView: (x: number, y: number) => boolean): void {
+  render(
+    ctx: CanvasRenderingContext2D,
+    screenOf: (x: number, y: number) => { x: number; y: number },
+    inView: (x: number, y: number) => boolean,
+    sxFn?: (wx: number) => number,
+    syFn?: (wy: number) => number,
+  ): void {
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i]
-      const s = screenOf(p.x, p.y)
-      if (!inView(s.x, s.y)) continue
+      let sx: number
+      let sy: number
+      if (sxFn && syFn) {
+        sx = sxFn(p.x)
+        sy = syFn(p.y)
+      } else {
+        const s = screenOf(p.x, p.y)
+        sx = s.x
+        sy = s.y
+      }
+      if (!inView(sx, sy)) continue
       const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1
       ctx.globalAlpha = alpha
       ctx.fillStyle = p.color
       ctx.beginPath()
-      ctx.arc(s.x, s.y, p.size, 0, Math.PI * 2)
+      ctx.arc(sx, sy, p.size, 0, Math.PI * 2)
       ctx.fill()
     }
     ctx.globalAlpha = 1

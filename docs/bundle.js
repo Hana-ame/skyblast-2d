@@ -1102,15 +1102,21 @@
   }
   var MAX_LAG_HISTORY_TICKS = 36;
   function recordPlayerLagHistory(history, tick, players) {
-    const map = /* @__PURE__ */ new Map();
+    let entry;
+    if (history.length >= MAX_LAG_HISTORY_TICKS) {
+      entry = history.shift();
+      entry.tick = tick;
+      entry.positions.clear();
+    } else {
+      entry = { tick, positions: /* @__PURE__ */ new Map() };
+    }
     for (let i = 0; i < players.length; i++) {
       const p = players[i];
       if (p.deployed && p.alive && p.respawnTimer <= 0) {
-        map.set(p.id, { x: p.pos.x, y: p.pos.y });
+        entry.positions.set(p.id, { x: p.pos.x, y: p.pos.y });
       }
     }
-    history.push({ tick, positions: map });
-    if (history.length > MAX_LAG_HISTORY_TICKS) history.shift();
+    history.push(entry);
   }
   function withRewoundPlayersForShooter(enabled, history, playerLagMs, shooterId, players, rebuildBuckets, fn) {
     if (!enabled || history.length === 0) return fn();
@@ -3708,16 +3714,25 @@
       }
     }
     /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
-    render(ctx2, screenOf, inView) {
+    render(ctx2, screenOf, inView, sxFn, syFn) {
       for (let i = 0; i < this.particles.length; i++) {
         const p = this.particles[i];
-        const s = screenOf(p.x, p.y);
-        if (!inView(s.x, s.y)) continue;
+        let sx;
+        let sy;
+        if (sxFn && syFn) {
+          sx = sxFn(p.x);
+          sy = syFn(p.y);
+        } else {
+          const s = screenOf(p.x, p.y);
+          sx = s.x;
+          sy = s.y;
+        }
+        if (!inView(sx, sy)) continue;
         const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1;
         ctx2.globalAlpha = alpha;
         ctx2.fillStyle = p.color;
         ctx2.beginPath();
-        ctx2.arc(s.x, s.y, p.size, 0, Math.PI * 2);
+        ctx2.arc(sx, sy, p.size, 0, Math.PI * 2);
         ctx2.fill();
       }
       ctx2.globalAlpha = 1;
@@ -3963,9 +3978,9 @@
     if (kind === "tunnel_bg" || kind === "pipe_bg" || kind === "building_bg") return "tunnel";
     return "unifiedPanel";
   }
-  var lastPatternCamX = 0;
-  var lastPatternCamY = 0;
-  var patternMatrix = null;
+  var lastPatternCamX = Number.NaN;
+  var lastPatternCamY = Number.NaN;
+  var sharedPatternMatrix = null;
   function getTerrainPattern(ctx2, kind) {
     const key = texKindOf(kind);
     const hit = cache.get(key);
@@ -3974,21 +3989,33 @@
     const pat = ctx2.createPattern(cv, "repeat");
     if (pat) {
       if (typeof DOMMatrix !== "undefined" && typeof pat.setTransform === "function") {
-        pat.setTransform(new DOMMatrix().translate(-lastPatternCamX, -lastPatternCamY));
+        if (!sharedPatternMatrix) sharedPatternMatrix = new DOMMatrix();
+        sharedPatternMatrix.a = 1;
+        sharedPatternMatrix.b = 0;
+        sharedPatternMatrix.c = 0;
+        sharedPatternMatrix.d = 1;
+        sharedPatternMatrix.e = Number.isFinite(lastPatternCamX) ? -lastPatternCamX : 0;
+        sharedPatternMatrix.f = Number.isFinite(lastPatternCamY) ? -lastPatternCamY : 0;
+        pat.setTransform(sharedPatternMatrix);
       }
       cache.set(key, pat);
     }
     return pat;
   }
   function syncTerrainPatterns(camX, camY) {
-    if (typeof DOMMatrix === "undefined") return;
-    if (!patternMatrix) patternMatrix = new DOMMatrix();
-    patternMatrix.translateSelf(-(camX - lastPatternCamX), -(camY - lastPatternCamY));
+    if (Math.abs(camX - lastPatternCamX) < 0.05 && Math.abs(camY - lastPatternCamY) < 0.05) return;
     lastPatternCamX = camX;
     lastPatternCamY = camY;
-    const m = patternMatrix;
+    if (typeof DOMMatrix === "undefined" || cache.size === 0) return;
+    if (!sharedPatternMatrix) sharedPatternMatrix = new DOMMatrix();
+    sharedPatternMatrix.a = 1;
+    sharedPatternMatrix.b = 0;
+    sharedPatternMatrix.c = 0;
+    sharedPatternMatrix.d = 1;
+    sharedPatternMatrix.e = -camX;
+    sharedPatternMatrix.f = -camY;
     for (const pat of cache.values()) {
-      if (typeof pat.setTransform === "function") pat.setTransform(m);
+      if (typeof pat.setTransform === "function") pat.setTransform(sharedPatternMatrix);
     }
   }
 
@@ -4030,6 +4057,11 @@
     green: { color: "#10b981", light: "#6ee7b7", dark: "#064e3b", glow: "rgba(16,185,129,0.35)" },
     ffa: { color: "#eab308", light: "#fde047", dark: "#713f12", glow: "rgba(234,179,8,0.35)" }
   };
+  var cachedShadowGrad = null;
+  var cachedBodyGrads = /* @__PURE__ */ new Map();
+  var cachedHelmGrads = /* @__PURE__ */ new Map();
+  var cachedVisorGrads = /* @__PURE__ */ new Map();
+  var cachedShieldGrad = null;
   function roundRect(ctx2, x, y, w, h, r) {
     const rr = Math.min(r, w / 2, h / 2);
     ctx2.beginPath();
@@ -4050,10 +4082,12 @@
     ctx2.save();
     ctx2.translate(dx, dy);
     if (!alive) ctx2.globalAlpha = 0.45;
-    const shadowGrad = ctx2.createRadialGradient(0, 18, 2, 0, 18, 16);
-    shadowGrad.addColorStop(0, "rgba(0,0,0,0.45)");
-    shadowGrad.addColorStop(1, "rgba(0,0,0,0)");
-    ctx2.fillStyle = shadowGrad;
+    if (!cachedShadowGrad) {
+      cachedShadowGrad = ctx2.createRadialGradient(0, 18, 2, 0, 18, 16);
+      cachedShadowGrad.addColorStop(0, "rgba(0,0,0,0.45)");
+      cachedShadowGrad.addColorStop(1, "rgba(0,0,0,0)");
+    }
+    ctx2.fillStyle = cachedShadowGrad;
     ctx2.beginPath();
     ctx2.ellipse(0, 18, 16, 4.5, 0, 0, Math.PI * 2);
     ctx2.fill();
@@ -4114,10 +4148,14 @@
     ctx2.fill();
     roundRect(ctx2, rightLegX - 0.5, 15.5, 7.5, 3.5, 1.2);
     ctx2.fill();
-    const bodyGrad = ctx2.createLinearGradient(0, -14, 0, 10);
-    bodyGrad.addColorStop(0, pal.light);
-    bodyGrad.addColorStop(0.4, pal.color);
-    bodyGrad.addColorStop(1, pal.dark);
+    let bodyGrad = cachedBodyGrads.get(pal.color);
+    if (!bodyGrad) {
+      bodyGrad = ctx2.createLinearGradient(0, -14, 0, 10);
+      bodyGrad.addColorStop(0, pal.light);
+      bodyGrad.addColorStop(0.4, pal.color);
+      bodyGrad.addColorStop(1, pal.dark);
+      cachedBodyGrads.set(pal.color, bodyGrad);
+    }
     ctx2.fillStyle = bodyGrad;
     ctx2.strokeStyle = "#090d16";
     ctx2.lineWidth = 2;
@@ -4144,10 +4182,14 @@
       ctx2.arc(facing > 0 ? -6 : 6, 6.2, 2.2, 0, Math.PI * 2);
       ctx2.fill();
     }
-    const helmGrad = ctx2.createRadialGradient(-2 * facing, -27, 1, 0, -24, 11);
-    helmGrad.addColorStop(0, "#f1f5f9");
-    helmGrad.addColorStop(0.55, "#cbd5e1");
-    helmGrad.addColorStop(1, "#475569");
+    let helmGrad = cachedHelmGrads.get(facing);
+    if (!helmGrad) {
+      helmGrad = ctx2.createRadialGradient(-2 * facing, -27, 1, 0, -24, 11);
+      helmGrad.addColorStop(0, "#f1f5f9");
+      helmGrad.addColorStop(0.55, "#cbd5e1");
+      helmGrad.addColorStop(1, "#475569");
+      cachedHelmGrads.set(facing, helmGrad);
+    }
     ctx2.fillStyle = helmGrad;
     ctx2.strokeStyle = "#090d16";
     ctx2.lineWidth = 2;
@@ -4171,10 +4213,14 @@
     ctx2.arc(antX - facing * 2, -35, 1.3, 0, Math.PI * 2);
     ctx2.fill();
     const visorX = facing > 0 ? 1.5 : -9;
-    const visorGrad = ctx2.createLinearGradient(visorX, -27, visorX + 7.5, -22);
-    visorGrad.addColorStop(0, "#38bdf8");
-    visorGrad.addColorStop(0.6, "#0284c7");
-    visorGrad.addColorStop(1, "#0f172a");
+    let visorGrad = cachedVisorGrads.get(facing);
+    if (!visorGrad) {
+      visorGrad = ctx2.createLinearGradient(visorX, -27, visorX + 7.5, -22);
+      visorGrad.addColorStop(0, "#38bdf8");
+      visorGrad.addColorStop(0.6, "#0284c7");
+      visorGrad.addColorStop(1, "#0f172a");
+      cachedVisorGrads.set(facing, visorGrad);
+    }
     ctx2.fillStyle = visorGrad;
     roundRect(ctx2, visorX, -26.8, 7.5, 4.2, 1.5);
     ctx2.fill();
@@ -4422,11 +4468,13 @@
     }
     if (p.shieldTimer > 0 && p.shieldHp > 0) {
       const r = 34 + Math.sin(t * 0.15) * 1.5;
-      const sGrad = ctx2.createRadialGradient(0, -8, r * 0.4, 0, -8, r);
-      sGrad.addColorStop(0, "rgba(56,189,248,0.04)");
-      sGrad.addColorStop(0.75, "rgba(56,189,248,0.16)");
-      sGrad.addColorStop(1, "rgba(125,211,252,0.42)");
-      ctx2.fillStyle = sGrad;
+      if (!cachedShieldGrad) {
+        cachedShieldGrad = ctx2.createRadialGradient(0, -8, 13.6, 0, -8, 35);
+        cachedShieldGrad.addColorStop(0, "rgba(56,189,248,0.04)");
+        cachedShieldGrad.addColorStop(0.75, "rgba(56,189,248,0.16)");
+        cachedShieldGrad.addColorStop(1, "rgba(125,211,252,0.42)");
+      }
+      ctx2.fillStyle = cachedShieldGrad;
       ctx2.strokeStyle = "rgba(56,189,248,0.92)";
       ctx2.lineWidth = 2.2;
       ctx2.beginPath();
@@ -9576,6 +9624,39 @@
       }
     }
   }
+  var minimapBgCache = /* @__PURE__ */ new Map();
+  function getMinimapStaticBg(W, H) {
+    if (typeof document === "undefined" || typeof document.createElement !== "function") return null;
+    const key = `${W}x${H}:${world.terrain.rects.length}`;
+    let bg = minimapBgCache.get(key);
+    if (bg) return bg;
+    const cv = document.createElement("canvas");
+    if (typeof cv.getContext !== "function") return null;
+    cv.width = W;
+    cv.height = H;
+    const bc = cv.getContext("2d");
+    if (!bc || typeof bc.fillRect !== "function") return null;
+    const sx = (wx) => wx / WORLD_W * W;
+    const sy = (wy) => wy / WORLD_H * H;
+    bc.fillStyle = "#040814";
+    bc.fillRect(0, 0, W, H);
+    bc.strokeStyle = "rgba(56, 189, 248, 0.25)";
+    bc.lineWidth = 1;
+    if (typeof bc.beginPath === "function") {
+      bc.beginPath();
+      bc.moveTo(0, sy(SURFACE_Y));
+      bc.lineTo(W, sy(SURFACE_Y));
+      bc.stroke();
+    }
+    bc.fillStyle = "rgba(51, 65, 85, 0.75)";
+    for (let i = 0; i < world.terrain.rects.length; i++) {
+      const r = world.terrain.rects[i];
+      if (r.kind.startsWith("deco_") || r.kind.endsWith("_bg")) continue;
+      bc.fillRect(sx(r.x), sy(r.y), Math.max(1.2, r.w / WORLD_W * W), Math.max(1.2, r.h / WORLD_H * H));
+    }
+    minimapBgCache.set(key, cv);
+    return cv;
+  }
   function drawTacticalMinimapOnCanvas(mm, isDeathMap) {
     if (typeof mm.getContext !== "function") return;
     const c = mm.getContext("2d");
@@ -9584,20 +9665,25 @@
     const H = mm.height || (isDeathMap ? 168 : 82);
     const sx = (wx) => wx / WORLD_W * W;
     const sy = (wy) => wy / WORLD_H * H;
-    c.clearRect(0, 0, W, H);
-    c.fillStyle = "#040814";
-    c.fillRect(0, 0, W, H);
-    c.strokeStyle = "rgba(56, 189, 248, 0.25)";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(0, sy(SURFACE_Y));
-    c.lineTo(W, sy(SURFACE_Y));
-    c.stroke();
-    c.fillStyle = "rgba(51, 65, 85, 0.75)";
-    for (let i = 0; i < world.terrain.rects.length; i++) {
-      const r = world.terrain.rects[i];
-      if (r.kind.startsWith("deco_") || r.kind.endsWith("_bg")) continue;
-      c.fillRect(sx(r.x), sy(r.y), Math.max(1.2, r.w / WORLD_W * W), Math.max(1.2, r.h / WORLD_H * H));
+    const staticBg = typeof c.drawImage === "function" ? getMinimapStaticBg(W, H) : null;
+    if (staticBg) {
+      c.drawImage(staticBg, 0, 0);
+    } else {
+      c.clearRect(0, 0, W, H);
+      c.fillStyle = "#040814";
+      c.fillRect(0, 0, W, H);
+      c.strokeStyle = "rgba(56, 189, 248, 0.25)";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(0, sy(SURFACE_Y));
+      c.lineTo(W, sy(SURFACE_Y));
+      c.stroke();
+      c.fillStyle = "rgba(51, 65, 85, 0.75)";
+      for (let i = 0; i < world.terrain.rects.length; i++) {
+        const r = world.terrain.rects[i];
+        if (r.kind.startsWith("deco_") || r.kind.endsWith("_bg")) continue;
+        c.fillRect(sx(r.x), sy(r.y), Math.max(1.2, r.w / WORLD_W * W), Math.max(1.2, r.h / WORLD_H * H));
+      }
     }
     const activeSpawnId = pendingLoadout.spawnPointId || localPlayer.selectedSpawnId || "base";
     const bases = [
@@ -10258,6 +10344,8 @@
     if (bot.team === "blue") return { x: 260, y: MAIN_DECK_TOP - 16, team: "red" };
     return bot.pos.x <= 6600 ? { x: 12940, y: MAIN_DECK_TOP - 16, team: "blue" } : { x: 260, y: MAIN_DECK_TOP - 16, team: "red" };
   }
+  var cachedTerrainCoverRects = null;
+  var cachedTerrainRectsLen = -1;
   function findNearestCoverPosition(bot, enemy) {
     const bx = bot.pos.x;
     const by = bot.pos.y;
@@ -10276,9 +10364,14 @@
         best = { x: shelterX, y: by, kind: "obstacle", coverX: cx };
       }
     }
-    for (const r of world.terrain.rects) {
-      if (r.kind.startsWith("deco_") || r.kind.endsWith("_bg")) continue;
-      if (r.h < 34 || r.h > 260 || r.w > 320) continue;
+    if (!cachedTerrainCoverRects || cachedTerrainRectsLen !== world.terrain.rects.length) {
+      cachedTerrainRectsLen = world.terrain.rects.length;
+      cachedTerrainCoverRects = world.terrain.rects.filter(
+        (r) => !r.kind.startsWith("deco_") && !r.kind.endsWith("_bg") && r.h >= 34 && r.h <= 260 && r.w <= 320
+      );
+    }
+    for (let i = 0; i < cachedTerrainCoverRects.length; i++) {
+      const r = cachedTerrainCoverRects[i];
       if (Math.abs(r.y + r.h - (by + 16)) > 95) continue;
       const cx = r.x + r.w / 2;
       const d = Math.abs(cx - bx);
@@ -11466,6 +11559,8 @@
   }
 
   // src/web/render/beamGeometry.ts
+  var WRAP_OFFSETS_X = [-WORLD_W, 0, WORLD_W];
+  var WRAP_OFFSETS_Y = [-WORLD_H, 0, WORLD_H];
   function expandBeamSegments(segments, toScreen, halfW, halfH) {
     const out = [];
     const padX = halfW + 200;
@@ -11475,8 +11570,10 @@
       const dx = seg.dx ?? wrapDeltaX(seg.x1, seg.x2);
       const dy = seg.dy ?? wrapDeltaY(seg.y1, seg.y2);
       out.push({ x1: from.x, y1: from.y, x2: from.x + dx, y2: from.y + dy });
-      for (const ox of [-WORLD_W, 0, WORLD_W]) {
-        for (const oy of [-WORLD_H, 0, WORLD_H]) {
+      for (let ix = 0; ix < 3; ix++) {
+        const ox = WRAP_OFFSETS_X[ix];
+        for (let iy = 0; iy < 3; iy++) {
+          const oy = WRAP_OFFSETS_Y[iy];
           if (ox === 0 && oy === 0) continue;
           const x1 = from.x + ox;
           const y1 = from.y + oy;
@@ -11492,7 +11589,12 @@
   }
 
   // src/web/render/scene.ts
-  var skyGradCache = null;
+  var WRAP_OFFSETS_X2 = [-WORLD_W, 0, WORLD_W];
+  var WRAP_OFFSETS_Y2 = [-WORLD_H, 0, WORLD_H];
+  var sharedPt = { x: 0, y: 0 };
+  var cachedSkyGrad = null;
+  var cachedSkyGradH = 0;
+  var cachedSkyDepthQuant = -1;
   function renderScene() {
     if (!ctx || !canvas) return;
     const targetW = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || canvas.clientWidth || 1024));
@@ -11522,23 +11624,26 @@
     const halfH = canvas.height * camera.fovFactor / 2 + 160;
     ctx.save();
     const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1);
-    const depthKey = Math.round(depthT * 64);
-    if (!skyGradCache || skyGradCache.h !== canvas.height || skyGradCache.k !== depthKey) {
-      const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      const topR = Math.round(5 + depthT * 4);
-      const topB = Math.round(17 - depthT * 10);
-      g.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`);
-      g.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`);
-      g.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`);
-      skyGradCache = { g, h: canvas.height, k: depthKey };
+    const depthQuant = Math.round(depthT * 25);
+    if (!cachedSkyGrad || cachedSkyGradH !== canvas.height || cachedSkyDepthQuant !== depthQuant) {
+      cachedSkyGradH = canvas.height;
+      cachedSkyDepthQuant = depthQuant;
+      const qT = depthQuant / 25;
+      const topR = Math.round(5 + qT * 4);
+      const topB = Math.round(17 - qT * 10);
+      cachedSkyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      cachedSkyGrad.addColorStop(0, `rgb(${topR}, ${Math.round(8 + qT * 4)}, ${topB + 4})`);
+      cachedSkyGrad.addColorStop(0.55, `rgb(${Math.round(15 - qT * 9)}, ${Math.round(23 - qT * 12)}, ${Math.round(42 - qT * 22)})`);
+      cachedSkyGrad.addColorStop(1, `rgb(${Math.round(30 - qT * 20)}, ${Math.round(27 - qT * 17)}, ${Math.round(75 - qT * 45)})`);
     }
-    ctx.fillStyle = skyGradCache.g;
+    ctx.fillStyle = cachedSkyGrad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
     ctx.scale(zoom, zoom);
     const sx = (wx) => wrapDeltaX(camera.x, wx);
     const sy = (wy) => wrapDeltaY(camera.y, wy);
     const inView = (dx, dy, pad = 0) => dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad;
+    const inViewRect = (dx, dy, padX, padY) => dx > -halfW - padX && dx < halfW + padX && dy > -halfH - padY && dy < halfH + padY;
     for (const st of worldStars) {
       const px = sx(st.x);
       const py = sy(st.y);
@@ -11567,11 +11672,14 @@
       if (r.kind.startsWith("deco_")) continue;
       const cx0 = sx(r.x + r.w / 2);
       const cy0 = sy(r.y + r.h / 2);
-      for (const ox of [-WORLD_W, 0, WORLD_W]) {
-        for (const oy of [-WORLD_H, 0, WORLD_H]) {
-          const cx = cx0 + ox;
-          const cy = cy0 + oy;
-          if (!inView(cx, cy, Math.max(r.w, r.h))) continue;
+      const rHalfW = r.w * 0.5;
+      const rHalfH = r.h * 0.5;
+      for (let ix = 0; ix < 3; ix++) {
+        const cx = cx0 + WRAP_OFFSETS_X2[ix];
+        if (cx <= -halfW - rHalfW || cx >= halfW + rHalfW) continue;
+        for (let iy = 0; iy < 3; iy++) {
+          const cy = cy0 + WRAP_OFFSETS_Y2[iy];
+          if (cy <= -halfH - rHalfH || cy >= halfH + rHalfH) continue;
           const left = cx - r.w / 2;
           const top = cy - r.h / 2;
           const pat = getTerrainPattern(ctx, r.kind);
@@ -11629,7 +11737,7 @@
     for (const ob of world.obstacles) {
       const ox = sx(ob.x + ob.w / 2);
       const oy = sy(ob.y + ob.h / 2);
-      if (!inView(ox, oy, Math.max(ob.w, ob.h))) continue;
+      if (!inViewRect(ox, oy, ob.w * 0.5, ob.h * 0.5)) continue;
       drawObstacleSprite(ctx, ob, ox, oy);
     }
     for (const cp of world.capturePoints) {
@@ -11940,11 +12048,14 @@
       for (const sz of world.terrain.shadows) {
         const cx0 = sx(sz.x + sz.w / 2);
         const cy0 = sy(sz.y + sz.h / 2);
-        for (const ox of [-WORLD_W, 0, WORLD_W]) {
-          for (const oy of [-WORLD_H, 0, WORLD_H]) {
-            const cx = cx0 + ox;
-            const cy = cy0 + oy;
-            if (!inView(cx, cy, Math.max(sz.w, sz.h))) continue;
+        const szHalfW = sz.w * 0.5;
+        const szHalfH = sz.h * 0.5;
+        for (let ix = 0; ix < 3; ix++) {
+          const cx = cx0 + WRAP_OFFSETS_X2[ix];
+          if (cx <= -halfW - szHalfW || cx >= halfW + szHalfW) continue;
+          for (let iy = 0; iy < 3; iy++) {
+            const cy = cy0 + WRAP_OFFSETS_Y2[iy];
+            if (cy <= -halfH - szHalfH || cy >= halfH + szHalfH) continue;
             const inside = localPlayer.deployed && Math.abs(wrapDeltaX(localPlayer.pos.x, sz.x + sz.w / 2)) <= sz.w / 2 + 40 && Math.abs(wrapDeltaY(localPlayer.pos.y, sz.y + sz.h / 2)) <= sz.h / 2 + 40;
             ctx.fillStyle = inside ? "rgba(2, 6, 23, 0.22)" : `rgba(2, 6, 23, ${sz.alpha ?? 0.74})`;
             ctx.fillRect(cx - sz.w / 2, cy - sz.h / 2, sz.w, sz.h);
@@ -11956,11 +12067,14 @@
       if (!r.kind.startsWith("deco_")) continue;
       const cx0 = sx(r.x + r.w / 2);
       const cy0 = sy(r.y + r.h / 2);
-      for (const ox of [-WORLD_W, 0, WORLD_W]) {
-        for (const oy of [-WORLD_H, 0, WORLD_H]) {
-          const cx = cx0 + ox;
-          const cy = cy0 + oy;
-          if (!inView(cx, cy, Math.max(r.w, r.h) + 40)) continue;
+      const decoPadX = r.w * 0.5 + 40;
+      const decoPadY = r.h * 0.5 + 40;
+      for (let ix = 0; ix < 3; ix++) {
+        const cx = cx0 + WRAP_OFFSETS_X2[ix];
+        if (cx <= -halfW - decoPadX || cx >= halfW + decoPadX) continue;
+        for (let iy = 0; iy < 3; iy++) {
+          const cy = cy0 + WRAP_OFFSETS_Y2[iy];
+          if (cy <= -halfH - decoPadY || cy >= halfH + decoPadY) continue;
           drawDeco(ctx, r, cx, cy, world.tick);
         }
       }
@@ -12009,7 +12123,11 @@
       }
       ctx.restore();
     }
-    effects.render(ctx, (x, y) => ({ x: sx(x), y: sy(y) }), (x, y) => inView(x, y));
+    effects.render(ctx, (x, y) => {
+      sharedPt.x = sx(x);
+      sharedPt.y = sy(y);
+      return sharedPt;
+    }, inView, sx, sy);
     ctx.restore();
   }
 
@@ -12144,9 +12262,9 @@
       if (rawDt > 1e-3) {
         smoothFps = smoothFps * 0.9 + 1 / rawDt * 0.1;
       }
-      const dt = Math.min(0.05, rawDt);
+      const snappedDt = shouldRender && rawDt > 0.0145 && rawDt < 0.019 ? FIXED : Math.min(0.05, rawDt);
       lastFrame = now;
-      acc += dt;
+      acc += snappedDt;
       let guard = 0;
       while (acc >= FIXED && guard < 5) {
         playerInput = buildLocalInput();
@@ -12190,7 +12308,7 @@
           }
           const kl = document.getElementById("deathKillerLine");
           if (kl) kl.textContent = death.info ? `${death.info.killer} \xB7 ${death.info.weapon}` : "";
-          renderDeathStats();
+          if (world.tick % 6 === 0) renderDeathStats();
         }
         for (const p of world.players) {
           if (p.deployed && p.respawnTimer <= 0 && p.jetpack) {
@@ -12227,11 +12345,12 @@
     });
     window.setInterval(() => {
       const now = performance.now();
-      if (document.hidden || now - lastFrame > 45 && netState.role !== "offline") {
+      if (document.hidden || now - lastFrame > 120 && netState.role !== "offline") {
         stepLoopTick(now, false);
       }
-    }, 16);
+    }, 32);
   }
+  var lastDeathRankSig = "";
   function renderDeathStats() {
     renderDeathMinimap();
     const me = localPlayer;
@@ -12256,15 +12375,18 @@
       const top = ranked.slice(0, 10);
       const myRank = ranked.findIndex((p) => p.id === me.id) + 1;
       const maxKills = Math.max(1, ...ranked.map((p) => p.kills ?? 0));
-      list.innerHTML = top.map((p, i) => {
-        const isMe = p.id === me.id;
-        const k = p.kills ?? 0;
-        const d = p.deaths ?? 0;
-        const kd = d === 0 ? k.toFixed(2) : (k / d).toFixed(2);
-        const pct = Math.max(4, Math.round(k / maxKills * 100));
-        const teamColor = p.team === "red" ? "text-rose-300" : p.team === "blue" ? "text-sky-300" : "text-amber-200";
-        const aliveDot = p.respawnTimer > 0 || !p.alive ? "\u{1F480}" : "\u{1F7E2}";
-        return `
+      const rankSig = `${me.id}:${kills}:${deaths}:` + top.map((p) => `${p.id}:${p.kills ?? 0}:${p.deaths ?? 0}:${p.respawnTimer > 0 || !p.alive ? 0 : 1}:${p.team}:${p.name}`).join("|");
+      if (rankSig !== lastDeathRankSig) {
+        lastDeathRankSig = rankSig;
+        list.innerHTML = top.map((p, i) => {
+          const isMe = p.id === me.id;
+          const k = p.kills ?? 0;
+          const d = p.deaths ?? 0;
+          const kd = d === 0 ? k.toFixed(2) : (k / d).toFixed(2);
+          const pct = Math.max(4, Math.round(k / maxKills * 100));
+          const teamColor = p.team === "red" ? "text-rose-300" : p.team === "blue" ? "text-sky-300" : "text-amber-200";
+          const aliveDot = p.respawnTimer > 0 || !p.alive ? "\u{1F480}" : "\u{1F7E2}";
+          return `
         <li class="relative flex items-center gap-2 rounded-lg px-2 py-1 text-[11px] ${isMe ? "bg-sky-500/20 ring-1 ring-sky-400/50" : "bg-slate-900/60"}">
           <span class="absolute inset-y-0 left-0 rounded-lg bg-sky-400/10" style="width:${pct}%"></span>
           <span class="relative w-4 text-right font-mono font-bold text-slate-400 tabular-nums">${i + 1}</span>
@@ -12274,7 +12396,8 @@
           <span class="relative w-6 text-right font-mono text-rose-300 tabular-nums">${d}</span>
           <span class="relative w-9 text-right font-mono font-bold text-amber-300 tabular-nums">${kd}</span>
         </li>`;
-      }).join("");
+        }).join("");
+      }
       const selfLine = document.getElementById("deathRankSelfLine");
       const selfBar = document.getElementById("deathRankSelfBar");
       if (selfLine) selfLine.textContent = myRank > 0 ? `#${myRank}/${ranked.length} \xB7 K/D ${ratio.toFixed(2)}` : "\u2014";

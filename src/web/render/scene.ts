@@ -14,8 +14,12 @@ import {
   drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, drawJumpPad,
 } from '../sprites.ts'
 
-// 天空渐变缓存：仅当画布高度或量化深度值变化时重建，避免每帧 createLinearGradient
-let skyGradCache: { g: CanvasGradient; h: number; k: number } | null = null
+const WRAP_OFFSETS_X = [-WORLD_W, 0, WORLD_W] as const
+const WRAP_OFFSETS_Y = [-WORLD_H, 0, WORLD_H] as const
+const sharedPt = { x: 0, y: 0 }
+let cachedSkyGrad: CanvasGradient | null = null
+let cachedSkyGradH = 0
+let cachedSkyDepthQuant = -1
 
 export function renderScene(): void {
   if (!ctx || !canvas) return
@@ -53,19 +57,20 @@ export function renderScene(): void {
 
   // ── 背景：与地形同坐标系的世界锚定层（不产生相对滑动） ──
   ctx.save()
-  // 天空渐变按 (canvas.height, 量化 depthT) 缓存，避免每帧重建渐变对象
   const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1)
-  const depthKey = Math.round(depthT * 64)
-  if (!skyGradCache || skyGradCache.h !== canvas.height || skyGradCache.k !== depthKey) {
-    const g = ctx.createLinearGradient(0, 0, 0, canvas.height)
-    const topR = Math.round(5 + depthT * 4)
-    const topB = Math.round(17 - depthT * 10)
-    g.addColorStop(0, `rgb(${topR}, ${Math.round(8 + depthT * 4)}, ${topB + 4})`)
-    g.addColorStop(0.55, `rgb(${Math.round(15 - depthT * 9)}, ${Math.round(23 - depthT * 12)}, ${Math.round(42 - depthT * 22)})`)
-    g.addColorStop(1, `rgb(${Math.round(30 - depthT * 20)}, ${Math.round(27 - depthT * 17)}, ${Math.round(75 - depthT * 45)})`)
-    skyGradCache = { g, h: canvas.height, k: depthKey }
+  const depthQuant = Math.round(depthT * 25)
+  if (!cachedSkyGrad || cachedSkyGradH !== canvas.height || cachedSkyDepthQuant !== depthQuant) {
+    cachedSkyGradH = canvas.height
+    cachedSkyDepthQuant = depthQuant
+    const qT = depthQuant / 25
+    const topR = Math.round(5 + qT * 4)
+    const topB = Math.round(17 - qT * 10)
+    cachedSkyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height)
+    cachedSkyGrad.addColorStop(0, `rgb(${topR}, ${Math.round(8 + qT * 4)}, ${topB + 4})`)
+    cachedSkyGrad.addColorStop(0.55, `rgb(${Math.round(15 - qT * 9)}, ${Math.round(23 - qT * 12)}, ${Math.round(42 - qT * 22)})`)
+    cachedSkyGrad.addColorStop(1, `rgb(${Math.round(30 - qT * 20)}, ${Math.round(27 - qT * 17)}, ${Math.round(75 - qT * 45)})`)
   }
-  ctx.fillStyle = skyGradCache.g
+  ctx.fillStyle = cachedSkyGrad
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY)
@@ -75,6 +80,8 @@ export function renderScene(): void {
   const sy = (wy: number): number => wrapDeltaY(camera.y, wy)
   const inView = (dx: number, dy: number, pad = 0): boolean =>
     dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad
+  const inViewRect = (dx: number, dy: number, padX: number, padY: number): boolean =>
+    dx > -halfW - padX && dx < halfW + padX && dy > -halfH - padY && dy < halfH + padY
 
   // 世界锚定星空（随地形移动，无相对滑动）
   for (const st of worldStars) {
@@ -103,11 +110,14 @@ export function renderScene(): void {
     if (r.kind.startsWith('deco_')) continue
     const cx0 = sx(r.x + r.w / 2)
     const cy0 = sy(r.y + r.h / 2)
-    for (const ox of [-WORLD_W, 0, WORLD_W]) {
-      for (const oy of [-WORLD_H, 0, WORLD_H]) {
-        const cx = cx0 + ox
-        const cy = cy0 + oy
-        if (!inView(cx, cy, Math.max(r.w, r.h))) continue
+    const rHalfW = r.w * 0.5
+    const rHalfH = r.h * 0.5
+    for (let ix = 0; ix < 3; ix++) {
+      const cx = cx0 + WRAP_OFFSETS_X[ix]
+      if (cx <= -halfW - rHalfW || cx >= halfW + rHalfW) continue
+      for (let iy = 0; iy < 3; iy++) {
+        const cy = cy0 + WRAP_OFFSETS_Y[iy]
+        if (cy <= -halfH - rHalfH || cy >= halfH + rHalfH) continue
         const left = cx - r.w / 2
         const top = cy - r.h / 2
         const pat = getTerrainPattern(ctx, r.kind)
@@ -173,7 +183,7 @@ export function renderScene(): void {
   for (const ob of world.obstacles) {
     const ox = sx(ob.x + ob.w / 2)
     const oy = sy(ob.y + ob.h / 2)
-    if (!inView(ox, oy, Math.max(ob.w, ob.h))) continue
+    if (!inViewRect(ox, oy, ob.w * 0.5, ob.h * 0.5)) continue
     drawObstacleSprite(ctx, ob, ox, oy)
   }
 
@@ -488,11 +498,14 @@ export function renderScene(): void {
     for (const sz of world.terrain.shadows) {
       const cx0 = sx(sz.x + sz.w / 2)
       const cy0 = sy(sz.y + sz.h / 2)
-      for (const ox of [-WORLD_W, 0, WORLD_W]) {
-        for (const oy of [-WORLD_H, 0, WORLD_H]) {
-          const cx = cx0 + ox
-          const cy = cy0 + oy
-          if (!inView(cx, cy, Math.max(sz.w, sz.h))) continue
+      const szHalfW = sz.w * 0.5
+      const szHalfH = sz.h * 0.5
+      for (let ix = 0; ix < 3; ix++) {
+        const cx = cx0 + WRAP_OFFSETS_X[ix]
+        if (cx <= -halfW - szHalfW || cx >= halfW + szHalfW) continue
+        for (let iy = 0; iy < 3; iy++) {
+          const cy = cy0 + WRAP_OFFSETS_Y[iy]
+          if (cy <= -halfH - szHalfH || cy >= halfH + szHalfH) continue
           const inside = localPlayer.deployed &&
             Math.abs(wrapDeltaX(localPlayer.pos.x, sz.x + sz.w / 2)) <= sz.w / 2 + 40 &&
             Math.abs(wrapDeltaY(localPlayer.pos.y, sz.y + sz.h / 2)) <= sz.h / 2 + 40
@@ -508,11 +521,14 @@ export function renderScene(): void {
     if (!r.kind.startsWith('deco_')) continue
     const cx0 = sx(r.x + r.w / 2)
     const cy0 = sy(r.y + r.h / 2)
-    for (const ox of [-WORLD_W, 0, WORLD_W]) {
-      for (const oy of [-WORLD_H, 0, WORLD_H]) {
-        const cx = cx0 + ox
-        const cy = cy0 + oy
-        if (!inView(cx, cy, Math.max(r.w, r.h) + 40)) continue
+    const decoPadX = r.w * 0.5 + 40
+    const decoPadY = r.h * 0.5 + 40
+    for (let ix = 0; ix < 3; ix++) {
+      const cx = cx0 + WRAP_OFFSETS_X[ix]
+      if (cx <= -halfW - decoPadX || cx >= halfW + decoPadX) continue
+      for (let iy = 0; iy < 3; iy++) {
+        const cy = cy0 + WRAP_OFFSETS_Y[iy]
+        if (cy <= -halfH - decoPadY || cy >= halfH + decoPadY) continue
         drawDeco(ctx, r, cx, cy, world.tick)
       }
     }
@@ -567,7 +583,7 @@ export function renderScene(): void {
   }
 
   // 13. 客户端粒子
-  effects.render(ctx, (x, y) => ({ x: sx(x), y: sy(y) }), (x, y) => inView(x, y))
+  effects.render(ctx, (x, y) => { sharedPt.x = sx(x); sharedPt.y = sy(y); return sharedPt }, inView, sx, sy)
 
   ctx.restore()
 }

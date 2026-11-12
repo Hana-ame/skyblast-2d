@@ -15,6 +15,12 @@ export const TEAM_PALETTE: Record<string, TeamPalette> = {
   ffa:   { color: '#eab308', light: '#fde047', dark: '#713f12', glow: 'rgba(234,179,8,0.35)' },
 }
 
+let cachedShadowGrad: CanvasGradient | null = null
+const cachedBodyGrads = new Map<string, CanvasGradient>()
+const cachedHelmGrads = new Map<number, CanvasGradient>()
+const cachedVisorGrads = new Map<number, CanvasGradient>()
+let cachedShieldGrad: CanvasGradient | null = null
+
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   const rr = Math.min(r, w / 2, h / 2)
   ctx.beginPath()
@@ -45,11 +51,13 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
   ctx.translate(dx, dy)
   if (!alive) ctx.globalAlpha = 0.45
 
-  // 1. 落地软阴影
-  const shadowGrad = ctx.createRadialGradient(0, 18, 2, 0, 18, 16)
-  shadowGrad.addColorStop(0, 'rgba(0,0,0,0.45)')
-  shadowGrad.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = shadowGrad
+  // 1. 落地软阴影（缓存本地坐标渐变，消除每帧每角色重复创建）
+  if (!cachedShadowGrad) {
+    cachedShadowGrad = ctx.createRadialGradient(0, 18, 2, 0, 18, 16)
+    cachedShadowGrad.addColorStop(0, 'rgba(0,0,0,0.45)')
+    cachedShadowGrad.addColorStop(1, 'rgba(0,0,0,0)')
+  }
+  ctx.fillStyle = cachedShadowGrad
   ctx.beginPath()
   ctx.ellipse(0, 18, 16, 4.5, 0, 0, Math.PI * 2)
   ctx.fill()
@@ -120,11 +128,15 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
   roundRect(ctx, leftLegX - 0.5, 15.5, 7.5, 3.5, 1.2); ctx.fill()
   roundRect(ctx, rightLegX - 0.5, 15.5, 7.5, 3.5, 1.2); ctx.fill()
 
-  // 4. 躯干装甲（立体斜切渐变 + 战术腰带 + 核心指示灯）
-  const bodyGrad = ctx.createLinearGradient(0, -14, 0, 10)
-  bodyGrad.addColorStop(0, pal.light)
-  bodyGrad.addColorStop(0.4, pal.color)
-  bodyGrad.addColorStop(1, pal.dark)
+  // 4. 躯干装甲（按队伍缓存本地坐标渐变 + 战术腰带 + 核心指示灯）
+  let bodyGrad = cachedBodyGrads.get(pal.color)
+  if (!bodyGrad) {
+    bodyGrad = ctx.createLinearGradient(0, -14, 0, 10)
+    bodyGrad.addColorStop(0, pal.light)
+    bodyGrad.addColorStop(0.4, pal.color)
+    bodyGrad.addColorStop(1, pal.dark)
+    cachedBodyGrads.set(pal.color, bodyGrad)
+  }
   ctx.fillStyle = bodyGrad
   ctx.strokeStyle = '#090d16'
   ctx.lineWidth = 2
@@ -157,11 +169,15 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
     ctx.fill()
   }
 
-  // 5. 头盔与光学面罩
-  const helmGrad = ctx.createRadialGradient(-2 * facing, -27, 1, 0, -24, 11)
-  helmGrad.addColorStop(0, '#f1f5f9')
-  helmGrad.addColorStop(0.55, '#cbd5e1')
-  helmGrad.addColorStop(1, '#475569')
+  // 5. 头盔与光学面罩（按朝向缓存渐变）
+  let helmGrad = cachedHelmGrads.get(facing)
+  if (!helmGrad) {
+    helmGrad = ctx.createRadialGradient(-2 * facing, -27, 1, 0, -24, 11)
+    helmGrad.addColorStop(0, '#f1f5f9')
+    helmGrad.addColorStop(0.55, '#cbd5e1')
+    helmGrad.addColorStop(1, '#475569')
+    cachedHelmGrads.set(facing, helmGrad)
+  }
   ctx.fillStyle = helmGrad
   ctx.strokeStyle = '#090d16'
   ctx.lineWidth = 2
@@ -189,12 +205,16 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
   ctx.arc(antX - facing * 2, -35, 1.3, 0, Math.PI * 2)
   ctx.fill()
 
-  // 光学面罩（带流光高光）
+  // 光学面罩（按朝向缓存渐变）
   const visorX = facing > 0 ? 1.5 : -9
-  const visorGrad = ctx.createLinearGradient(visorX, -27, visorX + 7.5, -22)
-  visorGrad.addColorStop(0, '#38bdf8')
-  visorGrad.addColorStop(0.6, '#0284c7')
-  visorGrad.addColorStop(1, '#0f172a')
+  let visorGrad = cachedVisorGrads.get(facing)
+  if (!visorGrad) {
+    visorGrad = ctx.createLinearGradient(visorX, -27, visorX + 7.5, -22)
+    visorGrad.addColorStop(0, '#38bdf8')
+    visorGrad.addColorStop(0.6, '#0284c7')
+    visorGrad.addColorStop(1, '#0f172a')
+    cachedVisorGrads.set(facing, visorGrad)
+  }
   ctx.fillStyle = visorGrad
   roundRect(ctx, visorX, -26.8, 7.5, 4.2, 1.5)
   ctx.fill()
@@ -467,14 +487,16 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
     ctx.restore()
   }
 
-  // 7. 能量护盾（六边形科技感双层光罩）
+  // 7. 能量护盾（缓存径向渐变）
   if (p.shieldTimer > 0 && p.shieldHp > 0) {
     const r = 34 + Math.sin(t * 0.15) * 1.5
-    const sGrad = ctx.createRadialGradient(0, -8, r * 0.4, 0, -8, r)
-    sGrad.addColorStop(0, 'rgba(56,189,248,0.04)')
-    sGrad.addColorStop(0.75, 'rgba(56,189,248,0.16)')
-    sGrad.addColorStop(1, 'rgba(125,211,252,0.42)')
-    ctx.fillStyle = sGrad
+    if (!cachedShieldGrad) {
+      cachedShieldGrad = ctx.createRadialGradient(0, -8, 13.6, 0, -8, 35)
+      cachedShieldGrad.addColorStop(0, 'rgba(56,189,248,0.04)')
+      cachedShieldGrad.addColorStop(0.75, 'rgba(56,189,248,0.16)')
+      cachedShieldGrad.addColorStop(1, 'rgba(125,211,252,0.42)')
+    }
+    ctx.fillStyle = cachedShieldGrad
     ctx.strokeStyle = 'rgba(56,189,248,0.92)'
     ctx.lineWidth = 2.2
     ctx.beginPath()

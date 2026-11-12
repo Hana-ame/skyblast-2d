@@ -628,6 +628,41 @@ function updateCaptureProgressCardUI(): void {
  * - 严格遵守战争迷雾：只绘制自身与同队友军 (isFriendlyOnMinimap)，绝不绘制敌方玩家位置！
  * - 绘制全部 10 个旗帜据点 (A~J) 的代号、旗帜颜色、占领进度环与当前选中的复活点绿框。
  */
+const minimapBgCache = new Map<string, HTMLCanvasElement>()
+
+function getMinimapStaticBg(W: number, H: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') return null
+  const key = `${W}x${H}:${world.terrain.rects.length}`
+  let bg = minimapBgCache.get(key)
+  if (bg) return bg
+  const cv = document.createElement('canvas')
+  if (typeof cv.getContext !== 'function') return null
+  cv.width = W
+  cv.height = H
+  const bc = cv.getContext('2d')
+  if (!bc || typeof bc.fillRect !== 'function') return null
+  const sx = (wx: number) => (wx / WORLD_W) * W
+  const sy = (wy: number) => (wy / WORLD_H) * H
+  bc.fillStyle = '#040814'
+  bc.fillRect(0, 0, W, H)
+  bc.strokeStyle = 'rgba(56, 189, 248, 0.25)'
+  bc.lineWidth = 1
+  if (typeof bc.beginPath === 'function') {
+    bc.beginPath()
+    bc.moveTo(0, sy(SURFACE_Y))
+    bc.lineTo(W, sy(SURFACE_Y))
+    bc.stroke()
+  }
+  bc.fillStyle = 'rgba(51, 65, 85, 0.75)'
+  for (let i = 0; i < world.terrain.rects.length; i++) {
+    const r = world.terrain.rects[i]
+    if (r.kind.startsWith('deco_') || r.kind.endsWith('_bg')) continue
+    bc.fillRect(sx(r.x), sy(r.y), Math.max(1.2, (r.w / WORLD_W) * W), Math.max(1.2, (r.h / WORLD_H) * H))
+  }
+  minimapBgCache.set(key, cv)
+  return cv
+}
+
 function drawTacticalMinimapOnCanvas(mm: HTMLCanvasElement, isDeathMap: boolean): void {
   if (typeof mm.getContext !== 'function') return
   const c = mm.getContext('2d')
@@ -638,24 +673,25 @@ function drawTacticalMinimapOnCanvas(mm: HTMLCanvasElement, isDeathMap: boolean)
   const sx = (wx: number) => (wx / WORLD_W) * W
   const sy = (wy: number) => (wy / WORLD_H) * H
 
-  c.clearRect(0, 0, W, H)
-  c.fillStyle = '#040814'
-  c.fillRect(0, 0, W, H)
-
-  // 主地面基准线
-  c.strokeStyle = 'rgba(56, 189, 248, 0.25)'
-  c.lineWidth = 1
-  c.beginPath()
-  c.moveTo(0, sy(SURFACE_Y))
-  c.lineTo(W, sy(SURFACE_Y))
-  c.stroke()
-
-  // 地形缩略块
-  c.fillStyle = 'rgba(51, 65, 85, 0.75)'
-  for (let i = 0; i < world.terrain.rects.length; i++) {
-    const r = world.terrain.rects[i]
-    if (r.kind.startsWith('deco_') || r.kind.endsWith('_bg')) continue
-    c.fillRect(sx(r.x), sy(r.y), Math.max(1.2, (r.w / WORLD_W) * W), Math.max(1.2, (r.h / WORLD_H) * H))
+  const staticBg = typeof c.drawImage === 'function' ? getMinimapStaticBg(W, H) : null
+  if (staticBg) {
+    c.drawImage(staticBg, 0, 0)
+  } else {
+    c.clearRect(0, 0, W, H)
+    c.fillStyle = '#040814'
+    c.fillRect(0, 0, W, H)
+    c.strokeStyle = 'rgba(56, 189, 248, 0.25)'
+    c.lineWidth = 1
+    c.beginPath()
+    c.moveTo(0, sy(SURFACE_Y))
+    c.lineTo(W, sy(SURFACE_Y))
+    c.stroke()
+    c.fillStyle = 'rgba(51, 65, 85, 0.75)'
+    for (let i = 0; i < world.terrain.rects.length; i++) {
+      const r = world.terrain.rects[i]
+      if (r.kind.startsWith('deco_') || r.kind.endsWith('_bg')) continue
+      c.fillRect(sx(r.x), sy(r.y), Math.max(1.2, (r.w / WORLD_W) * W), Math.max(1.2, (r.h / WORLD_H) * H))
+    }
   }
 
   const activeSpawnId = pendingLoadout.spawnPointId || localPlayer.selectedSpawnId || 'base'

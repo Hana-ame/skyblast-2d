@@ -412,8 +412,9 @@
     if (kind === "tunnel_bg" || kind === "pipe_bg" || kind === "building_bg") return "tunnel";
     return "unifiedPanel";
   }
-  var lastPatternCamX = 0;
-  var lastPatternCamY = 0;
+  var lastPatternCamX = Number.NaN;
+  var lastPatternCamY = Number.NaN;
+  var sharedPatternMatrix = null;
   function getTerrainPattern(ctx2, kind) {
     const key = texKindOf(kind);
     const hit = cache.get(key);
@@ -422,19 +423,33 @@
     const pat = ctx2.createPattern(cv, "repeat");
     if (pat) {
       if (typeof DOMMatrix !== "undefined" && typeof pat.setTransform === "function") {
-        pat.setTransform(new DOMMatrix().translate(-lastPatternCamX, -lastPatternCamY));
+        if (!sharedPatternMatrix) sharedPatternMatrix = new DOMMatrix();
+        sharedPatternMatrix.a = 1;
+        sharedPatternMatrix.b = 0;
+        sharedPatternMatrix.c = 0;
+        sharedPatternMatrix.d = 1;
+        sharedPatternMatrix.e = Number.isFinite(lastPatternCamX) ? -lastPatternCamX : 0;
+        sharedPatternMatrix.f = Number.isFinite(lastPatternCamY) ? -lastPatternCamY : 0;
+        pat.setTransform(sharedPatternMatrix);
       }
       cache.set(key, pat);
     }
     return pat;
   }
   function syncTerrainPatterns(camX, camY) {
+    if (Math.abs(camX - lastPatternCamX) < 0.05 && Math.abs(camY - lastPatternCamY) < 0.05) return;
     lastPatternCamX = camX;
     lastPatternCamY = camY;
-    if (typeof DOMMatrix === "undefined") return;
-    const m = new DOMMatrix().translate(-camX, -camY);
+    if (typeof DOMMatrix === "undefined" || cache.size === 0) return;
+    if (!sharedPatternMatrix) sharedPatternMatrix = new DOMMatrix();
+    sharedPatternMatrix.a = 1;
+    sharedPatternMatrix.b = 0;
+    sharedPatternMatrix.c = 0;
+    sharedPatternMatrix.d = 1;
+    sharedPatternMatrix.e = -camX;
+    sharedPatternMatrix.f = -camY;
     for (const pat of cache.values()) {
-      if (typeof pat.setTransform === "function") pat.setTransform(m);
+      if (typeof pat.setTransform === "function") pat.setTransform(sharedPatternMatrix);
     }
   }
 
