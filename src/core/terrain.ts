@@ -2,7 +2,7 @@
 // 服务器权威：World 持有；地形静态（build 一次，两端一致，不进快照）。
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY } from './wrap.ts'
 import type { MapSolid } from './map.ts'
-import { defaultMapData, UNIFIED_EDGE_HIGHLIGHT } from './map.ts'
+import { defaultMapData, BEDROCK_TOP, UNIFIED_EDGE_HIGHLIGHT } from './map.ts'
 
 export const TILE_SIZE = 20
 export const GRID_W = Math.floor(WORLD_W / TILE_SIZE)   // 660
@@ -54,13 +54,16 @@ export class Terrain {
     this.rects.length = 0
     this.shadows.length = 0
 
-    // 底部基岩层（统一色调与统一边缘高亮）
-    this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, UNIFIED_FILL, UNIFIED_BORDER, 'earth')
-
     const list = customSolids ?? defaultMapData().solids
+    // 当地图包含深层地下通道（y + h > SURFACE_Y）时，底部基岩下移至 BEDROCK_TOP (4160)，避免底部留出 1600px 的巨大实心块；
+    // 当单测使用空地形或浅层测试场时，保持 SURFACE_Y (2800) 作为基础测试地面。
+    const hasDeepUnderground = list.some(r => r.y + r.h > SURFACE_Y)
+    const earthTop = hasDeepUnderground ? BEDROCK_TOP : SURFACE_Y
+    this.addSolidBlock(0, earthTop, WORLD_W, WORLD_H - earthTop, UNIFIED_FILL, UNIFIED_BORDER, 'earth')
+
     for (const r of list) {
       const label = r.kind === 'platform' ? '平台' : r.kind === 'block' ? '方块' : '掩体'
-      this.addSolidBlock(r.x, r.y, r.w, r.h, UNIFIED_FILL, UNIFIED_BORDER, r.kind, label)
+      this.addSolidBlock(r.x, r.y, r.w, r.h, UNIFIED_FILL, UNIFIED_BORDER, 'kind' in r ? r.kind : 'block', label)
     }
   }
 

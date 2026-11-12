@@ -7,6 +7,7 @@ import { Terrain } from '../core/terrain.ts'
 import { WEAPONS } from '../core/weapons.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../core/wrap.ts'
 import { predictLocalPlayerStep } from '../core/sim/playerPhysics.ts'
+import { WATCHTOWERS } from '../core/sim/landmarks.ts'
 import { stepClientProjectilesDeadReckoning } from '../core/sim/projectiles.ts'
 
 export interface PendingInputFrame {
@@ -71,7 +72,7 @@ export class StateSync {
       this.terrain,
       this.cur?.obstacles ?? [],
       this.cur?.mortars ?? [],
-      [],
+      WATCHTOWERS,
     )
     return this.predictedLocal
   }
@@ -119,7 +120,7 @@ export class StateSync {
               this.terrain,
               snap.obstacles,
               snap.mortars,
-              [],
+              WATCHTOWERS,
             )
           }
         }
@@ -263,6 +264,7 @@ function clonePlayerState(p: PlayerState): PlayerState {
     vel: { x: p.vel.x, y: p.vel.y },
     ammo: [...p.ammo],
     reserveAmmo: [...p.reserveAmmo],
+    selectedSpawnId: p.selectedSpawnId,
     doll: p.doll
       ? {
           ...p.doll,

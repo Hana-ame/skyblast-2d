@@ -1,39 +1,245 @@
 (function() {
   const __modules = {
-  "./src/core/types.ts": function(exports, __require) {
-// core/types.ts —— 纯数据契约（零逻辑、可 JSON 序列化 = 天然快照格式）
-// 覆盖 SkyBlast 全部玩法实体：玩家/弹丸/手雷/地雷/空袭/可破坏障碍物/占领点/弹药点/补给箱/迫击炮/瞭望塔/传送门/替身人偶/事件
+  "./src/web/main-noita.ts": function(exports, __require) {
+"use strict";
 
-// 模拟层只认这个归一化输入（由 InputMapper 从 Intent[] 翻译而来）
+var _NoitaWorld = __require("./src/core/noita/NoitaWorld.ts");
+var _fullscreen = __require("./src/web/fullscreen.ts");
+// web/main-noita.ts —— 仿 Noita 浏览器入口：可破坏像素地形 + 落沙 + 悬浮 + 360°瞄准
 
-// 触发事件（瞬态、不进快照；由 World 产出、net/ui 层订阅 → killfeed/音效/粒子）
+const LW = _NoitaWorld.W * _NoitaWorld.TILE; // 960
+const LH = _NoitaWorld.H * _NoitaWorld.TILE; // 600
 
-function defaultWorldInput() {
+const canvas = document.getElementById('game');
+const vp = (0, _fullscreen.fitCanvas)(canvas, LW, LH);
+const ctx = canvas.getContext('2d');
+
+// Noita 页面不需要 Controls 的跳/喷语义，自建轻量输入（键盘+鼠标+触屏）
+const keys = new Set();
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+  keys.add(k);
+});
+window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+let mouse = {
+  x: LW / 2,
+  y: LH / 2
+};
+let mouseDown = false;
+canvas.addEventListener('mousemove', e => {
+  const w = vp.toWorld(e.clientX, e.clientY);
+  mouse = w;
+});
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) mouseDown = true;
+});
+window.addEventListener('mouseup', () => {
+  mouseDown = false;
+});
+// 触屏：左半=左右移动，右半=悬浮+瞄准开火
+const touches = new Map();
+canvas.addEventListener('touchstart', e => onTouch(e), {
+  passive: false
+});
+canvas.addEventListener('touchmove', e => onTouch(e), {
+  passive: false
+});
+canvas.addEventListener('touchend', e => onTouchEnd(e), {
+  passive: false
+});
+function onTouch(e) {
+  e.preventDefault();
+  for (const t of Array.from(e.changedTouches)) {
+    const w = vp.toWorld(t.clientX, t.clientY);
+    touches.set(t.identifier, {
+      side: w.x < LW / 2 ? 'L' : 'R',
+      ...w
+    });
+  }
+}
+function onTouchEnd(e) {
+  e.preventDefault();
+  for (const t of Array.from(e.changedTouches)) touches.delete(t.identifier);
+}
+const world = new _NoitaWorld.NoitaWorld();
+const player = world.addPlayer(50 * _NoitaWorld.TILE, (_NoitaWorld.H - 46) * _NoitaWorld.TILE);
+const enemy = world.addPlayer(190 * _NoitaWorld.TILE, (_NoitaWorld.H - 46) * _NoitaWorld.TILE);
+
+// 像素地形渲染：offscreen 瓦片 canvas（1 tile=1px），每帧只重绘脏瓦片
+const terrainCv = document.createElement('canvas');
+terrainCv.width = _NoitaWorld.W;
+terrainCv.height = _NoitaWorld.H;
+const tctx = terrainCv.getContext('2d');
+let dirty = true;
+const lastTiles = new Uint8Array(_NoitaWorld.W * _NoitaWorld.H);
+function syncTerrain() {
+  const t = world.tiles;
+  if (dirty) {
+    // 全量重绘（首次/炸坑后）
+    tctx.fillStyle = '#000';
+    tctx.fillRect(0, 0, _NoitaWorld.W, _NoitaWorld.H);
+    for (let y = 0; y < _NoitaWorld.H; y++) for (let x = 0; x < _NoitaWorld.W; x++) {
+      const v = t[x + y * _NoitaWorld.W];
+      if (v === _NoitaWorld.EMPTY) continue;
+      tctx.fillStyle = v === _NoitaWorld.SAND ? '#c9a227' : '#5a6470';
+      tctx.fillRect(x, y, 1, 1);
+    }
+    lastTiles.set(t);
+    dirty = false;
+  } else {
+    // 增量：落沙每帧有变化，diff 重绘（36000 瓦片 diff 很快）
+    for (let y = 0; y < _NoitaWorld.H; y++) {
+      for (let x = 0; x < _NoitaWorld.W; x++) {
+        const i = x + y * _NoitaWorld.W;
+        if (t[i] !== lastTiles[i]) {
+          tctx.fillStyle = t[i] === _NoitaWorld.EMPTY ? '#000' : t[i] === _NoitaWorld.SAND ? '#c9a227' : '#5a6470';
+          tctx.fillRect(x, y, 1, 1);
+          lastTiles[i] = t[i];
+        }
+      }
+    }
+  }
+}
+document.getElementById('btn-fullscreen')?.addEventListener('click', _fullscreen.toggleFullscreen);
+function toInput() {
+  let move = 0;
+  let hover = false;
+  let aim = player.aim;
+  let fire = false;
+  // 键盘
+  if (keys.has('a') || keys.has('arrowleft')) move = -1;
+  if (keys.has('d') || keys.has('arrowright')) move = 1;
+  if (keys.has('w') || keys.has(' ') || keys.has('arrowup')) hover = true;
+  aim = Math.atan2(mouse.y - player.pos.y, mouse.x - player.pos.x);
+  fire = mouseDown;
+  // 触屏覆盖
+  for (const t of touches.values()) {
+    if (t.side === 'L') move = t.x < player.pos.x - 20 ? -1 : t.x > player.pos.x + 20 ? 1 : 0;else {
+      hover = true;
+      aim = Math.atan2(t.y - player.pos.y, t.x - player.pos.x);
+      fire = true;
+    }
+  }
   return {
-    move: 0,
-    jump: false,
-    jetpack: false,
-    dive: false,
-    aim: 0,
-    fire: false,
-    reload: false,
-    switchWeapon: null,
-    interact: false,
-    secondary: null
+    move,
+    hover,
+    moveY: 0,
+    aim,
+    fire
   };
 }
-exports.defaultWorldInput = defaultWorldInput;
+
+// AI：朝玩家射 + 追踪
+function aiInput() {
+  const dx = player.pos.x - enemy.pos.x,
+    dy = player.pos.y - enemy.pos.y;
+  const dist = Math.hypot(dx, dy);
+  return {
+    move: Math.abs(dx) > 140 ? dx > 0 ? 1 : -1 : 0,
+    hover: dist > 220 && enemy.energy > 0.5,
+    moveY: 0,
+    aim: Math.atan2(dy, dx),
+    fire: world.tick % 20 < 14
+  };
+}
+function drawPlayer(p, color, label) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(p.pos.x, p.pos.y, 6, 0, Math.PI * 2);
+  ctx.fill();
+  // 360° 瞄准线
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(p.pos.x, p.pos.y);
+  ctx.lineTo(p.pos.x + Math.cos(p.aim) * 18, p.pos.y + Math.sin(p.aim) * 18);
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, p.pos.x, p.pos.y - 12);
+}
+function render() {
+  vp.applyTransform();
+  // 背景层：每帧先清屏再铺底色，否则 drawImage 只写非透明像素，旧帧残留 → 拖影
+  ctx.clearRect(0, 0, LW, LH);
+  ctx.fillStyle = '#0e1420'; // 深夜空底色（与地形 offscreen 透明区一致）
+  ctx.fillRect(0, 0, LW, LH);
+  // 地形（像素放大）
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(terrainCv, 0, 0, _NoitaWorld.W, _NoitaWorld.H, 0, 0, LW, LH);
+  // 弹丸
+  ctx.fillStyle = '#ffd166';
+  for (const b of world.projectiles) {
+    ctx.beginPath();
+    ctx.arc(b.pos.x, b.pos.y, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  drawPlayer(player, '#4ade80', 'YOU');
+  drawPlayer(enemy, '#f87171', 'AI');
+  // HUD
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`K/D ${player.kills}/${player.deaths} vs ${enemy.kills}/${enemy.deaths}   能量 ${Math.round(player.energy * 100)}%   HP ${player.hp}   tick ${world.tick}`, 12, 20);
+  // 能量条
+  ctx.fillStyle = '#333';
+  ctx.fillRect(12, 28, 100, 6);
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillRect(12, 28, 100 * player.energy, 6);
+}
+const FIXED = 1 / 60;
+let last = performance.now();
+let acc = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  acc += dt;
+  let guard = 0;
+  while (acc >= FIXED && guard < 5) {
+    const inp = toInput();
+    world.step(FIXED, new Map([[player.id, inp], [enemy.id, aiInput()]]));
+    acc -= FIXED;
+    guard++;
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame)
+
+// 炸坑检测：暴露给测试（渲染脏标记用）
+;
+window.__noita = {
+  world,
+  get player() {
+    return player;
+  },
+  get enemy() {
+    return enemy;
+  },
+  markDirty() {
+    dirty = true;
+  }
+};
   },
   "./src/core/noita/NoitaWorld.ts": function(exports, __require) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.W = exports.TILE = exports.STONE = exports.SAND = exports.PLAYER_R = exports.NoitaWorld = exports.MOVE_SPEED = exports.HOVER_MAX_UP = exports.HOVER_ACCEL = exports.H = exports.GRAVITY = exports.FRICTION = exports.FIRE_DAMAGE = exports.FIRE_CD = exports.ENERGY_RECHARGE = exports.ENERGY_MAX = exports.ENERGY_DRAIN = exports.EMPTY = exports.BULLET_SPEED = exports.BULLET_LIFE = exports.BLAST_R = exports.AIR_FRICTION = exports.ACCEL = void 0;
+exports.defaultNoitaInput = defaultNoitaInput;
 // core/noita/NoitaWorld.ts —— 仿 Noita：像素可破坏地形 + 落沙 + 360°自由瞄准 + 悬浮飞行（能量）
 // 纯 TS 零依赖，确定性 step(dt, inputs)。地形 = Uint8Array 瓦片图（0=空 1=沙 2=石），弹丸命中炸坑。
 
-const TILE = 4;
-exports.TILE = TILE; // 瓦片像素尺寸（逻辑 px）
-const W = 240;
-exports.W = W; // 地形宽（瓦片数）→ 240*4=960 逻辑px
-const H = 150;
-exports.H = H; // 地形高（瓦片数）→ 150*4=600 逻辑px
+const TILE = 4; // 瓦片像素尺寸（逻辑 px）
+exports.TILE = TILE;
+const W = 240; // 地形宽（瓦片数）→ 240*4=960 逻辑px
+exports.W = W;
+const H = 150; // 地形高（瓦片数）→ 150*4=600 逻辑px
+exports.H = H;
 const EMPTY = 0;
 exports.EMPTY = EMPTY;
 const SAND = 1;
@@ -49,39 +255,38 @@ function defaultNoitaInput() {
     fire: false
   };
 }
-exports.defaultNoitaInput = defaultNoitaInput;
 const GRAVITY = 900;
 exports.GRAVITY = GRAVITY;
 const MOVE_SPEED = 180;
 exports.MOVE_SPEED = MOVE_SPEED;
 const ACCEL = 1400;
 exports.ACCEL = ACCEL;
-const FRICTION = 30;
-exports.FRICTION = FRICTION; // 地面摩擦 λ
+const FRICTION = 30; // 地面摩擦 λ
+exports.FRICTION = FRICTION;
 const AIR_FRICTION = 1.5;
 exports.AIR_FRICTION = AIR_FRICTION;
-const HOVER_ACCEL = 1900;
-exports.HOVER_ACCEL = HOVER_ACCEL; // 悬浮升力（>重力 900）
-const HOVER_MAX_UP = 320;
-exports.HOVER_MAX_UP = HOVER_MAX_UP; // 悬浮升速上限
+const HOVER_ACCEL = 1900; // 悬浮升力（>重力 900）
+exports.HOVER_ACCEL = HOVER_ACCEL;
+const HOVER_MAX_UP = 320; // 悬浮升速上限
+exports.HOVER_MAX_UP = HOVER_MAX_UP;
 const ENERGY_MAX = 1;
 exports.ENERGY_MAX = ENERGY_MAX;
-const ENERGY_DRAIN = 0.5;
-exports.ENERGY_DRAIN = ENERGY_DRAIN; // 悬浮每秒消耗（1=满能量悬浮2s）
-const ENERGY_RECHARGE = 0.65;
-exports.ENERGY_RECHARGE = ENERGY_RECHARGE; // 落地每秒回充
+const ENERGY_DRAIN = 0.5; // 悬浮每秒消耗（1=满能量悬浮2s）
+exports.ENERGY_DRAIN = ENERGY_DRAIN;
+const ENERGY_RECHARGE = 0.65; // 落地每秒回充
+exports.ENERGY_RECHARGE = ENERGY_RECHARGE;
 const FIRE_CD = 0.25;
 exports.FIRE_CD = FIRE_CD;
 const BULLET_SPEED = 480;
 exports.BULLET_SPEED = BULLET_SPEED;
 const BULLET_LIFE = 2.5;
 exports.BULLET_LIFE = BULLET_LIFE;
-const BLAST_R = 5;
-exports.BLAST_R = BLAST_R; // 炸坑半径（瓦片）
+const BLAST_R = 5; // 炸坑半径（瓦片）
+exports.BLAST_R = BLAST_R;
 const FIRE_DAMAGE = 25;
 exports.FIRE_DAMAGE = FIRE_DAMAGE;
-const PLAYER_R = 6;
-exports.PLAYER_R = PLAYER_R; // 玩家碰撞半径（逻辑 px）
+const PLAYER_R = 6; // 玩家碰撞半径（逻辑 px）
+exports.PLAYER_R = PLAYER_R;
 class NoitaWorld {
   players = [];
   projectiles = [];
@@ -335,25 +540,71 @@ class NoitaWorld {
 }
 exports.NoitaWorld = NoitaWorld;
   },
+  "./src/core/types.ts": function(exports, __require) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.defaultWorldInput = defaultWorldInput;
+// core/types.ts —— 纯数据契约（零逻辑、可 JSON 序列化 = 天然快照格式）
+// 覆盖 SkyBlast 全部玩法实体：玩家/弹丸/手雷/地雷/空袭/可破坏障碍物/占领点/弹药点/补给箱/迫击炮/瞭望塔/传送门/替身人偶/事件
+
+// 模拟层只认这个归一化输入（由 InputMapper 从 Intent[] 翻译而来）
+
+// 触发事件（瞬态、不进快照；由 World 产出、net/ui 层订阅 → killfeed/音效/粒子）
+
+function defaultWorldInput() {
+  return {
+    move: 0,
+    jump: false,
+    jetpack: false,
+    dive: false,
+    aim: 0,
+    fire: false,
+    reload: false,
+    switchWeapon: null,
+    interact: false,
+    secondary: null
+  };
+}
+  },
   "./src/web/fullscreen.ts": function(exports, __require) {
-// web/fullscreen.ts —— 全屏 API + canvas 视口适配（浏览器，零依赖）
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.fitCanvas = fitCanvas;
+exports.isFullscreen = isFullscreen;
+exports.toggleFullscreen = toggleFullscreen;
+// web/fullscreen.ts —— 全屏 API + canvas 视口适配（浏览器，零依赖，含沙箱降级支持）
+let pseudoFullscreen = false;
 function isFullscreen() {
   const d = document;
-  return !!(d.fullscreenElement ?? d.webkitFullscreenElement);
+  return !!(d.fullscreenElement ?? d.webkitFullscreenElement) || pseudoFullscreen;
 }
-exports.isFullscreen = isFullscreen;
 function toggleFullscreen() {
   const el = document.documentElement;
   const d = document;
   if (isFullscreen()) {
-    ;
-    d.exitFullscreen?.() ?? d.webkitExitFullscreen?.();
+    pseudoFullscreen = false;
+    document.body.classList.remove('pseudo-fullscreen');
+    try {
+      const p = d.exitFullscreen?.() ?? d.webkitExitFullscreen?.();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {/* ignore */}
+    return false;
   } else {
-    ;
-    el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.();
+    pseudoFullscreen = true;
+    document.body.classList.add('pseudo-fullscreen');
+    try {
+      const p = el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {/* ignore */}
+    return true;
   }
 }
-exports.toggleFullscreen = toggleFullscreen;
 /**
  * 把 canvas 铺满窗口；内部分辨率 = logical × devicePixelRatio；
  * 返回坐标换算与每帧 transform 设置。监听 resize/orientationchange。
@@ -385,238 +636,6 @@ function fitCanvas(canvas, logicalW, logicalH) {
     }
   };
 }
-exports.fitCanvas = fitCanvas;
-  },
-  "./src/web/main-noita.ts": function(exports, __require) {
-// web/main-noita.ts —— 仿 Noita 浏览器入口：可破坏像素地形 + 落沙 + 悬浮 + 360°瞄准
-const {
-  NoitaWorld,
-  TILE,
-  W,
-  H,
-  EMPTY,
-  SAND
-} = __require("./src/core/noita/NoitaWorld.ts");
-const {
-  fitCanvas,
-  toggleFullscreen
-} = __require("./src/web/fullscreen.ts");
-const LW = W * TILE; // 960
-const LH = H * TILE; // 600
-
-const canvas = document.getElementById('game');
-const vp = fitCanvas(canvas, LW, LH);
-const ctx = canvas.getContext('2d');
-
-// Noita 页面不需要 Controls 的跳/喷语义，自建轻量输入（键盘+鼠标+触屏）
-const keys = new Set();
-window.addEventListener('keydown', e => {
-  const k = e.key.toLowerCase();
-  if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
-  keys.add(k);
-});
-window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
-let mouse = {
-  x: LW / 2,
-  y: LH / 2
-};
-let mouseDown = false;
-canvas.addEventListener('mousemove', e => {
-  const w = vp.toWorld(e.clientX, e.clientY);
-  mouse = w;
-});
-canvas.addEventListener('mousedown', e => {
-  if (e.button === 0) mouseDown = true;
-});
-window.addEventListener('mouseup', () => {
-  mouseDown = false;
-});
-// 触屏：左半=左右移动，右半=悬浮+瞄准开火
-const touches = new Map();
-canvas.addEventListener('touchstart', e => onTouch(e), {
-  passive: false
-});
-canvas.addEventListener('touchmove', e => onTouch(e), {
-  passive: false
-});
-canvas.addEventListener('touchend', e => onTouchEnd(e), {
-  passive: false
-});
-function onTouch(e) {
-  e.preventDefault();
-  for (const t of Array.from(e.changedTouches)) {
-    const w = vp.toWorld(t.clientX, t.clientY);
-    touches.set(t.identifier, {
-      side: w.x < LW / 2 ? 'L' : 'R',
-      ...w
-    });
-  }
-}
-function onTouchEnd(e) {
-  e.preventDefault();
-  for (const t of Array.from(e.changedTouches)) touches.delete(t.identifier);
-}
-const world = new NoitaWorld();
-const player = world.addPlayer(50 * TILE, (H - 46) * TILE);
-const enemy = world.addPlayer(190 * TILE, (H - 46) * TILE);
-
-// 像素地形渲染：offscreen 瓦片 canvas（1 tile=1px），每帧只重绘脏瓦片
-const terrainCv = document.createElement('canvas');
-terrainCv.width = W;
-terrainCv.height = H;
-const tctx = terrainCv.getContext('2d');
-let dirty = true;
-const lastTiles = new Uint8Array(W * H);
-function syncTerrain() {
-  const t = world.tiles;
-  if (dirty) {
-    // 全量重绘（首次/炸坑后）
-    tctx.fillStyle = '#000';
-    tctx.fillRect(0, 0, W, H);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const v = t[x + y * W];
-      if (v === EMPTY) continue;
-      tctx.fillStyle = v === SAND ? '#c9a227' : '#5a6470';
-      tctx.fillRect(x, y, 1, 1);
-    }
-    lastTiles.set(t);
-    dirty = false;
-  } else {
-    // 增量：落沙每帧有变化，diff 重绘（36000 瓦片 diff 很快）
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const i = x + y * W;
-        if (t[i] !== lastTiles[i]) {
-          tctx.fillStyle = t[i] === EMPTY ? '#000' : t[i] === SAND ? '#c9a227' : '#5a6470';
-          tctx.fillRect(x, y, 1, 1);
-          lastTiles[i] = t[i];
-        }
-      }
-    }
-  }
-}
-document.getElementById('btn-fullscreen')?.addEventListener('click', toggleFullscreen);
-function toInput() {
-  let move = 0;
-  let hover = false;
-  let aim = player.aim;
-  let fire = false;
-  // 键盘
-  if (keys.has('a') || keys.has('arrowleft')) move = -1;
-  if (keys.has('d') || keys.has('arrowright')) move = 1;
-  if (keys.has('w') || keys.has(' ') || keys.has('arrowup')) hover = true;
-  aim = Math.atan2(mouse.y - player.pos.y, mouse.x - player.pos.x);
-  fire = mouseDown;
-  // 触屏覆盖
-  for (const t of touches.values()) {
-    if (t.side === 'L') move = t.x < player.pos.x - 20 ? -1 : t.x > player.pos.x + 20 ? 1 : 0;else {
-      hover = true;
-      aim = Math.atan2(t.y - player.pos.y, t.x - player.pos.x);
-      fire = true;
-    }
-  }
-  return {
-    move,
-    hover,
-    moveY: 0,
-    aim,
-    fire
-  };
-}
-
-// AI：朝玩家射 + 追踪
-function aiInput() {
-  const dx = player.pos.x - enemy.pos.x,
-    dy = player.pos.y - enemy.pos.y;
-  const dist = Math.hypot(dx, dy);
-  return {
-    move: Math.abs(dx) > 140 ? dx > 0 ? 1 : -1 : 0,
-    hover: dist > 220 && enemy.energy > 0.5,
-    moveY: 0,
-    aim: Math.atan2(dy, dx),
-    fire: world.tick % 20 < 14
-  };
-}
-function drawPlayer(p, color, label) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(p.pos.x, p.pos.y, 6, 0, Math.PI * 2);
-  ctx.fill();
-  // 360° 瞄准线
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(p.pos.x, p.pos.y);
-  ctx.lineTo(p.pos.x + Math.cos(p.aim) * 18, p.pos.y + Math.sin(p.aim) * 18);
-  ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.font = '10px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(label, p.pos.x, p.pos.y - 12);
-}
-function render() {
-  vp.applyTransform();
-  // 背景层：每帧先清屏再铺底色，否则 drawImage 只写非透明像素，旧帧残留 → 拖影
-  ctx.clearRect(0, 0, LW, LH);
-  ctx.fillStyle = '#0e1420'; // 深夜空底色（与地形 offscreen 透明区一致）
-  ctx.fillRect(0, 0, LW, LH);
-  // 地形（像素放大）
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(terrainCv, 0, 0, W, H, 0, 0, LW, LH);
-  // 弹丸
-  ctx.fillStyle = '#ffd166';
-  for (const b of world.projectiles) {
-    ctx.beginPath();
-    ctx.arc(b.pos.x, b.pos.y, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  drawPlayer(player, '#4ade80', 'YOU');
-  drawPlayer(enemy, '#f87171', 'AI');
-  // HUD
-  ctx.fillStyle = '#fff';
-  ctx.font = '12px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText(`K/D ${player.kills}/${player.deaths} vs ${enemy.kills}/${enemy.deaths}   能量 ${Math.round(player.energy * 100)}%   HP ${player.hp}   tick ${world.tick}`, 12, 20);
-  // 能量条
-  ctx.fillStyle = '#333';
-  ctx.fillRect(12, 28, 100, 6);
-  ctx.fillStyle = '#38bdf8';
-  ctx.fillRect(12, 28, 100 * player.energy, 6);
-}
-const FIXED = 1 / 60;
-let last = performance.now();
-let acc = 0;
-function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-  acc += dt;
-  let guard = 0;
-  while (acc >= FIXED && guard < 5) {
-    const inp = toInput();
-    world.step(FIXED, new Map([[player.id, inp], [enemy.id, aiInput()]]));
-    acc -= FIXED;
-    guard++;
-  }
-  render();
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame)
-
-// 炸坑检测：暴露给测试（渲染脏标记用）
-;
-
-window.__noita = {
-  world,
-  get player() {
-    return player;
-  },
-  get enemy() {
-    return enemy;
-  },
-  markDirty() {
-    dirty = true;
-  }
-};
   }
   };
   const __cache = {};

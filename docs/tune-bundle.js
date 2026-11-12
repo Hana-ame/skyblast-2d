@@ -100,108 +100,118 @@
   // src/core/map.ts
   var CEILING_TOP = 280;
   var CEILING_THICK = 80;
+  var BEDROCK_TOP = 4160;
   var WALL_THICK = 60;
-  var MAIN_DECK_TOP = 1760;
-  var MAIN_DECK_THICK = 40;
-  var ARCH_CENTER_TOP = 680;
+  var UNDERGROUND_FLOOR_THICK = 120;
+  var MAIN_DECK_TOP = 3280;
+  var MAIN_DECK_THICK = 160;
+  var FIRST_COVER_HEIGHT = 140;
+  var CENTER_SHAFT_W = 280;
+  var CENTER_SHAFT_X0 = (WORLD_W - CENTER_SHAFT_W) / 2;
+  var CENTER_SHAFT_X1 = CENTER_SHAFT_X0 + CENTER_SHAFT_W;
+  var GROUND_PIT_OPEN_W = 240;
+  var GROUND_PIT_DEPTH = 80;
+  var GROUND_PIT_FLOOR_TOP = MAIN_DECK_TOP + GROUND_PIT_DEPTH;
+  var GROUND_PIT_FLOOR_THICK = MAIN_DECK_THICK - GROUND_PIT_DEPTH;
+  var SKY_SQUARE_SIZE = 260;
+  var ARCH_CENTER_TOP = 980;
+  var GAUSS_CENTER_PERCH_X = WORLD_W / 2;
+  var GAUSS_CENTER_PERCH_Y = WORLD_H / 2;
+  var STAIR_SMALL_SQUARE_SIZE = 80;
+  var M249_PERCH_SIZE = 100;
+  var M249_PERCH_Y = 520;
+  var M249_LEFT_PERCH_X = 3380;
+  var M249_RIGHT_PERCH_X = WORLD_W - M249_LEFT_PERCH_X - M249_PERCH_SIZE;
   var UNIFIED_EDGE_HIGHLIGHT = "#38bdf8";
-  function defaultMapData() {
-    const solids = [
-      // ── 1. 四面封闭边界（顶部完整无入口天花板 + 左右全高封闭墙；底部由世界内置 SURFACE_Y=2800 封闭） ──
-      { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: "platform" },
-      { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
-      { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
-      // ── 2. 天空拱形浮空方块群（有上有下高低交错，正中 x=6600 放置复活点与旗帜） ──
-      ...SKY_ARCH_BLOCKS(),
-      // ── 3. 中层地表主平台（y=1760，出生点所在平面）+ 左翼高掩体柱 ──
-      // 左翼出生台与主平台（x=500..680 留 180px 狭窄竖井通往地下地道）
-      { x: WALL_THICK, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
-      { x: 680, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
-      // 左翼出生点旁高耸掩体柱（对应设计图左侧出生点旁高框）
-      { x: 740, y: 1440, w: 120, h: 320, kind: "cover" },
-      // 右翼主平台与出生台（x=12520..12700 留 180px 狭窄竖井通往地下地道）
-      { x: 8e3, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
-      { x: 12700, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
-      // ── 4. 地下区域（y > 1760）：全部采用实心岩体围合成狭窄地道（高 120~160px，竖井宽 160~260px） ──
-      ...UNDERGROUND_NARROW_TUNNEL_SOLIDS()
+  function mirrorSolid(s) {
+    return {
+      x: WORLD_W - s.x - s.w,
+      y: s.y,
+      w: s.w,
+      h: s.h,
+      kind: s.kind
+    };
+  }
+  function mirrorPairs(leftSolids) {
+    return [
+      ...leftSolids,
+      ...leftSolids.map(mirrorSolid)
     ];
-    return { name: "\u5C01\u95ED\u62F1\u9876\xB7\u5730\u4E0B\u72ED\u9053\u7ADE\u6280\u573A", solids };
+  }
+  function defaultMapData() {
+    const leftThickGroundWithPits = [
+      { x: WALL_THICK, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 740, y: MAIN_DECK_TOP - FIRST_COVER_HEIGHT, w: 120, h: FIRST_COVER_HEIGHT, kind: "cover" },
+      { x: 680, y: MAIN_DECK_TOP, w: 980, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 1660, y: GROUND_PIT_FLOOR_TOP, w: GROUND_PIT_OPEN_W, h: GROUND_PIT_FLOOR_THICK, kind: "platform" },
+      { x: 1900, y: MAIN_DECK_TOP, w: 960, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 2860, y: GROUND_PIT_FLOOR_TOP, w: GROUND_PIT_OPEN_W, h: GROUND_PIT_FLOOR_THICK, kind: "platform" },
+      { x: 3100, y: MAIN_DECK_TOP, w: 1260, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 4360, y: GROUND_PIT_FLOOR_TOP, w: GROUND_PIT_OPEN_W, h: GROUND_PIT_FLOOR_THICK, kind: "platform" },
+      { x: 4600, y: MAIN_DECK_TOP, w: 1400, h: MAIN_DECK_THICK, kind: "platform" }
+    ];
+    const solids = [
+      // 1. 四面封闭边界
+      { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: "platform" },
+      ...mirrorPairs([
+        { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: BEDROCK_TOP - (CEILING_TOP + CEILING_THICK), kind: "platform" }
+      ]),
+      // 2. 空中交错正方形拱桥 (y=2940→980) + 左右对称双 M249 阶梯（正中高斯枪无垫脚方块实体）
+      ...SKY_ARCH_BLOCKS(),
+      ...SYMMETRIC_CORNER_STAIRCASE_BLOCKS(),
+      // 3. 完整连续无空洞的主地面（y=3280..3440）+ 左右对称改矮的首个挡板方块 + 6 处可站人凹陷坑
+      ...mirrorPairs(leftThickGroundWithPits),
+      // 4. 三层薄地板地下隧道（y=3440..4160）
+      ...UNDERGROUND_THREE_LAYER_TUNNEL_SOLIDS()
+    ];
+    return { name: "\u9AD8\u8038\u65B9\u5F62\u62F1\u6865\xB7\u6B63\u4E2D\u60AC\u6D6E\u9AD8\u65AF\u67AA\xB7\u4E94\u636E\u70B9\xB7\u4E09\u5C42\u8584\u677F\u7ADE\u6280\u573A", solids };
   }
   function SKY_ARCH_BLOCKS() {
+    const S = SKY_SQUARE_SIZE;
+    const leftSquares = [
+      { x: 1080, y: 2940, w: S, h: S, kind: "block" },
+      { x: 1500, y: 2660, w: S, h: S, kind: "block" },
+      { x: 1920, y: 2380, w: S, h: S, kind: "block" },
+      { x: 2340, y: 2480, w: S, h: S, kind: "block" },
+      { x: 2760, y: 2180, w: S, h: S, kind: "block" },
+      { x: 3180, y: 1900, w: S, h: S, kind: "block" },
+      { x: 3600, y: 2e3, w: S, h: S, kind: "block" },
+      { x: 4020, y: 1700, w: S, h: S, kind: "block" },
+      { x: 4440, y: 1420, w: S, h: S, kind: "block" },
+      { x: 4860, y: 1520, w: S, h: S, kind: "block" },
+      { x: 5280, y: 1240, w: S, h: S, kind: "block" },
+      { x: 5700, y: 1340, w: S, h: S, kind: "block" },
+      { x: 6120, y: 1080, w: S, h: S, kind: "block" }
+    ];
     return [
-      // 左侧阶梯上升段
-      { x: 1200, y: 1280, w: 200, h: 360, kind: "block" },
-      { x: 1680, y: 1080, w: 420, h: 240, kind: "block" },
-      { x: 2740, y: 700, w: 720, h: 220, kind: "block" },
-      // 拱顶左峰（高）
-      { x: 3940, y: 560, w: 880, h: 220, kind: "block" },
-      // 左中交错块（下沉，体现“有上有下”）
-      { x: 5220, y: 760, w: 560, h: 220, kind: "block" },
-      // 正中央主方块（x=6200..7000，中心 x=6600，顶面 y=680：放置正中旗帜与复活点）
-      { x: 6200, y: ARCH_CENTER_TOP, w: 800, h: 220, kind: "block" },
-      // 拱顶右峰（高，体现“有上有下”）
-      { x: 7420, y: 560, w: 720, h: 220, kind: "block" },
-      // 右中交错块（下沉）
-      { x: 8580, y: 740, w: 720, h: 240, kind: "block" },
-      // 右侧阶梯下降段
-      { x: 9700, y: 920, w: 580, h: 260, kind: "block" },
-      { x: 10680, y: 1080, w: 440, h: 280, kind: "block" },
-      { x: 11480, y: 1240, w: 200, h: 360, kind: "block" },
-      { x: 12020, y: 1320, w: 200, h: 340, kind: "block" }
+      ...mirrorPairs(leftSquares),
+      { x: 6470, y: ARCH_CENTER_TOP, w: S, h: S, kind: "block" }
     ];
   }
-  function UNDERGROUND_NARROW_TUNNEL_SOLIDS() {
-    return [
-      // ── A. 左右浅层狭道顶部悬挂掩体块（对应设计图主平台横线下方的掩体块） ──
-      { x: 1800, y: 1800, w: 260, h: 60, kind: "cover" },
-      { x: 3e3, y: 1800, w: 260, h: 70, kind: "cover" },
-      { x: 4100, y: 1800, w: 220, h: 60, kind: "cover" },
-      { x: 9e3, y: 1800, w: 180, h: 60, kind: "cover" },
-      { x: 1e4, y: 1800, w: 240, h: 60, kind: "cover" },
-      { x: 11100, y: 1800, w: 340, h: 70, kind: "block" },
-      // ── B. 左右两侧地下实心岩层（围合出左侧 x=500..680 与右侧 x=12520..12700 的 L 型狭窄地道） ──
-      // 左端外侧全高地下实心墙（x=60..500, y=1800..2660，底部预留 y=2660..2800 底层贯通狭道）
-      { x: WALL_THICK, y: 1800, w: 440, h: 860, kind: "block" },
-      // 左侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=1280..1440 联络竖井）
-      { x: 680, y: 2040, w: 600, h: 320, kind: "block" },
-      { x: 1440, y: 2040, w: 1060, h: 320, kind: "block" },
-      // 左侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
-      { x: 680, y: 2500, w: 1820, h: 160, kind: "block" },
-      // 右端外侧全高地下实心墙（x=12700..13140, y=1800..2660）
-      { x: 12700, y: 1800, w: 440, h: 860, kind: "block" },
-      // 右侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=11760..11920 联络竖井）
-      { x: 10700, y: 2040, w: 1060, h: 320, kind: "block" },
-      { x: 11920, y: 2040, w: 600, h: 320, kind: "block" },
-      // 右侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
-      { x: 10700, y: 2500, w: 1820, h: 160, kind: "block" },
-      // ── C. 中央地下顶盖与中央下沉狭窄井道（y=1800..2160） ──
-      // 左中顶盖岩层（x=2500..5200, y=2040..2160，厚 120px，上方为浅层狭道，下方为 y=2160..2280 地下上层狭道）
-      { x: 2500, y: 2040, w: 2700, h: 120, kind: "platform" },
-      // 右中顶盖岩层（x=8000..10700, y=2040..2160，厚 120px）
-      { x: 8e3, y: 2040, w: 2700, h: 120, kind: "platform" },
-      // 中央咽喉区左肩巨石（x=5380..6260, y=1800..2160，留出 x=5200..5380 宽 180px 的西侧下沉竖井）
-      { x: 5380, y: 1800, w: 880, h: 360, kind: "block" },
-      // 中央咽喉区右肩巨石（留出 x=6260..6660 中央竖井、x=7020..7360 东侧竖井及 x=7820..8000 边缘竖井）
-      { x: 6660, y: 1800, w: 360, h: 360, kind: "block" },
-      { x: 7360, y: 1800, w: 460, h: 360, kind: "block" },
-      // ── D. 中央地下迷宫核心岩体群（围合出上 y=2160..2280、中 y=2380..2500、下 y=2660..2800 三层狭窄横道与多条狭窄竖井） ──
-      // 1. 左侧竖直巨岩（左留 x=2500..2660 竖井，右留 x=3220..3380 竖井）
-      { x: 2660, y: 2280, w: 560, h: 380, kind: "block" },
-      // 2. 左中上层横岩（上留 y=2160..2280 狭道，下留 y=2380..2500 狭道）
-      { x: 3380, y: 2280, w: 2240, h: 100, kind: "block" },
-      // 3. 左中下层横岩（上留 y=2380..2500 狭道，下留 y=2660..2800 底层狭道）
-      { x: 3380, y: 2500, w: 2240, h: 160, kind: "block" },
-      // 4. 正中竖直巨柱（左留 x=5620..5820 竖井，右留 x=6380..6640 核心中央竖井）
-      { x: 5820, y: 2280, w: 560, h: 380, kind: "block" },
-      // 5. 右中上层横岩（预留 x=7020..7180 狭窄竖井供垂直机动与射击）
-      { x: 6640, y: 2280, w: 380, h: 100, kind: "block" },
-      { x: 7180, y: 2280, w: 1920, h: 100, kind: "block" },
-      // 6. 右中下层横岩（预留 x=7020..7180 狭窄竖井）
-      { x: 6640, y: 2500, w: 380, h: 160, kind: "block" },
-      { x: 7180, y: 2500, w: 1920, h: 160, kind: "block" },
-      // 7. 右侧竖直巨岩（左留 x=9100..9260 竖井，右留 x=10540..10700 竖井）
-      { x: 9260, y: 2280, w: 1280, h: 380, kind: "block" }
+  function SYMMETRIC_CORNER_STAIRCASE_BLOCKS() {
+    const s = STAIR_SMALL_SQUARE_SIZE;
+    const leftStaircase = [
+      { x: 4780, y: 1040, w: s, h: s, kind: "block" },
+      { x: 4320, y: 860, w: s, h: s, kind: "block" },
+      { x: 3860, y: 680, w: s, h: s, kind: "block" },
+      { x: M249_LEFT_PERCH_X, y: M249_PERCH_Y, w: M249_PERCH_SIZE, h: M249_PERCH_SIZE, kind: "block" }
     ];
+    return mirrorPairs(leftStaircase);
+  }
+  function UNDERGROUND_THREE_LAYER_TUNNEL_SOLIDS() {
+    const leftUnderground = [
+      { x: WALL_THICK, y: 3440, w: 440, h: 560, kind: "block" },
+      { x: 680, y: 3600, w: 1820, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 680, y: 3880, w: 820, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 1680, y: 3880, w: 820, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 2680, y: 3600, w: 280, h: 400, kind: "block" },
+      { x: 3220, y: 3600, w: 280, h: 400, kind: "block" },
+      { x: 3680, y: 3600, w: 1060, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 4940, y: 3600, w: 1060, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 3680, y: 3880, w: 2320, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 6180, y: MAIN_DECK_TOP, w: 280, h: 4e3 - MAIN_DECK_TOP, kind: "block" }
+    ];
+    return mirrorPairs(leftUnderground);
   }
 
   // src/core/terrain.ts
@@ -242,11 +252,13 @@
       this.grid.fill(0);
       this.rects.length = 0;
       this.shadows.length = 0;
-      this.addSolidBlock(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y, UNIFIED_FILL, UNIFIED_BORDER, "earth");
       const list = customSolids ?? defaultMapData().solids;
+      const hasDeepUnderground = list.some((r) => r.y + r.h > SURFACE_Y);
+      const earthTop = hasDeepUnderground ? BEDROCK_TOP : SURFACE_Y;
+      this.addSolidBlock(0, earthTop, WORLD_W, WORLD_H - earthTop, UNIFIED_FILL, UNIFIED_BORDER, "earth");
       for (const r of list) {
         const label = r.kind === "platform" ? "\u5E73\u53F0" : r.kind === "block" ? "\u65B9\u5757" : "\u63A9\u4F53";
-        this.addSolidBlock(r.x, r.y, r.w, r.h, UNIFIED_FILL, UNIFIED_BORDER, r.kind, label);
+        this.addSolidBlock(r.x, r.y, r.w, r.h, UNIFIED_FILL, UNIFIED_BORDER, "kind" in r ? r.kind : "block", label);
       }
     }
     /** 点是否被原始地形挡住（双轴环形 x/y） */
@@ -374,8 +386,8 @@
       spread: 3e-3,
       speed: 4e3,
       recoil: 390,
-      magSize: 3,
-      maxReserve: 15,
+      magSize: 10,
+      maxReserve: 20,
       reloadTime: 2.8,
       fireDelay: 0.95,
       chargeSeconds: 0.5,
@@ -385,8 +397,9 @@
       laser: true,
       pierceOnHeadshot: true,
       lifeSeconds: 999,
-      moveSpeedMult: 0.6,
-      fuelMult: 0.6,
+      moveSpeedMult: 0.85,
+      fuelMult: 1,
+      ascendMult: 0.85,
       fovMult: 1.3,
       color: "#c084fc",
       // 狙击擦边分级：正中（穿心）= 137，越靠碰撞箱边缘越低，最低 99。
@@ -501,11 +514,12 @@
       name: "\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 24,
+      damage: 37,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
-      // 伤害降低（=手枪）
+      grazeDamageMin: 30,
+      // 伤害调高=突击步枪(37)
       speed: 1100,
       recoil: 240,
       magSize: 6,
@@ -566,6 +580,7 @@
       id: 8,
       name: "\u51B2\u950B\u67AA",
       shortName: "\u51B2\u950B\u67AA",
+      extraSecondarySlot: true,
       isSupplyOnly: false,
       damage: 24,
       headshotMult: 1.8,
@@ -655,20 +670,19 @@
       desc: "\u8FDE\u6B7B4\u89E3\u9501\u6216\u7279\u6B8A\u8865\u7ED9\u62FE\u53D6"
     }
   };
-  function isSecondaryUnlocked(secId, deathStreak, dollCharges = 0) {
+  function getEffectiveUnlockStreak(deathStreak, weaponIndex) {
+    const base = Math.max(0, Math.floor(deathStreak ?? 0));
+    const bonus = weaponIndex !== void 0 && WEAPONS[weaponIndex]?.extraSecondarySlot ? 1 : 0;
+    return base + bonus;
+  }
+  function getPlayerFragMaxCharges(deathStreak, baseMax = 1) {
+    return Math.max(baseMax, Math.floor(deathStreak ?? 0));
+  }
+  function isSecondaryUnlocked(secId, deathStreak, dollCharges = 0, weaponIndex) {
     const def = SECONDARIES[secId];
     if (!def) return false;
     if (secId === "doll" && dollCharges > 0) return true;
-    return (deathStreak ?? 0) >= def.unlockStreak;
-  }
-  function getHighestUnlockedSecondary(deathStreak, dollCharges = 0) {
-    const s = Math.max(0, Math.floor(deathStreak ?? 0));
-    for (let i = SECONDARY_UNLOCK_ORDER.length - 1; i >= 0; i--) {
-      const id = SECONDARY_UNLOCK_ORDER[i];
-      if (s >= SECONDARIES[id].unlockStreak) return id;
-    }
-    if (dollCharges > 0) return "doll";
-    return "frag";
+    return getEffectiveUnlockStreak(deathStreak, weaponIndex) >= def.unlockStreak;
   }
   var DEFAULT_CONFIG = {
     maxHp: 100,
@@ -730,21 +744,42 @@
   var BODY_TOP = 26;
   var BODY_BOTTOM = 16;
   var CEILING_STAND = 264;
+  var GROUND_STAND = BEDROCK_TOP - 60;
   var MAIN_DECK_STAND = MAIN_DECK_TOP - 16;
   var CENTER_RESPAWN_X = 6600;
   var CENTER_RESPAWN_Y = ARCH_CENTER_TOP - 16;
+  var GAUSS_CENTER_X = 6600;
+  var GAUSS_CENTER_Y = 2200;
+  var M249_LEFT_SKY_X = M249_LEFT_PERCH_X + M249_PERCH_SIZE / 2;
+  var M249_RIGHT_SKY_X = M249_RIGHT_PERCH_X + M249_PERCH_SIZE / 2;
+  var M249_SKY_Y = M249_PERCH_Y - 16;
+  var GRAVITY_BOTTOM_X = 6600;
+  var GRAVITY_BOTTOM_Y = BEDROCK_TOP - 16;
   var FFA_SPAWN_POINTS = [
-    { x: 1180, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u7FFC\u5E73\u53F0" },
-    { x: 2400, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u5E73\u53F0" },
-    { x: 3100, y: 700 - 16, team: "ffa", label: "FFA\xB7\u897F\u62F1\u6D6E\u5C9B" },
-    { x: 4380, y: 560 - 16, team: "ffa", label: "FFA\xB7\u5DE6\u5CF0\u62F1\u5C9B" },
-    { x: 4500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u5730\u9053" },
-    { x: 5500, y: 760 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u62F1\u5C9B" },
-    { x: 7780, y: 560 - 16, team: "ffa", label: "FFA\xB7\u53F3\u5CF0\u62F1\u5C9B" },
-    { x: 8500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u5730\u9053" },
-    { x: 9990, y: 920 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u62F1\u6D6E\u5C9B" },
-    { x: 10800, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u5E73\u53F0" },
-    { x: 12020, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u7FFC\u5E73\u53F0" }
+    { x: 1170, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u7FFC\u5730\u9762" },
+    { x: 1630, y: 2660 - 16, team: "ffa", label: "FFA\xB7\u897F\u4F4E\u65B9\u5C9B" },
+    { x: 2050, y: 2380 - 16, team: "ffa", label: "FFA\xB7\u897F\u4E2D\u65B9\u5C9B" },
+    { x: 2380, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u5730\u9762" },
+    { x: 2470, y: 2480 - 16, team: "ffa", label: "FFA\xB7\u897F\u5916\u65B9\u5C9B" },
+    { x: 3310, y: 1900 - 16, team: "ffa", label: "FFA\xB7\u897F\u4E2D\u62F1\u5C9B" },
+    { x: 3730, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u4E2D\u5730\u9762" },
+    { x: 3730, y: 2e3 - 16, team: "ffa", label: "FFA\xB7\u897F\u9AD8\u65B9\u5C9B" },
+    { x: 4210, y: 3600 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u4E0A\u5C42\u5730\u9053" },
+    { x: 4300, y: 3880 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u4E2D\u5C42\u5730\u9053" },
+    { x: 4570, y: 1420 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u9AD8\u65B9\u5C9B" },
+    { x: 5300, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u5FC3\u897F\u5730\u9762" },
+    { x: 7900, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u5FC3\u4E1C\u5730\u9762" },
+    { x: 8630, y: 1420 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u9AD8\u65B9\u5C9B" },
+    { x: 8900, y: 3880 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u4E2D\u5C42\u5730\u9053" },
+    { x: 8990, y: 3600 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u4E0A\u5C42\u5730\u9053" },
+    { x: 9470, y: 2e3 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u9AD8\u65B9\u5C9B" },
+    { x: 9470, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u4E2D\u5730\u9762" },
+    { x: 9890, y: 1900 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u4E2D\u62F1\u5C9B" },
+    { x: 10730, y: 2480 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u5916\u65B9\u5C9B" },
+    { x: 10820, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u5730\u9762" },
+    { x: 11150, y: 2380 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u4E2D\u65B9\u5C9B" },
+    { x: 11570, y: 2660 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u4F4E\u65B9\u5C9B" },
+    { x: 12030, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u7FFC\u5730\u9762" }
   ];
   var SPAWN_POINTS = [
     { x: 260, y: MAIN_DECK_STAND, team: "red" },
@@ -753,21 +788,26 @@
     ...FFA_SPAWN_POINTS.map(({ x, y, team }) => ({ x, y, team }))
   ];
   var AMMO_SPOTS = [
-    { x: 4950, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u897F\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
-    { x: 5500, y: 760 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
-    { x: 6320, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u897F\u4FA7\u5F39\u836F\u70B9" },
-    { x: 6880, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u4E1C\u4FA7\u5F39\u836F\u70B9" },
-    { x: 7780, y: 560 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
-    { x: 8250, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
-    { x: 6500, y: 2800 - 16, area: "\u5730\u4E0B\u4E2D\u592E\u72ED\u9053\xB7\u6838\u5FC3\u5F39\u836F\u70B9" }
+    { x: 4950, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u897F\xB7\u4E3B\u5730\u9762\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 4570, y: 1420 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u4E2D\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 5410, y: 1240 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u5185\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 6250, y: 1080 - 16, area: "\u6B63\u4E2D\u897F\u4FA7\xB7\u62F1\u9876\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 6950, y: 1080 - 16, area: "\u6B63\u4E2D\u4E1C\u4FA7\xB7\u62F1\u9876\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 7790, y: 1240 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u5185\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 8630, y: 1420 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E2D\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 8250, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E3B\u5730\u9762\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 4200, y: 3600 - 16, area: "\u5730\u4E0B\u897F\u533A\xB7\u4E00\u5C42\u901A\u9053\u5F39\u836F\u70B9" },
+    { x: 9e3, y: 3600 - 16, area: "\u5730\u4E0B\u4E1C\u533A\xB7\u4E00\u5C42\u901A\u9053\u5F39\u836F\u70B9" },
+    { x: 3090, y: 4160 - 16, area: "\u5730\u4E0B\u897F\u533A\xB7\u5E95\u5C42\u901A\u9053\u5F39\u836F\u70B9" },
+    { x: 10110, y: 4160 - 16, area: "\u5730\u4E0B\u4E1C\u533A\xB7\u5E95\u5C42\u901A\u9053\u5F39\u836F\u70B9" }
   ];
   var SUPPLY_SPOTS = [
-    { x: 1500, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u897F\u533A\u8865\u7ED9\u70B9" },
-    { x: 3100, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u897F\u8865\u7ED9\u70B9" },
-    { x: 4300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F\u8865\u7ED9\u70B9" },
-    { x: 5400, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u533A\u5DE6\u8865\u7ED9\u70B9" },
-    { x: 7800, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u533A\u53F3\u8865\u7ED9\u70B9" },
-    { x: 10300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A\u8865\u7ED9\u70B9" }
+    { x: 1500, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u897F\u533A\u8865\u7ED9\u70B9", weaponId: 4 },
+    { x: 10300, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E1C\u533A\u8865\u7ED9\u70B9", weaponId: 4 },
+    { x: GAUSS_CENTER_X, y: GAUSS_CENTER_Y, area: "\u6B63\u4E2D\u7A7A\u4E2D(\u4E16\u754C/2)\xB7\u9AD8\u65AF\u67AA\u8865\u7ED9\u70B9", weaponId: 4 },
+    { x: M249_LEFT_SKY_X, y: M249_SKY_Y, area: "\u5DE6\u7FFC\u9636\u68AF\xB7\u5929\u82B1\u677F\u4E0BM249\u8865\u7ED9\u70B9", weaponId: 5 },
+    { x: M249_RIGHT_SKY_X, y: M249_SKY_Y, area: "\u53F3\u7FFC\u9636\u68AF\xB7\u5929\u82B1\u677F\u4E0BM249\u8865\u7ED9\u70B9", weaponId: 5 },
+    { x: GRAVITY_BOTTOM_X, y: GRAVITY_BOTTOM_Y, area: "\u5730\u4E0B\u4E2D\u592E\u7AD6\u4E95\u6700\u5E95\u90E8\xB7\u5F15\u529B\u67AA\u8865\u7ED9\u70B9", weaponId: 6 }
   ];
   var DOLL_SUPPLY_SPOTS = [
     { x: 4600, y: CEILING_STAND, area: "\u5929\u82B1\u677F\xB7\u4E2D\u592E\u897F\u7279\u6B8A\u8865\u7ED9\u70B9" },
@@ -803,24 +843,46 @@
     { id: "warp_6", name: "W6 \u4E1C\u533A\u4F20\u9001\u95E8", x: 12280, y: CEILING_STAND, targetId: "warp_5", color: "#10b981" }
   ];
   var RANDOM_SPAWN_CANDIDATES = [
-    { x: 1180, y: MAIN_DECK_STAND - 20 },
-    { x: 2400, y: MAIN_DECK_STAND - 20 },
-    { x: 3600, y: MAIN_DECK_STAND - 20 },
-    { x: 4700, y: MAIN_DECK_STAND - 20 },
-    { x: 3100, y: 700 - 36 },
-    { x: 4380, y: 560 - 36 },
-    { x: 5500, y: 760 - 36 },
+    { x: 1170, y: MAIN_DECK_STAND - 20 },
+    { x: 1480, y: MAIN_DECK_STAND - 20 },
+    { x: 2100, y: MAIN_DECK_STAND - 20 },
+    { x: 2380, y: MAIN_DECK_STAND - 20 },
+    { x: 2680, y: MAIN_DECK_STAND - 20 },
+    { x: 3350, y: MAIN_DECK_STAND - 20 },
+    { x: 3730, y: MAIN_DECK_STAND - 20 },
+    { x: 4120, y: MAIN_DECK_STAND - 20 },
+    { x: 4900, y: MAIN_DECK_STAND - 20 },
+    { x: 5300, y: MAIN_DECK_STAND - 20 },
+    { x: 5720, y: MAIN_DECK_STAND - 20 },
+    { x: 1630, y: 2660 - 36 },
+    { x: 2050, y: 2380 - 36 },
+    { x: 2470, y: 2480 - 36 },
+    { x: 2890, y: 2180 - 36 },
+    { x: 3310, y: 1900 - 36 },
+    { x: 3730, y: 2e3 - 36 },
+    { x: 4150, y: 1700 - 36 },
+    { x: 4570, y: 1420 - 36 },
+    { x: 4990, y: 1520 - 36 },
+    { x: 5410, y: 1240 - 36 },
+    { x: 5830, y: 1340 - 36 },
+    { x: 6250, y: 1080 - 36 },
     { x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y - 24 },
-    { x: 7780, y: 560 - 36 },
-    { x: 8940, y: 740 - 36 },
-    { x: 9990, y: 920 - 36 },
-    { x: 8500, y: MAIN_DECK_STAND - 20 },
-    { x: 9600, y: MAIN_DECK_STAND - 20 },
-    { x: 10800, y: MAIN_DECK_STAND - 20 },
-    { x: 12020, y: MAIN_DECK_STAND - 20 },
-    { x: 4500, y: 2500 - 24 },
-    { x: 6500, y: 2800 - 24 },
-    { x: 8500, y: 2500 - 24 }
+    { x: 6950, y: 1080 - 36 },
+    { x: 7370, y: 1340 - 36 },
+    { x: 7790, y: 1240 - 36 },
+    { x: 8210, y: 1520 - 36 },
+    { x: 8630, y: 1420 - 36 },
+    { x: 9050, y: 1700 - 36 },
+    { x: 9470, y: 2e3 - 36 },
+    { x: 9890, y: 1900 - 36 },
+    { x: 10310, y: 2180 - 36 },
+    { x: 10730, y: 2480 - 36 },
+    { x: 11150, y: 2380 - 36 },
+    { x: 11570, y: 2660 - 36 },
+    { x: 7480, y: MAIN_DECK_STAND - 20 },
+    { x: 8300, y: MAIN_DECK_STAND - 20 },
+    { x: 9470, y: MAIN_DECK_STAND - 20 },
+    { x: 10820, y: MAIN_DECK_STAND - 20 }
   ];
   var JUMP_PADS = [
     { x: 1e3, y: 280, vx: 210, vy: -810 },
@@ -829,11 +891,16 @@
     { x: 13050, y: 280, vx: -210, vy: -810 }
   ];
   var CP_INITS = [
-    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u897F\u533A", x: 1720, y: CEILING_STAND, ownerTeam: null },
-    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u4E2D\u592E\u897F", x: 3900, y: CEILING_STAND, ownerTeam: null },
+    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u5730\u4E0B\u4E2D\u897F", x: 5470, y: 3880 - 16, ownerTeam: null },
+    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u897F\u62F1\u534A\u8DEF", x: 3730, y: 2e3 - 16, ownerTeam: null },
     { id: "cp_c", code: "C", name: "\u6B63\u4E2D\u590D\u6D3B\u70B9", x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y, ownerTeam: null },
-    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E2D\u4E1C", x: 7800, y: CEILING_STAND, ownerTeam: null },
-    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u4E1C\u533A", x: 11420, y: CEILING_STAND, ownerTeam: null }
+    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E1C\u62F1\u534A\u8DEF", x: 9470, y: 2e3 - 16, ownerTeam: null },
+    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u5730\u4E0B\u4E2D\u4E1C", x: 7730, y: 3880 - 16, ownerTeam: null },
+    { id: "cp_f", code: "F", name: "\u636E\u70B9F\xB7\u897F\u5916\u5730\u9762", x: 2380, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_g", code: "G", name: "\u636E\u70B9G\xB7\u897F\u5185\u5730\u9762", x: 3730, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_h", code: "H", name: "\u636E\u70B9H\xB7\u4E1C\u5185\u5730\u9762", x: 9470, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_i", code: "I", name: "\u636E\u70B9I\xB7\u4E1C\u5916\u5730\u9762", x: 10820, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_j", code: "J", name: "\u636E\u70B9J\xB7\u897F\u533A\u5730\u9053", x: 1590, y: 3600 - 16, ownerTeam: null }
   ];
 
   // src/core/sim/spatial.ts
@@ -952,6 +1019,49 @@
       }
     }
     return false;
+  }
+  var MAX_LAG_HISTORY_TICKS = 36;
+  function recordPlayerLagHistory(history, tick, players) {
+    const map = /* @__PURE__ */ new Map();
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      if (p.deployed && p.alive && p.respawnTimer <= 0) {
+        map.set(p.id, { x: p.pos.x, y: p.pos.y });
+      }
+    }
+    history.push({ tick, positions: map });
+    if (history.length > MAX_LAG_HISTORY_TICKS) history.shift();
+  }
+  function withRewoundPlayersForShooter(enabled, history, playerLagMs, shooterId, players, rebuildBuckets, fn) {
+    if (!enabled || history.length === 0) return fn();
+    const lagMs = playerLagMs.get(shooterId) ?? 0;
+    if (lagMs < 16) return fn();
+    const rewindTicks = Math.min(30, Math.max(1, Math.round(lagMs / (1e3 / 60))));
+    const idx = Math.max(0, history.length - 1 - rewindTicks);
+    const snap = history[idx];
+    if (!snap) return fn();
+    const saved = [];
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      if (p.id === shooterId || !p.deployed || !p.alive || p.respawnTimer > 0) continue;
+      const histPos = snap.positions.get(p.id);
+      if (histPos && Math.abs(wrapDeltaX(p.pos.x, histPos.x)) < 480 && Math.abs(wrapDeltaY(p.pos.y, histPos.y)) < 480) {
+        saved.push({ p, x: p.pos.x, y: p.pos.y });
+        p.pos.x = histPos.x;
+        p.pos.y = histPos.y;
+      }
+    }
+    if (saved.length === 0) return fn();
+    rebuildBuckets();
+    try {
+      return fn();
+    } finally {
+      for (let i = 0; i < saved.length; i++) {
+        saved[i].p.pos.x = saved[i].x;
+        saved[i].p.pos.y = saved[i].y;
+      }
+      rebuildBuckets();
+    }
   }
 
   // src/core/sim/playerPhysics.ts
@@ -1830,7 +1940,7 @@
       ctx2.events.push({ kind: "doll_recall", x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: "anchor" });
       return;
     }
-    if ((p.deathStreak ?? 0) < def.unlockStreak && p.secondary !== s.type) return;
+    if (!isSecondaryUnlocked(s.type, p.deathStreak ?? 0, p.dollCharges ?? 0, p.weaponIndex) && p.secondary !== s.type) return;
     if (s.type === "obstacle") {
       p.secondaryCooldown = def.cd;
       const w = 56;
@@ -1953,8 +2063,15 @@
     t.hp = 0;
     t.alive = false;
     t.deaths++;
-    t.deathStreak = (t.deathStreak ?? 0) + 1;
-    t.secondary = getHighestUnlockedSecondary(t.deathStreak, t.dollCharges);
+    if ((t.lifeKills ?? 0) > 0) {
+      t.deathStreak = 0;
+      t.lifeKills = 0;
+    } else {
+      t.deathStreak = (t.deathStreak ?? 0) + 1;
+    }
+    if (!SECONDARIES[t.secondary] || !isSecondaryUnlocked(t.secondary, t.deathStreak, t.dollCharges, t.weaponIndex)) {
+      t.secondary = "frag";
+    }
     t.respawnTimer = ctx2.config.respawnDelay;
     t.shieldHp = 0;
     t.shieldTimer = 0;
@@ -1966,7 +2083,13 @@
     const killer = ctx2.playerById.get(atkId) ?? ctx2.players.find((x) => x.id === atkId);
     if (killer && atkId !== t.id) {
       killer.kills++;
+      killer.lifeKills = (killer.lifeKills ?? 0) + 1;
       killer.deathStreak = 0;
+      if (!SECONDARIES[killer.secondary] || !isSecondaryUnlocked(killer.secondary, killer.deathStreak, killer.dollCharges, killer.weaponIndex)) {
+        killer.secondary = "frag";
+      }
+      const killerMaxFrags = getPlayerFragMaxCharges(killer.deathStreak, ctx2.config.fragMaxCharges);
+      if (killer.fragCharges > killerMaxFrags) killer.fragCharges = killerMaxFrags;
       if (ctx2.scores[atkTeam] !== void 0) ctx2.scores[atkTeam]++;
     }
     ctx2.events.push({
@@ -2221,7 +2344,7 @@
     }
     for (const tw of ctx2.watchtowers) {
       if (tw.operatorId === null && wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 130) {
-        tw.operatorId = p.id;
+        tw.operatorId = tw.id ? p.id : p.id;
         p.mountedTowerId = tw.id;
         p.pos = { x: tw.x, y: tw.y - 150 + 12 };
         p.vel = { x: 0, y: 0 };
@@ -2241,10 +2364,44 @@
         return;
       }
     }
-    const nearCaptured = ctx2.capturePoints.find(
-      (cp) => isCapturePointSelectable(cp, p.team) && wrapDist(p.pos.x, p.pos.y, cp.x, cp.y) < Math.max(150, ctx2.config.captureRadius + 40)
-    );
-    const targetCp = nearCaptured ?? ctx2.capturePoints.find((cp) => isCapturePointSelectable(cp, p.team));
+    for (const crate of ctx2.supplyCrates) {
+      if (!crate.active) continue;
+      if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 95) {
+        crate.active = false;
+        crate.respawnTimer = ctx2.config.supplyRespawnTime;
+        if (crate.kind === "doll") {
+          p.dollCharges = Math.min(ctx2.config.dollMaxCharges, p.dollCharges + 1);
+        } else {
+          p.weaponIndex = crate.weaponId;
+          p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (WEAPONS[crate.weaponId].fuelMult ?? 1));
+          p.ammo[crate.weaponId] = WEAPONS[crate.weaponId].magSize;
+          p.reserveAmmo[crate.weaponId] = WEAPONS[crate.weaponId].maxReserve;
+        }
+        ctx2.events.push({
+          kind: "supply_pickup",
+          playerId: p.id,
+          playerName: p.name,
+          weaponId: crate.kind === "doll" ? -1 : crate.weaponId,
+          weaponName: crate.weaponName,
+          x: crate.x,
+          y: crate.y
+        });
+        return;
+      }
+    }
+    const maxSelectDist = Math.max(150, ctx2.config.captureRadius + 35);
+    let targetCp = null;
+    let bestDist = Infinity;
+    for (const cp of ctx2.capturePoints) {
+      if (cp.y <= 400) continue;
+      if (!isCapturePointSelectable(cp, p.team)) continue;
+      if (Math.abs(wrapDeltaY(p.pos.y, cp.y)) > 115) continue;
+      const d = wrapDist(p.pos.x, p.pos.y, cp.x, cp.y);
+      if (d < maxSelectDist && d < bestDist) {
+        bestDist = d;
+        targetCp = cp;
+      }
+    }
     if (targetCp) {
       p.selectedSpawnId = targetCp.id;
       ctx2.events.push({
@@ -2268,31 +2425,62 @@
     ctx2.ammoPacks.push({ id: ctx2.nextAmmoId(), x: spot.x, y: spot.y, area: spot.area });
   }
   function stepMapInteractables(ctx2, dt) {
-    const capR = ctx2.config.captureRadius;
+    const capR = Math.max(150, ctx2.config.captureRadius + 35);
     for (const cp of ctx2.capturePoints) {
+      if (cp.y <= 400) continue;
       const presence = {};
       for (let i = 0; i < ctx2.players.length; i++) {
         const p = ctx2.players[i];
         if (p.respawnTimer > 0 || !p.deployed || !p.alive) continue;
-        if (Math.abs(wrapDeltaX(p.pos.x, cp.x)) >= capR) continue;
-        if (Math.abs(p.pos.y - cp.y) >= capR) continue;
-        if (wrapDist(p.pos.x, p.pos.y, cp.x, cp.y) < capR) {
+        const dx = Math.abs(wrapDeltaX(p.pos.x, cp.x));
+        if (dx >= capR) continue;
+        const dy = wrapDeltaY(cp.y, p.pos.y);
+        if (dy > 28 || dy < -115) continue;
+        if (Math.hypot(dx, dy) < capR) {
           presence[p.team] = (presence[p.team] || 0) + 1;
         }
       }
-      const teams = Object.keys(presence);
-      if (teams.length === 1) {
-        const t = teams[0];
-        if (cp.ownerTeam !== t) {
-          if (cp.capturingTeam !== t) {
+      const entries = Object.entries(presence);
+      if (entries.length > 0) {
+        entries.sort((a, b) => b[1] - a[1]);
+        const [t, topCount] = entries[0];
+        const secondCount = entries.length > 1 ? entries[1][1] : 0;
+        const netCount = topCount - secondCount;
+        if (netCount > 0) {
+          const delta = ctx2.config.captureRate * dt * netCount;
+          const curTeam = cp.progress > 0 ? cp.ownerTeam ?? cp.capturingTeam : null;
+          if (curTeam !== null && curTeam !== t) {
+            cp.capturingTeam = curTeam;
+            if (cp.progress > delta) {
+              cp.progress -= delta;
+            } else {
+              const overflow = delta - cp.progress;
+              cp.ownerTeam = null;
+              if (overflow > 0) {
+                cp.capturingTeam = t;
+                cp.progress = Math.min(100, overflow);
+                if (cp.progress >= 100) {
+                  cp.progress = 100;
+                  cp.ownerTeam = t;
+                  ctx2.events.push({ kind: "capture", pointCode: cp.code, team: t, x: cp.x, y: cp.y });
+                }
+              } else {
+                cp.capturingTeam = null;
+                cp.progress = 0;
+              }
+            }
+          } else if (cp.ownerTeam !== t || cp.progress < 100) {
             cp.capturingTeam = t;
-            if (cp.ownerTeam !== null) cp.progress = 0;
-          }
-          cp.progress += ctx2.config.captureRate * dt * (presence[t] || 0);
-          if (cp.progress >= 100) {
-            cp.progress = 100;
-            cp.ownerTeam = t;
-            ctx2.events.push({ kind: "capture", pointCode: cp.code, team: t, x: cp.x, y: cp.y });
+            cp.progress += delta;
+            if (cp.progress >= 100) {
+              cp.progress = 100;
+              const newlyCaptured = cp.ownerTeam !== t;
+              cp.ownerTeam = t;
+              cp.capturingTeam = t;
+              if (newlyCaptured) {
+                ctx2.events.push({ kind: "capture", pointCode: cp.code, team: t, x: cp.x, y: cp.y });
+              }
+            }
           }
         }
       }
@@ -2380,6 +2568,7 @@
     seed;
     tick = 0;
     hits = 0;
+    mapName;
     pid = 1;
     prj = 1;
     gren = 1;
@@ -2393,9 +2582,16 @@
     obstacleBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
     playerById = /* @__PURE__ */ new Map();
     activeGravityOrbs = [];
+    lagHistory = [];
+    playerLagMs = /* @__PURE__ */ new Map();
+    lagCompensationEnabled = true;
+    setPlayerLagMs(playerId, lagMs) {
+      this.playerLagMs.set(playerId, Math.max(0, Math.min(400, lagMs)));
+    }
     constructor(seed = 12345, map) {
       this.seed = seed;
       this.rng = new Rng(seed);
+      this.mapName = map?.name;
       this.terrain.build(map?.solids);
       this.resetMatch();
     }
@@ -2498,6 +2694,7 @@
     resetMatch() {
       this.obsSeq = 1;
       this.mineSeq = 1;
+      if (this.lagHistory) this.lagHistory.length = 0;
       this.obstacles = OBSTACLE_PRESETS.map((o) => ({ ...o, maxHp: o.hp }));
       this.capturePoints = CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
       this.mortars = MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
@@ -2516,9 +2713,13 @@
         preset: true,
         respawnTimer: 0
       }));
+      const isIsolatedWeaponTestArena = Boolean(
+        this.mapName && (this.mapName.startsWith("sniper-") || this.mapName.startsWith("shell-") || this.mapName.startsWith("cs-pump"))
+      );
       this.supplyCrates = [
         ...SUPPLY_SPOTS.map((spot, idx) => {
-          const w = WEAPONS[4 + idx % 3];
+          const w = WEAPONS[spot.weaponId ?? 4 + idx % 3];
+          const hideForUnitTest = isIsolatedWeaponTestArena && spot.x === GAUSS_CENTER_X && spot.y === GAUSS_CENTER_Y;
           return {
             id: this.crate++,
             x: spot.x,
@@ -2528,8 +2729,8 @@
             weaponId: w.id,
             weaponName: w.name,
             color: w.color,
-            active: true,
-            respawnTimer: 0
+            active: !hideForUnitTest,
+            respawnTimer: hideForUnitTest ? 9999 : 0
           };
         }),
         ...DOLL_SUPPLY_SPOTS.map((spot) => ({
@@ -2546,7 +2747,7 @@
         }))
       ];
       this.ammoPacks = [];
-      for (let i = 0; i < this.config.ammoPackMaxActive; i++) spawnSingleAmmoPack(this);
+      for (let i = 0; i < Math.min(7, this.config.ammoPackMaxActive); i++) spawnSingleAmmoPack(this);
       this.projectiles = [];
       this.grenades = [];
       this.airstrikes = [];
@@ -2595,6 +2796,7 @@
         respawnTimer: 0,
         kills: 0,
         deaths: 0,
+        lifeKills: 0,
         deathStreak: 0
       };
       this.respawnAt(p, team);
@@ -2639,7 +2841,8 @@
       p.hp = this.config.maxHp;
       p.ammo = WEAPONS.map((w) => w.magSize);
       p.reserveAmmo = WEAPONS.map((w) => w.maxReserve);
-      p.fragCharges = this.config.fragMaxCharges;
+      const streak = p.deathStreak ?? 0;
+      p.fragCharges = getPlayerFragMaxCharges(streak, this.config.fragMaxCharges);
       p.fragRechargeTimer = 0;
       p.fuel = getPhysicsParams().jetpackFuel * (WEAPONS[p.weaponIndex]?.fuelMult ?? 1);
       p.shieldHp = 0;
@@ -2649,17 +2852,17 @@
       p.warpCooldown = 0;
       p.teleportTimer = 0;
       p.teleportTarget = null;
-      const streak = p.deathStreak ?? 0;
       p.doll = null;
-      p.dollCharges = streak >= SECONDARIES.doll.unlockStreak ? 1 : 0;
-      if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges)) {
-        p.secondary = getHighestUnlockedSecondary(streak, p.dollCharges);
+      p.dollCharges = streak + (WEAPONS[p.weaponIndex]?.extraSecondarySlot ? 1 : 0) >= SECONDARIES.doll.unlockStreak ? 1 : 0;
+      if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges, p.weaponIndex)) {
+        p.secondary = "frag";
       }
       p.reloading = false;
       p.fireCooldown = 0;
       p.chargeTimer = 0;
       p.chargeAim = void 0;
       p.secondaryCooldown = 0;
+      p.lifeKills = 0;
       p.deployed = true;
       p.alive = true;
       p.respawnTimer = 0;
@@ -2713,6 +2916,7 @@
         }
       }
       this.rebuildPlayerBucketsOnly();
+      recordPlayerLagHistory(this.lagHistory, this.tick, this.players);
       separateOverlappingPlayers(this.players, this.playerBroadBuckets, this.terrain, this.obstacles, this.obstacleBroadBuckets);
       this.rebuildPlayerBucketsOnly();
       stepProjectilesSubsystem(this, dt);
@@ -2756,6 +2960,7 @@
         if (wep && !wep.isSupplyOnly && canSwitch) {
           p.weaponIndex = wep.id;
           p.lastPrimaryIndex = wep.id;
+          if (!isSecondaryUnlocked(p.secondary, p.deathStreak ?? 0, p.dollCharges, p.weaponIndex)) p.secondary = "frag";
           p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1));
           p.reloading = false;
           p.reloadTimer = 0;
@@ -2780,11 +2985,12 @@
       p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax);
       if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt);
       if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt);
-      if (p.fragCharges < this.config.fragMaxCharges) {
+      const maxFrags = getPlayerFragMaxCharges(p.deathStreak ?? 0, this.config.fragMaxCharges);
+      if (p.fragCharges < maxFrags) {
         p.fragRechargeTimer += dt;
         if (p.fragRechargeTimer >= this.config.fragRechargeSeconds) {
           p.fragRechargeTimer -= this.config.fragRechargeSeconds;
-          p.fragCharges = Math.min(this.config.fragMaxCharges, p.fragCharges + 1);
+          p.fragCharges = Math.min(maxFrags, p.fragCharges + 1);
         }
       } else p.fragRechargeTimer = 0;
       if (p.shieldTimer > 0) {
@@ -2845,7 +3051,7 @@
       if (w.secondary) useSecondaryInWorld(this, p, w.secondary);
       const wepNow = WEAPONS[p.weaponIndex];
       if (wepNow?.beam) {
-        if (w.fire) updateContinuousBeam(this, p, wepNow, dt);
+        if (w.fire) withRewoundPlayersForShooter(this.lagCompensationEnabled, this.lagHistory, this.playerLagMs, p.id, this.players, () => this.rebuildPlayerBucketsOnly(), () => updateContinuousBeam(this, p, wepNow, dt));
         p.chargeTimer = 0;
       } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
         const firePressed = w.fire && !p.prevFireHeld;
@@ -3106,10 +3312,29 @@
   };
   var sharedServerWriter = new ByteWriter(32768);
   var sharedClientWriter = new ByteWriter(512);
-  var staticDictCapturePoints = null;
-  var staticDictSupplyCrates = null;
-  var staticDictMortars = null;
-  var staticDictAmmoSpots = /* @__PURE__ */ new Map();
+  function buildDefaultCapturePointsDict() {
+    return CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
+  }
+  function buildDefaultSupplyCratesDict() {
+    const crates = [];
+    let id = 1;
+    for (const s of SUPPLY_SPOTS) {
+      const wid = s.weaponId ?? 4;
+      const w = WEAPONS[wid];
+      crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: "weapon", weaponId: wid, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 });
+    }
+    for (const s of DOLL_SUPPLY_SPOTS) {
+      crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: "doll", weaponId: -1, weaponName: "\u{1F38E} \u66FF\u8EAB\u4EBA\u5076", color: "#f472b6", active: true, respawnTimer: 0 });
+    }
+    return crates;
+  }
+  function buildDefaultMortarsDict() {
+    return MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
+  }
+  var staticDictCapturePoints = buildDefaultCapturePointsDict();
+  var staticDictSupplyCrates = buildDefaultSupplyCratesDict();
+  var staticDictMortars = buildDefaultMortarsDict();
+  var staticDictAmmoSpots = new Map(AMMO_SPOTS.map((a) => [a.x, a.area]));
   var encodedPlayerNames = /* @__PURE__ */ new Map();
   var lastEncObsSig = "";
   var lastEncCpSig = "";
@@ -3124,6 +3349,7 @@
     w.u32(MAGIC_SERVER);
     const hasEvents = !!(msg.events && msg.events.length > 0);
     const hasWelcome = !!msg.welcome;
+    if (hasWelcome || msg.snap.tick % 60 === 0) encodedPlayerNames.clear();
     const hasAckSeqs = !!(msg.snap.ackSeqs && Object.keys(msg.snap.ackSeqs).length > 0);
     const hdrFlags = 1 | (hasEvents ? 2 : 0) | (hasWelcome ? 4 : 0) | (hasAckSeqs ? 8 : 0) | (opts.deltaFacilities ? 16 : 0) | (opts.deltaProjectiles ? 32 : 0);
     w.u8(hdrFlags);
@@ -3397,8 +3623,10 @@
     const bitFlags = teamIdx & 3 | (p.alive ? 4 : 0) | (p.deployed ? 8 : 0) | (p.onGround ? 16 : 0) | (p.jetpack ? 32 : 0) | (p.reloading ? 64 : 0) | (p.doll ? 128 : 0);
     w.u8(bitFlags);
     const secIdx = Math.max(0, SECONDARY_UNLOCK_ORDER.indexOf(p.secondary));
-    const wepAndSec = p.weaponIndex & 15 | (secIdx & 1) << 4 | (p.fragCharges & 7) << 5;
+    const hasCustomSpawn = Boolean(p.selectedSpawnId && p.selectedSpawnId !== "base");
+    const wepAndSec = p.weaponIndex & 15 | (hasCustomSpawn ? 1 : 0) << 4 | (p.fragCharges & 7) << 5;
     w.u8(wepAndSec);
+    if (hasCustomSpawn) w.str(p.selectedSpawnId);
     w.i16(clamp(Math.round(p.hp * 10), -32767, 32767));
     w.u16(p.maxHp);
     w.u16(clamp(Math.round(p.fuel * 1e3), 0, 65535));
@@ -3593,8 +3821,9 @@
   }
 
   // src/net/transport/Peer.ts
-  function encodeServerWireFrame(m) {
-    return encodeServerMsgBinary(m);
+  function encodeServerWireFrame(m, forceFull = false) {
+    const isKeyframe = forceFull || Boolean(m.welcome) || Boolean(m.events && m.events.length > 0) || m.snap.tick % 30 === 0;
+    return encodeServerMsgBinary(m, { deltaFacilities: !isKeyframe });
   }
 
   // src/net/ServerSim.ts
@@ -3843,19 +4072,34 @@
   };
 
   // src/web/fullscreen.ts
+  var pseudoFullscreen = false;
   function isFullscreen() {
     const d = document;
-    return !!(d.fullscreenElement ?? d.webkitFullscreenElement);
+    return !!(d.fullscreenElement ?? d.webkitFullscreenElement) || pseudoFullscreen;
   }
   function toggleFullscreen() {
     const el = document.documentElement;
     const d = document;
     if (isFullscreen()) {
-      ;
-      d.exitFullscreen?.() ?? d.webkitExitFullscreen?.();
+      pseudoFullscreen = false;
+      document.body.classList.remove("pseudo-fullscreen");
+      try {
+        const p = d.exitFullscreen?.() ?? d.webkitExitFullscreen?.();
+        if (p && typeof p.catch === "function") p.catch(() => {
+        });
+      } catch {
+      }
+      return false;
     } else {
-      ;
-      el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.();
+      pseudoFullscreen = true;
+      document.body.classList.add("pseudo-fullscreen");
+      try {
+        const p = el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.();
+        if (p && typeof p.catch === "function") p.catch(() => {
+        });
+      } catch {
+      }
+      return true;
     }
   }
   function fitCanvas(canvas2, logicalW, logicalH) {

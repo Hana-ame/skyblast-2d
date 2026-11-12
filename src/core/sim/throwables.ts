@@ -1,7 +1,7 @@
 // core/sim/throwables.ts —— 副武器释放、读条传送、手雷、地雷、空袭与爆炸结算子系统 (stepExplosionsAndThrowables)
 import type { Terrain } from '../terrain.ts'
 import type { Rng } from '../rng.ts'
-import { WEAPONS, SECONDARIES, getHighestUnlockedSecondary } from '../weapons.ts'
+import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getPlayerFragMaxCharges } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
 import { bucketIdx, findObstacleAt, checkBodyOverlapsAt } from './spatial.ts'
@@ -104,8 +104,8 @@ export function useSecondaryInWorld(
     return
   }
 
-  // 连死阶梯解锁校验：必须达到对应连死阈值（或当前已合法装备该副手）
-  if ((p.deathStreak ?? 0) < def.unlockStreak && p.secondary !== s.type) return
+  // 连死阶梯解锁校验（含冲锋枪 +1 挡加权，或当前已合法装备该副手）
+  if (!isSecondaryUnlocked(s.type, p.deathStreak ?? 0, p.dollCharges ?? 0, p.weaponIndex) && p.secondary !== s.type) return
 
   if (s.type === 'obstacle') {
     // 10.0s 冷却，不设同屏/同玩家数量上限，可无限生成
@@ -234,8 +234,17 @@ export function damagePlayerInWorld(
   t.hp = 0
   t.alive = false
   t.deaths++
-  t.deathStreak = (t.deathStreak ?? 0) + 1
-  t.secondary = getHighestUnlockedSecondary(t.deathStreak, t.dollCharges)
+  // 若本命内已有击杀 (lifeKills > 0)，本次阵亡只终结本命击杀而不算进「连死」(保持连死为 0)；仅零击杀阵亡才累加连死
+  if ((t.lifeKills ?? 0) > 0) {
+    t.deathStreak = 0
+    t.lifeKills = 0
+  } else {
+    t.deathStreak = (t.deathStreak ?? 0) + 1
+  }
+  // 连死后不要自动选择最新解锁的副武器：仅当当前副武器不再满足解锁条件时才统一退回手榴弹 ('frag')
+  if (!SECONDARIES[t.secondary] || !isSecondaryUnlocked(t.secondary, t.deathStreak, t.dollCharges, t.weaponIndex)) {
+    t.secondary = 'frag'
+  }
   t.respawnTimer = ctx.config.respawnDelay
   t.shieldHp = 0
   t.shieldTimer = 0
@@ -247,7 +256,14 @@ export function damagePlayerInWorld(
   const killer = ctx.playerById.get(atkId) ?? ctx.players.find(x => x.id === atkId)
   if (killer && atkId !== t.id) {
     killer.kills++
+    killer.lifeKills = (killer.lifeKills ?? 0) + 1
     killer.deathStreak = 0
+    // 杀人后连死归零：若当前副武器因杀人失效，统一返回手榴弹 ('frag')，且手榴弹上限同步回 1
+    if (!SECONDARIES[killer.secondary] || !isSecondaryUnlocked(killer.secondary, killer.deathStreak, killer.dollCharges, killer.weaponIndex)) {
+      killer.secondary = 'frag'
+    }
+    const killerMaxFrags = getPlayerFragMaxCharges(killer.deathStreak, ctx.config.fragMaxCharges)
+    if (killer.fragCharges > killerMaxFrags) killer.fragCharges = killerMaxFrags
     if (ctx.scores[atkTeam] !== undefined) ctx.scores[atkTeam]++
   }
   ctx.events.push({

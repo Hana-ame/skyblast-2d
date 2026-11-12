@@ -2,7 +2,7 @@
 import { TILE_SIZE, GRID_W, GRID_H } from '../terrain.ts'
 import type { Terrain } from '../terrain.ts'
 import { WORLD_W, WORLD_H, wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../wrap.ts'
-import type { Obstacle } from '../types.ts'
+import type { Obstacle, PlayerState } from '../types.ts'
 
 export const BUCKET_SIZE = 200
 export const INV_BUCKET_SIZE = 1 / BUCKET_SIZE
@@ -167,4 +167,64 @@ export function checkBodyOverlapsAt(
     }
   }
   return false
+}
+
+export interface LagHistoryEntry {
+  tick: number
+  positions: Map<number, { x: number; y: number }>
+}
+
+const MAX_LAG_HISTORY_TICKS = 36
+
+export function recordPlayerLagHistory(history: LagHistoryEntry[], tick: number, players: PlayerState[]): void {
+  const map = new Map<number, { x: number; y: number }>()
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i]
+    if (p.deployed && p.alive && p.respawnTimer <= 0) {
+      map.set(p.id, { x: p.pos.x, y: p.pos.y })
+    }
+  }
+  history.push({ tick, positions: map })
+  if (history.length > MAX_LAG_HISTORY_TICKS) history.shift()
+}
+
+export function withRewoundPlayersForShooter<T>(
+  enabled: boolean,
+  history: LagHistoryEntry[],
+  playerLagMs: Map<number, number>,
+  shooterId: number,
+  players: PlayerState[],
+  rebuildBuckets: () => void,
+  fn: () => T,
+): T {
+  if (!enabled || history.length === 0) return fn()
+  const lagMs = playerLagMs.get(shooterId) ?? 0
+  if (lagMs < 16) return fn()
+  const rewindTicks = Math.min(30, Math.max(1, Math.round(lagMs / (1000 / 60))))
+  const idx = Math.max(0, history.length - 1 - rewindTicks)
+  const snap = history[idx]
+  if (!snap) return fn()
+
+  const saved: { p: PlayerState; x: number; y: number }[] = []
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i]
+    if (p.id === shooterId || !p.deployed || !p.alive || p.respawnTimer > 0) continue
+    const histPos = snap.positions.get(p.id)
+    if (histPos && Math.abs(wrapDeltaX(p.pos.x, histPos.x)) < 480 && Math.abs(wrapDeltaY(p.pos.y, histPos.y)) < 480) {
+      saved.push({ p, x: p.pos.x, y: p.pos.y })
+      p.pos.x = histPos.x
+      p.pos.y = histPos.y
+    }
+  }
+  if (saved.length === 0) return fn()
+  rebuildBuckets()
+  try {
+    return fn()
+  } finally {
+    for (let i = 0; i < saved.length; i++) {
+      saved[i].p.pos.x = saved[i].x
+      saved[i].p.pos.y = saved[i].y
+    }
+    rebuildBuckets()
+  }
 }

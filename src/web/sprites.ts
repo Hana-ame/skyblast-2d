@@ -833,11 +833,25 @@ export function drawWarpSprite(ctx: CanvasRenderingContext2D, wp: WarpPortal, dx
   ctx.restore()
 }
 
+export const NEUTRAL_FLAG_PALETTE: TeamPalette = {
+  color: '#94a3b8',
+  light: '#cbd5e1',
+  dark: '#475569',
+  glow: 'rgba(148, 163, 184, 0.22)',
+}
+
+/** 获取占领点旗帜与地面光圈的统一配色（无论未占领、半截读条中、已占领或已选中，地面光圈与旗面颜色严格一致） */
+export function getFlagPalette(cp: CapturePoint): TeamPalette {
+  const activeTeam = cp.ownerTeam ?? cp.capturingTeam
+  return activeTeam ? (TEAM_PALETTE[activeTeam] ?? TEAM_PALETTE.red) : NEUTRAL_FLAG_PALETTE
+}
+
 /** 占领点旗帜 sprite（旗面随 tick 飘动） */
 export function drawFlagSprite(ctx: CanvasRenderingContext2D, cp: CapturePoint, dx: number, dy: number, tick: number): void {
-  const pal = cp.ownerTeam ? (TEAM_PALETTE[cp.ownerTeam] ?? TEAM_PALETTE.red) : { color: '#94a3b8', light: '#cbd5e1', dark: '#475569', glow: 'rgba(148,163,184,0.2)' }
+  const pal = getFlagPalette(cp)
   ctx.save()
-  ctx.translate(dx, dy)
+  // cp.y 为站立角色中心高度 (地面高度 - 16)，+16 使旗杆底座严丝合缝贴合平台地面且与复活光环同心对齐
+  ctx.translate(dx, dy + 16)
   // 旗杆底座与金属杆
   ctx.fillStyle = '#475569'
   roundRect(ctx, -10, -4, 20, 6, 2); ctx.fill()

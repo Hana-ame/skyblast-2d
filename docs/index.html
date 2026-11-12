@@ -3,609 +3,719 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>SkyBlast 2D - 环形大世界战术对战 (服务器权威版)</title>
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <title>SkyBlast 2D</title>
+  <script async src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./css/style.css" />
 </head>
-<body class="relative w-full h-full overflow-hidden bg-slate-950 text-slate-100">
+<body class="relative w-full h-full overflow-hidden bg-slate-950 text-slate-100 select-none">
 
-  <!-- 主游戏 2D 画布 -->
   <canvas id="gameCanvas" class="block w-full h-full cursor-crosshair"></canvas>
 
-  <!-- 右上角击杀提示 (Kill Feed) -->
-  <div id="killFeedContainer" class="fixed top-14 right-3 z-30 flex flex-col items-end gap-1.5 pointer-events-none max-w-xs sm:max-w-sm"></div>
-
-  <!-- 顶部常驻状态与快捷栏 (HUD Top Bar) -->
-  <div id="topHudBar" class="fixed top-2 left-2 right-2 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-    <!-- 左侧：玩家生命、护盾、漂浮能量、当前队伍、K/D 与积分 -->
-    <div class="glass-panel rounded-xl px-3 py-1.5 flex items-center gap-3 pointer-events-auto shadow-lg">
-      <div class="flex flex-col gap-1 min-w-[155px] sm:min-w-[185px]">
-        <div class="flex items-center justify-between text-xs font-semibold gap-1.5">
-          <span id="hudPlayerName" class="truncate max-w-[86px] text-white">特工</span>
-          <span class="px-1.5 py-0.5 rounded bg-slate-900/90 border border-slate-700/80 text-[10px] font-mono font-bold text-amber-300 tabular-nums" title="当前击杀/阵亡">
-            K/D <span id="hudTopKdText" class="text-white">0/0</span>
-          </span>
-          <span id="hudSniperFovBadge" class="hidden px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/25 text-purple-200 border border-purple-400/50">🔭 视野+30%</span>
-          <span id="hudTeamBadge" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">红队 ALPHA</span>
-        </div>
-        <!-- 生命值条 + 限时护盾叠加条 -->
-        <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/80 relative">
-          <div id="hudHpBar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-100" style="width: 100%;"></div>
-          <div id="hudShieldBar" class="absolute top-0 left-0 h-full bg-cyan-400/75 transition-all duration-75" style="width: 0%;"></div>
-          <span id="hudHpText" class="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white drop-shadow">100 / 100</span>
-        </div>
-        <!-- 漂浮推进能量条 -->
-        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/80 relative">
-          <div id="hudFuelBar" class="h-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-75" style="width: 100%;"></div>
-          <span class="absolute inset-0 flex items-center justify-center text-[8px] font-semibold text-sky-100">漂浮推进器</span>
+  <!-- ==================== 顶部极简 HUD（左上血量燃料 · 右上小地图 + 隐藏式系统栏） ==================== -->
+  <div id="topHudBar" class="fixed top-2 left-2 right-2 z-20 flex items-start justify-between gap-2 pointer-events-none">
+    <!-- 左上：血条 + 护盾 + 燃料（无队伍文字、无KD） -->
+    <div class="glass-panel rounded-2xl px-3 py-2 flex flex-col gap-1.5 pointer-events-auto shadow-xl border border-slate-700/80 min-w-[185px] sm:min-w-[210px]">
+      <div class="flex items-center justify-between text-xs font-semibold gap-1.5">
+        <span id="hudPlayerName" class="truncate max-w-[96px] font-extrabold text-white">SkyHunter</span>
+        <div class="flex items-center gap-1 shrink-0">
+          <span id="hudSniperFovBadge" class="hidden px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/25 text-purple-200 border border-purple-400/50">🔭 +30%</span>
+          <button id="hudCurrentSpawnBtn" type="button" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/50 text-[10px] font-extrabold text-emerald-200 transition tabular-nums">
+            🏠 基地
+          </button>
         </div>
       </div>
 
-      <!-- 队伍比分展示 -->
-      <div class="hidden md:flex items-center gap-2 border-l border-slate-700/70 pl-3 text-xs font-bold">
-        <div class="px-2 py-1 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300">
-          红队 <span id="scoreRed" class="text-white ml-0.5">0</span>
-        </div>
-        <div class="px-2 py-1 rounded bg-sky-500/15 border border-sky-500/30 text-sky-300">
-          蓝队 <span id="scoreBlue" class="text-white ml-0.5">0</span>
-        </div>
-        <div class="px-2 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-          绿队 <span id="scoreGreen" class="text-white ml-0.5">0</span>
-        </div>
+      <!-- 生命值 + 护盾双层条（内联高度与渐变防止坍塌） -->
+      <div id="hudHpBarWrap" class="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-700/90 relative" style="height: 12px;">
+        <div id="hudHpBar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-100" style="width: 100%; height: 100%; background: linear-gradient(90deg, #10b981, #2dd4bf);"></div>
+        <div id="hudShieldBar" class="absolute top-0 left-0 h-full bg-cyan-400/80 transition-all duration-75" style="width: 0%; height: 100%; background: rgba(34, 211, 238, 0.85);"></div>
+        <span id="hudHpText" class="absolute inset-0 flex items-center justify-center text-[9px] font-black text-white drop-shadow tabular-nums">100 / 100</span>
+      </div>
+
+      <!-- 喷气燃料条 -->
+      <div id="hudFuelBarWrap" class="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700/90 relative" style="height: 8px;">
+        <div id="hudFuelBar" class="h-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-75" style="width: 100%; height: 100%; background: linear-gradient(90deg, #0ea5e9, #67e8f9);"></div>
+        <span id="hudFuelPctText" class="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-sky-100 tabular-nums">🚀 100%</span>
+      </div>
+
+      <div id="hudSubStatusRow" class="flex items-center justify-between gap-1 text-[10px]">
+        <span id="hudStreakCountBadge" class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700/80 font-mono font-bold text-rose-300 tabular-nums">连死 0</span>
+        <span id="hudUnlockTierPips" class="font-mono text-[9px] text-slate-400 tracking-tight">💣✓ 🧱1 🛡️2 🌀3 🎎4</span>
+        <span id="hudActiveBuffsText" class="text-[9px] font-extrabold text-cyan-300 truncate max-w-[90px]"></span>
       </div>
     </div>
 
-    <!-- 右侧：状态与功能按钮 -->
-    <div class="glass-panel rounded-xl px-2.5 py-1.5 flex items-center gap-1.5 sm:gap-2 pointer-events-auto shadow-lg">
-      <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px]">
-        <span id="netStatusDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
-        <span id="netStatusText" class="text-slate-300 font-medium hidden sm:inline">本地权威</span>
-        <span id="peerCountBadge" class="text-cyan-400 font-bold">单机/AI</span>
-        <span id="kcpRttBadge" class="hidden text-[10px] font-mono text-emerald-300 border-l border-slate-700 pl-1.5">KCP 0ms</span>
+    <!-- 右上角：战术雷达小地图（代替原记分板与队伍信息）+ 按下触发按钮才展开的系统栏 -->
+    <div class="flex flex-col items-end gap-1.5 pointer-events-none">
+      <div class="flex items-start gap-1.5 pointer-events-auto">
+        <div id="hudMinimapPanel" class="glass-panel rounded-2xl p-1.5 shadow-xl border border-slate-700/80 relative w-[256px]">
+          <canvas id="hudMinimapCanvas" width="244" height="80" class="w-full h-[80px] rounded-xl bg-slate-950/95 border border-slate-800 cursor-pointer block"></canvas>
+          <span id="hudZoneCoordText" class="hidden"></span>
+        </div>
+        <!-- 特定位置系统栏展开按钮（平时只露出此小按钮，按下才展开 Host/房间/触屏/全屏/Debug 栏） -->
+        <button id="toggleSysBarBtn" type="button" class="glass-panel w-8 h-8 rounded-xl border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-xs font-extrabold text-slate-200 flex items-center justify-center shadow-xl transition">
+          ⚙️
+        </button>
       </div>
-      <button id="openLobbyBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-xs font-semibold text-white transition flex items-center gap-1">
-        <span>🏠</span><span>待机/联机</span>
+
+      <!-- 隐藏式系统工具栏（默认 hidden，按下右上角 #toggleSysBarBtn 才显示） -->
+      <div id="topSystemToolbar" class="hidden glass-panel rounded-2xl px-2 py-1 flex items-center gap-1.5 pointer-events-auto shadow-xl border border-slate-700/80">
+        <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px]">
+          <span id="netStatusDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span id="netStatusText" class="text-slate-300 font-medium">Host</span>
+          <span id="peerCountBadge" class="text-cyan-400 font-bold">4AI</span>
+          <span id="kcpRttBadge" class="hidden text-[10px] font-mono text-emerald-300 border-l border-slate-700 pl-1.5">0ms</span>
+        </div>
+        <button id="toggleFlagsHudBtn" type="button" class="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 text-[11px] font-extrabold transition flex items-center gap-1">
+          🎛️ <span id="hudFlagsCountText">6/6</span>
+        </button>
+        <button id="openLobbyBtn" type="button" class="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-[11px] font-extrabold text-white transition">
+          🏠 房间
+        </button>
+        <button id="toggleTouchBtn" type="button" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-700 transition">
+          📱 触屏
+        </button>
+        <button id="fullscreenBtn" type="button" class="px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 active:scale-95 text-[11px] font-semibold text-white transition">
+          ⛶ <span id="fullscreenBtnText">全屏</span>
+        </button>
+        <button id="toggleDebugHudBtn" type="button" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-semibold text-[11px] transition flex items-center gap-1">
+          🛠️ Debug
+        </button>
+      </div>
+
+      <!-- 击杀播报流（置于右上角小地图与系统栏正下方，流式排布绝不重叠） -->
+      <div id="killFeedContainer" class="flex flex-col items-end gap-1.5 pointer-events-none max-w-xs sm:max-w-sm mt-0.5"></div>
+    </div>
+  </div>
+
+  <!-- ==================== 特性开关 (Feature Flags) 浮动抽屉 ==================== -->
+  <div id="hudFlagsPanel" style="top: 146px;" class="hidden fixed right-3 z-30 w-80 rounded-2xl bg-slate-950/95 border border-emerald-400/50 shadow-2xl p-3 backdrop-blur-md pointer-events-auto text-xs">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+      <div class="flex items-center gap-1.5">
+        <span class="font-extrabold text-emerald-300">🎛️ 特性开关 (Feature Flags)</span>
+        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 text-[9px] font-bold">默认全开</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <button id="resetFeatureFlagsBtn" type="button" class="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-200 text-[10px] font-bold">全部开启</button>
+        <button id="closeFlagsHudBtn" type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold">✕</button>
+      </div>
+    </div>
+    <div id="hudFlagsList" class="space-y-1.5">
+      <button type="button" data-flag="minimapRadar" class="feature-flag-btn w-full px-2.5 py-1.5 rounded-xl border border-emerald-400/60 bg-emerald-500/15 text-left transition flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-extrabold text-white text-[11px]">📡 战术雷达小地图</div>
+          <div class="text-[9px] text-slate-300 truncate">右上角全景雷达，显示10据点/队友/特武并支持点选复活</div>
+        </div>
+        <span class="flag-state-pill px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 font-black text-[10px] shrink-0">开启</span>
       </button>
-      <button id="openParamsBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 active:scale-95 text-xs font-semibold text-amber-300 transition flex items-center gap-1">
-        <span>⚙️</span><span>物理调校</span>
+      <button type="button" data-flag="captureHudRing" class="feature-flag-btn w-full px-2.5 py-1.5 rounded-xl border border-emerald-400/60 bg-emerald-500/15 text-left transition flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-extrabold text-white text-[11px]">🚩 占点双向读条HUD</div>
+          <div class="text-[9px] text-slate-300 truncate">显示 100→0 中和 / 0→100 占领面板与旗杆底座进度环</div>
+        </div>
+        <span class="flag-state-pill px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 font-black text-[10px] shrink-0">开启</span>
       </button>
-      <button id="toggleTouchBtn" type="button" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition" title="切换触屏虚拟摇杆">
-        📱 触屏
+      <button type="button" data-flag="adaptiveNetAoi" class="feature-flag-btn w-full px-2.5 py-1.5 rounded-xl border border-emerald-400/60 bg-emerald-500/15 text-left transition flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-extrabold text-white text-[11px]">⚡ 动态降频与AOI省流</div>
+          <div class="text-[9px] text-slate-300 truncate">联机按人数动态调节快照步长并启用AOI与弹丸增量</div>
+        </div>
+        <span class="flag-state-pill px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 font-black text-[10px] shrink-0">开启</span>
       </button>
-      <button id="resetTerrainBtn" type="button" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition hidden sm:inline-block" title="重置所有可破坏障碍物、地雷与弹药包">
-        🧱 重置地形
+      <button type="button" data-flag="lagCompensation" class="feature-flag-btn w-full px-2.5 py-1.5 rounded-xl border border-emerald-400/60 bg-emerald-500/15 text-left transition flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-extrabold text-white text-[11px]">🎯 服务端延迟补偿</div>
+          <div class="text-[9px] text-slate-300 truncate">维护500ms历史轨迹，按RTT回溯命中消除高延迟提前量</div>
+        </div>
+        <span class="flag-state-pill px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 font-black text-[10px] shrink-0">开启</span>
       </button>
-      <button id="openAdminBtn" type="button" class="px-2 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-xs font-semibold text-white transition" title="打开数值后台：武器/全局/物理全部数值（新页面）">
-        ⚙️ 数值后台
+      <button type="button" data-flag="smartBotTactics" class="feature-flag-btn w-full px-2.5 py-1.5 rounded-xl border border-emerald-400/60 bg-emerald-500/15 text-left transition flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-extrabold text-white text-[11px]">🤖 AI协同守点智能</div>
+          <div class="text-[9px] text-slate-300 truncate">AI优先增援回防掉进度本队旗帜并在守点时自动开盾/掩体</div>
+        </div>
+        <span class="flag-state-pill px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 font-black text-[10px] shrink-0">开启</span>
       </button>
-      <button id="openEditorBtn" type="button" class="px-2 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 active:scale-95 text-xs font-semibold text-white transition" title="打开地图编辑器（新页面）">
-        🛠️ 地图编辑器
+      <button type="button" data-flag="proceduralAudio" class="feature-flag-btn w-full px-2.5 py-1.5 rounded-xl border border-emerald-400/60 bg-emerald-500/15 text-left transition flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-extrabold text-white text-[11px]">🔊 WebAudio战术音效</div>
+          <div class="text-[9px] text-slate-300 truncate">零外部依赖过程式合成射击、爆头、击杀、护盾破碎与爆炸音效</div>
+        </div>
+        <span class="flag-state-pill px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 font-black text-[10px] shrink-0">开启</span>
       </button>
     </div>
   </div>
 
-  <!-- 互动横幅（瞭望塔/传送门/迫击炮/阵亡整备） -->
-  <div id="interactBanner" class="fixed top-20 left-1/2 -translate-x-1/2 z-20 hidden pointer-events-auto">
-    <button id="interactBannerBtn" type="button" class="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-xl border-2 border-amber-200 flex items-center gap-2 animate-bounce">
-      <span id="interactBannerText">按 [E] 或点击此处操控公共迫击炮台</span>
+  <!-- ==================== Host Debug HUD ==================== -->
+  <div id="debugHudPanel" style="top: 146px;" class="hidden fixed right-3 z-30 w-72 rounded-2xl bg-slate-950/92 border border-amber-400/50 shadow-2xl p-3 backdrop-blur-md pointer-events-auto text-xs">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+      <span class="font-extrabold text-amber-300">🛠️ Debug HUD</span>
+      <button id="closeDebugHudBtn" type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold">✕</button>
+    </div>
+
+    <div class="grid grid-cols-2 gap-1.5 bg-slate-900/90 border border-slate-800 rounded-xl p-2 font-mono text-[10px] mb-2">
+      <div id="dbgTickText" class="text-emerald-300 font-bold tabular-nums">Tick 0 · 60 FPS</div>
+      <div id="dbgPosVelText" class="text-sky-300 font-bold tabular-nums">(0, 0)</div>
+      <div id="dbgEntitiesText" class="col-span-2 text-amber-200 font-bold tabular-nums border-t border-slate-800/80 pt-1">弹丸 0 · 掩体 0</div>
+      <div id="kcpStatChannel" class="font-bold text-cyan-300 border-t border-slate-800/80 pt-1">UDP/KCP</div>
+      <div class="border-t border-slate-800/80 pt-1">
+        <span id="kcpStatRtt" class="text-emerald-300 font-bold">0 ms</span> · <span id="kcpStatPkts" class="text-amber-300 font-bold">0/0</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-1.5">
+      <button id="openParamsBtn" type="button" class="px-2 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs transition">
+        ⚙️ 调参
+      </button>
+      <button id="resetTerrainBtn" type="button" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs transition">
+        🧱 重置
+      </button>
+      <button id="openAdminBtn" type="button" class="px-2 py-1.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white font-bold text-xs transition">
+        📊 后台
+      </button>
+      <button id="openEditorBtn" type="button" class="px-2 py-1.5 rounded-lg bg-sky-700/80 hover:bg-sky-600 text-white font-bold text-xs transition">
+        🛠️ 编辑
+      </button>
+      <button id="peerLoopbackTestBtn" type="button" class="col-span-2 px-2 py-1.5 rounded-lg bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-400/50 text-indigo-200 font-bold text-xs transition">
+        ⚡ 双端自测
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== 据点占领读条面板 ==================== -->
+  <div id="hudCaptureProgressCard" class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none w-[min(86vw,260px)]">
+    <div class="glass-panel rounded-2xl px-3 py-1.5 border border-slate-600/80 shadow-2xl flex flex-col gap-1">
+      <div class="flex items-center justify-between gap-2 text-xs">
+        <span id="hudCapCardTitle" class="font-extrabold text-white truncate">🚩 C</span>
+        <div class="flex items-center gap-1 shrink-0">
+          <span id="hudCapCardSynergy" class="hidden px-1.5 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/50 text-[9px] font-extrabold text-emerald-200">×2</span>
+          <span id="hudCapCardPct" class="font-mono font-black text-amber-300 tabular-nums">0%</span>
+        </div>
+      </div>
+      <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700 relative" style="height: 8px;">
+        <div id="hudCapCardBar" class="h-full bg-rose-500 transition-all duration-75" style="width: 0%; height: 100%;"></div>
+      </div>
+      <div id="hudCapCardPhase" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- 靠近可互动目标时的轻量按钮 -->
+  <div id="interactBanner" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-20 hidden pointer-events-auto">
+    <button id="interactBannerBtn" type="button" class="px-3.5 py-1 rounded-full bg-amber-500/95 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-xl border border-amber-200">
+      <span id="interactBannerText">[E]</span>
     </button>
   </div>
 
-  <!-- 死亡 KD 战报与重生整备界面（死亡时显示：居中呈现个人 K/D 战报、全场实时 KD 榜与重生配装） -->
+  <!-- ==================== 阵亡界面 ==================== -->
   <div id="deathScreen" class="hidden fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/85 backdrop-blur-md pointer-events-auto py-6">
-    <div class="w-[min(94vw,1060px)] rounded-2xl border border-rose-500/40 bg-slate-900/95 p-5 shadow-2xl mx-auto">
-      <!-- 顶部：阵亡战报横幅 + 个人 K/D 核心指标卡 + 重生倒计时读条 -->
-      <div class="flex flex-wrap items-center justify-between gap-4 pb-3.5 border-b border-slate-800">
-        <div class="min-w-0 flex items-center gap-3">
-          <div class="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-xl shadow-inner shrink-0">💀</div>
+    <div class="w-[min(94vw,1000px)] rounded-2xl border border-rose-500/40 bg-slate-900/95 p-4 sm:p-5 shadow-2xl mx-auto">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+        <div class="min-w-0 flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-lg shrink-0">💀</div>
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <h2 class="text-xl sm:text-2xl font-black text-rose-300 tracking-wide shrink-0">阵亡 · K/D 战报</h2>
+              <h2 class="text-lg font-black text-rose-300 shrink-0">阵亡</h2>
               <span id="deathStreakPill" class="px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-400/30 text-[10px] font-bold text-rose-200">连死 0</span>
             </div>
-            <p id="deathKillerLine" class="text-xs text-slate-300 mt-0.5 truncate">等待重生…</p>
+            <p id="deathKillerLine" class="text-xs text-slate-300 truncate"></p>
           </div>
         </div>
 
-        <div class="flex items-center gap-3 sm:gap-4 shrink-0">
-          <!-- KD 统计：固定槽位，数字位数变化不推动布局 -->
-          <div class="flex items-center gap-3 rounded-xl border border-slate-700/80 bg-slate-950/80 px-3.5 py-2 shadow-inner">
+        <div class="flex items-center gap-3 shrink-0">
+          <div class="flex items-center gap-2.5 rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-1.5">
             <div class="text-center">
-              <div id="deathKdKills" class="w-[2.4em] text-center text-lg sm:text-xl font-mono font-black tabular-nums text-emerald-300">0</div>
-              <div class="text-[9px] text-slate-400 font-bold tracking-wider uppercase">击杀 K</div>
+              <div id="deathKdKills" class="w-[2.4em] text-center text-lg font-mono font-black tabular-nums text-emerald-300">0</div>
+              <div class="text-[9px] text-slate-400 font-bold">K</div>
             </div>
-            <div class="w-px h-7 bg-slate-800"></div>
+            <div class="w-px h-6 bg-slate-800"></div>
             <div class="text-center">
-              <div id="deathKdDeaths" class="w-[2.4em] text-center text-lg sm:text-xl font-mono font-black tabular-nums text-rose-300">0</div>
-              <div class="text-[9px] text-slate-400 font-bold tracking-wider uppercase">阵亡 D</div>
+              <div id="deathKdDeaths" class="w-[2.4em] text-center text-lg font-mono font-black tabular-nums text-rose-300">0</div>
+              <div class="text-[9px] text-slate-400 font-bold">D</div>
             </div>
-            <div class="w-px h-7 bg-slate-800"></div>
+            <div class="w-px h-6 bg-slate-800"></div>
             <div class="text-center">
-              <div id="deathKdRatio" class="w-[2.8em] text-center text-lg sm:text-xl font-mono font-black tabular-nums text-amber-300">0.00</div>
-              <div class="text-[9px] text-slate-400 font-bold tracking-wider uppercase">K/D 比</div>
+              <div id="deathKdRatio" class="w-[2.8em] text-center text-lg font-mono font-black tabular-nums text-amber-300">0.00</div>
+              <div class="text-[9px] text-slate-400 font-bold">K/D</div>
             </div>
           </div>
 
-          <div class="text-right min-w-[84px]">
-            <div id="deathCountdown" class="text-2xl sm:text-3xl font-mono font-black text-amber-300 tabular-nums">0.0</div>
-            <div class="text-[10px] text-slate-400">秒后自动部署</div>
-            <div class="mt-1 w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden ml-auto">
+          <div class="text-right min-w-[68px]">
+            <div id="deathCountdown" class="text-2xl font-mono font-black text-amber-300 tabular-nums">0.0</div>
+            <div class="mt-1 w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden ml-auto">
               <div id="deathRespawnProgressBar" class="h-full bg-gradient-to-r from-rose-500 to-amber-400 transition-all duration-75" style="width: 0%;"></div>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_310px] gap-4 items-start">
+      <div class="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4 items-start">
         <div class="min-w-0">
+          <div id="deathWeaponGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <button type="button" data-wep="0" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+              <div class="text-xs font-extrabold text-white">霰弹</div>
+              <div class="text-[10px] text-amber-200">8/72发(8丸) · 近距高伤 · 全中致死</div>
+            </button>
+            <button type="button" data-wep="8" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+              <div class="text-xs font-extrabold text-white">冲锋枪</div>
+              <div class="text-[10px] text-emerald-200">30/150发 · 极高射速 · 机动压制</div>
+            </button>
+            <button type="button" data-wep="1" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+              <div class="text-xs font-extrabold text-white">突击步枪</div>
+              <div class="text-[10px] text-slate-300">30/90发 · 稳定连发 · 均衡主力</div>
+            </button>
+            <button type="button" data-wep="2" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+              <div class="text-xs font-extrabold text-purple-200">狙</div>
+              <div class="text-[10px] text-purple-200">10/20发 · 无限射程 · 命中即死</div>
+            </button>
+            <button type="button" data-wep="7" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+              <div class="text-xs font-extrabold text-amber-200">手枪</div>
+              <div class="text-[10px] text-amber-200">12/60发 · 移速最快 · 双倍飞行</div>
+            </button>
+            <button type="button" data-wep="3" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+              <div class="text-xs font-extrabold text-rose-200">火箭筒</div>
+              <div class="text-[10px] text-rose-200">1/20发 · 直线慢速 · 碰到爆炸</div>
+            </button>
+          </div>
 
-      <div class="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">重生配装 · 主武器（只有死亡界面才能换枪）</div>
-      <div id="deathWeaponGrid" class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
-        <button type="button" data-wep="0" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-          <div class="text-xs font-extrabold text-white">霰弹</div>
-          <div class="text-[10px] text-amber-200">8/72发(8丸) · 近距高伤 · 全中致死</div>
-        </button>
-        <button type="button" data-wep="8" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-          <div class="text-xs font-extrabold text-white">冲锋枪</div>
-          <div class="text-[10px] text-emerald-200">30/150发 · 极高射速 · 机动压制</div>
-        </button>
-        <button type="button" data-wep="1" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-          <div class="text-xs font-extrabold text-white">突击步枪</div>
-          <div class="text-[10px] text-slate-300">30/90发 · 稳定连发 · 均衡主力</div>
-        </button>
-        <button type="button" data-wep="2" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-          <div class="text-xs font-extrabold text-purple-200">狙</div>
-          <div class="text-[10px] text-purple-200">3/15发 · 无限射程 · 命中即死</div>
-        </button>
-        <button type="button" data-wep="7" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-          <div class="text-xs font-extrabold text-amber-200">手枪</div>
-          <div class="text-[10px] text-amber-200">12/60发 · 移速最快 · 双倍飞行</div>
-        </button>
-        <button type="button" data-wep="3" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-          <div class="text-xs font-extrabold text-rose-200">火箭筒</div>
-          <div class="text-[10px] text-rose-200">1/20发 · 直线慢速 · 碰到爆炸</div>
-        </button>
-      </div>
+          <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <button type="button" data-sec="frag" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-rose-400 bg-rose-500/20 text-xs font-extrabold text-white">💣 手榴弹 [默认]</button>
+            <button type="button" data-sec="obstacle" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🧱 障碍物 [连死1]</button>
+            <button type="button" data-sec="shield" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🛡️ 护盾 [连死2]</button>
+            <button type="button" data-sec="teleport" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🌀 Teleport [连死3]</button>
+            <button type="button" data-sec="doll" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🎎 替身人偶 [连死4/补给]</button>
+            <span id="deathSecNote" class="text-[10px] text-slate-400 ml-1"></span>
+          </div>
 
-      <div class="mt-3 flex flex-wrap items-center gap-2">
-        <span class="text-[11px] font-bold text-rose-300">副武器（连死依次解锁）：</span>
-        <button type="button" data-sec="frag" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-rose-400 bg-rose-500/20 text-xs font-extrabold text-white">💣 手榴弹 [默认]</button>
-        <button type="button" data-sec="obstacle" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🧱 障碍物 [连死1]</button>
-        <button type="button" data-sec="shield" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🛡️ 护盾 [连死2]</button>
-        <button type="button" data-sec="teleport" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🌀 Teleport [连死3]</button>
-        <button type="button" data-sec="doll" class="death-sec-btn px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-xs font-semibold text-slate-400">🎎 替身人偶 [连死4/补给]</button>
-        <span id="deathSecNote" class="text-[10px] text-slate-400 w-full mt-0.5">连续阵亡时按平衡性依次解锁：障碍物 → 护盾 → Teleport → 替身人偶（获得击杀重置）</span>
-      </div>
-
-      <div class="mt-3 flex flex-wrap items-center gap-2">
-        <span class="text-[11px] font-bold text-cyan-300">🚩 重生复活点（占领正中旗帜后可点击或按 [E] 选中）：</span>
-        <button type="button" data-spawn="base" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold">🏠 队伍主基地</button>
-        <button type="button" data-spawn="cp_c" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed">🚩 正中复活点 [按E可选]</button>
-      </div>
-
-      <div class="mt-3 text-[10px] text-slate-500">配装在倒计时结束重生时生效；游戏进行中下方单行 HUD 专注显示战术弹药与副手冷却状态。</div>
+          <!-- 阵亡界面小地图选点 -->
+          <div id="deathMinimapPanel" class="mt-3 rounded-xl border border-slate-700/80 bg-slate-950/80 p-2">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+              <span id="deathSelectedSpawnBadge" class="px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-400/50 text-[11px] font-extrabold text-emerald-200">
+                🏠 基地
+              </span>
+              <button id="deathSpawnBaseBtn" type="button" class="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] font-bold text-slate-200 transition">
+                🏠 基地
+              </button>
+            </div>
+            <canvas id="deathMinimapCanvas" width="528" height="168" class="w-full h-[148px] sm:h-[168px] rounded-xl bg-slate-950 border border-slate-800 cursor-pointer block shadow-inner"></canvas>
+          </div>
         </div>
 
-        <!-- 右侧：实时全房 KD 战绩排行榜（按击杀降序，KD 与阵亡并列；行高固定不抖动） -->
-        <aside class="rounded-xl border border-slate-700/80 bg-slate-950/75 p-3.5 lg:sticky lg:top-0">
+        <aside class="rounded-xl border border-slate-700/80 bg-slate-950/75 p-3 lg:sticky lg:top-0">
           <div class="flex items-center justify-between">
-            <h3 class="text-[11px] font-black uppercase tracking-wider text-sky-300">📊 全场实时 KD 榜</h3>
+            <h3 class="text-[11px] font-black text-sky-300">📊 排名</h3>
             <span class="text-[9px] text-slate-400 font-bold">击杀 / 阵亡 / KD</span>
           </div>
-          <div class="mt-2 h-2.5 bg-slate-800 rounded-full overflow-hidden">
+          <div class="mt-1.5 h-2 bg-slate-800 rounded-full overflow-hidden">
             <div id="deathRankSelfBar" class="h-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-150" style="width: 0%;"></div>
           </div>
-          <div id="deathRankSelfLine" class="mt-1 text-[10px] text-slate-300 font-medium">你的排名 —</div>
-          <ol id="deathRankList" class="mt-2 space-y-1 max-h-[240px] overflow-y-auto pr-1">
+          <div id="deathRankSelfLine" class="mt-1 text-[10px] text-slate-300 font-medium">—</div>
+          <ol id="deathRankList" class="mt-1.5 space-y-1 max-h-[210px] overflow-y-auto pr-1">
           </ol>
         </aside>
       </div>
     </div>
   </div>
 
-  <!-- 底部中央：单行紧凑战术 HUD Dock（主武器+弹药格+换弹按钮 | 副武器冷却胶囊 | 设施互动键；换弹进度悬浮于正上方，不占行宽） -->
+  <!-- ==================== 底部武器 HUD（回退上一版本简洁样式） ==================== -->
   <div id="bottomWeaponDock" class="fixed bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center pointer-events-none px-2 max-w-[98vw]">
     <div class="relative pointer-events-auto">
-      <!-- 悬浮式美学换弹进度胶囊（位于单行 HUD 正上方，平时隐藏不占空间，换弹时平滑浮现） -->
-      <div id="reloadProgressWrap" class="invisible opacity-0 translate-y-1 transition-all duration-150 pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/90 border border-amber-400/50 shadow-[0_0_20px_rgba(251,191,36,0.25)] backdrop-blur-md whitespace-nowrap">
-        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-        <span id="reloadProgressLabel" class="text-[11px] font-extrabold text-amber-200 tracking-wide">换弹中...</span>
-        <div class="w-24 h-2 bg-slate-800/90 rounded-full overflow-hidden border border-slate-700 p-[1px]">
-          <div id="reloadProgressBar" class="h-full rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-cyan-300 transition-all duration-75" style="width: 0%;"></div>
+      <div id="reloadProgressWrap" class="invisible opacity-0 translate-y-1 transition-all duration-150 pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-amber-400/50 backdrop-blur-md whitespace-nowrap">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+        <span id="reloadProgressLabel" class="text-[10px] font-extrabold text-amber-200">换弹</span>
+        <div class="w-20 h-1.5 bg-slate-800/90 rounded-full overflow-hidden">
+          <div id="reloadProgressBar" class="h-full rounded-full bg-gradient-to-r from-amber-400 to-cyan-300 transition-all duration-75" style="width: 0%;"></div>
         </div>
         <span id="reloadProgressPct" class="w-[2.6em] text-right font-mono text-[10px] font-bold text-cyan-300 tabular-nums">0%</span>
       </div>
 
-      <!-- 单行战术底栏主体 -->
-      <div class="glass-panel rounded-2xl px-3 py-1.5 flex items-center gap-2 sm:gap-2.5 shadow-2xl border border-slate-700/80 relative overflow-hidden">
-        <!-- 底部边缘微缩换弹流光条 -->
+      <div class="glass-panel rounded-2xl px-3 py-1.5 flex items-center gap-2 shadow-2xl border border-slate-700/80 relative overflow-hidden">
         <div class="absolute bottom-0 left-0 right-0 h-[2px] bg-transparent pointer-events-none">
           <div id="reloadDockBottomBar" class="h-full bg-gradient-to-r from-amber-400 via-cyan-300 to-emerald-400 transition-all duration-75" style="width: 0%;"></div>
         </div>
 
-        <!-- 1. 主武器与弹药一体槽 -->
         <div id="hudWeaponPlate" class="flex items-center gap-2 pr-2 border-r border-slate-700/80 shrink-0">
-          <div class="flex flex-col min-w-[68px]">
-            <div class="flex items-center gap-1">
-              <span class="text-[9px] uppercase tracking-wider text-slate-400 font-bold">主武</span>
-              <span id="hudCurrentWeaponName" class="hidden text-[10px] text-slate-300 font-bold">霰弹</span>
-            </div>
-            <span id="currentWeaponName" class="text-xs sm:text-sm font-extrabold text-amber-300 truncate max-w-[92px]">霰弹枪</span>
-          </div>
+          <span id="hudCurrentWeaponName" class="hidden">霰弹</span>
+          <span id="currentWeaponName" class="text-xs sm:text-sm font-extrabold text-amber-300 truncate max-w-[76px]">霰弹</span>
 
-          <div class="flex flex-col items-end min-w-[78px]">
-            <div class="inline-flex items-baseline justify-end gap-0.5 font-mono tabular-nums leading-none" title="当前弹匣 / 剩余备弹">
-              <span id="currentAmmoText" class="inline-block w-[1.7em] text-right text-base sm:text-lg font-black text-white">8</span>
+          <div class="flex flex-col items-end min-w-[70px]">
+            <div class="inline-flex items-baseline justify-end gap-0.5 font-mono tabular-nums leading-none">
+              <span id="currentAmmoText" class="inline-block w-[1.6em] text-right text-base sm:text-lg font-black text-white">8</span>
               <span class="text-slate-500 text-xs font-bold">/</span>
-              <span id="reserveAmmoText" class="inline-block w-[2.3em] text-right text-xs sm:text-sm font-bold text-slate-300">72</span>
+              <span id="reserveAmmoText" class="inline-block w-[2.1em] text-right text-xs sm:text-sm font-bold text-slate-300">72</span>
             </div>
-            <!-- 弹药格/容量微缩条（霰弹显示 8 颗分格弹壳，连发枪显示紧凑能量条） -->
             <div id="hudAmmoPips" class="w-full flex items-center gap-0.5 mt-1"></div>
           </div>
 
-          <button id="hudReloadBtn" type="button" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-[11px] font-bold text-amber-200 border border-slate-600/80 transition shrink-0" title="按 R 装填弹药">
-            [R] 换弹
+          <button id="hudReloadBtn" type="button" class="px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-[11px] font-bold text-amber-200 border border-slate-600/80 transition shrink-0">
+            [R]
           </button>
         </div>
 
-        <!-- 2. 副武器状态与释放一体键（收纳至同一行） -->
-        <button id="hudGrenadeBtn" type="button" class="px-2.5 py-1 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 active:scale-95 text-left transition flex items-center gap-2 relative overflow-hidden shrink-0">
+        <button id="hudGrenadeBtn" type="button" class="px-2.5 py-1 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 active:scale-95 text-left transition flex items-center gap-1.5 relative overflow-hidden shrink-0">
           <div id="grenadeCdOverlay" class="absolute inset-x-0 bottom-0 bg-slate-950/80 pointer-events-none transition-all" style="height: 0%;"></div>
-          <div class="flex flex-col relative z-10 min-w-[96px]">
-            <span id="hudSecondaryTitle" class="text-[9px] text-rose-300 font-bold leading-tight">[G/右键] 手榴弹</span>
-            <span id="hudGrenadeLabel" class="text-xs font-extrabold text-white leading-tight mt-0.5">💣 就绪</span>
+          <div class="flex flex-col relative z-10 min-w-[64px]">
+            <span id="hudSecondaryTitle" class="text-[9px] text-rose-300 font-bold leading-tight">手榴弹</span>
+            <span id="hudGrenadeLabel" class="text-xs font-extrabold text-white leading-tight">💣 ×1</span>
           </div>
-          <span id="hudSecondaryChip" class="hidden">
-            <span id="hudSecondaryChipText">💣 手榴弹</span>
-          </span>
+          <span id="hudSecondaryChip" class="hidden"><span id="hudSecondaryChipText"></span></span>
         </button>
 
-        <!-- 3. 战场设施快速互动键 -->
-        <button id="hudQuickMortarBtn" type="button" class="px-2.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/30 active:scale-95 text-[11px] font-extrabold text-orange-300 border border-orange-500/40 transition shrink-0" title="靠近迫击炮/瞭望塔/传送门按 E 互动">
-          🎯 互动 [E]
+        <button id="hudQuickMortarBtn" type="button" class="hidden px-2.5 py-1.5 rounded-xl bg-emerald-500/25 hover:bg-emerald-500/40 active:scale-95 text-[11px] font-extrabold text-emerald-200 border border-emerald-400/60 transition shrink-0 animate-pulse">
+          [E]
         </button>
       </div>
     </div>
   </div>
 
-  <!-- 手机触屏操控层 -->
+  <!-- ==================== 移动端触屏层 ==================== -->
   <div id="touchControlsLayer" class="fixed inset-0 z-10 pointer-events-none hidden">
-    <div id="touchMoveZone" class="absolute bottom-6 left-5 w-36 h-36 rounded-full bg-slate-900/45 border-2 border-sky-400/35 pointer-events-auto flex items-center justify-center touch-none">
-      <div class="text-[10px] text-sky-200/50 font-semibold text-center pointer-events-none">
-        移动 / 上推漂浮
+    <div id="touchMoveZone" class="absolute bottom-5 left-5 w-40 h-40 rounded-full bg-slate-900/50 border-2 border-sky-400/45 pointer-events-auto flex flex-col items-center justify-between py-2.5 touch-none shadow-[0_0_24px_rgba(14,165,233,0.18)]">
+      <div id="touchMoveAscendBadge" class="text-[10px] font-bold text-sky-200/75 pointer-events-none">▲ 升空</div>
+      <div class="w-full flex items-center justify-between px-3 text-[9px] text-slate-400/70 font-bold pointer-events-none">
+        <span>◀</span>
+        <span>▶</span>
       </div>
-      <div id="touchMoveStick" class="w-14 h-14 rounded-full bg-sky-400/60 border-2 border-white/80 shadow-lg pointer-events-none absolute transition-transform duration-75"></div>
+      <div class="text-[9px] text-slate-400/60 font-semibold pointer-events-none">▼</div>
+      <div id="touchMoveStick" class="w-14 h-14 rounded-full bg-sky-400/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75"></div>
     </div>
 
-    <button id="touchBoostBtn" type="button" class="absolute bottom-48 left-8 w-20 h-12 rounded-xl bg-sky-500/40 border-2 border-sky-300/70 text-white font-bold text-xs shadow-lg pointer-events-auto active:bg-sky-400/70 touch-none">
-      🚀 喷气升空
-    </button>
-
-    <div id="touchAimZone" class="absolute bottom-6 right-5 w-36 h-36 rounded-full bg-slate-900/45 border-2 border-rose-400/35 pointer-events-auto flex items-center justify-center touch-none">
-      <div class="text-[10px] text-rose-200/50 font-semibold text-center pointer-events-none">
-        拖动瞄准射击
-      </div>
-      <div id="touchAimStick" class="w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute transition-transform duration-75"></div>
+    <div id="touchAimZone" class="absolute bottom-5 right-5 w-40 h-40 rounded-full bg-slate-900/50 border-2 border-rose-400/45 pointer-events-auto flex flex-col items-center justify-between py-2.5 touch-none shadow-[0_0_24px_rgba(244,63,94,0.18)]">
+      <div id="touchAimFireBadge" class="text-[10px] text-rose-200/75 font-bold text-center pointer-events-none">瞄准 / 开火</div>
+      <div class="w-16 h-16 rounded-full border border-dashed border-rose-300/30 pointer-events-none"></div>
+      <div class="text-[9px] text-rose-300/60 font-semibold pointer-events-none">FIRE</div>
+      <div id="touchAimStick" class="w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75"></div>
     </div>
 
-    <div class="absolute bottom-48 right-5 flex flex-col gap-2 pointer-events-auto">
-      <button id="touchGrenadeBtn" type="button" class="w-20 h-11 rounded-xl bg-rose-600/80 border border-rose-300 text-white font-bold text-xs shadow-lg active:scale-95">
-        💣 副武器
+    <div class="absolute bottom-48 right-5 flex flex-col items-end gap-2 pointer-events-auto">
+      <button id="touchInteractBtn" type="button" class="hidden px-3.5 h-11 rounded-2xl bg-emerald-500/90 border-2 border-emerald-200 text-slate-950 font-black text-xs shadow-[0_0_20px_rgba(16,185,129,0.6)] active:scale-95 touch-none animate-bounce">
+        [E]
       </button>
-      <button id="touchReloadBtn" type="button" class="w-20 h-10 rounded-xl bg-amber-500/80 border border-amber-200 text-slate-950 font-extrabold text-xs shadow-lg active:scale-95">
-        🔄 换弹
-      </button>
-      <button id="touchInteractBtn" type="button" class="w-20 h-10 rounded-xl bg-emerald-500/80 border border-emerald-200 text-slate-950 font-extrabold text-xs shadow-lg active:scale-95">
-        🎯 公共用具
-      </button>
+      <div class="flex items-center gap-2">
+        <button id="touchReloadBtn" type="button" class="px-3.5 h-11 rounded-2xl bg-amber-500/85 border border-amber-200 text-slate-950 font-extrabold text-xs shadow-lg active:scale-95 touch-none">
+          🔄 换弹
+        </button>
+        <button id="touchGrenadeBtn" type="button" class="px-3.5 h-11 rounded-2xl bg-rose-600/85 border border-rose-300 text-white font-extrabold text-xs shadow-lg active:scale-95 touch-none">
+          💣 副武
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- ==================== 待机与重生前配装大厅 (全按钮组实现，无任何下拉框) ==================== -->
-  <div id="lobbyModal" class="fixed inset-0 z-40 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-    <div class="glass-panel w-full max-w-6xl rounded-2xl border border-slate-700/80 shadow-2xl overflow-hidden my-auto max-h-[96vh] flex flex-col">
-      <!-- 头部 -->
-      <div class="px-4 sm:px-6 py-3 bg-gradient-to-r from-slate-900 via-indigo-950/80 to-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-lg font-extrabold shadow-md">💥</div>
-          <div>
-            <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white flex items-center flex-wrap gap-2">
-              <span>SkyBlast 2D · 环形大世界战术整备大厅</span>
-              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">服务器权威 · PeerJS + WebRTC KCP</span>
-              <button id="inputDeviceDetectBadge" type="button" class="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition">
-                💻 已自动识别：PC 键鼠模式 (点击可切触屏)
-              </button>
-            </h1>
-            <p class="text-xs text-slate-400">13200×4400 双轴环形地图 · CS 逐发霰弹装填 · WebRTC DataChannel 自定义 KCP 低延迟同步 · 100HP不溢出护盾</p>
+  <!-- ==================== 游戏大厅（创建游戏 / 加入游戏） ==================== -->
+  <div id="lobbyModal" class="fixed inset-0 z-40 bg-slate-950/88 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div class="glass-panel w-full max-w-5xl rounded-2xl border border-slate-700/80 shadow-2xl overflow-hidden my-auto max-h-[96vh] flex flex-col">
+      <!-- 顶栏：创建游戏 / 加入游戏 -->
+      <div class="px-4 py-3 bg-slate-900 border-b border-slate-800 flex flex-col gap-2.5">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="text-base font-black text-white">SkyBlast 2D</span>
+            <span id="peerRoleBadge" class="hidden"></span>
+            <button id="inputDeviceDetectBadge" type="button" class="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition">
+              💻 键鼠
+            </button>
           </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="lobbyOpenParamsBtn" type="button" class="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition">
-            ⚙️ 自由修改全部参数
+          <button id="lobbyOpenParamsBtn" type="button" class="px-3 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition">
+            ⚙️ 调参
           </button>
-          <button id="startBattleBtn" type="button" class="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg transition">
-            ⚡ 立即进入战场
+        </div>
+
+        <div class="flex gap-2">
+          <button id="lobbyTabHostBtn" type="button" class="flex-1 py-2 px-4 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 font-extrabold text-sm transition flex items-center justify-center gap-2 shadow">
+            创建游戏
+          </button>
+          <button id="lobbyTabClientBtn" type="button" class="flex-1 py-2 px-4 rounded-xl border border-slate-700 bg-slate-900/70 text-slate-400 hover:text-slate-200 font-bold text-sm transition flex items-center justify-center gap-2">
+            加入游戏
           </button>
         </div>
       </div>
 
-      <!-- 主体双栏结构 -->
-      <div class="p-4 sm:p-5 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <!-- 左栏 (6列)：死斗模式/队伍/重生点/主武器/副武器按钮组 -->
-        <div class="lg:col-span-6 flex flex-col gap-3">
-          <!-- 0. 死斗模式按钮组（FFA / 2 队对抗，随机出生点） -->
-          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300">0. 对战模式（随机出生点 · 击杀计分）</h2>
-            <div class="grid grid-cols-2 gap-2">
-              <button type="button" data-mode="ffa" class="mode-btn px-3 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition">
-                <div class="text-xs font-extrabold text-amber-300">🟡 自由混战</div>
-                <div class="text-[10px] text-slate-300">全员皆敌 · 各自为战 · 随机出生</div>
-              </button>
-              <button type="button" data-mode="2teams" class="mode-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition hover:border-slate-500">
-                <div class="text-xs font-extrabold text-rose-300">⚔️ 双队对抗</div>
-                <div class="text-[10px] text-slate-400">红队对蓝队 · 队友免伤 · 随机出生</div>
-              </button>
-            </div>
-            <div class="text-[10px] text-slate-500">击杀 +1 分；阵亡后随机安全点重生；模式切换需在待机/阵亡整备时进行</div>
+      <!-- 主体设置 -->
+      <div class="p-4 overflow-y-auto flex-1 flex flex-col gap-3">
+
+        <!-- 显眼 Username 栏 + 房间码栏 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+          <!-- Username 专属显眼输入卡 -->
+          <div class="lg:col-span-5 bg-slate-900/95 border-2 border-indigo-500/50 rounded-xl px-3.5 py-2.5 flex items-center gap-3 shadow-lg">
+            <label for="playerNameInput" class="px-2.5 py-1 rounded-lg bg-indigo-500/25 border border-indigo-400/50 text-xs font-black tracking-wider text-indigo-200 uppercase shrink-0">
+              👤 Username
+            </label>
+            <input id="playerNameInput" type="text" maxlength="18" value="SkyHunter" placeholder="输入 Username" class="flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-sm sm:text-base text-white font-extrabold focus:outline-none focus:border-indigo-400" />
           </div>
-          <!-- 1. 代号、队伍与占领点重生位按钮组 -->
-          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2.5">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">1. 特工代号、队伍与占领点重生选择</h2>
-              <input id="playerNameInput" type="text" maxlength="18" value="SkyHunter" class="w-40 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-semibold focus:outline-none focus:border-indigo-500" />
-            </div>
 
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <button id="teamBtnRed" type="button" data-team="red" class="team-select-btn px-3 py-2 rounded-xl border-2 border-rose-500 bg-rose-500/20 text-left transition flex items-center justify-between">
-                <div>
-                  <div class="text-xs font-extrabold text-rose-300">🔴 红队 ALPHA</div>
-                  <div class="text-[10px] text-slate-300">左翼高地出生点</div>
-                </div>
-                <span class="text-xs font-bold text-white" id="teamCountRed">1人</span>
+          <!-- 房间码栏 -->
+          <div id="peerNetPanel" class="lg:col-span-7 bg-slate-900/95 border border-cyan-500/40 rounded-xl px-3.5 py-2.5 flex flex-col justify-center gap-2">
+            <!-- 创建游戏：生成房间码 -->
+            <div id="hostKcpSection" class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-extrabold text-emerald-300 shrink-0">房间码</span>
+              <input id="peerLocalIdInput" type="text" readonly placeholder="点击创建生成" class="flex-1 min-w-[140px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs sm:text-sm font-mono font-bold text-cyan-200 focus:outline-none" />
+              <button id="peerHostBtn" type="button" class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-extrabold text-xs transition">
+                创建
               </button>
-              <button id="teamBtnBlue" type="button" data-team="blue" class="team-select-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition flex items-center justify-between">
-                <div>
-                  <div class="text-xs font-extrabold text-sky-300">🔵 蓝队 BRAVO</div>
-                  <div class="text-[10px] text-slate-400">右翼要塞出生点</div>
-                </div>
-                <span class="text-xs font-bold text-slate-300" id="teamCountBlue">0人</span>
-              </button>
-              <button id="teamBtnGreen" type="button" data-team="green" class="team-select-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition flex items-center justify-between">
-                <div>
-                  <div class="text-xs font-extrabold text-emerald-300">🟢 绿队 CHARLIE</div>
-                  <div class="text-[10px] text-slate-400">中央空降出生点</div>
-                </div>
-                <span class="text-xs font-bold text-slate-300" id="teamCountGreen">0人</span>
-              </button>
-              <button id="teamBtnFfa" type="button" data-team="ffa" class="team-select-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition flex items-center justify-between">
-                <div>
-                  <div class="text-xs font-extrabold text-amber-300">🟡 自由混战 FFA</div>
-                  <div class="text-[10px] text-slate-400">全员皆敌独立作战</div>
-                </div>
-                <span class="text-xs font-bold text-slate-300" id="teamCountFfa">0人</span>
+              <button id="peerCopyIdBtn" type="button" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-xs font-extrabold text-cyan-200 border border-cyan-400/50">
+                复制
               </button>
             </div>
 
-            <!-- 占领点重生点按钮组 -->
-            <div>
-              <div class="text-[11px] text-slate-300 mb-1 font-medium">🚩 选择部署/重生点（正中复活点与旗帜同位，占领后可点击或按 [E] 选中）：</div>
-              <div id="spawnPointBtnGroup" class="flex flex-wrap gap-1.5">
-                <button type="button" data-spawn="base" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold">🏠 队伍主基地</button>
-                <button type="button" data-spawn="cp_c" class="spawn-select-btn px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩 正中复活点 [按E可选]</button>
+            <!-- 加入游戏：输入房间码 -->
+            <div id="clientKcpSection" class="hidden flex flex-col gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs font-extrabold text-sky-300 shrink-0">房间码</span>
+                <input id="peerRemoteIdInput" type="text" placeholder="输入房间码 (例: SB2-O7UCV)" class="flex-1 min-w-[140px] px-3 py-1.5 rounded-lg bg-slate-950 border-2 border-sky-500/50 text-xs sm:text-sm font-mono font-bold text-white focus:outline-none focus:border-cyan-400" />
+                <button id="peerJoinBtn" type="button" class="px-3.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 font-black text-xs transition">
+                  连接
+                </button>
+                <button id="peerLeaveBtn" type="button" class="hidden px-2.5 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 font-bold text-xs transition">
+                  断开
+                </button>
               </div>
-            </div>
-          </div>
 
-          <!-- 2. 主武器与副武器按钮组 -->
-          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2.5">
-            <div class="flex items-center justify-between">
-              <h2 class="text-xs font-bold uppercase tracking-wider text-amber-300">2. 重生前选定主武器与副武器 (重生后锁定；连死依次解锁：障碍物 → 护盾 → Teleport → 替身人偶)</h2>
-            </div>
-
-            <!-- 主武器按钮组 -->
-            <div id="lobbyWeaponSelect" class="grid grid-cols-2 sm:grid-cols-6 gap-2">
-              <button type="button" data-wep="0" class="lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition">
-                <div class="text-xs font-extrabold text-white">1. 霰弹</div>
-                <div class="text-[10px] text-amber-200">8/72发(8丸) · 近距高伤 · 全中致死</div>
-              </button>
-              <button type="button" data-wep="8" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-emerald-300">2. 冲锋枪</div>
-                <div class="text-[10px] text-emerald-200">30/150发 · 极高射速 · 机动压制</div>
-              </button>
-              <button type="button" data-wep="1" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-white">3. 突击步枪</div>
-                <div class="text-[10px] text-slate-400">30/90发 · 稳定连发 · 均衡主力</div>
-              </button>
-              <button type="button" data-wep="2" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-purple-300">4. 狙</div>
-                <div class="text-[10px] text-purple-200">3/15发 · 无限射程 · 命中即死</div>
-              </button>
-              <button type="button" data-wep="7" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-amber-300">5. 手枪</div>
-                <div class="text-[10px] text-amber-200">12/60发 · 移速最快 · 双倍飞行</div>
-              </button>
-              <button type="button" data-wep="3" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
-                <div class="text-xs font-extrabold text-rose-300">6. 火箭筒</div>
-                <div class="text-[10px] text-rose-200">1/20发 · 直线慢速 · 碰到爆炸</div>
-              </button>
-            </div>
-
-            <div id="lobbyGrenadeSelect" class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              <button type="button" data-sec="frag" class="lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition">
-                <div class="text-xs font-extrabold text-white">💣 手榴弹 [默认]</div>
-                <div class="text-[10px] text-rose-200">1 充能自然回复（6s/枚）</div>
-              </button>
-              <button type="button" data-sec="obstacle" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
-                <div class="text-xs font-extrabold text-sky-300">🧱 障碍物 [连死1]</div>
-                <div class="text-[10px] text-sky-200/70">10s冷却 · 无限生成240HP掩体</div>
-              </button>
-              <button type="button" data-sec="shield" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
-                <div class="text-xs font-extrabold text-cyan-300">🛡️ 护盾 [连死2]</div>
-                <div class="text-[10px] text-cyan-200/70">100HP 护盾 · 伤害不溢出 · 碰撞箱略大</div>
-              </button>
-              <button type="button" data-sec="teleport" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
-                <div class="text-xs font-extrabold text-purple-300">🌀 Teleport [连死3]</div>
-                <div class="text-[10px] text-purple-200/70">读条后直接出现在右键位置</div>
-              </button>
-              <button type="button" data-sec="doll" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
-                <div class="text-xs font-extrabold text-pink-300">🎎 替身人偶 [连死4]</div>
-                <div class="text-[10px] text-pink-200/70">连死4解锁或特殊补给拾取</div>
-              </button>
-            </div>
-
-            <!-- AI 机器人数量按钮组 -->
-            <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-800">
-              <span class="text-xs font-semibold text-slate-300">🤖 战场 AI 陪练数量按钮组：</span>
-              <div id="botCountSelect" class="flex items-center gap-1.5">
-                <button type="button" data-bots="0" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">0 AI</button>
-                <button type="button" data-bots="2" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">2 AI</button>
-                <button type="button" data-bots="4" class="bot-count-btn px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs">4 AI</button>
-                <button type="button" data-bots="6" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">6 AI</button>
-                <button type="button" data-bots="8" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">8 AI</button>
+              <div class="rounded-lg bg-slate-950/85 border border-slate-800 px-3 py-1.5">
+                <div id="clientRoomParamsEmpty" class="text-xs text-slate-400">
+                  <span id="clientRoomParamsStatus">输入房间码显示参数</span>
+                </div>
+                <div id="clientRoomParamsGrid" class="hidden grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+                  <div>
+                    <div class="text-[10px] text-slate-500">房间</div>
+                    <div id="clientParamRoomId" class="font-mono font-bold text-cyan-300">—</div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-slate-500">模式</div>
+                    <div id="clientParamMode" class="font-bold text-emerald-300">—</div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-slate-500">FFA</div>
+                    <div id="clientParamFfaRule" class="font-bold text-amber-300">—</div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-slate-500">AI</div>
+                    <div id="clientParamBots" class="font-bold text-white">—</div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-slate-500">HP/重生</div>
+                    <div id="clientParamHpRespawn" class="font-bold text-rose-300">—</div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-slate-500">物理</div>
+                    <div id="clientParamPhysics" class="font-mono font-bold text-sky-200">—</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- 右栏 (6列)：PeerJS + WebRTC 自定义 KCP 联机控制台 & 架构说明 -->
-        <div class="lg:col-span-6 flex flex-col gap-3">
-          <!-- 3. PeerJS + WebRTC 自定义 KCP 联机编排面板 -->
-          <div id="peerNetPanel" class="bg-slate-900/90 border border-cyan-500/40 rounded-xl p-3.5 flex flex-col gap-2.5 shadow-lg">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <h2 class="text-xs font-extrabold uppercase tracking-wider text-cyan-300">⚡ PeerJS 联机 & WebRTC 自定义 KCP 协议栈</h2>
-                <span id="peerRoleBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">本地单机</span>
-              </div>
-              <span class="text-[10px] font-mono text-emerald-300">NoDelay=1 · Interval=10ms · FastResend=2 · NC=1</span>
-            </div>
-
-            <!-- 房间创建 / 加入操作行 -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div class="rounded-xl bg-slate-950/75 border border-slate-800 p-2.5 flex flex-col gap-1.5">
-                <div class="flex items-center justify-between">
-                  <span class="text-[11px] font-bold text-emerald-300">👑 作为房主创建 (Host)</span>
-                  <button id="peerHostBtn" type="button" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-extrabold text-[11px] transition">
-                    创建 KCP 房间
-                  </button>
-                </div>
-                <div class="flex items-center gap-1.5 mt-0.5">
-                  <input id="peerLocalIdInput" type="text" readonly placeholder="点击「创建 KCP 房间」生成房间码" class="flex-1 min-w-0 px-2 py-1 rounded bg-slate-900 border border-slate-700 text-[11px] font-mono text-cyan-200 focus:outline-none" />
-                  <button id="peerCopyIdBtn" type="button" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-200 border border-slate-700 shrink-0">
-                    复制
-                  </button>
-                </div>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+          <!-- 左栏 (7列)：阵营、复活点与武器 -->
+          <div class="lg:col-span-7 flex flex-col gap-3">
+            <!-- 阵营与复活点 -->
+            <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5">
+              <div class="grid grid-cols-3 gap-2">
+                <button id="teamBtnRed" type="button" data-team="red" class="team-select-btn px-3 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition flex items-center justify-between">
+                  <span class="text-xs font-extrabold text-rose-300">🔴 红队</span>
+                  <span class="text-xs font-bold text-white" id="teamCountRed">1</span>
+                </button>
+                <button id="teamBtnBlue" type="button" data-team="blue" class="team-select-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition flex items-center justify-between">
+                  <span class="text-xs font-extrabold text-sky-300">🔵 蓝队</span>
+                  <span class="text-xs font-bold text-slate-300" id="teamCountBlue">0</span>
+                </button>
+                <button id="teamBtnFfa" type="button" data-team="ffa" class="team-select-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition flex items-center justify-between">
+                  <span class="text-xs font-extrabold text-amber-300">🟡 FFA</span>
+                  <span class="text-xs font-bold text-slate-300" id="teamCountFfa">0</span>
+                </button>
               </div>
 
-              <div class="rounded-xl bg-slate-950/75 border border-slate-800 p-2.5 flex flex-col gap-1.5">
-                <div class="flex items-center justify-between">
-                  <span class="text-[11px] font-bold text-sky-300">🚀 加入房主房间 (Client)</span>
-                  <button id="peerLeaveBtn" type="button" class="hidden px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 font-bold text-[10px] transition">
-                    断开联机
-                  </button>
-                </div>
-                <div class="flex items-center gap-1.5 mt-0.5">
-                  <input id="peerRemoteIdInput" type="text" placeholder="输入房主房间码 (Peer ID)" class="flex-1 min-w-0 px-2 py-1 rounded bg-slate-900 border border-slate-700 text-[11px] font-mono text-white focus:outline-none focus:border-cyan-400" />
-                  <button id="peerJoinBtn" type="button" class="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 font-extrabold text-[11px] transition shrink-0">
-                    连接 KCP
-                  </button>
-                </div>
+              <div id="spawnPointBtnGroup" class="flex flex-wrap gap-1.5">
+                <button type="button" data-spawn="base" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold">🏠 基地</button>
+                <button type="button" data-spawn="cp_a" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩A</button>
+                <button type="button" data-spawn="cp_b" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩B</button>
+                <button type="button" data-spawn="cp_c" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩C</button>
+                <button type="button" data-spawn="cp_d" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩D</button>
+                <button type="button" data-spawn="cp_e" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩E</button>
+                <button type="button" data-spawn="cp_f" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩F</button>
+                <button type="button" data-spawn="cp_g" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩G</button>
+                <button type="button" data-spawn="cp_h" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩H</button>
+                <button type="button" data-spawn="cp_i" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩I</button>
+                <button type="button" data-spawn="cp_j" class="spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-500 text-[11px] font-semibold">🚩J</button>
               </div>
             </div>
 
-            <!-- KCP + WebRTC DataChannel 实时传输遥测 -->
-            <div class="grid grid-cols-4 gap-1.5 text-center bg-slate-950/60 border border-slate-800/90 rounded-lg p-2 font-mono text-[10px]">
-              <div>
-                <div class="text-slate-500">WebRTC 通道</div>
-                <div id="kcpStatChannel" class="font-bold text-cyan-300 mt-0.5">Unordered/UDP</div>
+            <!-- 武器 -->
+            <div class="bg-slate-900/80 border border-amber-500/35 rounded-xl p-3 flex flex-col gap-2">
+              <div id="lobbyWeaponSelect" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <button type="button" data-wep="0" class="lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition">
+                  <div class="text-xs font-extrabold text-white">1. 霰弹</div>
+                  <div class="text-[10px] text-amber-200">8/72发(8丸) · 近距高伤 · 全中致死</div>
+                </button>
+                <button type="button" data-wep="8" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+                  <div class="text-xs font-extrabold text-emerald-300">2. 冲锋枪</div>
+                  <div class="text-[10px] text-emerald-200">30/150发 · 极高射速 · 机动压制</div>
+                </button>
+                <button type="button" data-wep="1" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+                  <div class="text-xs font-extrabold text-white">3. 突击步枪</div>
+                  <div class="text-[10px] text-slate-400">30/90发 · 稳定连发 · 均衡主力</div>
+                </button>
+                <button type="button" data-wep="2" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+                  <div class="text-xs font-extrabold text-purple-300">4. 狙</div>
+                  <div class="text-[10px] text-purple-200">10/20发 · 无限射程 · 命中即死</div>
+                </button>
+                <button type="button" data-wep="7" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+                  <div class="text-xs font-extrabold text-amber-300">5. 手枪</div>
+                  <div class="text-[10px] text-amber-200">12/60发 · 移速最快 · 双倍飞行</div>
+                </button>
+                <button type="button" data-wep="3" class="lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition">
+                  <div class="text-xs font-extrabold text-rose-300">6. 火箭筒</div>
+                  <div class="text-[10px] text-rose-200">1/20发 · 直线慢速 · 碰到爆炸</div>
+                </button>
               </div>
-              <div>
-                <div class="text-slate-500">KCP RTT / Jitter</div>
-                <div id="kcpStatRtt" class="font-bold text-emerald-300 tabular-nums mt-0.5">0 ms</div>
-              </div>
-              <div>
-                <div class="text-slate-500">KCP 收发包 / 快速重传</div>
-                <div id="kcpStatPkts" class="font-bold text-amber-300 tabular-nums mt-0.5">0 / 0 (0)</div>
-              </div>
-              <div>
-                <div class="text-slate-500">本机回环联机自测</div>
-                <button id="peerLoopbackTestBtn" type="button" class="mt-0.5 px-2 py-0.5 rounded bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-400/50 text-indigo-200 font-sans font-bold text-[10px] transition">
-                  ⚡ 双端KCP实测
+
+              <div id="lobbyGrenadeSelect" class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                <button type="button" data-sec="frag" class="lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition">
+                  <div class="text-xs font-extrabold text-white">💣 手榴弹 [默认]</div>
+                  <div class="text-[10px] text-rose-200">1 充能自然回复（6s/枚）</div>
+                </button>
+                <button type="button" data-sec="obstacle" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
+                  <div class="text-xs font-extrabold text-sky-300">🧱 障碍物 [连死1]</div>
+                  <div class="text-[10px] text-sky-200/70">10s冷却 · 无限生成240HP掩体</div>
+                </button>
+                <button type="button" data-sec="shield" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
+                  <div class="text-xs font-extrabold text-cyan-300">🛡️ 护盾 [连死2]</div>
+                  <div class="text-[10px] text-cyan-200/70">100HP 护盾 · 伤害不溢出 · 碰撞箱略大</div>
+                </button>
+                <button type="button" data-sec="teleport" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
+                  <div class="text-xs font-extrabold text-purple-300">🌀 Teleport [连死3]</div>
+                  <div class="text-[10px] text-purple-200/70">读条后直接出现在右键位置</div>
+                </button>
+                <button type="button" data-sec="doll" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60">
+                  <div class="text-xs font-extrabold text-pink-300">🎎 替身人偶 [连死4]</div>
+                  <div class="text-[10px] text-pink-200/70">连死4解锁或特殊补给拾取</div>
                 </button>
               </div>
             </div>
-            <div id="peerStatusLog" class="text-[10px] text-slate-400 truncate">
-              就绪：WebRTC DataChannel 配置 ordered:false, maxRetransmits:0 模拟底层 UDP，由自定义 KCP 协议栈负责极速 ARQ 重传与低延迟状态同步。
-            </div>
           </div>
 
-          <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-2 flex-1">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300">🌐 架构与补给说明（合并版）</h2>
-            <div class="text-[11px] text-slate-300 leading-relaxed space-y-1.5">
-              <p>· <strong class="text-white">CS 风格霰弹逐发装填</strong>：打空或按 R 后逐颗塞入霰弹，泵动冷却期间不偷塞子弹；换弹途中只要枪膛有弹，按下开火立即打断装填并瞬发。</p>
-              <p>· <strong class="text-white">WebRTC 自定义 KCP 协议栈</strong>：基于 WebRTC 非可靠无序 DataChannel（UDP 语义）实现完整 KCP 24 字节帧头、PUSH/ACK/WASK/WINS 指令、UNA+ACK 双重确认、FastResend=2 快速重传与 Unreliable-KCP 快照通道。</p>
-              <p>· <strong class="text-white">服务器权威与客户端预测</strong>：60Hz 权威物理 + 0 RTT 本地移动预测与服务器回滚重放（Reconciliation）+ 远端环形平滑插值。</p>
-              <p>· <strong class="text-white">补给与连死阶梯</strong>：高斯枪/M249/引力枪从空投特武箱获得；副手按连续阵亡依次解锁：手榴弹(默认) → 障碍物(连死1) → 100HP不溢出护盾(连死2) → Teleport(连死3) → 替身人偶(连死4或特殊补给)。</p>
+          <!-- 右栏 (5列)：模式 / FFA开关 / AI -->
+          <div class="lg:col-span-5 flex flex-col gap-3">
+            <div id="hostRoomParamsCard" class="bg-slate-900/80 border border-slate-800 rounded-xl p-3 flex flex-col gap-3">
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" data-mode="ffa" class="mode-btn px-3 py-2 rounded-xl border border-slate-700 bg-slate-950/60 text-left transition">
+                  <div class="text-xs font-extrabold text-amber-300">🟡 混战</div>
+                </button>
+                <button type="button" data-mode="2teams" class="mode-btn px-3 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition">
+                  <div class="text-xs font-extrabold text-rose-300">⚔️ 双队</div>
+                </button>
+              </div>
+
+              <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                <span class="text-xs font-semibold text-slate-300">FFA 身份</span>
+                <div class="flex items-center gap-1.5">
+                  <button type="button" data-allow-ffa="1" class="ffa-allow-btn px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-extrabold text-xs">允许</button>
+                  <button type="button" data-allow-ffa="0" class="ffa-allow-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-400 font-extrabold text-xs border border-slate-700">禁止</button>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                <span class="text-xs font-semibold text-slate-300">AI</span>
+                <div id="botCountSelect" class="flex items-center gap-1.5">
+                  <button type="button" data-bots="0" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">0</button>
+                  <button type="button" data-bots="2" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">2</button>
+                  <button type="button" data-bots="4" class="bot-count-btn px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs">4</button>
+                  <button type="button" data-bots="6" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">6</button>
+                  <button type="button" data-bots="8" class="bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700">8</button>
+                </div>
+              </div>
             </div>
+
+            <!-- 大厅内嵌特性开关卡片（默认全开，与顶栏 🎛️ 特性 实时同步） -->
+            <div id="lobbyFlagsCard" class="bg-slate-900/80 border border-emerald-500/35 rounded-xl p-3 flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-extrabold text-emerald-300">🎛️ 增强特性开关（默认全开）</span>
+                <span class="text-[10px] font-mono text-emerald-200">全部默认 ON</span>
+              </div>
+              <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+                <button type="button" data-flag="minimapRadar" class="feature-flag-btn px-2 py-1.5 rounded-lg border border-emerald-400/60 bg-emerald-500/15 text-left flex items-center justify-between">
+                  <span class="font-bold text-white truncate">📡 雷达小地图</span>
+                  <span class="flag-state-pill px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[9px]">开启</span>
+                </button>
+                <button type="button" data-flag="captureHudRing" class="feature-flag-btn px-2 py-1.5 rounded-lg border border-emerald-400/60 bg-emerald-500/15 text-left flex items-center justify-between">
+                  <span class="font-bold text-white truncate">🚩 双向占点HUD</span>
+                  <span class="flag-state-pill px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[9px]">开启</span>
+                </button>
+                <button type="button" data-flag="adaptiveNetAoi" class="feature-flag-btn px-2 py-1.5 rounded-lg border border-emerald-400/60 bg-emerald-500/15 text-left flex items-center justify-between">
+                  <span class="font-bold text-white truncate">⚡ 动态AOI省流</span>
+                  <span class="flag-state-pill px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[9px]">开启</span>
+                </button>
+                <button type="button" data-flag="lagCompensation" class="feature-flag-btn px-2 py-1.5 rounded-lg border border-emerald-400/60 bg-emerald-500/15 text-left flex items-center justify-between">
+                  <span class="font-bold text-white truncate">🎯 延迟补偿</span>
+                  <span class="flag-state-pill px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[9px]">开启</span>
+                </button>
+                <button type="button" data-flag="smartBotTactics" class="feature-flag-btn px-2 py-1.5 rounded-lg border border-emerald-400/60 bg-emerald-500/15 text-left flex items-center justify-between">
+                  <span class="font-bold text-white truncate">🤖 AI协同守点</span>
+                  <span class="flag-state-pill px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[9px]">开启</span>
+                </button>
+                <button type="button" data-flag="proceduralAudio" class="feature-flag-btn px-2 py-1.5 rounded-lg border border-emerald-400/60 bg-emerald-500/15 text-left flex items-center justify-between">
+                  <span class="font-bold text-white truncate">🔊 合成音效</span>
+                  <span class="flag-state-pill px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[9px]">开启</span>
+                </button>
+              </div>
           </div>
         </div>
+      </div>
+
+      <!-- ==================== 底部超大「进入房间」按钮 ==================== -->
+      <div class="p-3.5 bg-slate-950/95 border-t border-slate-800 shrink-0">
+        <button id="startBattleBtn" type="button" class="w-full py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 hover:from-emerald-400 hover:to-cyan-300 active:scale-[0.99] text-slate-950 shadow-[0_0_28px_rgba(16,185,129,0.45)] border-2 border-emerald-200 transition flex items-center justify-center">
+          <span id="startBattleBtnText" class="text-lg sm:text-xl font-black tracking-wider">进入房间</span>
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- ==================== 数值调整后台（旧内嵌调参台已废弃，改为独立页面 admin.html） ==================== -->
+  <!-- ==================== 调参弹窗 ==================== -->
   <div id="paramsModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-2 sm:p-4 overflow-y-auto">
     <div class="glass-panel w-full max-w-4xl rounded-2xl border border-amber-500/40 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
-      <div class="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
-        <div>
-          <h2 class="text-base font-extrabold text-amber-300">⚙️ 物理参数调校（武器/全局数值请用「数值后台」独立页面）</h2>
-          <p class="text-xs text-slate-400">重力/移速/喷气/生命等物理参数；完整武器数值与全局配置请点顶栏「⚙️ 数值后台」（admin.html）</p>
-        </div>
+      <div class="px-5 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="text-base font-extrabold text-amber-300">⚙️ 调参</h2>
         <div class="flex items-center gap-2">
-          <button id="resetParamsBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">
-            恢复默认数值
-          </button>
-          <button id="closeParamsBtn" type="button" class="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs">
-            完成并应用
-          </button>
+          <button id="resetParamsBtn" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700">默认</button>
+          <button id="closeParamsBtn" type="button" class="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs">应用</button>
         </div>
       </div>
 
       <div class="p-5 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
-          <h3 class="font-bold text-sky-300 text-sm border-b border-slate-800 pb-1.5">🚀 角色物理与爆头判定</h3>
+          <h3 class="font-bold text-sky-300 text-sm border-b border-slate-800 pb-1.5">物理</h3>
           <div>
-            <div class="flex justify-between mb-1"><span>重力加速度 (Gravity, px/s²)</span><span id="valGravity" class="font-mono text-amber-300">1250</span></div>
+            <div class="flex justify-between mb-1"><span>重力</span><span id="valGravity" class="font-mono text-amber-300">1250</span></div>
             <input id="paramGravity" type="range" min="400" max="2500" step="50" value="1250" class="w-full accent-sky-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>水平移动速度 (Move Speed, px/s)</span><span id="valMoveSpeed" class="font-mono text-amber-300">300</span></div>
+            <div class="flex justify-between mb-1"><span>移速</span><span id="valMoveSpeed" class="font-mono text-amber-300">300</span></div>
             <input id="paramMoveSpeed" type="range" min="100" max="600" step="10" value="300" class="w-full accent-sky-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>喷射推力 (Jetpack Accel)</span><span id="valJetpackAccel" class="font-mono text-amber-300">3000</span></div>
+            <div class="flex justify-between mb-1"><span>喷气推力</span><span id="valJetpackAccel" class="font-mono text-amber-300">3000</span></div>
             <input id="paramJetpackAccel" type="range" min="800" max="6000" step="100" value="3000" class="w-full accent-sky-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>升空速度上限 (Jetpack Max Up)</span><span id="valJetpackMaxUp" class="font-mono text-amber-300">280</span></div>
+            <div class="flex justify-between mb-1"><span>升空极速</span><span id="valJetpackMaxUp" class="font-mono text-amber-300">280</span></div>
             <input id="paramJetpackMaxUp" type="range" min="100" max="800" step="20" value="280" class="w-full accent-sky-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>角色最大生命值 (Max HP)</span><span id="valMaxHp" class="font-mono text-amber-300">100</span></div>
+            <div class="flex justify-between mb-1"><span>生命值</span><span id="valMaxHp" class="font-mono text-amber-300">100</span></div>
             <input id="paramMaxHp" type="range" min="50" max="300" step="10" value="100" class="w-full accent-sky-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>头部判定圆半径 (Head Hitbox Radius)</span><span id="valHeadRadius" class="font-mono text-amber-300">13</span></div>
+            <div class="flex justify-between mb-1"><span>头围</span><span id="valHeadRadius" class="font-mono text-amber-300">13</span></div>
             <input id="paramHeadRadius" type="range" min="8" max="22" step="1" value="13" class="w-full accent-sky-400" />
           </div>
         </div>
 
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-2.5">
           <div class="border-b border-slate-800 pb-2">
-            <h3 class="font-bold text-amber-300 text-sm mb-1.5">🔫 主武器与补给特武按钮组切换</h3>
+            <h3 class="font-bold text-amber-300 text-sm mb-1.5">武器</h3>
             <div id="paramWeaponPicker" class="flex flex-wrap gap-1">
               <button type="button" data-pwep="0" class="param-wep-tab px-2 py-1 rounded bg-amber-500 text-slate-950 font-extrabold text-[11px]">霰弹</button>
               <button type="button" data-pwep="1" class="param-wep-tab px-2 py-1 rounded bg-slate-950 text-slate-300 font-semibold text-[11px] border border-slate-700">突击步枪</button>
@@ -619,63 +729,63 @@
             </div>
           </div>
           <div>
-            <div class="flex justify-between mb-0.5"><span>单发伤害 (Damage)</span><span id="valWepDamage" class="font-mono text-amber-300">24</span></div>
+            <div class="flex justify-between mb-0.5"><span>伤害</span><span id="valWepDamage" class="font-mono text-amber-300">24</span></div>
             <input id="paramWepDamage" type="range" min="4" max="150" step="1" value="24" class="w-full accent-amber-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-0.5"><span>爆头伤害倍率 (Headshot Multiplier)</span><span id="valWepHeadshot" class="font-mono text-amber-300">1x</span></div>
+            <div class="flex justify-between mb-0.5"><span>爆头倍率</span><span id="valWepHeadshot" class="font-mono text-amber-300">1x</span></div>
             <input id="paramWepHeadshot" type="range" min="1.0" max="4.0" step="0.1" value="1.0" class="w-full accent-amber-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-0.5"><span>弹速 (Projectile Speed, px/s)</span><span id="valWepSpeed" class="font-mono text-amber-300">1000</span></div>
+            <div class="flex justify-between mb-0.5"><span>弹速</span><span id="valWepSpeed" class="font-mono text-amber-300">1000</span></div>
             <input id="paramWepSpeed" type="range" min="200" max="4000" step="20" value="1000" class="w-full accent-amber-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-0.5"><span>弹匣容量 (Magazine Size)</span><span id="valWepMag" class="font-mono text-amber-300">8</span></div>
+            <div class="flex justify-between mb-0.5"><span>弹匣</span><span id="valWepMag" class="font-mono text-amber-300">8</span></div>
             <input id="paramWepMag" type="range" min="1" max="150" step="1" value="8" class="w-full accent-amber-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-0.5"><span>换弹耗时秒数 (Reload Seconds)</span><span id="valWepReload" class="font-mono text-amber-300">1.5s</span></div>
+            <div class="flex justify-between mb-0.5"><span>换弹耗时</span><span id="valWepReload" class="font-mono text-amber-300">1.5s</span></div>
             <input id="paramWepReload" type="range" min="0.3" max="4.5" step="0.1" value="1.5" class="w-full accent-amber-400" />
           </div>
         </div>
 
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
-          <h3 class="font-bold text-rose-300 text-sm border-b border-slate-800 pb-1.5">💣 副武器与爆炸威力</h3>
+          <h3 class="font-bold text-rose-300 text-sm border-b border-slate-800 pb-1.5">爆炸</h3>
           <div>
-            <div class="flex justify-between mb-1"><span>手榴弹爆炸伤害（一发致死档）</span><span id="valGrenadeDmg" class="font-mono text-amber-300">520</span></div>
+            <div class="flex justify-between mb-1"><span>手雷伤害</span><span id="valGrenadeDmg" class="font-mono text-amber-300">520</span></div>
             <input id="paramGrenadeDmg" type="range" min="20" max="800" step="5" value="520" class="w-full accent-rose-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>爆炸作用半径</span><span id="valGrenadeRadius" class="font-mono text-amber-300">100</span></div>
+            <div class="flex justify-between mb-1"><span>手雷半径</span><span id="valGrenadeRadius" class="font-mono text-amber-300">100</span></div>
             <input id="paramGrenadeRadius" type="range" min="30" max="160" step="5" value="100" class="w-full accent-rose-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>地雷爆炸伤害</span><span id="valMineDmg" class="font-mono text-amber-300">110</span></div>
+            <div class="flex justify-between mb-1"><span>地雷伤害</span><span id="valMineDmg" class="font-mono text-amber-300">110</span></div>
             <input id="paramMineDmg" type="range" min="30" max="220" step="5" value="110" class="w-full accent-rose-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>地雷感应触发半径</span><span id="valMineRadius" class="font-mono text-amber-300">48</span></div>
+            <div class="flex justify-between mb-1"><span>地雷半径</span><span id="valMineRadius" class="font-mono text-amber-300">48</span></div>
             <input id="paramMineRadius" type="range" min="20" max="90" step="2" value="48" class="w-full accent-rose-400" />
           </div>
         </div>
 
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
-          <h3 class="font-bold text-emerald-300 text-sm border-b border-slate-800 pb-1.5">🎯 迫击炮与重生参数</h3>
+          <h3 class="font-bold text-emerald-300 text-sm border-b border-slate-800 pb-1.5">其他</h3>
           <div>
-            <div class="flex justify-between mb-1"><span>公共迫击炮伤害</span><span id="valMortarDmg" class="font-mono text-amber-300">130</span></div>
+            <div class="flex justify-between mb-1"><span>迫击炮伤害</span><span id="valMortarDmg" class="font-mono text-amber-300">130</span></div>
             <input id="paramMortarDmg" type="range" min="40" max="240" step="5" value="130" class="w-full accent-emerald-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>迫击炮爆炸半径</span><span id="valMortarRadius" class="font-mono text-amber-300">105</span></div>
+            <div class="flex justify-between mb-1"><span>迫击炮半径</span><span id="valMortarRadius" class="font-mono text-amber-300">105</span></div>
             <input id="paramMortarRadius" type="range" min="40" max="160" step="5" value="105" class="w-full accent-emerald-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>重生等待秒数</span><span id="valRespawnDelay" class="font-mono text-amber-300">4s</span></div>
+            <div class="flex justify-between mb-1"><span>重生秒数</span><span id="valRespawnDelay" class="font-mono text-amber-300">4s</span></div>
             <input id="paramRespawnDelay" type="range" min="1" max="10" step="0.5" value="4" class="w-full accent-emerald-400" />
           </div>
           <div>
-            <div class="flex justify-between mb-1"><span>替身人偶最大充能数</span><span id="valDollMax" class="font-mono text-amber-300">2</span></div>
+            <div class="flex justify-between mb-1"><span>人偶上限</span><span id="valDollMax" class="font-mono text-amber-300">2</span></div>
             <input id="paramDollMax" type="range" min="1" max="4" step="1" value="2" class="w-full accent-emerald-400" />
           </div>
         </div>
@@ -683,42 +793,38 @@
     </div>
   </div>
 
-  <!-- ==================== 内嵌增强版战术地图编辑器弹窗 ==================== -->
+  <!-- ==================== 地图编辑器 ==================== -->
   <div id="inGameEditorModal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex-col">
     <div class="px-4 py-2.5 bg-slate-900 border-b border-sky-400/40 flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-3">
-        <span class="text-sm font-extrabold text-sky-300">🛠️ 战术地图编辑器 Pro（内嵌实时版）</span>
-        <span id="igeStatus" class="text-xs font-mono text-cyan-300 bg-slate-950 px-2.5 py-1 rounded border border-slate-700">0 块 · 统一高亮 #38bdf8</span>
+        <span class="text-sm font-extrabold text-sky-300">🛠️ 地图编辑</span>
+        <span id="igeStatus" class="text-xs font-mono text-cyan-300 bg-slate-950 px-2.5 py-1 rounded border border-slate-700">0 块</span>
       </div>
       <div class="flex flex-wrap items-center gap-1.5 text-xs">
         <button type="button" data-ige-tool="draw" class="ige-tool-btn px-2.5 py-1 rounded bg-sky-600 text-white font-bold border border-sky-400">✏️ 绘制</button>
-        <button type="button" data-ige-tool="select" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-bold border border-slate-700">✋ 选择/缩放</button>
-        <button type="button" data-ige-tool="carve" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-rose-200 font-bold border border-slate-700">⛏️ 挖狭窄地道</button>
+        <button type="button" data-ige-tool="select" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-bold border border-slate-700">✋ 选择</button>
+        <button type="button" data-ige-tool="carve" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-rose-200 font-bold border border-slate-700">⛏️ 挖道</button>
         <button type="button" data-ige-tool="erase" class="ige-tool-btn px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-bold border border-slate-700">🧹 擦除</button>
         <span class="text-slate-600">|</span>
-        <button type="button" id="igeStampTunnel" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 狭窄横道</button>
-        <button type="button" id="igeStampShaft" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 狭窄竖井</button>
-        <button type="button" id="igeStampIsland" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 拱顶浮岛</button>
-        <button type="button" id="igeSymmetrize" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-200 border border-slate-700">⚖️ 左右对称</button>
+        <button type="button" id="igeStampTunnel" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 横道</button>
+        <button type="button" id="igeStampShaft" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 竖井</button>
+        <button type="button" id="igeStampIsland" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-200 border border-slate-700">➕ 浮岛</button>
+        <button type="button" id="igeSymmetrize" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-200 border border-slate-700">⚖️ 对称</button>
         <button type="button" id="igeUndo" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">↩ 撤销</button>
-        <button type="button" id="igeReset" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">🔄 默认图</button>
-        <button type="button" id="igeExportPng" class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold">🖼️ 导出全景 PNG</button>
-        <button type="button" id="igeApplyBtn" class="px-3 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold">✅ 应用到当前对局</button>
-        <button type="button" id="igeCloseBtn" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">✕ 关闭</button>
+        <button type="button" id="igeReset" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">🔄 默认</button>
+        <button type="button" id="igeExportPng" class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold">🖼️ PNG</button>
+        <button type="button" id="igeApplyBtn" class="px-3 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold">✅ 应用</button>
+        <button type="button" id="igeCloseBtn" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">✕</button>
       </div>
     </div>
     <div class="relative flex-1 overflow-hidden bg-slate-950">
       <canvas id="igeCanvas" class="w-full h-full block cursor-crosshair"></canvas>
-      <div class="absolute bottom-3 left-3 pointer-events-none bg-slate-900/90 border border-sky-500/40 rounded-lg px-3 py-1.5 text-[11px] text-slate-300">
-        左键拖拽绘制/选择/挖狭窄地道 · 右键擦除 · 滚轮缩放 · 空格+左键平移 · 黄色=均匀FFA出生点 · 绿色=近中心弹药点 · y=1760以下为地下狭窄地道区
-      </div>
     </div>
   </div>
 
-  <!-- 顶部轻提示 Toast -->
-  <div id="toastBanner" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
+  <!-- 轻提示 Toast -->
+  <div id="toastBanner" class="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
-  <!-- 合并版 bundle：core+net+input+ui+web 全量打包 -->
-  <script src="./bundle.js?v=e0f2071a0e"></script>
+  <script src="./bundle.js?v=0316f199a9"></script>
 </body>
 </html>

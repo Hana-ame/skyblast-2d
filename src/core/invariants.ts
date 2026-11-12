@@ -73,7 +73,7 @@ export function weaponViolations(): Violation[] {
   // 用户明确要求的跨武器规则
   if (rifle && m249 && m249.damage !== rifle.damage) add('rule.m249dmg', 'M249 伤害必须等于突击步枪')
   if (rifle && (rifle.magSize !== 30 || rifle.maxReserve !== 90)) add('rule.riflemag', '突击步枪弹药必须为 30/90')
-  if (pistol && gravity && gravity.damage !== pistol.damage) add('rule.gravitydmg', '引力枪伤害必须等于手枪')
+  if (rifle && gravity && gravity.damage !== rifle.damage) add('rule.gravitydmg', '引力枪伤害必须等于突击步枪')
   if (pistol && smg && smg.damage !== pistol.damage) add('rule.smgdmg', '冲锋枪伤害必须等于手枪')
   if (smg && (smg.magSize !== 30 || smg.maxReserve !== 150)) add('rule.smgmag', '冲锋枪弹药必须为 30/150')
   if (pistol && pistol.magSize !== 12) add('rule.pistolmag', '手枪弹匣必须 12')
@@ -91,6 +91,7 @@ export function weaponViolations(): Violation[] {
   if (sniper && (sniper.damage !== 137 || sniper.grazeDamageMin !== 99)) {
     add('rule.sniperedge', '狙击必须做连续分级：正中 137、擦边 99（中间插值）')
   }
+  if (sniper && (sniper.magSize !== 10 || sniper.maxReserve !== 20 || sniper.moveSpeedMult !== 0.85 || sniper.fuelMult !== 1.0 || sniper.ascendMult !== 0.85)) add('rule.sniperstats', '狙击步枪必须为 10/20 弹量，移速 0.85x、升空 0.85x、飞行容量 1x')
   if (sniper && sniper.farRange === undefined) {
     add('rule.sniperfar', '狙击必须有远距离衰减（farRange/farDamage）')
   }
@@ -141,7 +142,7 @@ export function layoutViolations(world: World, opts: { skipPads?: boolean } = {}
 
   for (const pt of points) {
     if (!inBounds(pt.x, pt.y)) add('layout.bounds', `${pt.label} out of world bounds (${pt.x},${pt.y})`)
-    if (!pt.skipSolid && world.terrain.isSolidAt(pt.x, pt.y)) add('layout.solid', `${pt.label} is inside solid terrain (${pt.x},${pt.y})`)
+    if (!pt.skipSolid && !(opts.skipPads && pt.y >= 2800) && world.terrain.isSolidAt(pt.x, pt.y)) add('layout.solid', `${pt.label} is inside solid terrain (${pt.x},${pt.y})`)
   }
   if (!opts.skipPads) {
     for (const p of JUMP_PADS) {

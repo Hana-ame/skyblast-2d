@@ -3,7 +3,7 @@ import { jetpack, jump, updateJetpackFuel, getPhysicsParams, recoilDelta } from 
 import { Terrain, OBSTACLE_PRESETS } from '../terrain.ts'
 import type { MapData } from '../map.ts'
 import { Rng } from '../rng.ts'
-import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../weapons.ts'
+import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, isSecondaryUnlocked, getPlayerFragMaxCharges } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX } from '../wrap.ts'
 import { defaultWorldInput } from '../types.ts'
@@ -13,13 +13,13 @@ import type {
 } from '../types.ts'
 import type { WorldSnapshot } from '../snap.ts'
 import {
-  SPAWN_POINTS, FFA_SPAWN_POINTS, CENTER_RESPAWN_POINT, AMMO_SPOTS, SUPPLY_SPOTS, DOLL_SUPPLY_SPOTS,
+  SPAWN_POINTS, FFA_SPAWN_POINTS, CENTER_RESPAWN_POINT, AMMO_SPOTS, SUPPLY_SPOTS, DOLL_SUPPLY_SPOTS, M249_SKY_X, M249_SKY_Y, GAUSS_CENTER_X, GAUSS_CENTER_Y, GRAVITY_BOTTOM_X, GRAVITY_BOTTOM_Y,
   MORTARS_INIT, MINE_PRESETS, WATCHTOWERS, WARP_PORTALS,
   RANDOM_SPAWN_CANDIDATES, JUMP_PADS, CP_INITS,
 } from './landmarks.ts'
 import {
   BUCKET_SIZE, INV_BUCKET_SIZE, NUM_BUCKETS, PLAYER_BROAD_PAD, OBSTACLE_BROAD_PAD,
-  bucketIdx, checkBodyOverlapsAt,
+  bucketIdx, checkBodyOverlapsAt, recordPlayerLagHistory, withRewoundPlayersForShooter, type LagHistoryEntry,
 } from './spatial.ts'
 import {
   ensureFreePosition, resolvePenetration, stepPlayerKinematic, separateOverlappingPlayers,
@@ -33,11 +33,11 @@ import {
 } from './throwables.ts'
 import type { ThrowablesContext } from './throwables.ts'
 import {
-  recallDollState, handlePlayerInteract, spawnSingleAmmoPack, stepMapInteractables, isCapturePointSelectable,
+  recallDollState, handlePlayerInteract, spawnSingleAmmoPack, stepMapInteractables, isCapturePointSelectable, getNearbyInteractablePrompt,
 } from './interactables.ts'
 import type { InteractablesContext } from './interactables.ts'
 
-export { SPAWN_POINTS, FFA_SPAWN_POINTS, CENTER_RESPAWN_POINT, AMMO_SPOTS, JUMP_PADS, isCapturePointSelectable }
+export { SPAWN_POINTS, FFA_SPAWN_POINTS, CENTER_RESPAWN_POINT, AMMO_SPOTS, SUPPLY_SPOTS, M249_SKY_X, M249_SKY_Y, GAUSS_CENTER_X, GAUSS_CENTER_Y, GRAVITY_BOTTOM_X, GRAVITY_BOTTOM_Y, JUMP_PADS, isCapturePointSelectable, getNearbyInteractablePrompt }
 
 export class World implements ProjectileContext, ThrowablesContext, InteractablesContext {
   terrain = new Terrain()
@@ -61,6 +61,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   tick = 0
   hits = 0
 
+  private mapName?: string
   private pid = 1
   private prj = 1
   private gren = 1
@@ -75,10 +76,15 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   obstacleBroadBuckets: Obstacle[][] = Array.from({ length: NUM_BUCKETS }, () => [])
   playerById = new Map<number, PlayerState>()
   activeGravityOrbs: Projectile[] = []
+  lagHistory: LagHistoryEntry[] = []
+  playerLagMs = new Map<number, number>()
+  lagCompensationEnabled = true
+  setPlayerLagMs(playerId: number, lagMs: number): void { this.playerLagMs.set(playerId, Math.max(0, Math.min(400, lagMs))) }
 
   constructor(seed = 12345, map?: MapData) {
     this.seed = seed
     this.rng = new Rng(seed)
+    this.mapName = map?.name
     this.terrain.build(map?.solids)
     this.resetMatch()
   }
@@ -185,8 +191,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   }
 
   resetMatch(): void {
-    this.obsSeq = 1
-    this.mineSeq = 1
+    this.obsSeq = 1; this.mineSeq = 1; if (this.lagHistory) this.lagHistory.length = 0
     this.obstacles = OBSTACLE_PRESETS.map(o => ({ ...o, maxHp: o.hp }))
     this.capturePoints = CP_INITS.map(c => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }))
     this.mortars = MORTARS_INIT.map(m => ({ ...m, cooldown: 0, operatorId: null }))
@@ -196,12 +201,16 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       armed: true, armTimer: 0, triggered: false, fuse: 0,
       instant: false, directHit: false, preset: true, respawnTimer: 0,
     }))
+    const isIsolatedWeaponTestArena = Boolean(
+      this.mapName && (this.mapName.startsWith('sniper-') || this.mapName.startsWith('shell-') || this.mapName.startsWith('cs-pump')),
+    )
     this.supplyCrates = [
       ...SUPPLY_SPOTS.map((spot, idx) => {
-        const w = WEAPONS[4 + (idx % 3)]
+        const w = WEAPONS[spot.weaponId ?? (4 + (idx % 3))]
+        const hideForUnitTest = isIsolatedWeaponTestArena && spot.x === GAUSS_CENTER_X && spot.y === GAUSS_CENTER_Y
         return {
           id: this.crate++, x: spot.x, y: spot.y, area: spot.area, kind: 'weapon' as const,
-          weaponId: w.id, weaponName: w.name, color: w.color, active: true, respawnTimer: 0,
+          weaponId: w.id, weaponName: w.name, color: w.color, active: !hideForUnitTest, respawnTimer: hideForUnitTest ? 9999 : 0,
         }
       }),
       ...DOLL_SUPPLY_SPOTS.map((spot) => ({
@@ -210,7 +219,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       })),
     ]
     this.ammoPacks = []
-    for (let i = 0; i < this.config.ammoPackMaxActive; i++) spawnSingleAmmoPack(this)
+    for (let i = 0; i < Math.min(7, this.config.ammoPackMaxActive); i++) spawnSingleAmmoPack(this)
     this.projectiles = []
     this.grenades = []
     this.airstrikes = []
@@ -239,7 +248,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       shieldHp: 0, shieldTimer: 0, watchtowerTimer: 0, mountedTowerId: null, warpCooldown: 0,
       teleportTimer: 0, teleportTarget: null,
       doll: null, dollCharges: 0, respawnTimer: 0,
-      kills: 0, deaths: 0, deathStreak: 0,
+      kills: 0, deaths: 0, lifeKills: 0, deathStreak: 0,
     }
     this.respawnAt(p, team)
     this.players.push(p)
@@ -287,18 +296,18 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     p.hp = this.config.maxHp
     p.ammo = WEAPONS.map(w => w.magSize)
     p.reserveAmmo = WEAPONS.map(w => w.maxReserve)
-    p.fragCharges = this.config.fragMaxCharges
+    const streak = p.deathStreak ?? 0
+    p.fragCharges = getPlayerFragMaxCharges(streak, this.config.fragMaxCharges)
     p.fragRechargeTimer = 0
     p.fuel = getPhysicsParams().jetpackFuel * (WEAPONS[p.weaponIndex]?.fuelMult ?? 1)
     p.shieldHp = 0; p.shieldTimer = 0; p.watchtowerTimer = 0; p.mountedTowerId = null; p.warpCooldown = 0
     p.teleportTimer = 0; p.teleportTarget = null
-    const streak = p.deathStreak ?? 0
     p.doll = null
-    p.dollCharges = streak >= SECONDARIES.doll.unlockStreak ? 1 : 0
-    if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges)) {
-      p.secondary = getHighestUnlockedSecondary(streak, p.dollCharges)
+    p.dollCharges = (streak + (WEAPONS[p.weaponIndex]?.extraSecondarySlot ? 1 : 0)) >= SECONDARIES.doll.unlockStreak ? 1 : 0
+    if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges, p.weaponIndex)) {
+      p.secondary = 'frag'
     }
-    p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.chargeAim = undefined; p.secondaryCooldown = 0
+    p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.chargeAim = undefined; p.secondaryCooldown = 0; p.lifeKills = 0
     p.deployed = true; p.alive = true; p.respawnTimer = 0
     resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
     ensureFreePosition(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
@@ -345,6 +354,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     }
 
     this.rebuildPlayerBucketsOnly()
+    recordPlayerLagHistory(this.lagHistory, this.tick, this.players)
     separateOverlappingPlayers(this.players, this.playerBroadBuckets, this.terrain, this.obstacles, this.obstacleBroadBuckets)
     this.rebuildPlayerBucketsOnly()
 
@@ -395,6 +405,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (wep && !wep.isSupplyOnly && canSwitch) {
         p.weaponIndex = wep.id
         p.lastPrimaryIndex = wep.id
+        if (!isSecondaryUnlocked(p.secondary, p.deathStreak ?? 0, p.dollCharges, p.weaponIndex)) p.secondary = 'frag'
         p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
         p.reloading = false
         p.reloadTimer = 0
@@ -421,11 +432,12 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
 
     if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt)
     if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt)
-    if (p.fragCharges < this.config.fragMaxCharges) {
+    const maxFrags = getPlayerFragMaxCharges(p.deathStreak ?? 0, this.config.fragMaxCharges)
+    if (p.fragCharges < maxFrags) {
       p.fragRechargeTimer += dt
       if (p.fragRechargeTimer >= this.config.fragRechargeSeconds) {
         p.fragRechargeTimer -= this.config.fragRechargeSeconds
-        p.fragCharges = Math.min(this.config.fragMaxCharges, p.fragCharges + 1)
+        p.fragCharges = Math.min(maxFrags, p.fragCharges + 1)
       }
     } else p.fragRechargeTimer = 0
     if (p.shieldTimer > 0) {
@@ -489,7 +501,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
 
     const wepNow = WEAPONS[p.weaponIndex]
     if (wepNow?.beam) {
-      if (w.fire) updateContinuousBeam(this, p, wepNow, dt)
+      if (w.fire) withRewoundPlayersForShooter(this.lagCompensationEnabled, this.lagHistory, this.playerLagMs, p.id, this.players, () => this.rebuildPlayerBucketsOnly(), () => updateContinuousBeam(this, p, wepNow, dt))
       p.chargeTimer = 0
     } else if ((wepNow?.chargeSeconds ?? 0) > 0) {
       const firePressed = w.fire && !p.prevFireHeld

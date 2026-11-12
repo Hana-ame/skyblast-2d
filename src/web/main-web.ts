@@ -1,15 +1,19 @@
 // web/main-web.ts —— 浏览器入口/组合根：装配各层模块、启动循环、暴露调试与调参句柄
 import {
   canvas, world, localPlayer, bots, pendingLoadout, camera, touchState, beams,
+  featureFlags, setFeatureFlag, toggleFeatureFlag, resetAllFeatureFlags,
 } from './app/context.ts'
 import { WEAPONS } from '../core/weapons.ts'
 import { bindAllEvents } from './input/bindings.ts'
 import { autoDetectDeviceInput } from './input/device.ts'
-import { syncBotsCount, pickBotTarget } from './game/bots.ts'
+import { syncBotsCount, pickBotTarget, getBotPatrolStatus, PATROL_ROUTES } from './game/bots.ts'
 import { applyPendingLoadoutAndSpawn } from './game/loadout.ts'
 import { startGameLoop } from './game/loop.ts'
 import { renderScene } from './render/scene.ts'
-import { updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI, updateHudUI, updateScoreboardUI } from './app/hud.ts'
+import {
+  updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI,
+  updateHudUI, updateScoreboardUI, syncFeatureFlagsUI,
+} from './app/hud.ts'
 import { syncParamsToUI } from './app/params.ts'
 import { mode } from './app/context.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
@@ -22,6 +26,7 @@ syncBotsCount(4)
 updateHudWeaponButtons()
 updateSpawnPointButtonsUI()
 updateTeamCountUI()
+syncFeatureFlagsUI()
 syncParamsToUI()
 startGameLoop()
 
@@ -32,11 +37,22 @@ startGameLoop()
   get bots() { return bots },
   get camera() { return camera },
   get pendingLoadout() { return pendingLoadout },
+  get flags() { return featureFlags },
+  setFeatureFlag: (k: keyof typeof featureFlags, v: boolean) => { setFeatureFlag(k, v); syncFeatureFlagsUI() },
+  toggleFeatureFlag: (k: keyof typeof featureFlags) => { const r = toggleFeatureFlag(k); syncFeatureFlagsUI(); return r },
+  resetAllFeatureFlags: () => { resetAllFeatureFlags(); syncFeatureFlagsUI() },
   syncBotsCount,
   applyPendingLoadoutAndSpawn,
-  render: () => { renderScene(); updateHudUI(); updateScoreboardUI(); updateHudWeaponButtons(); },
+  render: () => { renderScene(); updateHudUI(); updateScoreboardUI(); updateHudWeaponButtons(); syncFeatureFlagsUI(); },
   get touch() { return touchState },
-  botTargets: () => bots.map(b => ({ bot: b.name, team: b.team, target: pickBotTarget(b)?.name ?? null, targetTeam: pickBotTarget(b)?.team ?? null })),
+  botTargets: () => bots.map(b => ({
+    bot: b.name,
+    team: b.team,
+    ...getBotPatrolStatus(b),
+    target: pickBotTarget(b)?.name ?? null,
+    targetTeam: pickBotTarget(b)?.team ?? null,
+  })),
+  patrolRoutes: PATROL_ROUTES,
   get beams() { return beams },
   get mode() { return mode.current },
   weapons: () => WEAPONS.map(w => ({ id: w.id, name: w.name, damage: w.damage, fireDelay: w.fireDelay, moveSpeedMult: w.moveSpeedMult })),

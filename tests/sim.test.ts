@@ -9,7 +9,7 @@ import { ServerSim } from '../src/net/ServerSim.ts'
 import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
-import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, getUnlockedSecondaries, getHighestUnlockedSecondary, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
+import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, isSecondaryUnlocked, getUnlockedSecondaries, getHighestUnlockedSecondary, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
 import { defaultMapData, sanitizeMapData, carveTunnelInSolids, UNIFIED_EDGE_HIGHLIGHT } from '../src/core/map.ts'
 import { FFA_SPAWN_POINTS, AMMO_SPOTS } from '../src/core/sim/world.ts'
@@ -208,7 +208,7 @@ test('Loopback 集成：两客户端对局跑通，服务器权威产生命中�
   // 快照含全部 v2 实体
   const snap = csA.lastSnapshot!
   assert.ok(Array.isArray(snap.obstacles) && snap.obstacles.length > 0, 'snapshot has obstacles')
-  assert.ok(snap.capturePoints.length === 5, 'snapshot has 5 capture points')
+  assert.ok(snap.capturePoints.length === 10, 'snapshot has 10 capture points')
   assert.ok(snap.supplyCrates.length === 8, 'snapshot has 8 supply crates (6 weapon + 2 doll)')
   assert.ok(snap.ammoPacks.length > 0, 'snapshot has ammo packs')
   assert.ok(snap.scores !== undefined, 'snapshot has scores')
@@ -277,7 +277,7 @@ test('高斯枪：按住持续输出（射速无限），一梭子可打 8 秒�
   p.weaponIndex = 4   // 高斯枪
   // 空旷处水平开火：测"按住即持续输出"本身。
   // 注意：光束绕世界一圈从背面打回自己会自伤（设计如此），这里给足血量以免中途死亡影响计数。
-  p.pos = { x: 6600, y: 2400 }
+  p.pos = { x: 6600, y: 460 }
   p.aim = 0
   p.hp = 100000
   p.maxHp = 100000
@@ -370,7 +370,7 @@ test('特武（高斯枪/M249/引力枪）只能从补给箱获得，常规换�
 test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器差异倍率', () => {
   assert.equal(WEAPONS.length, 9)
   assert.deepEqual(WEAPONS.map(w => w.speed), [1000, 1500, 4000, 780, 3000, 1300, 1100, 1000, 1000])
-  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 37, 137, 160, 25, 37, 24, 24, 24])
+  assert.deepEqual(WEAPONS.map(w => w.damage), [24, 37, 137, 160, 25, 37, 37, 24, 24])
   assert.equal(WEAPONS[1].magSize, 30, 'assault rifle mag 30')
   assert.equal(WEAPONS[1].maxReserve, 90, 'assault rifle reserve 90')
   assert.equal(WEAPONS[8].magSize, 30, 'SMG mag 30')
@@ -398,7 +398,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
   assert.ok(WEAPONS[5].fireDelay <= 0.1, 'M249 high fire rate (damage-synced with rifle, DPS preserved)')
-  assert.ok(WEAPONS[6].fireDelay >= 0.8 && WEAPONS[6].damage === WEAPONS[7].damage, 'gravity gun slower, damage equals pistol')
+  assert.ok(WEAPONS[6].fireDelay >= 0.8 && WEAPONS[6].damage === WEAPONS[1].damage, 'gravity gun slower, damage equals assault rifle')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
@@ -416,8 +416,11 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   // 步枪正常速度/正常飞行；狙/火箭筒移速与飞行受限（0.5~0.6）
   assert.equal(WEAPONS[1].moveSpeedMult, 1.0, 'assault normal move speed')
   assert.equal(WEAPONS[1].fuelMult, 1.0, 'assault normal flight')
-  assert.ok((WEAPONS[2].moveSpeedMult ?? 1) <= 0.6, 'sniper slow movement')
-  assert.ok((WEAPONS[2].fuelMult ?? 1) <= 0.6, 'sniper limited flight')
+  assert.equal(WEAPONS[2].magSize, 10, 'sniper mag 10')
+  assert.equal(WEAPONS[2].maxReserve, 20, 'sniper reserve 20')
+  assert.equal(WEAPONS[2].moveSpeedMult, 0.85, 'sniper move 0.85x')
+  assert.equal(WEAPONS[2].fuelMult, 1.0, 'sniper fuel 1.0x')
+  assert.equal(WEAPONS[2].ascendMult, 0.85, 'sniper ascend 0.85x')
   assert.equal(WEAPONS[3].moveSpeedMult, 1.0, 'bazooka move 1.0x')
   assert.equal(WEAPONS[3].fuelMult, 1.0, 'bazooka flight 1.0x')
   assert.equal(WEAPONS[3].ascendMult, 1.0, 'bazooka ascend 1.0x')
@@ -586,7 +589,7 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
   // 上升加速：连续喷射的前 0.2s 是加速梯度（speed 逐帧增加）
   const w = new World(71)
   const a = w.addPlayer('A', 'ffa')
-  a.pos = { x: 6450, y: 2500 }
+  a.pos = { x: 6450, y: 2000 }
   const speeds: number[] = []
   for (let i = 0; i < 24; i++) {
     w.step(DT, new Map([[a.id, input({ jetpack: true })]]))
@@ -598,12 +601,12 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
   // 下降加速：同高度自由落体 vs 按住下键，俯冲 0.5s 后更快
   const w2 = new World(72)
   const b = w2.addPlayer('B', 'ffa')
-  b.pos = { x: 6450, y: 2200 }
+  b.pos = { x: 6450, y: 1800 }
   for (let i = 0; i < 30; i++) w2.step(DT, new Map([[b.id, input({ dive: true })]]))
   const diveSpeed = b.vel.y
   const w3 = new World(73)
   const c = w3.addPlayer('C', 'ffa')
-  c.pos = { x: 6450, y: 2200 }
+  c.pos = { x: 6450, y: 1800 }
   for (let i = 0; i < 30; i++) w3.step(DT, new Map([[c.id, input()]]))
   const fallSpeed = c.vel.y
   assert.ok(Math.abs(diveSpeed - fallSpeed) < 1e-6, `dive acceleration cancelled: dive=${diveSpeed.toFixed(1)} fall=${fallSpeed.toFixed(1)}`)
@@ -611,7 +614,7 @@ test('飞行：上升加速（喷射渐变） vs 下降加速（俯冲），且�
   // 水平零滑步：俯冲中松开方向键 → 水平速度立即为 0
   const w4 = new World(74)
   const d2 = w4.addPlayer('D', 'ffa')
-  d2.pos = { x: 6600, y: 2400 }
+  d2.pos = { x: 6600, y: 2000 }
   w4.step(DT, new Map([[d2.id, input({ move: 1, dive: true })]]))
   const vxFly = d2.vel.x
   w4.step(DT, new Map([[d2.id, input({ move: 0, dive: true })]]))
@@ -708,8 +711,8 @@ test('引力弹：持续把玩家拉向弹体位置；力度可被移动抵抗',
   // 开阔地面（建筑 1 与台地之间），玩家站稳 → 不会被重力带出牵引范围
   const w = new World(97)
   const p = w.addPlayer('P', 'ffa')
-  p.pos = { x: 2200, y: 2784 }
-  makeOrb(w, 2450, 2760)   // 右侧 250px
+  p.pos = { x: 2200, y: 3264 }
+  makeOrb(w, 2450, 3240)   // 右侧 250px
   const d0 = Math.abs(2450 - p.pos.x)
   for (let i = 0; i < 60; i++) { w.step(DT, new Map([[p.id, input()]])); w.drainEvents() }
   const d1 = Math.abs(2450 - p.pos.x)
@@ -718,8 +721,8 @@ test('引力弹：持续把玩家拉向弹体位置；力度可被移动抵抗',
   // 抵抗：弹体在左，玩家向右跑（远离）
   const w2 = new World(98)
   const q = w2.addPlayer('Q', 'ffa')
-  q.pos = { x: 2200, y: 2784 }
-  makeOrb(w2, 1950, 2760)
+  q.pos = { x: 2200, y: 3264 }
+  makeOrb(w2, 1950, 3240)
   const r0 = Math.abs(1950 - q.pos.x)
   for (let i = 0; i < 90; i++) { w2.step(DT, new Map([[q.id, input({ move: 1 })]])); w2.drainEvents() }
   const r1 = Math.abs(1950 - q.pos.x)
@@ -749,8 +752,8 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
   const w = new World(111)
   const a = w.addPlayer('A', 'ffa')
   const b = w.addPlayer('B', 'ffa')
-  a.pos = { x: 3300, y: 2740 }   // 开阔平地（避开平台/掩体/地雷）
-  b.pos = { x: 3340, y: 2740 }
+  a.pos = { x: 3300, y: 3220 }   // 开阔平地（避开平台/掩体/地雷）
+  b.pos = { x: 3340, y: 3220 }
   for (let i = 0; i < 60; i++) w.step(DT, new Map([[a.id, input({ move: 1 })], [b.id, input()]]))
   const gap = Math.abs(b.pos.x - a.pos.x)
   assert.ok(gap >= 20, `players collide (gap=${gap.toFixed(1)})`)
@@ -759,8 +762,8 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
   const w2 = new World(112)
   const c = w2.addPlayer('C', 'ffa')
   const d = w2.addPlayer('D', 'ffa')
-  d.pos = { x: 3300, y: 2760 }
-  c.pos = { x: 3300, y: 2600 }   // 正上方（此处无平台）
+  d.pos = { x: 3300, y: 3240 }
+  c.pos = { x: 3300, y: 3080 }   // 正上方（此处无平台）
   for (let i = 0; i < 90; i++) w2.step(DT, new Map([[c.id, input()], [d.id, input()]]))
   assert.ok(Math.abs(c.pos.x - d.pos.x) < 6, `stays above head, dx=${(c.pos.x - d.pos.x).toFixed(1)}`)
   assert.ok(c.pos.y <= d.pos.y - 40 && c.pos.y >= d.pos.y - 50, `stands on head: c.y=${c.pos.y.toFixed(0)} d.y=${d.pos.y.toFixed(0)}`)
@@ -769,8 +772,8 @@ test('玩家碰撞：互相阻挡、可站头顶、可顶着对方走', () => {
   const w3 = new World(113)
   const e = w3.addPlayer('E', 'ffa')
   const f = w3.addPlayer('F', 'ffa')
-  e.pos = { x: 3300, y: 2740 }
-  f.pos = { x: 3320, y: 2740 }
+  e.pos = { x: 3300, y: 3220 }
+  f.pos = { x: 3320, y: 3220 }
   const f0 = f.pos.x
   for (let i = 0; i < 120; i++) w3.step(DT, new Map([[e.id, input({ move: 1 })], [f.id, input()]]))
   assert.ok(f.pos.x > f0 + 5, `pushed by walking into them: ${f0.toFixed(0)} -> ${f.pos.x.toFixed(0)}`)
@@ -919,7 +922,7 @@ test('升空速度：手枪 1.25×（喷气上升极速更快），步枪正常'
     const w = new World(171)
     const p = w.addPlayer('P', 'ffa')
     p.weaponIndex = wepIdx
-    p.pos = { x: 6450, y: 2400 }
+    p.pos = { x: 6450, y: 2000 }
     for (let i = 0; i < 40; i++) w.step(DT, new Map([[p.id, input({ jetpack: true })]]))
     return -p.vel.y
   }
@@ -1089,32 +1092,85 @@ test('地图编辑器数据：默认地图/清洗/自定义地图可被 World �
   assert.ok(w0.terrain.isSolidAt(10000, 320), 'right ceiling solid')
   assert.ok(w0.terrain.isSolidAt(20, 1500), 'left boundary wall solid')
   assert.ok(w0.terrain.isSolidAt(13180, 1500), 'right boundary wall solid')
-  // 天空拱形方块（有上有下）：正中方块 x=6600 顶面 680，左峰 3940..4820 顶面 560，左中 5220..5780 顶面 760
-  assert.ok(w0.terrain.isSolidAt(6600, 740), 'sky arch center block solid (top 680)')
-  assert.ok(w0.terrain.isSolidAt(4300, 620), 'sky arch left peak solid (top 560)')
-  assert.ok(w0.terrain.isSolidAt(5500, 820), 'sky arch left-mid dip solid (top 760)')
-  assert.ok(!w0.terrain.isSolidAt(6000, 740), 'sky arch gap between blocks is open')
-  // 正中复活点与旗帜 cp_c 同在 (6600, 664)，所有旗帜初始未占领，且已移除 FFA 出生点
+
+  // 1) 全图所有地形块（含空中正方形、左右双阶梯、地面凹坑、中央H型地形、地下三层薄横板与竖向长块）100% 严格以 x=6600 左右对称
+  for (const s of def.solids) {
+    const mx = 13200 - s.x - s.w
+    const hasMirror = def.solids.some(
+      o => o.x === mx && o.y === s.y && o.w === s.w && o.h === s.h && o.kind === s.kind,
+    )
+    assert.ok(hasMirror, `solid ${JSON.stringify(s)} must have exact left-right mirror at x=${mx}`)
+  }
+
+  // 2) 空中主方块群（27 座 260×260 正方形）随地面下移至 y=2320..2940，且左右对称建立 80×80 小正方形极限飞行阶梯直达天花板下双 M249
+  const skySquares = def.solids.filter(s => s.y >= 980 && s.y <= 2940 && s.w === 260 && s.h === 260)
+  assert.equal(skySquares.length, 27, `expected 27 main sky 260x260 squares, got ${skySquares.length}`)
+  const stairSquares = def.solids.filter(s => s.w === s.h && s.w <= 160)
+  assert.equal(stairSquares.length, 8, `expected 8 small/perch squares (3 steps + 1 M249 perch per side; center Gauss at y=2200 is aerial), got ${stairSquares.length}`)
+  const m249Crates = w0.supplyCrates.filter(c => c.weaponId === 5 && c.y < 700 && c.y > 400)
+  assert.equal(m249Crates.length, 2, 'two symmetric M249 supply crates exist below the ceiling (left and right)')
+  assert.equal(m249Crates[0].x + m249Crates[1].x, 13200, 'left and right M249 crates are symmetric across x=6600')
+
+  // 3) 障碍物技能高度 (76px) 与三层地下隧道高度 (160px) 碰撞箱对比及通行实测：
+  //    地下横向地板采用 120px 薄板，保持三层 160px 净高隧道（第1层 3440..3600、第2层 3720..3880、第3层 4000..4160）
+  const tunnelFloorY = 3600
+  const tunnelCeilY = 3440
+  const tunnelH = tunnelFloorY - tunnelCeilY
+  assert.equal(tunnelH, 160, 'underground tunnel height is 160px')
+  const builder = w0.addPlayer('ObsBuilder', 'red')
+  const runner = w0.addPlayer('TunnelRunner', 'blue')
+  w0.config.randomSpawn = false
+  builder.pos = { x: 1800, y: tunnelFloorY - 16 }
+  builder.vel = { x: 0, y: 0 }
+  builder.deathStreak = 1
+  builder.secondary = 'obstacle'
+  builder.secondaryCooldown = 0
+  const obsBefore = w0.obstacles.length
+  w0.step(DT, new Map([[builder.id, input({ aim: 0, secondary: sec('obstacle') })]]))
+  assert.equal(w0.obstacles.length, obsBefore + 1, 'obstacle spawned on tunnel floor')
+  const spawnedOb = w0.obstacles[w0.obstacles.length - 1]
+  assert.equal(spawnedOb.h, 76, 'spawned obstacle height is 76px')
+  const clearanceAboveOb = spawnedOb.y - tunnelCeilY
+  assert.ok(clearanceAboveOb >= 80, `space above obstacle (${clearanceAboveOb}px) > player AABB height (46px)`)
+  builder.pos = { x: 1200, y: tunnelFloorY - 16 }
+  runner.pos = { x: spawnedOb.x - 24, y: tunnelFloorY - 16 }
+  runner.vel = { x: 0, y: 0 }
+  runner.onGround = true
+  for (let f = 0; f < 60; f++) {
+    const highEnough = runner.pos.y <= spawnedOb.y - 16
+    const passedOb = runner.pos.x > spawnedOb.x + spawnedOb.w + 16
+    w0.step(DT, new Map([[runner.id, input({
+      move: (highEnough || passedOb || f >= 12) ? 1 : 0,
+      jump: f === 0,
+      jetpack: !passedOb && runner.pos.y > spawnedOb.y - 18,
+    })]]))
+  }
+  assert.ok(runner.pos.x > spawnedOb.x + spawnedOb.w + 25, `runner passed through space above obstacle in tunnel (x=${runner.pos.x.toFixed(1)} > ${spawnedOb.x + spawnedOb.w})`)
+  assert.equal(w0.bodyOverlapsAt(runner.pos.x, runner.pos.y), false, 'runner never stuck in ceiling or obstacle')
+
+  // 4) 中央双竖柱结构（去掉 H 中间横着的挡板）：两侧竖柱 (6180..6460 与 6740..7020, y=3280..4000)，中央竖井从地面直通最底部引力枪 (weaponId=6)，且有三个凹坑的地面 (x=680..6000) 完整无空洞
+  assert.equal(w0.terrain.isSolidAt(6300, 3500), true, 'left central pillar solid')
+  assert.equal(w0.terrain.isSolidAt(6900, 3500), true, 'right central pillar solid')
+  for (let x = 700; x <= 5980; x += 120) {
+    assert.equal(w0.terrain.isSolidAt(x, 3400), true, `main ground with 3 pits is completely continuous at x=${x}`)
+  }
+  for (let y = 3280; y <= 4140; y += 80) {
+    assert.equal(w0.terrain.isSolidAt(6600, y), false, `central shaft at (6600, ${y}) has no crossbar and goes straight to bottom`)
+  }
+  const gravCrate = w0.supplyCrates.find(c => c.weaponId === 6 && c.x === 6600 && c.y > 4100)
+  assert.ok(gravCrate, 'Gravity Gun (weaponId=6) is placed at the very bottom center of the central H shaft')
+
+  // 5) 地下通道不放小箱子（参考图2结构：采用 120px 薄横板与跨层竖向长块 y=3600..4000）
+  const ugSmallCovers = def.solids.filter(s => s.y >= 3440 && s.kind === 'cover')
+  assert.equal(ugSmallCovers.length, 0, 'no small cover boxes placed inside underground tunnels')
+  const ugTallVerticalBlocks = def.solids.filter(s => s.y === 3600 && s.h === 400 && s.w === 280)
+  assert.equal(ugTallVerticalBlocks.length, 4, '4 symmetric tall vertical blocks (2 per wing) spanning y=3600..4000')
+
+  // 正中复活点与旗帜 cp_c 同在 (6600, 2304)，所有旗帜初始未占领
   assert.ok(w0.capturePoints.every(c => c.ownerTeam === null && c.progress === 0), 'all flags start uncaptured')
   const cpC = w0.capturePoints.find(c => c.id === 'cp_c')!
   assert.equal(cpC.x, 6600, 'central flag at x=6600')
-  assert.equal(cpC.y, 664, 'central flag on top of central sky arch block')
-  // FFA 出生点均匀分布在全图（左、中、右及地下地道）
-  assert.ok(FFA_SPAWN_POINTS.length >= 10, `expected >= 10 uniform FFA spawn points, got ${FFA_SPAWN_POINTS.length}`)
-  assert.ok(FFA_SPAWN_POINTS.some(s => s.x < 3000), 'FFA spawn exists in west zone')
-  assert.ok(FFA_SPAWN_POINTS.some(s => s.x >= 4000 && s.x <= 9000), 'FFA spawn exists in central zone')
-  assert.ok(FFA_SPAWN_POINTS.some(s => s.x > 10000), 'FFA spawn exists in east zone')
-  assert.ok(FFA_SPAWN_POINTS.some(s => s.y > 1800), 'FFA spawn exists in underground narrow tunnels')
-  // 靠近中间的位置设置弹药刷新点
-  assert.ok(AMMO_SPOTS.every(a => a.x >= 4800 && a.x <= 8400), 'all ammo spots are positioned near the center of the map')
-  // 贴图统一为 unifiedPanel（无 brick 纹理），所有方块边缘高亮色保持一致 (#38bdf8)
-  assert.ok(w0.terrain.rects.every(r => r.borderColor === UNIFIED_EDGE_HIGHLIGHT), 'all terrain rects share unified edge highlight color')
-  assert.equal(texKindOf('platform'), 'unifiedPanel')
-  assert.equal(texKindOf('cover'), 'unifiedPanel')
-  assert.equal(texKindOf('block'), 'unifiedPanel')
-  // 地下狭窄地道切割工具验证
-  const carved = carveTunnelInSolids([{ x: 1000, y: 2000, w: 1000, h: 500, kind: 'block' }], { x: 1000, y: 2200, w: 1000, h: 120 })
-  assert.equal(carved.length, 2, 'horizontal narrow tunnel splits solid block into top and bottom slabs')
+  assert.equal(cpC.y, 964, 'central flag on top of high-arched central sky square block')
   // 占领正中旗帜后按 E 可选中正中复活点并在重生时生效
   const p = w0.addPlayer('CapTester', 'red')
   w0.config.randomSpawn = false
@@ -1126,7 +1182,7 @@ test('地图编辑器数据：默认地图/清洗/自定义地图可被 World �
   w0.step(DT, new Map([[p.id, input({ interact: true })]]))
   assert.equal(p.selectedSpawnId, 'cp_c', 'pressing E selects central flag respawn point')
   w0.deploy(p)
-  assert.ok(Math.abs(p.pos.x - 6600) <= 60 && Math.abs(p.pos.y - 664) <= 20, `respawns at central respawn point: (${p.pos.x}, ${p.pos.y})`)
+  assert.ok(Math.abs(p.pos.x - 6600) <= 60 && Math.abs(p.pos.y - 964) <= 20, `respawns at central respawn point: (${p.pos.x}, ${p.pos.y})`)
   // 清洗：非法项丢弃、kind 回退
   const clean = sanitizeMapData({ name: 't', solids: [
     { x: 100, y: 2500, w: 60, h: 20, kind: 'platform' },
@@ -1285,7 +1341,7 @@ test('私有二进制协议：百人快照 + 弹幕 + 事件 + 欢迎包 编解�
   assert.equal(decoded!.snap.projectiles.length, snap.projectiles.length)
   assert.equal(decoded!.snap.grenades.length, snap.grenades.length)
   assert.equal(decoded!.snap.obstacles.length, snap.obstacles.length)
-  assert.equal(decoded!.snap.capturePoints.length, 5)
+  assert.equal(decoded!.snap.capturePoints.length, 10)
   assert.equal(decoded!.welcome?.playerId, 42)
   assert.ok(Math.abs(decoded!.snap.players[0].pos.x - snap.players[0].pos.x) <= 0.25)
   assert.ok(Math.abs(decoded!.snap.players[0].hp - snap.players[0].hp) <= 0.1)
@@ -1318,9 +1374,9 @@ test('AOI 视野裁剪：过滤远端无关弹丸，保留视野内与自身发�
   const p1 = w.addPlayer('Viewer', 'red')
   const p2 = w.addPlayer('Near', 'blue')
   const p3 = w.addPlayer('Far', 'blue')
-  p1.pos = { x: 2000, y: 2740 }
-  p2.pos = { x: 2400, y: 2740 }
-  p3.pos = { x: 9000, y: 2740 }
+  p1.pos = { x: 2000, y: 3240 }
+  p2.pos = { x: 2400, y: 3240 }
+  p3.pos = { x: 9000, y: 3240 }
   w.step(DT, new Map([
     [p1.id, input({ fire: true, aim: 0 })],
     [p2.id, input({ fire: true, aim: 0 })],
@@ -1485,7 +1541,7 @@ test('快照增量精简与高频弹丸事件化：静态设施零重复传输 +
   const frame1 = encodeServerMsgBinary({ snap: snap1, events: [] }, { deltaFacilities: true, deltaProjectiles: true })
   const dec1 = decodeServerMsgBinary(frame1)!
   assert.equal(dec1.snap.obstacles.length, snap1.obstacles.length)
-  assert.equal(dec1.snap.capturePoints.length, 5)
+  assert.equal(dec1.snap.capturePoints.length, 10)
   assert.equal(dec1.snap.projectiles.length, snap1.projectiles.length)
 
   // 第 2 帧：不发射新子弹，已有子弹继续飞行、设施状态未改变
@@ -1501,8 +1557,8 @@ test('快照增量精简与高频弹丸事件化：静态设施零重复传输 +
   assert.ok(deltaBin2.byteLength < fullBin2.byteLength * 0.65, `delta frame (${deltaBin2.byteLength}B) is >35% smaller than full binary frame (${fullBin2.byteLength}B)`)
   // 2) 解码端复用了上一帧的设施状态，数量与属性完好无损
   assert.equal(dec2.snap.obstacles.length, snap2.obstacles.length)
-  assert.equal(dec2.snap.capturePoints.length, 5)
-  assert.equal(dec2.snap.supplyCrates.length, 8)
+  assert.equal(dec2.snap.capturePoints.length, 10)
+  assert.equal(dec2.snap.supplyCrates.length, snap2.supplyCrates.length)
   // 3) 解码端通过本地 Dead Reckoning 推算了飞行中弹丸的位置，与服务器权威位置高度吻合
   assert.equal(dec2.snap.projectiles.length, snap2.projectiles.length)
   const pServer = snap2.projectiles[0]
@@ -1544,25 +1600,45 @@ test('连死副手阶梯解锁：按平衡性依次解锁 障碍物 → 护盾 �
   const expectedProgression = ['obstacle', 'shield', 'teleport', 'doll']
   for (let i = 0; i < expectedProgression.length; i++) {
     const expectedSec = expectedProgression[i]
+    // 确保持续测试 Victim 零击杀连死：每次重置 killer.lifeKills 不影响 Victim
     w.damagePlayer(p, 999, undefined, false, false, killer.id, killer.team, '测试')
     assert.equal(p.deathStreak, i + 1, `death #${i + 1} increments deathStreak`)
     assert.equal(getHighestUnlockedSecondary(p.deathStreak), expectedSec)
-    assert.equal(p.secondary, expectedSec, `auto-unlocks and selects ${expectedSec} at streak ${i + 1}`)
+    // 连死后不要自动选择最新解锁的副武器：p.secondary 保持为玩家原本的 'frag'
+    assert.equal(p.secondary, 'frag', `does NOT auto-switch secondary to ${expectedSec} at streak ${i + 1}`)
     // 推进到重生完成
     for (let t = 0; t < 300; t++) w.step(DT, new Map([[p.id, input()], [killer.id, input()]]))
     assert.ok(p.alive && p.respawnTimer <= 0, 'player respawned')
-    assert.equal(p.secondary, expectedSec)
+    // 手榴弹的上限 = 连死数 (i + 1)
+    assert.equal(p.fragCharges, i + 1, `at streak ${i + 1}, grenade max/initial charges equals deathStreak (${i + 1})`)
   }
 
-  // 连死 4 次解锁替身人偶后，重生自动赠送 1 充能，可直接使用
+  // 手动选择已解锁的替身人偶或护盾，验证可使用；随后反杀 Killer 验证「因为杀人失效，统一返回手榴弹」
+  p.secondary = 'shield'
   assert.equal(p.dollCharges, 1, 'streak 4 grants 1 doll charge on respawn')
   w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
   assert.ok(p.doll !== null, 'doll anchored after streak unlock')
 
-  // 当 Victim 反杀 Killer 时，Victim 的连死计数重置为 0
+  // 当 Victim 反杀 Killer 时，Victim 的连死计数重置为 0，且原本选中的高阶副手 ('shield') 因杀人失效统一返回手榴弹 ('frag')，手榴弹上限同步回 1
   w.damagePlayer(killer, 999, undefined, false, false, p.id, p.team, '反杀')
   assert.equal(p.kills, 1)
   assert.equal(p.deathStreak, 0, 'getting a kill resets deathStreak to 0')
+  assert.equal(p.secondary, 'frag', 'streak secondary invalidated by getting a kill automatically reverts to frag')
+  assert.equal(p.fragCharges, 1, 'fragCharges capped back to 1 when deathStreak resets to 0')
+
+  // 且 killer 在本命已杀 4 人的情况下本次阵亡，连死计数应为 0（而非无论杀几人死亡后都是连死 1）
+  assert.equal(killer.deathStreak, 0, 'dying after getting kills in that life keeps deathStreak at 0 instead of 1')
+
+  // 冲锋枪 (weaponIndex=8) 自动获得连死计数 +1 挡的副武器选择权
+  p.weaponIndex = 8
+  assert.equal(isSecondaryUnlocked('obstacle', 0, 0, 8), true, 'SMG at deathStreak=0 unlocks tier 1 (obstacle)')
+  assert.equal(isSecondaryUnlocked('shield', 0, 0, 8), false, 'SMG at deathStreak=0 does not unlock tier 2')
+  p.secondary = 'obstacle'
+  // 切换回突击步枪 (weaponIndex=1) 重生部署时失去冲锋枪 +1 挡加成，副武器自动退回手榴弹 ('frag')
+  p.weaponIndex = 1
+  w.deploy(p)
+  assert.equal(p.weaponIndex, 1)
+  assert.equal(p.secondary, 'frag', 'switching away from SMG invalidates +1 tier secondary and reverts to frag')
 })
 
 test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且碰撞箱略大的唯一护盾 / teleport读条落右键点 / 二进制同步无损', () => {
@@ -1570,8 +1646,8 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
   w.config.randomSpawn = false
   const p = w.addPlayer('Tester', 'red')
   const enemy = w.addPlayer('Enemy', 'blue')
-  p.pos = { x: 3000, y: 2784 }
-  enemy.pos = { x: 4200, y: 2784 }
+  p.pos = { x: 2200, y: 3264 }
+  enemy.pos = { x: 3500, y: 3264 }
   p.deathStreak = 4 // 解锁全部阶梯
 
   // 1) 障碍物 (obstacle)：10.0s 冷却，不设同屏数量上限，可无限生成
@@ -1579,7 +1655,7 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
   const obs0 = w.obstacles.length
   for (let k = 0; k < 5; k++) {
     p.secondaryCooldown = 0
-    p.pos = { x: 2400 + k * 140, y: 2784 }
+    p.pos = { x: 2000 + k * 140, y: 3264 }
     w.step(DT, new Map([[p.id, input({ aim: 0, secondary: sec('obstacle') })]]))
   }
   assert.equal(w.obstacles.length, obs0 + 5, 'all 5 player-spawned obstacles remain active (unlimited spawning)')
@@ -1645,7 +1721,7 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
   // 3) Teleport (teleport)：直接开始读条，读条结束后直接出现在右键目标位置
   p.secondaryCooldown = 0
   const rightClickX = 5200
-  const rightClickY = 2784
+  const rightClickY = 3264
   w.step(DT, new Map([[p.id, input({ aim: 0, secondary: sec('teleport', rightClickX, rightClickY) })]]))
   assert.ok((p.teleportTimer ?? 0) > 0, 'teleport starts channeling (读条中)')
   assert.deepEqual(p.teleportTarget, { x: rightClickX, y: rightClickY })
@@ -1660,7 +1736,7 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
   p.secondary = 'teleport'
   p.deathStreak = 3
   p.teleportTimer = 0.3
-  p.teleportTarget = { x: 6100, y: 2784 }
+  p.teleportTarget = { x: 6100, y: 3264 }
   const bin = encodeServerMsgBinary({ snap: w.snapshot(), events: [] })
   const dec = decodeServerMsgBinary(bin)!
   const decP = dec.snap.players.find(x => x.id === p.id)!

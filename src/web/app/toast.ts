@@ -19,7 +19,7 @@ const TEAM_LIGHT: Record<string, string> = { red: '#fda4af', blue: '#7dd3fc', gr
 
 export function addKillFeed(killerName: string, killerTeam: string, victimName: string, victimTeam: string, weaponLabel: string, isHeadshot?: boolean, isPierced?: boolean): void {
   const feed = document.getElementById('killFeedContainer')
-  if (!feed) return
+  if (!feed || typeof document.createElement !== 'function') return
   const item = document.createElement('div')
   item.className = 'kill-item glass-panel px-3 py-1.5 rounded-xl border border-slate-700/90 shadow-lg flex items-center gap-2 text-xs'
   item.innerHTML = `

@@ -72,7 +72,9 @@ export interface PlayerState {
   recoilVel?: Vec2
   kills: number
   deaths: number
-  /** 连续死亡次数（每次阵亡 +1，获得击杀时重置为 0；用于按平衡性阶梯依次解锁副手） */
+  /** 当前生命内的击杀数（若本命已有击杀，阵亡时连死计数保持 0 而非变成 1） */
+  lifeKills?: number
+  /** 连续死亡次数（每次零击杀阵亡 +1，获得击杀或有击杀阵亡时重置为 0；用于按平衡性阶梯依次解锁副手） */
   deathStreak: number
 }
 

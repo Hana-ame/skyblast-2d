@@ -1,13 +1,15 @@
-// web/fullscreen.ts —— 全屏 API + canvas 视口适配（浏览器，零依赖）
+// web/fullscreen.ts —— 全屏 API + canvas 视口适配（浏览器，零依赖，含沙箱降级支持）
+let pseudoFullscreen = false
+
 export function isFullscreen(): boolean {
   const d = document as unknown as {
     fullscreenElement?: Element | null
     webkitFullscreenElement?: Element | null
   }
-  return !!(d.fullscreenElement ?? d.webkitFullscreenElement)
+  return !!(d.fullscreenElement ?? d.webkitFullscreenElement) || pseudoFullscreen
 }
 
-export function toggleFullscreen(): void {
+export function toggleFullscreen(): boolean {
   const el = document.documentElement as unknown as {
     requestFullscreen?: () => Promise<void>
     webkitRequestFullscreen?: () => void
@@ -17,12 +19,23 @@ export function toggleFullscreen(): void {
     webkitExitFullscreen?: () => void
   }
   if (isFullscreen()) {
-    ;(d.exitFullscreen?.() ?? d.webkitExitFullscreen?.())
+    pseudoFullscreen = false
+    document.body.classList.remove('pseudo-fullscreen')
+    try {
+      const p = d.exitFullscreen?.() ?? d.webkitExitFullscreen?.()
+      if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => {})
+    } catch { /* ignore */ }
+    return false
   } else {
-    ;(el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.())
+    pseudoFullscreen = true
+    document.body.classList.add('pseudo-fullscreen')
+    try {
+      const p = el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.()
+      if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => {})
+    } catch { /* ignore */ }
+    return true
   }
 }
-
 export interface Viewport {
   /** 屏幕(px) → 逻辑世界坐标 */
   toWorld: (clientX: number, clientY: number) => { x: number; y: number }

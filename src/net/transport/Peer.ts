@@ -42,8 +42,9 @@ export interface FastClientTransport extends ClientTransport {
   tickKcp?(nowMs?: number): void
 }
 
-export function encodeServerWireFrame(m: ServerMsg): Uint8Array {
-  return encodeServerMsgBinary(m)
+export function encodeServerWireFrame(m: ServerMsg, forceFull = false): Uint8Array {
+  const isKeyframe = forceFull || Boolean(m.welcome) || Boolean(m.events && m.events.length > 0) || (m.snap.tick % 30 === 0)
+  return encodeServerMsgBinary(m, { deltaFacilities: !isKeyframe })
 }
 
 export function encodeClientWireFrame(m: ClientMsg): Uint8Array {
@@ -112,8 +113,9 @@ export function configureWebRtcUnreliableChannel(
     try { conn.dataChannel.binaryType = 'arraybuffer' } catch { /* ignore */ }
   }
 
+  const alreadyUnreliableKcpChannel = Boolean(conn.dataChannel && conn.dataChannel.label === 'skyblast-kcp')
   const pc = conn.peerConnection
-  if (pc && typeof pc.createDataChannel === 'function') {
+  if (!alreadyUnreliableKcpChannel && pc && typeof pc.createDataChannel === 'function') {
     try {
       // 监听对端创建的 skyblast-kcp 低延迟无序不可靠通道
       const prevOnDc = pc.ondatachannel
@@ -154,7 +156,7 @@ export function configureWebRtcUnreliableChannel(
       conn.send(pkt)
     },
     isCustomDataChannel() {
-      return customDc !== null && customDc.readyState === 'open'
+      return alreadyUnreliableKcpChannel || (customDc !== null && customDc.readyState === 'open')
     },
   }
 }

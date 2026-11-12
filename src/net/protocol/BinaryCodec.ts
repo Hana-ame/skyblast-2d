@@ -13,6 +13,7 @@ import type {
 import type { Intent } from '../../input/intent.ts'
 import { WEAPONS, SECONDARY_UNLOCK_ORDER } from '../../core/weapons.ts'
 import { OBSTACLE_PRESETS } from '../../core/terrain.ts'
+import { CP_INITS, SUPPLY_SPOTS, DOLL_SUPPLY_SPOTS, MORTARS_INIT, AMMO_SPOTS } from '../../core/sim/landmarks.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, clamp } from '../../core/wrap.ts'
 import { stepClientProjectilesDeadReckoning } from '../../core/sim/projectiles.ts'
 
@@ -228,11 +229,30 @@ class ByteReader {
 const sharedServerWriter = new ByteWriter(32768)
 const sharedClientWriter = new ByteWriter(512)
 
-// ── 静态字典与增量缓存状态 ──
-let staticDictCapturePoints: CapturePoint[] | null = null
-let staticDictSupplyCrates: SupplyCrate[] | null = null
-let staticDictMortars: Mortar[] | null = null
-const staticDictAmmoSpots = new Map<number, string>()
+// ── 静态字典与增量缓存状态（模块加载即由权威静态地标预热，确保跨进程/跨标签页解码端无需等待全量帧即可安全解码快速帧） ──
+function buildDefaultCapturePointsDict(): CapturePoint[] {
+  return CP_INITS.map(c => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }))
+}
+function buildDefaultSupplyCratesDict(): SupplyCrate[] {
+  const crates: SupplyCrate[] = []
+  let id = 1
+  for (const s of SUPPLY_SPOTS) {
+    const wid = s.weaponId ?? 4
+    const w = WEAPONS[wid]
+    crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: 'weapon', weaponId: wid, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 })
+  }
+  for (const s of DOLL_SUPPLY_SPOTS) {
+    crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: 'doll', weaponId: -1, weaponName: '🎎 替身人偶', color: '#f472b6', active: true, respawnTimer: 0 })
+  }
+  return crates
+}
+function buildDefaultMortarsDict(): Mortar[] {
+  return MORTARS_INIT.map(m => ({ ...m, cooldown: 0, operatorId: null }))
+}
+let staticDictCapturePoints: CapturePoint[] | null = buildDefaultCapturePointsDict()
+let staticDictSupplyCrates: SupplyCrate[] | null = buildDefaultSupplyCratesDict()
+let staticDictMortars: Mortar[] | null = buildDefaultMortarsDict()
+const staticDictAmmoSpots = new Map<number, string>(AMMO_SPOTS.map(a => [a.x, a.area]))
 const encodedPlayerNames = new Map<number, string>()
 const decodedPlayerNames = new Map<number, string>()
 
@@ -255,6 +275,11 @@ const decodedBallisticProjs = new Map<number, Projectile>()
 let lastDecodedTick = 0
 
 export function resetBinaryCodecState(): void {
+  staticDictCapturePoints = buildDefaultCapturePointsDict()
+  staticDictSupplyCrates = buildDefaultSupplyCratesDict()
+  staticDictMortars = buildDefaultMortarsDict()
+  staticDictAmmoSpots.clear()
+  for (const a of AMMO_SPOTS) staticDictAmmoSpots.set(a.x, a.area)
   encodedPlayerNames.clear()
   decodedPlayerNames.clear()
   lastEncObsSig = ''
@@ -276,6 +301,7 @@ export function encodeServerMsgBinary(msg: ServerMsg, opts: BinaryEncodeOptions 
 
   const hasEvents = !!(msg.events && msg.events.length > 0)
   const hasWelcome = !!msg.welcome
+  if (hasWelcome || (msg.snap.tick % 60 === 0)) encodedPlayerNames.clear()
   const hasAckSeqs = !!(msg.snap.ackSeqs && Object.keys(msg.snap.ackSeqs).length > 0)
   const hdrFlags =
     1 |
@@ -912,8 +938,10 @@ function encodePlayer(w: ByteWriter, p: PlayerState): void {
   w.u8(bitFlags)
 
   const secIdx = Math.max(0, SECONDARY_UNLOCK_ORDER.indexOf(p.secondary as (typeof SECONDARY_UNLOCK_ORDER)[number]))
-  const wepAndSec = (p.weaponIndex & 0x0f) | ((secIdx & 1) << 4) | ((p.fragCharges & 0x07) << 5)
+  const hasCustomSpawn = Boolean(p.selectedSpawnId && p.selectedSpawnId !== 'base')
+  const wepAndSec = (p.weaponIndex & 0x0f) | ((hasCustomSpawn ? 1 : 0) << 4) | ((p.fragCharges & 0x07) << 5)
   w.u8(wepAndSec)
+  if (hasCustomSpawn) w.str(p.selectedSpawnId!)
 
   w.i16(clamp(Math.round(p.hp * 10), -32767, 32767))
   w.u16(p.maxHp)
@@ -1023,7 +1051,9 @@ function decodePlayer(r: ByteReader): PlayerState {
   const hasDoll = !!(bitFlags & 128)
 
   const weaponIndex = wepAndSec & 0x0f
+  const hasCustomSpawn = !!(wepAndSec & 0x10)
   const fragCharges = (wepAndSec >> 5) & 0x07
+  const selectedSpawnId = hasCustomSpawn ? r.str() : 'base'
 
   const hp = r.i16() * 0.1
   const maxHp = r.u16()
@@ -1126,7 +1156,7 @@ function decodePlayer(r: ByteReader): PlayerState {
     reloading, reloadTimer, fireCooldown, chargeTimer,
     secondary, secondaryCooldown, fragCharges, fragRechargeTimer,
     jetpack, fuel, shieldHp, shieldTimer, watchtowerTimer, mountedTowerId, warpCooldown,
-    teleportTimer, teleportTarget, doll, dollCharges, respawnTimer, kills, deaths, deathStreak,
+    teleportTimer, teleportTarget, doll, dollCharges, respawnTimer, kills, deaths, deathStreak, selectedSpawnId,
   }
 }
 

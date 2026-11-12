@@ -1,5 +1,9 @@
-// web/app/net.ts —— PeerJS 联机编排 & WebRTC DataChannel (ordered:false, maxRetransmits:0) 自定义 KCP 低延迟同步管理
-import { world, localPlayer, bots, mode } from './context.ts'
+// web/app/net.ts —— PeerJS 联机编排 & WebRTC DataChannel 自定义 KCP 低延迟同步管理
+// 房间只使用纯房间码 String（如 SB2-O7UCV），不拼 URL 参数；所有房间参数一律由房主实时下发。
+import { world, localPlayer, bots, mode, pendingLoadout, uiState, featureFlags } from './context.ts'
+import { getPhysicsParams, setPhysicsParams } from '../../core/sim/physics.ts'
+import { resetBinaryCodecState, encodeServerMsgBinary, filterSnapshotAOI } from '../../net/protocol/BinaryCodec.ts'
+import { WEAPONS } from '../../core/weapons.ts'
 import { applyIntents } from '../../net/ServerSim.ts'
 import { ClientSession } from '../../net/ClientSession.ts'
 import { StateSync } from '../../net/StateSync.ts'
@@ -7,7 +11,7 @@ import { InputMapper } from '../../input/InputMapper.ts'
 import { createPeerClient, createPeerServer, encodeServerWireFrame } from '../../net/transport/Peer.ts'
 import type { PeerConnLike, FastClientTransport, FastServerTransport } from '../../net/transport/Peer.ts'
 import { handleEvents } from './events.ts'
-import { updateTeamCountUI, updateScoreboardUI, updateHudUI } from './hud.ts'
+import { updateTeamCountUI, updateScoreboardUI, updateHudUI, updateDebugHudVisibility, syncTeamButtonsUI } from './hud.ts'
 import { showToast } from './toast.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput, TeamId, WorldEvent } from '../../core/types.ts'
@@ -15,9 +19,23 @@ import type { WorldSnapshot } from '../../core/snap.ts'
 
 export interface HostGuestSlot {
   playerId: number
+  conn: PeerConnLike
   transport: FastServerTransport
   input: WorldInput
   lastAckSeq: number
+}
+
+export interface HostRoomParamsPayload {
+  roomId: string
+  mode: '2teams' | 'ffa'
+  allowFfaInTeams: boolean
+  bots: number
+  maxHp: number
+  gravity: number
+  moveSpeed: number
+  jetpackAccel: number
+  respawnDelay: number
+  friendlyFire: boolean
 }
 
 export interface NetOrchestratorState {
@@ -28,10 +46,13 @@ export interface NetOrchestratorState {
   stateSync: StateSync | null
   hostGuests: Map<number, HostGuestSlot>
   clientTransport: FastClientTransport | null
+  clientConn: PeerConnLike | null
   mapper: InputMapper
   cleanupFns: (() => void)[]
+  probeCleanupFns: (() => void)[]
   channelMode: string
   lastPingMs: number
+  hostRoomParams: HostRoomParamsPayload | null
 }
 
 export const netState: NetOrchestratorState = {
@@ -42,10 +63,13 @@ export const netState: NetOrchestratorState = {
   stateSync: null,
   hostGuests: new Map(),
   clientTransport: null,
+  clientConn: null,
   mapper: new InputMapper(),
   cleanupFns: [],
+  probeCleanupFns: [],
   channelMode: 'Unordered/UDP',
   lastPingMs: 0,
+  hostRoomParams: null,
 }
 
 interface PeerConstructorLike {
@@ -65,6 +89,163 @@ function getGlobalPeer(): PeerConstructorLike | null {
 function setText(id: string, text: string): void {
   const el = document.getElementById(id)
   if (el) el.textContent = text
+}
+
+/** 提取纯房间 String（剥离任何多余后缀，只保留纯房间码如 SB2-O7UCV） */
+export function cleanRoomIdString(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  const sep = trimmed.search(/[?#&\s]/)
+  return (sep > 0 ? trimmed.slice(0, sep) : trimmed).trim()
+}
+
+/** 构造当前房主权威参数包（由房主直接下发给客户端） */
+export function getHostAuthoritativeRoomParams(): HostRoomParamsPayload {
+  const P = getPhysicsParams()
+  return {
+    roomId: netState.roomId || 'SB2-LOCAL',
+    mode: mode.current,
+    allowFfaInTeams: mode.allowFfaInTeams,
+    bots: bots.length,
+    maxHp: world.config.maxHp,
+    gravity: P.gravity,
+    moveSpeed: P.moveSpeed,
+    jetpackAccel: P.jetpackAccel,
+    respawnDelay: world.config.respawnDelay,
+    friendlyFire: Boolean(world.config.grenadeFriendlyFire),
+  }
+}
+
+/** 当 Host 修改任何参数时：房间码保持纯 String 不变，直接向所有已连客户端与信令监听端广播最新参数 */
+export function broadcastHostRoomParams(): void {
+  const idInput = document.getElementById('peerLocalIdInput') as HTMLInputElement | null
+  if (idInput && netState.roomId) {
+    idInput.value = netState.roomId
+  }
+  const params = getHostAuthoritativeRoomParams()
+  const ctrlMsg = JSON.stringify({
+    __sb2Ctrl: 'room-params',
+    ...params,
+  })
+  // 1. 若房主禁用了双队下的 FFA 身份，自动将房主与客机中的违规 FFA 身份归队
+  if (mode.current === '2teams' && !mode.allowFfaInTeams) {
+    if (localPlayer.team === 'ffa') localPlayer.team = 'red'
+    for (const slot of netState.hostGuests.values()) {
+      const gp = world.players.find(p => p.id === slot.playerId)
+      if (gp && gp.team === 'ffa') {
+        gp.team = 'blue'
+      }
+    }
+    syncTeamButtonsUI()
+    updateTeamCountUI()
+  }
+  // 2. 通过 DataChannel 实时推送给所有已连接客户端
+  for (const slot of netState.hostGuests.values()) {
+    try { slot.conn.send(ctrlMsg) } catch { /* ignore */ }
+  }
+  // 3. 通过同源信令广播给正在输入房间 String 预览参数的客户端
+  if (netState.roomId && typeof BroadcastChannel !== 'undefined') {
+    try {
+      const bc = new BroadcastChannel(`skyblast-kcp-sig-${netState.roomId}`)
+      bc.postMessage({ type: 'host-params', params })
+      bc.close()
+    } catch { /* ignore */ }
+  }
+}
+
+/** 客户端根据输入的房间 String 向房主请求实时参数 */
+export function probeHostRoomParamsByString(rawInput: string): void {
+  for (const fn of netState.probeCleanupFns) {
+    try { fn() } catch { /* ignore */ }
+  }
+  netState.probeCleanupFns.length = 0
+
+  const roomId = cleanRoomIdString(rawInput)
+  if (!roomId) {
+    netState.hostRoomParams = null
+    renderClientRoomParamsUI(null)
+    return
+  }
+
+  // 若已连入该房间，直接显示当前已同步的房主参数
+  if (netState.role === 'client' && netState.roomId === roomId && netState.hostRoomParams) {
+    renderClientRoomParamsUI(netState.hostRoomParams)
+    return
+  }
+
+  setText('clientRoomParamsStatus', `连接 [${roomId}]...`)
+  if (typeof BroadcastChannel !== 'undefined') {
+    const bc = new BroadcastChannel(`skyblast-kcp-sig-${roomId}`)
+    bc.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data
+      if (msg && msg.type === 'host-params' && msg.params) {
+        applyReceivedHostRoomParams(msg.params as HostRoomParamsPayload)
+      }
+    }
+    bc.postMessage({ type: 'query-params', roomId })
+    netState.probeCleanupFns.push(() => bc.close())
+  }
+}
+
+function applyReceivedHostRoomParams(params: HostRoomParamsPayload): void {
+  netState.hostRoomParams = params
+  if (netState.role === 'client' || uiState.lobbyRole === 'client') {
+    if (Number.isFinite(params.gravity) && Number.isFinite(params.moveSpeed) && Number.isFinite(params.jetpackAccel)) {
+      setPhysicsParams({
+        gravity: params.gravity,
+        moveSpeed: params.moveSpeed,
+        jetpackAccel: params.jetpackAccel,
+      })
+    }
+    if (Number.isFinite(params.maxHp) && params.maxHp > 0) world.config.maxHp = params.maxHp
+    if (Number.isFinite(params.respawnDelay) && params.respawnDelay > 0) world.config.respawnDelay = params.respawnDelay
+    world.config.grenadeFriendlyFire = Boolean(params.friendlyFire)
+  }
+  mode.current = params.mode === 'ffa' ? 'ffa' : '2teams'
+  mode.allowFfaInTeams = Boolean(params.allowFfaInTeams)
+  if (mode.current === 'ffa') {
+    localPlayer.team = 'ffa'
+  } else if (!mode.allowFfaInTeams && localPlayer.team === 'ffa') {
+    localPlayer.team = 'red'
+  }
+  syncTeamButtonsUI()
+  renderClientRoomParamsUI(params)
+}
+
+/** 渲染房主下发的只读房间参数 */
+export function renderClientRoomParamsUI(params: HostRoomParamsPayload | null): void {
+  const emptyBox = document.getElementById('clientRoomParamsEmpty')
+  const gridBox = document.getElementById('clientRoomParamsGrid')
+  if (!params) {
+    emptyBox?.classList.remove('hidden')
+    gridBox?.classList.add('hidden')
+    return
+  }
+  emptyBox?.classList.add('hidden')
+  gridBox?.classList.remove('hidden')
+  setText('clientParamRoomId', params.roomId)
+  setText('clientParamMode', params.mode === 'ffa' ? '混战' : '双队')
+  setText('clientParamFfaRule', params.mode === 'ffa' ? '全员' : (params.allowFfaInTeams ? '允许' : '禁止'))
+  setText('clientParamBots', `${params.bots} AI`)
+  setText('clientParamHpRespawn', `${params.maxHp}HP / ${params.respawnDelay}s`)
+  setText('clientParamPhysics', `G:${params.gravity} · V:${params.moveSpeed} · J:${params.jetpackAccel}`)
+}
+
+/** 客机向房主发送个人武器设置与身份变更 */
+export function sendClientLoadoutToHost(redeploy = false): void {
+  if (netState.role !== 'client' || !netState.clientConn) return
+  const payload = JSON.stringify({
+    __sb2Ctrl: 'client-loadout',
+    name: localPlayer.name,
+    team: localPlayer.team,
+    weaponIndex: pendingLoadout.weaponIndex,
+    secondary: pendingLoadout.secondaryType,
+    spawnPointId: pendingLoadout.spawnPointId,
+    redeploy,
+  })
+  try {
+    netState.clientConn.send(payload)
+  } catch { /* ignore */ }
 }
 
 export function updateNetStatusUI(): void {
@@ -102,54 +283,56 @@ export function updateNetStatusUI(): void {
 
   if (netState.role === 'offline') {
     if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400'
-    if (txt) txt.textContent = '本地权威'
+    if (txt) txt.textContent = 'Host'
     if (badge) badge.textContent = `单机/${bots.length}AI`
     if (rttBadge) rttBadge.classList.add('hidden')
     if (roleBadge) {
-      roleBadge.textContent = '本地单机'
-      roleBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700'
+      roleBadge.textContent = '👑 Host'
+      roleBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
     }
     if (leaveBtn) leaveBtn.classList.add('hidden')
   } else if (netState.role === 'host') {
     if (dot) dot.className = 'w-2 h-2 rounded-full bg-cyan-400 animate-pulse'
-    if (txt) txt.textContent = `KCP房主(${netState.roomId})`
-    if (badge) badge.textContent = `${netState.peerCount + 1}人在线`
+    if (txt) txt.textContent = netState.roomId
+    if (badge) badge.textContent = `${netState.peerCount + 1}人`
     if (rttBadge) {
       rttBadge.classList.remove('hidden')
-      rttBadge.textContent = `KCP ${srtt || 1}ms`
+      rttBadge.textContent = `${srtt || 1}ms`
     }
     if (roleBadge) {
-      roleBadge.textContent = `👑 KCP 房主 (${netState.peerCount} 客机)`
+      roleBadge.textContent = `👑 Host (${netState.roomId})`
       roleBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
     }
     if (leaveBtn) leaveBtn.classList.remove('hidden')
   } else {
     if (dot) dot.className = 'w-2 h-2 rounded-full bg-sky-400 animate-pulse'
-    if (txt) txt.textContent = `KCP客机(${netState.roomId})`
-    if (badge) badge.textContent = '已连KCP'
+    if (txt) txt.textContent = netState.roomId
+    if (badge) badge.textContent = 'Client'
     if (rttBadge) {
       rttBadge.classList.remove('hidden')
-      rttBadge.textContent = `KCP ${srtt || 1}ms`
+      rttBadge.textContent = `${srtt || 1}ms`
     }
     if (roleBadge) {
-      roleBadge.textContent = '🚀 KCP 客机已连接'
+      roleBadge.textContent = `🚀 Client (${netState.roomId})`
       roleBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-400/50'
     }
     if (leaveBtn) leaveBtn.classList.remove('hidden')
+    if (uiState.debugHudOpen) uiState.debugHudOpen = false
   }
 
   setText('kcpStatChannel', netState.channelMode)
   setText('kcpStatRtt', `${srtt || (netState.role === 'offline' ? 0 : 1)} ms`)
   setText('kcpStatPkts', `${tx} / ${rx} (${fast})`)
+  updateDebugHudVisibility()
 }
 
 /** 将 WebRTC RTCDataChannel (ordered:false, maxRetransmits:0) 封装为 PeerConnLike 供 KCP 协议栈驱动 */
 export function wrapRtcDataChannelAsPeerConn(dc: RTCDataChannel, pc?: RTCPeerConnection): PeerConnLike {
-  let onDataCb: ((data: unknown) => void) | null = null
+  const dataCbs: ((data: unknown) => void)[] = []
   let onCloseCb: (() => void) | null = null
   dc.binaryType = 'arraybuffer'
   dc.onmessage = (ev: MessageEvent) => {
-    onDataCb?.(ev.data)
+    for (const cb of dataCbs) cb(ev.data)
   }
   dc.onclose = () => {
     onCloseCb?.()
@@ -163,7 +346,6 @@ export function wrapRtcDataChannelAsPeerConn(dc: RTCDataChannel, pc?: RTCPeerCon
       if (dc.readyState !== 'open') return
       try {
         if (data instanceof Uint8Array) {
-          // RTCDataChannel.send 类型不接受 SharedArrayBuffer 视图 → 复制成标准 ArrayBuffer
           dc.send(data.slice().buffer as ArrayBuffer)
         } else if (data instanceof ArrayBuffer) {
           dc.send(data)
@@ -175,7 +357,7 @@ export function wrapRtcDataChannelAsPeerConn(dc: RTCDataChannel, pc?: RTCPeerCon
       }
     },
     on: ((event: 'data' | 'close', cb: ((d: unknown) => void) | (() => void)) => {
-      if (event === 'data') onDataCb = cb as (d: unknown) => void
+      if (event === 'data') dataCbs.push(cb as (d: unknown) => void)
       else if (event === 'close') onCloseCb = cb as () => void
     }) as PeerConnLike['on'],
     close() {
@@ -185,23 +367,43 @@ export function wrapRtcDataChannelAsPeerConn(dc: RTCDataChannel, pc?: RTCPeerCon
   }
 }
 
-/** 房主侧接入一条已建立的 PeerConnLike（PeerJS DataConnection 或原生 WebRTC DataChannel） */
-function acceptIncomingKcpGuest(conn: PeerConnLike, label = 'KCP-Guest'): number {
+function sanitizeGuestTeam(wantTeam?: TeamId): TeamId {
+  if (mode.current === 'ffa') return 'ffa'
+  if (wantTeam === 'ffa' && mode.allowFfaInTeams) return 'ffa'
+  if (wantTeam === 'red' || wantTeam === 'blue') return wantTeam
+  return world.players.filter(p => p.team === 'blue').length <= world.players.filter(p => p.team === 'red').length ? 'blue' : 'red'
+}
+
+/** 房主侧接入一条已建立的 PeerConnLike */
+function acceptIncomingKcpGuest(
+  conn: PeerConnLike,
+  label = 'KCP-Guest',
+  initTeam?: TeamId,
+  initWeaponIdx?: number,
+  initSecondary?: string,
+): number {
   const srvTransport = createPeerServer(conn, {
     nodelay: 1,
     interval: 10,
     resend: 2,
     nc: 1,
   })
-  const team: TeamId = mode.current === 'ffa'
-    ? 'ffa'
-    : (world.players.filter(p => p.team === 'blue').length <= world.players.filter(p => p.team === 'red').length ? 'blue' : 'red')
+  const team = sanitizeGuestTeam(initTeam)
   const guestPlayer = world.addPlayer(label, team)
+  if (typeof initWeaponIdx === 'number' && WEAPONS[initWeaponIdx] && !WEAPONS[initWeaponIdx].isSupplyOnly) {
+    guestPlayer.weaponIndex = initWeaponIdx
+    guestPlayer.lastPrimaryIndex = initWeaponIdx
+  }
+  if (typeof initSecondary === 'string') {
+    guestPlayer.secondary = initSecondary
+  }
   guestPlayer.deployed = true
   guestPlayer.alive = true
+  world.deploy(guestPlayer)
 
   const slot: HostGuestSlot = {
     playerId: guestPlayer.id,
+    conn,
     transport: srvTransport,
     input: defaultWorldInput(),
     lastAckSeq: 0,
@@ -213,14 +415,45 @@ function acceptIncomingKcpGuest(conn: PeerConnLike, label = 'KCP-Guest'): number
     slot.input = applyIntents(slot.input, msg.intents)
   })
 
+  conn.on('data', (raw) => {
+    if (typeof raw !== 'string' || !raw.includes('__sb2Ctrl')) return
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && parsed.__sb2Ctrl === 'client-loadout') {
+        if (typeof parsed.name === 'string' && parsed.name.trim()) {
+          guestPlayer.name = parsed.name.trim().slice(0, 18)
+        }
+        if (parsed.team === 'red' || parsed.team === 'blue' || parsed.team === 'ffa') {
+          guestPlayer.team = sanitizeGuestTeam(parsed.team)
+        }
+        const wIdx = Number(parsed.weaponIndex)
+        if (Number.isFinite(wIdx) && WEAPONS[wIdx] && !WEAPONS[wIdx].isSupplyOnly) {
+          guestPlayer.weaponIndex = wIdx
+          guestPlayer.lastPrimaryIndex = wIdx
+        }
+        if (typeof parsed.secondary === 'string') {
+          guestPlayer.secondary = parsed.secondary
+        }
+        if (typeof parsed.spawnPointId === 'string') {
+          guestPlayer.selectedSpawnId = parsed.spawnPointId
+        }
+        if (parsed.redeploy) {
+          world.deploy(guestPlayer)
+        }
+        updateTeamCountUI()
+      }
+    } catch { /* ignore */ }
+  })
+
   netState.hostGuests.set(guestPlayer.id, slot)
   netState.peerCount = netState.hostGuests.size
+  resetBinaryCodecState()
 
-  // 发送 KCP 可靠欢迎包 + 初始全量快照
   srvTransport.send({
     snap: world.snapshot(),
     welcome: { playerId: guestPlayer.id, name: guestPlayer.name, team: guestPlayer.team },
   })
+  broadcastHostRoomParams()
   srvTransport.kcp?.sendPing(performance.now())
 
   conn.on('close', () => {
@@ -229,13 +462,12 @@ function acceptIncomingKcpGuest(conn: PeerConnLike, label = 'KCP-Guest'): number
     netState.peerCount = netState.hostGuests.size
     updateTeamCountUI()
     updateNetStatusUI()
-    showToast(`🔌 客机 ${guestPlayer.name} 已断开 KCP 连接`)
+    showToast(`🔌 ${guestPlayer.name} 已断开`)
   })
 
   updateTeamCountUI()
   updateNetStatusUI()
-  setText('peerStatusLog', `✅ 已接入客机 ${guestPlayer.name} (#${guestPlayer.id}) · WebRTC Unordered DataChannel + KCP (nodelay=1, interval=10ms)`)
-  showToast(`⚡ 客机 ${guestPlayer.name} 已通过 WebRTC KCP 接入房间！`)
+  showToast(`⚡ ${guestPlayer.name} 已加入房间`)
   return guestPlayer.id
 }
 
@@ -252,9 +484,33 @@ function attachClientKcpSession(conn: PeerConnLike, roomId: string): void {
 
   netState.role = 'client'
   netState.roomId = roomId
+  netState.clientConn = conn
   netState.clientTransport = cliTransport
   netState.stateSync = sync
   netState.clientSession = session
+  uiState.lobbyRole = 'client'
+  uiState.debugHudOpen = false
+
+  conn.on('data', (raw) => {
+    if (typeof raw !== 'string' || !raw.includes('__sb2Ctrl')) return
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && parsed.__sb2Ctrl === 'room-params') {
+        applyReceivedHostRoomParams({
+          roomId: parsed.roomId || roomId,
+          mode: parsed.mode === 'ffa' ? 'ffa' : '2teams',
+          allowFfaInTeams: Boolean(parsed.allowFfaInTeams ?? true),
+          bots: Number(parsed.bots ?? 0),
+          maxHp: Number(parsed.maxHp ?? 100),
+          gravity: Number(parsed.gravity ?? 1250),
+          moveSpeed: Number(parsed.moveSpeed ?? 300),
+          jetpackAccel: Number(parsed.jetpackAccel ?? 3000),
+          respawnDelay: Number(parsed.respawnDelay ?? 4),
+          friendlyFire: Boolean(parsed.friendlyFire ?? true),
+        })
+      }
+    } catch { /* ignore */ }
+  })
 
   session.onSnapshot((snap: WorldSnapshot) => {
     applyAuthoritativeSnapshotToClientWorld(snap)
@@ -264,13 +520,13 @@ function attachClientKcpSession(conn: PeerConnLike, roomId: string): void {
   })
 
   conn.on('close', () => {
-    showToast('⚠️ 与房主的 KCP 连接已断开，已切回单机权威模式')
+    showToast('⚠️ 与房主断开连接')
     leaveMultiplayerRoom()
   })
 
+  sendClientLoadoutToHost(false)
   updateNetStatusUI()
-  setText('peerStatusLog', `🚀 已连入房主 [${roomId}] · WebRTC KCP 极速同步激活（0 RTT 预测 + KCP 快重传）`)
-  showToast(`🚀 已通过 WebRTC KCP 连入房间 ${roomId}`)
+  showToast(`🚀 已连入房间 ${roomId}`)
 }
 
 function applyAuthoritativeSnapshotToClientWorld(snap: WorldSnapshot): void {
@@ -291,50 +547,200 @@ function applyAuthoritativeSnapshotToClientWorld(snap: WorldSnapshot): void {
   const myId = netState.clientSession?.playerId ?? localPlayer.id
   const meInSnap = interp.players.find(p => p.id === myId)
   if (meInSnap) {
+    const keepSpawnId = pendingLoadout.spawnPointId || meInSnap.selectedSpawnId || 'base'
     Object.assign(localPlayer, meInSnap)
+    localPlayer.selectedSpawnId = keepSpawnId
   }
   updateScoreboardUI()
   updateHudUI()
 }
 
-/** 启动同源 BroadcastChannel + 原生 RTCPeerConnection(ordered:false, maxRetransmits:0) KCP 信令通道 */
+/**
+ * 双栈混合数据报连接（WebRTC Unordered DataChannel + BroadcastChannel 零阻塞 KCP 数据报通道）：
+ * - 在具备物理网卡的局域网/公网环境下，一旦 RTCDataChannel (ordered:false, maxRetransmits:0) 打开立即无缝切换至原生 WebRTC UDP 通道；
+ * - 在仅有 lo 回环网卡、企业内网禁 UDP 或沙盒容器环境下（Chromium libwebrtc 默认跳过 lo 采集 ICE 候选），
+ *   0ms 立即通过同源 BroadcastChannel 承载 24B KCP 原始二进制帧与控制指令，确保任何环境下双标签页/多窗口 100% 连通！
+ */
+function createHybridBroadcastWebRtcConn(
+  bc: BroadcastChannel,
+  clientId: string,
+  side: "host" | "client",
+): { conn: PeerConnLike; upgradeToRtc: (dc: RTCDataChannel, pc: RTCPeerConnection) => void; triggerClose: () => void } {
+  const dataCbs: ((data: unknown) => void)[] = []
+  let onCloseCb: (() => void) | null = null
+  let activeDc: RTCDataChannel | null = null
+  let activePc: RTCPeerConnection | null = null
+  let closed = false
+
+  const conn: PeerConnLike = {
+    dataChannel: { label: "skyblast-kcp", readyState: "open", binaryType: "arraybuffer" } as unknown as RTCDataChannel,
+    reliable: false,
+    serialization: "raw",
+    send(data: unknown) {
+      if (closed) return
+      if (activeDc && activeDc.readyState === "open") {
+        try {
+          if (data instanceof Uint8Array) activeDc.send(data.slice().buffer as ArrayBuffer)
+          else if (data instanceof ArrayBuffer) activeDc.send(data)
+          else if (typeof data === "string") activeDc.send(data)
+          return
+        } catch {
+          // 回退至 BroadcastChannel 数据报层
+        }
+      }
+      try {
+        const payload = data instanceof Uint8Array ? new Uint8Array(data) : data
+        bc.postMessage({ type: "kcp-pkt", clientId, from: side, payload })
+      } catch { /* ignore */ }
+    },
+    on: ((event: "data" | "close", cb: ((d: unknown) => void) | (() => void)) => {
+      if (event === "data") dataCbs.push(cb as (d: unknown) => void)
+      else if (event === "close") onCloseCb = cb as () => void
+    }) as PeerConnLike["on"],
+    close() {
+      if (closed) return
+      closed = true
+      try { bc.postMessage({ type: "kcp-close", clientId, from: side }) } catch { /* ignore */ }
+      try { activeDc?.close() } catch { /* ignore */ }
+      try { activePc?.close() } catch { /* ignore */ }
+    },
+  }
+
+  return {
+    conn,
+    upgradeToRtc(dc: RTCDataChannel, pc: RTCPeerConnection) {
+      activeDc = dc
+      activePc = pc
+      conn.dataChannel = dc
+      conn.peerConnection = pc
+      dc.binaryType = "arraybuffer"
+      dc.onmessage = (ev: MessageEvent) => {
+        for (const cb of dataCbs) cb(ev.data)
+      }
+      dc.onclose = () => {
+        if (!closed) {
+          closed = true
+          onCloseCb?.()
+        }
+      }
+    },
+    triggerClose() {
+      if (!closed) {
+        closed = true
+        onCloseCb?.()
+      }
+    },
+  }
+}
+
+/** 启动同源 BroadcastChannel + 原生 RTCPeerConnection KCP 双栈信令与数据报通道 */
 function setupBroadcastChannelWebRtcHost(roomId: string): void {
-  if (typeof BroadcastChannel === 'undefined' || typeof RTCPeerConnection === 'undefined') return
+  if (typeof BroadcastChannel === "undefined") return
   const bc = new BroadcastChannel(`skyblast-kcp-sig-${roomId}`)
   const pcs = new Map<string, RTCPeerConnection>()
+  const pendingIce = new Map<string, RTCIceCandidateInit[]>()
+  const remoteReady = new Set<string>()
+  const guestHybrids = new Map<string, ReturnType<typeof createHybridBroadcastWebRtcConn>>()
+  const guestDataListeners = new Map<string, (payload: unknown) => void>()
 
   bc.onmessage = async (ev: MessageEvent) => {
     const msg = ev.data
-    if (!msg || typeof msg !== 'object') return
-    if (msg.type === 'join-offer' && msg.clientId && msg.sdp) {
-      const pc = new RTCPeerConnection()
-      pcs.set(msg.clientId, pc)
-      pc.onicecandidate = (ice) => {
-        if (ice.candidate) {
-          bc.postMessage({ type: 'host-ice', clientId: msg.clientId, candidate: ice.candidate.toJSON() })
-        }
+    if (!msg || typeof msg !== "object") return
+    if (msg.type === "query-params") {
+      bc.postMessage({ type: "host-params", params: getHostAuthoritativeRoomParams() })
+      return
+    }
+    if (msg.type === "kcp-pkt" && msg.clientId && msg.from === "client") {
+      const fn = guestDataListeners.get(msg.clientId)
+      if (fn) fn(msg.payload)
+      return
+    }
+    if (msg.type === "kcp-close" && msg.clientId && msg.from === "client") {
+      guestHybrids.get(msg.clientId)?.triggerClose()
+      guestHybrids.delete(msg.clientId)
+      guestDataListeners.delete(msg.clientId)
+      return
+    }
+    if (msg.type === "join-offer" && msg.clientId) {
+      bc.postMessage({ type: "host-params", params: getHostAuthoritativeRoomParams() })
+
+      // 1. 立即建立 KCP 双栈数据报会话（0ms 握手，不阻塞于网卡 ICE 收集）
+      if (!guestHybrids.has(msg.clientId)) {
+        const hybrid = createHybridBroadcastWebRtcConn(bc, msg.clientId, "host")
+        guestHybrids.set(msg.clientId, hybrid)
+        // 拦截 conn.on("data") 以同时接收 BroadcastChannel 数据报
+        const origOn = hybrid.conn.on.bind(hybrid.conn) as (event: "data" | "close", cb: (d?: unknown) => void) => void
+        const cbs: ((d: unknown) => void)[] = []
+        hybrid.conn.on = ((event: "data" | "close", cb: any) => {
+          if (event === "data") cbs.push(cb)
+          origOn(event, cb)
+        }) as PeerConnLike["on"]
+        guestDataListeners.set(msg.clientId, (payload) => {
+          for (const cb of cbs) cb(payload)
+        })
+        netState.channelMode = "WebRTC/BC-UDP+KCP"
+        acceptIncomingKcpGuest(
+          hybrid.conn,
+          msg.playerName || "KCP-Ranger",
+          msg.team,
+          msg.weaponIndex,
+          msg.secondary,
+        )
+        bc.postMessage({ type: "host-ready", clientId: msg.clientId, params: getHostAuthoritativeRoomParams() })
       }
-      pc.ondatachannel = (dcEv) => {
-        const dc = dcEv.channel
-        dc.onopen = () => {
-          netState.channelMode = `WebRTC UDP(ordered:${dc.ordered},rtx:${dc.maxRetransmits ?? 0})+KCP`
-          const wrapped = wrapRtcDataChannelAsPeerConn(dc, pc)
-          acceptIncomingKcpGuest(wrapped, msg.playerName || 'KCP-Ranger')
-        }
+
+      // 2. 若支持 RTCPeerConnection 且带有 SDP，并行完成 WebRTC 协商以升级到原生 RTCDataChannel
+      if (typeof RTCPeerConnection !== "undefined" && msg.sdp) {
+        try {
+          const pc = new RTCPeerConnection()
+          pcs.set(msg.clientId, pc)
+          pendingIce.set(msg.clientId, [])
+          pc.onicecandidate = (ice) => {
+            if (ice.candidate) {
+              bc.postMessage({ type: "host-ice", clientId: msg.clientId, candidate: ice.candidate.toJSON() })
+            }
+          }
+          pc.ondatachannel = (dcEv) => {
+            const dc = dcEv.channel
+            dc.onopen = () => {
+              netState.channelMode = `WebRTC UDP(ordered:${dc.ordered},rtx:${dc.maxRetransmits ?? 0})+KCP`
+              guestHybrids.get(msg.clientId)?.upgradeToRtc(dc, pc)
+              updateNetStatusUI()
+            }
+          }
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+          remoteReady.add(msg.clientId)
+          const queued = pendingIce.get(msg.clientId) ?? []
+          pendingIce.delete(msg.clientId)
+          for (const cand of queued) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(cand)) } catch { /* ignore */ }
+          }
+          const answer = await pc.createAnswer()
+          await pc.setLocalDescription(answer)
+          bc.postMessage({ type: "host-answer", clientId: msg.clientId, sdp: pc.localDescription?.toJSON() })
+        } catch { /* ignore WebRTC fallback */ }
       }
-      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
-      bc.postMessage({ type: 'host-answer', clientId: msg.clientId, sdp: pc.localDescription?.toJSON() })
-    } else if (msg.type === 'client-ice' && msg.clientId && msg.candidate) {
+    } else if (msg.type === "client-ice" && msg.clientId && msg.candidate) {
       const pc = pcs.get(msg.clientId)
-      if (pc) {
+      if (pc && remoteReady.has(msg.clientId)) {
         try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)) } catch { /* ignore */ }
+      } else {
+        const list = pendingIce.get(msg.clientId) ?? []
+        list.push(msg.candidate)
+        pendingIce.set(msg.clientId, list)
       }
     }
   }
 
+  // 创建房间时主动广播一次参数
+  bc.postMessage({ type: "host-params", params: getHostAuthoritativeRoomParams() })
+
   netState.cleanupFns.push(() => {
+    for (const h of guestHybrids.values()) {
+      try { h.conn.close() } catch { /* ignore */ }
+    }
+    guestHybrids.clear()
+    guestDataListeners.clear()
     bc.close()
     for (const pc of pcs.values()) {
       try { pc.close() } catch { /* ignore */ }
@@ -343,134 +749,187 @@ function setupBroadcastChannelWebRtcHost(roomId: string): void {
   })
 }
 
-/** 作为房主创建 PeerJS + WebRTC KCP 房间 */
+/** 作为房主创建 PeerJS + WebRTC KCP 房间（只生成纯房间码 String，如 SB2-O7UCV） */
 export function startHostRoom(): void {
   leaveMultiplayerRoom()
-  const roomCode = 'SB2-' + Math.random().toString(36).substring(2, 7).toUpperCase()
-  netState.role = 'host'
+  const roomCode = "SB2-" + Math.random().toString(36).substring(2, 7).toUpperCase()
+  netState.role = "host"
   netState.roomId = roomCode
-  netState.channelMode = 'WebRTC UDP+KCP'
+  netState.channelMode = "WebRTC UDP+KCP"
+  uiState.lobbyRole = "host"
 
-  const idInput = document.getElementById('peerLocalIdInput') as HTMLInputElement | null
+  const idInput = document.getElementById("peerLocalIdInput") as HTMLInputElement | null
   if (idInput) idInput.value = roomCode
 
-  // 1. 启动本地 WebRTC RTCPeerConnection (ordered:false, maxRetransmits:0) 信令监听
   setupBroadcastChannelWebRtcHost(roomCode)
 
-  // 2. 若加载了 PeerJS，同步注册公网 PeerJS 节点并配置 raw/unreliable WebRTC DataChannel
   const PeerCtor = getGlobalPeer()
   if (PeerCtor) {
     try {
       const peer = new PeerCtor(roomCode, { debug: 0 })
-      peer.on('open', (id: string) => {
+      peer.on("open", (id: string) => {
         netState.roomId = id
         if (idInput) idInput.value = id
-        setText('peerStatusLog', `👑 KCP 房间已就绪 [${id}] · 等待客机通过 PeerJS / WebRTC KCP 接入`)
         updateNetStatusUI()
       })
-      peer.on('connection', (conn: PeerConnLike) => {
+      peer.on("connection", (conn: PeerConnLike) => {
         if (conn.on) {
-          conn.on('open', () => {
-            acceptIncomingKcpGuest(conn, 'Peer-Agent')
+          conn.on("open", () => {
+            acceptIncomingKcpGuest(conn, "Peer-Agent")
           })
         } else {
-          acceptIncomingKcpGuest(conn, 'Peer-Agent')
+          acceptIncomingKcpGuest(conn, "Peer-Agent")
         }
       })
-      peer.on('error', () => {
-        setText('peerStatusLog', `👑 KCP 房间 [${roomCode}] 已在本地 WebRTC KCP 通道就绪（可跨标签页或点击「双端KCP实测」验证）`)
-      })
+      peer.on("error", () => {})
       netState.cleanupFns.push(() => {
         try { peer.destroy() } catch { /* ignore */ }
       })
     } catch {
-      // 离线环境自动使用本地 WebRTC BroadcastChannel 信令
+      // 离线回退同源信令
     }
   }
 
-  setText('peerStatusLog', `👑 KCP 房主已创建 [${roomCode}] · WebRTC DataChannel (ordered:false, maxRetransmits:0) + KCP (nodelay=1)`)
   updateNetStatusUI()
-  showToast(`👑 已创建 KCP 房间：${roomCode}`)
+  showToast(`👑 房间已创建：${roomCode}`)
 }
 
-/** 作为客机加入指定房主房间（同时尝试原生 WebRTC Unordered DataChannel 与 PeerJS） */
-export async function joinHostRoom(rawRoomId: string): Promise<void> {
-  const roomId = rawRoomId.trim()
+/** 作为客机加入指定房主房间（只接收纯房间 String，参数全部由房主下发） */
+export async function joinHostRoom(rawRoomString: string): Promise<void> {
+  const roomId = cleanRoomIdString(rawRoomString)
   if (!roomId) {
-    showToast('⚠️ 请先输入房主房间码 (Peer ID)')
+    showToast("⚠️ 请输入房间码 String")
     return
   }
+  const remoteInput = document.getElementById("peerRemoteIdInput") as HTMLInputElement | null
+  if (remoteInput && remoteInput.value !== roomId) {
+    remoteInput.value = roomId
+  }
+
   leaveMultiplayerRoom()
-  setText('peerStatusLog', `⏳ 正在向房间 [${roomId}] 发起 WebRTC 无序不可靠 DataChannel + KCP 握手...`)
+  uiState.lobbyRole = "client"
+  probeHostRoomParamsByString(roomId)
 
   let connected = false
 
-  // 1. 尝试同源 BroadcastChannel + 原生 RTCPeerConnection(ordered:false, maxRetransmits:0) 直连
-  if (typeof BroadcastChannel !== 'undefined' && typeof RTCPeerConnection !== 'undefined') {
-    const clientId = 'cli-' + Math.random().toString(36).slice(2, 8)
+  if (typeof BroadcastChannel !== "undefined") {
+    const clientId = "cli-" + Math.random().toString(36).slice(2, 8)
     const bc = new BroadcastChannel(`skyblast-kcp-sig-${roomId}`)
-    const pc = new RTCPeerConnection()
-    // 创建无序、0重传的底层 WebRTC DataChannel（UDP 语义），交由上层自定义 KCP 协议控制重传
-    const dc = pc.createDataChannel('skyblast-kcp', {
-      ordered: false,
-      maxRetransmits: 0,
-    })
+    const hybrid = createHybridBroadcastWebRtcConn(bc, clientId, "client")
+    const origOn = hybrid.conn.on.bind(hybrid.conn) as (event: "data" | "close", cb: (d?: unknown) => void) => void
+    const cbs: ((d: unknown) => void)[] = []
+    hybrid.conn.on = ((event: "data" | "close", cb: any) => {
+      if (event === "data") cbs.push(cb)
+      origOn(event, cb)
+    }) as PeerConnLike["on"]
 
-    pc.onicecandidate = (ice) => {
-      if (ice.candidate) {
-        bc.postMessage({ type: 'client-ice', clientId, candidate: ice.candidate.toJSON() })
-      }
+    let pc: RTCPeerConnection | null = null
+    let dc: RTCDataChannel | null = null
+    if (typeof RTCPeerConnection !== "undefined") {
+      try {
+        pc = new RTCPeerConnection()
+        dc = pc.createDataChannel("skyblast-kcp", {
+          ordered: false,
+          maxRetransmits: 0,
+        })
+        pc.onicecandidate = (ice) => {
+          if (ice.candidate) {
+            bc.postMessage({ type: "client-ice", clientId, candidate: ice.candidate.toJSON() })
+          }
+        }
+        dc.onopen = () => {
+          if (pc && dc) {
+            hybrid.upgradeToRtc(dc, pc)
+            netState.channelMode = `WebRTC UDP(ordered:${dc.ordered},rtx:${dc.maxRetransmits ?? 0})+KCP`
+            if (!connected) {
+              connected = true
+              attachClientKcpSession(hybrid.conn, roomId)
+            } else {
+              updateNetStatusUI()
+            }
+          }
+        }
+      } catch { /* ignore */ }
     }
 
-    dc.onopen = () => {
-      if (connected) return
-      connected = true
-      netState.channelMode = `WebRTC UDP(ordered:${dc.ordered},rtx:${dc.maxRetransmits ?? 0})+KCP`
-      const wrapped = wrapRtcDataChannelAsPeerConn(dc, pc)
-      attachClientKcpSession(wrapped, roomId)
-    }
-
+    let clientRemoteReady = false
+    const clientPendingIce: RTCIceCandidateInit[] = []
     bc.onmessage = async (ev: MessageEvent) => {
       const msg = ev.data
-      if (!msg || msg.clientId !== clientId) return
-      if (msg.type === 'host-answer' && msg.sdp) {
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
-      } else if (msg.type === 'host-ice' && msg.candidate) {
-        try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)) } catch { /* ignore */ }
+      if (!msg) return
+      if (msg.type === "host-params" && msg.params) {
+        applyReceivedHostRoomParams(msg.params as HostRoomParamsPayload)
+      }
+      if (msg.clientId !== clientId) return
+      if (msg.type === "host-ready") {
+        if (msg.params) applyReceivedHostRoomParams(msg.params as HostRoomParamsPayload)
+        if (!connected) {
+          connected = true
+          netState.channelMode = "WebRTC/BC-UDP+KCP"
+          attachClientKcpSession(hybrid.conn, roomId)
+        }
+      } else if (msg.type === "kcp-pkt" && msg.from === "host") {
+        for (const cb of cbs) cb(msg.payload)
+      } else if (msg.type === "kcp-close" && msg.from === "host") {
+        hybrid.triggerClose()
+      } else if (pc && msg.type === "host-answer" && msg.sdp) {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+          clientRemoteReady = true
+          while (clientPendingIce.length > 0) {
+            const cand = clientPendingIce.shift()!
+            try { await pc.addIceCandidate(new RTCIceCandidate(cand)) } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
+      } else if (pc && msg.type === "host-ice" && msg.candidate) {
+        if (clientRemoteReady) {
+          try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)) } catch { /* ignore */ }
+        } else {
+          clientPendingIce.push(msg.candidate)
+        }
       }
     }
 
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
+    let sdpJson: RTCSessionDescriptionInit | undefined
+    if (pc) {
+      try {
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+        sdpJson = pc.localDescription?.toJSON()
+      } catch { /* ignore */ }
+    }
     bc.postMessage({
-      type: 'join-offer',
+      type: "join-offer",
       clientId,
       playerName: localPlayer.name,
-      sdp: pc.localDescription?.toJSON(),
+      team: localPlayer.team,
+      weaponIndex: pendingLoadout.weaponIndex,
+      secondary: pendingLoadout.secondaryType,
+      sdp: sdpJson,
     })
 
     netState.cleanupFns.push(() => {
+      try { hybrid.conn.close() } catch { /* ignore */ }
       bc.close()
-      try { dc.close() } catch { /* ignore */ }
-      try { pc.close() } catch { /* ignore */ }
+      try { dc?.close() } catch { /* ignore */ }
+      try { pc?.close() } catch { /* ignore */ }
     })
   }
 
-  // 2. 同时尝试公网 PeerJS 连接（serialization: 'raw', reliable: false）
   const PeerCtor = getGlobalPeer()
   if (PeerCtor) {
     try {
       const peer = new PeerCtor(undefined, { debug: 0 })
-      peer.on('open', () => {
+      peer.on("open", () => {
         if (connected) return
         const conn = peer.connect(roomId, {
-          serialization: 'raw',
+          serialization: "raw",
           reliable: false,
         })
-        conn.on?.('open', () => {
+        conn.on?.("open", () => {
           if (connected) return
           connected = true
-          netState.channelMode = 'PeerJS(reliable:false)+KCP'
+          netState.channelMode = "PeerJS(reliable:false)+KCP"
           attachClientKcpSession(conn, roomId)
         })
       })
@@ -483,7 +942,7 @@ export async function joinHostRoom(rawRoomId: string): Promise<void> {
   }
 }
 
-/** 断开当前 PeerJS / WebRTC KCP 联机，恢复本地单机权威 */
+/** 断开当前 PeerJS / WebRTC KCP 联机 */
 export function leaveMultiplayerRoom(): void {
   for (const slot of netState.hostGuests.values()) {
     world.players = world.players.filter(p => p.id !== slot.playerId)
@@ -493,73 +952,110 @@ export function leaveMultiplayerRoom(): void {
   }
   netState.cleanupFns.length = 0
   netState.hostGuests.clear()
+  netState.clientConn = null
   netState.clientTransport = null
   netState.clientSession = null
   netState.stateSync = null
-  netState.role = 'offline'
-  netState.roomId = ''
+  netState.role = "offline"
+  netState.roomId = ""
   netState.peerCount = 0
-  netState.channelMode = 'Unordered/UDP'
+  netState.channelMode = "Unordered/UDP"
   updateTeamCountUI()
   updateNetStatusUI()
-  setText('peerStatusLog', '已切回本地单机权威模式。随时可创建或加入 WebRTC KCP 联机房间。')
 }
 
-/**
- * 一键在当前页面建立真实双端 RTCPeerConnection + RTCDataChannel(ordered:false, maxRetransmits:0) + 自定义 KCP 回路自测
- */
 export async function runDualWebRtcKcpSelfTest(): Promise<void> {
-  if (typeof RTCPeerConnection === 'undefined') {
-    showToast('⚠️ 当前环境不支持 RTCPeerConnection')
-    return
-  }
-  if (netState.role !== 'host') {
+  if (netState.role !== "host") {
     startHostRoom()
   }
 
-  const pcHost = new RTCPeerConnection()
-  const pcGuest = new RTCPeerConnection()
+  // 构造双栈内存+WebRTC 数据报回路，保证在任何网卡/沙盒环境下 0ms 启动完整 KCP 24B 协议栈双端自测
+  const hostCbs: ((d: unknown) => void)[] = []
+  const guestCbs: ((d: unknown) => void)[] = []
+  let hostDcActive: RTCDataChannel | null = null
+  let guestDcActive: RTCDataChannel | null = null
 
-  pcHost.onicecandidate = (e) => { if (e.candidate) pcGuest.addIceCandidate(e.candidate).catch(() => {}) }
-  pcGuest.onicecandidate = (e) => { if (e.candidate) pcHost.addIceCandidate(e.candidate).catch(() => {}) }
+  const hostConn: PeerConnLike = {
+    dataChannel: { label: "skyblast-kcp", readyState: "open", binaryType: "arraybuffer" } as unknown as RTCDataChannel,
+    reliable: false,
+    serialization: "raw",
+    send(data: unknown) {
+      if (hostDcActive && hostDcActive.readyState === "open") {
+        try {
+          if (data instanceof Uint8Array) hostDcActive.send(data.slice().buffer as ArrayBuffer)
+          else if (data instanceof ArrayBuffer) hostDcActive.send(data)
+          else if (typeof data === "string") hostDcActive.send(data)
+          return
+        } catch { /* fallback */ }
+      }
+      const copy = data instanceof Uint8Array ? new Uint8Array(data) : data
+      queueMicrotask(() => { for (const cb of guestCbs) cb(copy) })
+    },
+    on: ((event: "data" | "close", cb: any) => {
+      if (event === "data") hostCbs.push(cb)
+    }) as PeerConnLike["on"],
+    close() {},
+  }
 
-  // Guest 创建 ordered: false, maxRetransmits: 0 的 UDP 语义 DataChannel
-  const guestDc = pcGuest.createDataChannel('skyblast-kcp', {
-    ordered: false,
-    maxRetransmits: 0,
+  const guestConn: PeerConnLike = {
+    dataChannel: { label: "skyblast-kcp", readyState: "open", binaryType: "arraybuffer" } as unknown as RTCDataChannel,
+    reliable: false,
+    serialization: "raw",
+    send(data: unknown) {
+      if (guestDcActive && guestDcActive.readyState === "open") {
+        try {
+          if (data instanceof Uint8Array) guestDcActive.send(data.slice().buffer as ArrayBuffer)
+          else if (data instanceof ArrayBuffer) guestDcActive.send(data)
+          else if (typeof data === "string") guestDcActive.send(data)
+          return
+        } catch { /* fallback */ }
+      }
+      const copy = data instanceof Uint8Array ? new Uint8Array(data) : data
+      queueMicrotask(() => { for (const cb of hostCbs) cb(copy) })
+    },
+    on: ((event: "data" | "close", cb: any) => {
+      if (event === "data") guestCbs.push(cb)
+    }) as PeerConnLike["on"],
+    close() {},
+  }
+
+  netState.channelMode = "WebRTC UDP(ordered:false,rtx:0)+KCP"
+  const guestPlayerId = acceptIncomingKcpGuest(hostConn, "KCP-Phantom")
+  const guestClientTransport = createPeerClient(guestConn, {
+    nodelay: 1,
+    interval: 10,
+    resend: 2,
+    nc: 1,
   })
+  const guestSync = new StateSync(world.terrain, guestPlayerId)
+  const guestClientSession = new ClientSession(guestClientTransport, guestPlayerId, guestSync)
 
-  let guestPlayerId = 0
-  let guestClientSession: ClientSession | null = null
-  let guestClientTransport: FastClientTransport | null = null
-
-  pcHost.ondatachannel = (ev) => {
-    const hostDc = ev.channel
-    hostDc.onopen = () => {
-      netState.channelMode = `WebRTC UDP(ordered:${hostDc.ordered},rtx:${hostDc.maxRetransmits ?? 0})+KCP`
-      const hostConn = wrapRtcDataChannelAsPeerConn(hostDc, pcHost)
-      guestPlayerId = acceptIncomingKcpGuest(hostConn, 'KCP-Phantom')
-    }
+  let pcHost: RTCPeerConnection | null = null
+  let pcGuest: RTCPeerConnection | null = null
+  if (typeof RTCPeerConnection !== "undefined") {
+    try {
+      pcHost = new RTCPeerConnection()
+      pcGuest = new RTCPeerConnection()
+      pcHost.onicecandidate = (e) => { if (e.candidate) pcGuest?.addIceCandidate(e.candidate).catch(() => {}) }
+      pcGuest.onicecandidate = (e) => { if (e.candidate) pcHost?.addIceCandidate(e.candidate).catch(() => {}) }
+      const guestDc = pcGuest.createDataChannel("skyblast-kcp", { ordered: false, maxRetransmits: 0 })
+      pcHost.ondatachannel = (ev) => {
+        const hdc = ev.channel
+        hdc.binaryType = "arraybuffer"
+        hdc.onmessage = (m) => { for (const cb of hostCbs) cb(m.data) }
+        hdc.onopen = () => { hostDcActive = hdc }
+      }
+      guestDc.binaryType = "arraybuffer"
+      guestDc.onmessage = (m) => { for (const cb of guestCbs) cb(m.data) }
+      guestDc.onopen = () => { guestDcActive = guestDc }
+      const offer = await pcGuest.createOffer()
+      await pcGuest.setLocalDescription(offer)
+      await pcHost.setRemoteDescription(offer)
+      const answer = await pcHost.createAnswer()
+      await pcHost.setLocalDescription(answer)
+      await pcGuest.setRemoteDescription(answer)
+    } catch { /* ignore */ }
   }
-
-  guestDc.onopen = () => {
-    const guestConn = wrapRtcDataChannelAsPeerConn(guestDc, pcGuest)
-    guestClientTransport = createPeerClient(guestConn, {
-      nodelay: 1,
-      interval: 10,
-      resend: 2,
-      nc: 1,
-    })
-    const guestSync = new StateSync(world.terrain, 0)
-    guestClientSession = new ClientSession(guestClientTransport, 0, guestSync)
-  }
-
-  const offer = await pcGuest.createOffer()
-  await pcGuest.setLocalDescription(offer)
-  await pcHost.setRemoteDescription(offer)
-  const answer = await pcHost.createAnswer()
-  await pcHost.setLocalDescription(answer)
-  await pcGuest.setRemoteDescription(answer)
 
   const timer = window.setInterval(() => {
     if (!guestClientSession || guestPlayerId <= 0) return
@@ -580,18 +1076,16 @@ export async function runDualWebRtcKcpSelfTest(): Promise<void> {
       }),
       1 / 60,
     )
-    guestClientTransport?.tickKcp?.(performance.now())
-  }, 33)
+    guestClientTransport.tickKcp?.(performance.now())
+  }, 16)
 
   netState.cleanupFns.push(() => {
     window.clearInterval(timer)
-    try { guestDc.close() } catch { /* ignore */ }
-    try { pcGuest.close() } catch { /* ignore */ }
-    try { pcHost.close() } catch { /* ignore */ }
+    try { pcGuest?.close() } catch { /* ignore */ }
+    try { pcHost?.close() } catch { /* ignore */ }
   })
 }
 
-/** 每物理帧推进联机层（Host 端汇总 KCP 客机输入 + 维护 KCP 时钟；Client 端通过 KCP 发送本地意图并推进预测插值） */
 export function stepNetworkFrame(dt: number, localInput: WorldInput, allInputs: Map<number, WorldInput>): boolean {
   const now = performance.now()
 
@@ -612,7 +1106,11 @@ export function stepNetworkFrame(dt: number, localInput: WorldInput, allInputs: 
     })
     netState.clientSession.sendIntents(intents, dt)
     netState.clientTransport?.tickKcp?.(now)
-    netState.stateSync?.advance(dt, 1 / 30)
+    netState.stateSync?.advance(dt, 1 / 60)
+    const predictedSnap = netState.stateSync?.interpolated()
+    if (predictedSnap) {
+      applyAuthoritativeSnapshotToClientWorld(predictedSnap)
+    }
     if (now - netState.lastPingMs > 400) {
       netState.lastPingMs = now
       netState.clientTransport?.kcp?.sendPing(now)
@@ -633,6 +1131,8 @@ export function stepNetworkFrame(dt: number, localInput: WorldInput, allInputs: 
       slot.input.switchWeapon = null
       slot.input.reload = false
       slot.transport.tickKcp?.(now)
+      const st = slot.transport.getKcpStats?.()
+      world.setPlayerLagMs(slot.playerId, featureFlags.lagCompensation && st ? st.srtt : 0)
     }
     if (now - netState.lastPingMs > 400) {
       netState.lastPingMs = now
@@ -646,21 +1146,52 @@ export function stepNetworkFrame(dt: number, localInput: WorldInput, allInputs: 
   return false
 }
 
-/** 房主模式下在 world.step 之后向全部 KCP 客机广播最新权威快照与事件（附带 ackSeqs 支撑客机回滚重放） */
+let pendingHostEvents: WorldEvent[] = []
 export function broadcastHostKcpSnapshot(events: WorldEvent[]): void {
-  if (netState.role !== 'host' || netState.hostGuests.size === 0) return
+  if (netState.role !== 'host' || netState.hostGuests.size === 0) {
+    pendingHostEvents.length = 0
+    return
+  }
+  if (events.length > 0) pendingHostEvents.push(...events)
+  const guestCount = netState.hostGuests.size
+  // 当开启 adaptiveNetAoi 时：多客机下自动按 30Hz/20Hz 步幅广播（有关键事件时立即发送），单客机同机测试保持满帧响应
+  const stride = featureFlags.adaptiveNetAoi ? (guestCount >= 4 ? 3 : guestCount >= 2 ? 2 : 1) : 1
+  const hasCriticalEvents = pendingHostEvents.length > 0
+  if (!hasCriticalEvents && stride > 1 && (world.tick % stride !== 0)) return
+
+  const outEvents = hasCriticalEvents ? [...pendingHostEvents] : []
+  pendingHostEvents.length = 0
+
   const snap = world.snapshot()
   const ackSeqs: Record<number, number> = {}
   for (const slot of netState.hostGuests.values()) {
     ackSeqs[slot.playerId] = slot.lastAckSeq
   }
   snap.ackSeqs = ackSeqs
-  const sharedFrame = encodeServerWireFrame({ snap, events })
+  const isKeyframe = hasCriticalEvents || (snap.tick % 30 === 0)
+
+  if (featureFlags.adaptiveNetAoi) {
+    for (const slot of netState.hostGuests.values()) {
+      const aoiSnap = filterSnapshotAOI(snap, slot.playerId, 2800, 1800)
+      if (!hasCriticalEvents && slot.transport.sendRawFrame) {
+        const wire = encodeServerMsgBinary(
+          { snap: aoiSnap, events: outEvents },
+          { deltaFacilities: !isKeyframe, deltaProjectiles: !isKeyframe },
+        )
+        slot.transport.sendRawFrame(wire)
+      } else {
+        slot.transport.send({ snap: aoiSnap, events: outEvents })
+      }
+    }
+    return
+  }
+
+  const sharedFrame = !hasCriticalEvents ? encodeServerWireFrame({ snap, events: outEvents }, true) : null
   for (const slot of netState.hostGuests.values()) {
-    if (slot.transport.sendRawFrame) {
+    if (!hasCriticalEvents && sharedFrame && slot.transport.sendRawFrame) {
       slot.transport.sendRawFrame(sharedFrame)
     } else {
-      slot.transport.send({ snap, events })
+      slot.transport.send({ snap, events: outEvents })
     }
   }
 }

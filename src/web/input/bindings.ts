@@ -1,19 +1,25 @@
-import { defaultMapData, carveTunnelInSolids, MAIN_DECK_TOP, UNIFIED_EDGE_HIGHLIGHT } from '../../core/map.ts'
+import { toggleFullscreen, isFullscreen } from '../fullscreen.ts'
+import { defaultMapData, carveTunnelInSolids, MAIN_DECK_TOP, BEDROCK_TOP, UNIFIED_EDGE_HIGHLIGHT } from '../../core/map.ts'
 import type { MapSolid } from '../../core/map.ts'
-import { FFA_SPAWN_POINTS, AMMO_SPOTS, CENTER_RESPAWN_POINT } from '../../core/sim/world.ts'
+import { AMMO_SPOTS, CENTER_RESPAWN_POINT } from '../../core/sim/world.ts'
 import { getTerrainPattern } from '../textures.ts'
-// web/input/bindings.ts —— 全部 DOM 事件绑定（键鼠/触屏/大厅/死亡界面/参数台/PeerJS+KCP联机按钮）
+// web/input/bindings.ts —— DOM 事件绑定（纯房间码 String + 房主下发参数 + 双队FFA许可配置 + 精简HUD）
 import {
-  canvas, world, localPlayer, bots, pendingLoadout, mode,
+  canvas, world, localPlayer, bots, pendingLoadout, mode, uiState,
   keys, mouse, touchState, inputQueue, resizeCanvas,
 } from '../app/context.ts'
 import { showToast } from '../app/toast.ts'
 import {
   updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI,
   tryChangePrimaryWeapon, tryChangeSecondaryWeapon,
+  toggleDebugHud, syncLobbyRoleUI, updateDebugHudVisibility, isHostAuthority, syncTeamButtonsUI,
+  toggleFlagsHud, toggleSysBar, handleToggleFeatureFlagClick, handleResetAllFeatureFlags, cycleSelectedSpawnPoint, handleMinimapClick, selectSpawnPointById, syncFeatureFlagsUI,
 } from '../app/hud.ts'
+import type { FeatureFlags } from '../app/context.ts'
 import {
-  startHostRoom, joinHostRoom, leaveMultiplayerRoom, runDualWebRtcKcpSelfTest, updateNetStatusUI,
+  startHostRoom, joinHostRoom, leaveMultiplayerRoom, runDualWebRtcKcpSelfTest,
+  updateNetStatusUI, netState, cleanRoomIdString, probeHostRoomParamsByString,
+  broadcastHostRoomParams, sendClientLoadoutToHost,
 } from '../app/net.ts'
 import { syncParamsToUI, bindRangeParam, paramState } from '../app/params.ts'
 import { setTouchLayerVisible } from './device.ts'
@@ -23,22 +29,61 @@ import { setPhysicsParams, resetPhysicsParams } from '../../core/sim/physics.ts'
 import { isCapturePointSelectable } from '../../core/sim/world.ts'
 import { WEAPONS, DEFAULT_CONFIG } from '../../core/weapons.ts'
 import type { TeamId } from '../../core/types.ts'
+import { wrapDeltaY, wrapDist } from '../../core/wrap.ts'
 
-/** 尝试通过按 E 或快捷交互选中已占领的正中旗帜复活点 */
+/** 尝试通过按 E 选中就近已占领的旗帜复活点（严格取当前同层最近据点，不再跨图乱跳） */
 export function trySelectCapturedFlagSpawnByKey(): boolean {
-  const cp = world.capturePoints.find(c => c.id === 'cp_c' && isCapturePointSelectable(c, localPlayer.team))
-    ?? world.capturePoints.find(c => isCapturePointSelectable(c, localPlayer.team))
-  if (!cp) return false
-  pendingLoadout.spawnPointId = cp.id
-  localPlayer.selectedSpawnId = cp.id
+  // 若玩家正处于操控炮台/瞭望塔或靠近特武箱/传送门等优先交互点，不误触改写复活点
+  if (localPlayer.mountedTowerId || world.mortars.some(m => m.operatorId === localPlayer.id)) return false
+  if (world.supplyCrates.some(cr => cr.active && cr.y > 400 && wrapDist(localPlayer.pos.x, localPlayer.pos.y, cr.x, cr.y) < 95)) return false
+
+  const maxSelectDist = Math.max(150, world.config.captureRadius + 35)
+  let bestSelectable: typeof world.capturePoints[0] | null = null
+  let bestSelectableDist = Infinity
+  let nearestAny: typeof world.capturePoints[0] | null = null
+  let nearestAnyDist = Infinity
+
+  for (const c of world.capturePoints) {
+    if (c.y <= 400) continue
+    if (Math.abs(wrapDeltaY(localPlayer.pos.y, c.y)) > 115) continue
+    const d = wrapDist(localPlayer.pos.x, localPlayer.pos.y, c.x, c.y)
+    if (d < maxSelectDist) {
+      if (d < nearestAnyDist) {
+        nearestAnyDist = d
+        nearestAny = c
+      }
+      if (isCapturePointSelectable(c, localPlayer.team) && d < bestSelectableDist) {
+        bestSelectableDist = d
+        bestSelectable = c
+      }
+    }
+  }
+  if (!bestSelectable) {
+    if (nearestAny) {
+      showToast(`⚠️ 需先占领【${nearestAny.name}】(${Math.round(nearestAny.progress)}%) 才能按 E 选为复活点`)
+    }
+    return false
+  }
+  pendingLoadout.spawnPointId = bestSelectable.id
+  localPlayer.selectedSpawnId = bestSelectable.id
   updateSpawnPointButtonsUI()
-  showToast(`🚩 已选中【${cp.name}】作为复活点！`)
+  if (netState.role === 'client') sendClientLoadoutToHost(false)
+  showToast(`🚩 已选中【${bestSelectable.name}】作为复活点`)
   return true
 }
 
-// ── 事件绑定 ──
 export function bindAllEvents(): void {
-  window.addEventListener('resize', resizeCanvas)
+  window.addEventListener('resize', () => {
+    resizeCanvas()
+    renderIge()
+  })
+  if (typeof ResizeObserver !== 'undefined' && document.documentElement) {
+    const ro = new ResizeObserver(() => {
+      resizeCanvas()
+      renderIge()
+    })
+    if (document.documentElement instanceof Element) ro.observe(document.documentElement)
+  }
   resizeCanvas()
 
   window.addEventListener('keydown', (e) => {
@@ -51,11 +96,16 @@ export function bindAllEvents(): void {
       inputQueue.interact = true
       trySelectCapturedFlagSpawnByKey()
     }
+    else if (e.code === 'Backquote' || e.code === 'F3') {
+      e.preventDefault()
+      toggleDebugHud()
+    }
     else if (e.code === 'Digit1') tryChangePrimaryWeapon(0)
-    else if (e.code === 'Digit2') tryChangePrimaryWeapon(1)
-    else if (e.code === 'Digit3') tryChangePrimaryWeapon(2)
-    else if (e.code === 'Digit4') tryChangePrimaryWeapon(3)
+    else if (e.code === 'Digit2') tryChangePrimaryWeapon(8)
+    else if (e.code === 'Digit3') tryChangePrimaryWeapon(1)
+    else if (e.code === 'Digit4') tryChangePrimaryWeapon(2)
     else if (e.code === 'Digit5') tryChangePrimaryWeapon(7)
+    else if (e.code === 'Digit6') tryChangePrimaryWeapon(3)
   })
   window.addEventListener('keyup', (e) => { keys[e.code] = false })
 
@@ -71,11 +121,60 @@ export function bindAllEvents(): void {
   canvas?.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.down = false })
   canvas?.addEventListener('contextmenu', (e) => e.preventDefault())
 
+  // Host / Client 切换
+  document.getElementById('lobbyTabHostBtn')?.addEventListener('click', () => {
+    syncLobbyRoleUI('host')
+  })
+  document.getElementById('lobbyTabClientBtn')?.addEventListener('click', () => {
+    syncLobbyRoleUI('client')
+  })
+
+  // Host 专属 Debug HUD 开关 & 特性开关 (Feature Flags) 抽屉
+  document.getElementById('toggleDebugHudBtn')?.addEventListener('click', () => {
+    toggleDebugHud()
+  })
+  document.getElementById('closeDebugHudBtn')?.addEventListener('click', () => {
+    uiState.debugHudOpen = false
+    updateDebugHudVisibility()
+  })
+  document.getElementById('toggleSysBarBtn')?.addEventListener('click', () => {
+    toggleSysBar()
+  })
+  document.getElementById('toggleFlagsHudBtn')?.addEventListener('click', () => {
+    toggleFlagsHud()
+  })
+  document.getElementById('closeFlagsHudBtn')?.addEventListener('click', () => {
+    uiState.flagsHudOpen = false
+    syncFeatureFlagsUI()
+  })
+  document.getElementById('resetFeatureFlagsBtn')?.addEventListener('click', () => {
+    handleResetAllFeatureFlags()
+  })
+  document.querySelectorAll('.feature-flag-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const k = btn.getAttribute('data-flag') as keyof FeatureFlags | null
+      if (k) handleToggleFeatureFlagClick(k)
+    })
+  })
+  document.getElementById('hudCurrentSpawnBtn')?.addEventListener('click', () => {
+    cycleSelectedSpawnPoint()
+  })
+  document.getElementById('hudMinimapCanvas')?.addEventListener('click', (e) => {
+    const me = e as MouseEvent
+    handleMinimapClick(me.clientX, me.clientY, 'hudMinimapCanvas')
+  })
+  document.getElementById('deathMinimapCanvas')?.addEventListener('click', (e) => {
+    const me = e as MouseEvent
+    handleMinimapClick(me.clientX, me.clientY, 'deathMinimapCanvas')
+  })
+  document.getElementById('deathSpawnBaseBtn')?.addEventListener('click', () => {
+    selectSpawnPointById('base')
+  })
+
   document.querySelectorAll('.lobby-wep-btn').forEach((btn) =>
     btn.addEventListener('click', () => tryChangePrimaryWeapon(Number(btn.getAttribute('data-wep') || 0))))
   document.querySelectorAll('.lobby-sec-btn').forEach((btn) =>
     btn.addEventListener('click', () => tryChangeSecondaryWeapon(btn.getAttribute('data-sec') || 'frag')))
-  // 死亡界面：唯一的换枪入口
   document.querySelectorAll('.death-wep-btn').forEach((btn) =>
     btn.addEventListener('click', () => {
       tryChangePrimaryWeapon(Number(btn.getAttribute('data-wep') || 0))
@@ -93,21 +192,33 @@ export function bindAllEvents(): void {
       if (spId !== 'base') {
         const cp = world.capturePoints.find(c => c.id === spId)
         if (!isCapturePointSelectable(cp, localPlayer.team)) {
-          showToast('⚠️ 该旗帜复活点尚未占领，占领后即可选中（也可按 E 选中）！')
+          showToast('⚠️ 占领后可选')
           return
         }
       }
       pendingLoadout.spawnPointId = spId
       localPlayer.selectedSpawnId = spId
       updateSpawnPointButtonsUI()
-      showToast(spId === 'base' ? '🏠 已切换复活点为【队伍主基地】' : '🚩 已选中【正中复活点】！')
+      if (netState.role === 'client') sendClientLoadoutToHost(false)
+    })
+  })
+
+  // 房主配置：双队模式下是否允许 FFA 身份加入
+  document.querySelectorAll('.ffa-allow-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!isHostAuthority()) return
+      mode.allowFfaInTeams = btn.getAttribute('data-allow-ffa') === '1'
+      syncTeamButtonsUI()
+      broadcastHostRoomParams()
     })
   })
 
   document.querySelectorAll('.bot-count-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (!isHostAuthority()) return
       const cnt = Number(btn.getAttribute('data-bots') || 0)
       syncBotsCount(cnt)
+      broadcastHostRoomParams()
       updateNetStatusUI()
       document.querySelectorAll('.bot-count-btn').forEach((b) => {
         b.className = Number(b.getAttribute('data-bots')) === cnt
@@ -117,17 +228,16 @@ export function bindAllEvents(): void {
     })
   })
 
-  // PeerJS + WebRTC 自定义 KCP 联机控制台事件绑定
+  // KCP 房间创建与复制（只给纯房间码 String，不拼任何 URL 参数）
   document.getElementById('peerHostBtn')?.addEventListener('click', () => {
     startHostRoom()
+    syncLobbyRoleUI('host')
   })
   document.getElementById('peerCopyIdBtn')?.addEventListener('click', () => {
     const inp = document.getElementById('peerLocalIdInput') as HTMLInputElement | null
-    const val = inp?.value?.trim() || ''
-    if (!val) {
-      showToast('⚠️ 请先点击「创建 KCP 房间」生成房间码')
-      return
-    }
+    if (!netState.roomId) startHostRoom()
+    const val = cleanRoomIdString(inp?.value || netState.roomId)
+    if (inp) inp.value = val
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(val).catch(() => {})
@@ -141,16 +251,25 @@ export function bindAllEvents(): void {
         try { document.execCommand('copy') } catch { /* ignore */ }
       }
     }
-    showToast(`📋 已复制 KCP 房间码：${val}`)
+    showToast(`📋 已复制房间码：${val}`)
+  })
+
+  // Client 输入纯房间码 String，向房主请求参数
+  const remoteInput = document.getElementById('peerRemoteIdInput') as HTMLInputElement | null
+  remoteInput?.addEventListener('input', () => {
+    const cleaned = cleanRoomIdString(remoteInput.value)
+    probeHostRoomParamsByString(cleaned)
   })
   document.getElementById('peerJoinBtn')?.addEventListener('click', () => {
-    const inp = document.getElementById('peerRemoteIdInput') as HTMLInputElement | null
-    void joinHostRoom(inp?.value || '')
+    const val = cleanRoomIdString(remoteInput?.value || '')
+    void joinHostRoom(val)
   })
   document.getElementById('peerLeaveBtn')?.addEventListener('click', () => {
     leaveMultiplayerRoom()
+    syncLobbyRoleUI('host')
   })
   document.getElementById('peerLoopbackTestBtn')?.addEventListener('click', () => {
+    if (!isHostAuthority()) return
     void runDualWebRtcKcpSelfTest()
   })
 
@@ -161,6 +280,17 @@ export function bindAllEvents(): void {
     })
   })
 
+  const fsBtn = document.getElementById('fullscreenBtn')
+  const fsBtnText = document.getElementById('fullscreenBtnText')
+  const updateFsLabel = () => {
+    if (fsBtnText) fsBtnText.textContent = isFullscreen() ? '退出' : '全屏'
+  }
+  fsBtn?.addEventListener('click', () => {
+    toggleFullscreen()
+    resizeCanvas()
+    updateFsLabel()
+  })
+  document.addEventListener('fullscreenchange', updateFsLabel)
   document.getElementById('hudReloadBtn')?.addEventListener('click', () => { inputQueue.reload = true })
   document.getElementById('hudGrenadeBtn')?.addEventListener('click', () => {
     inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
@@ -169,7 +299,8 @@ export function bindAllEvents(): void {
     inputQueue.interact = true
     trySelectCapturedFlagSpawnByKey()
   })
-  // 内嵌增强版地图编辑器逻辑
+
+  // 内嵌地图编辑器（仅 Host 可打开）
   const igeModal = document.getElementById('inGameEditorModal')
   const igeCanvas = document.getElementById('igeCanvas') as HTMLCanvasElement | null
   let igeSolids: MapSolid[] = defaultMapData().solids.map(s => ({ ...s }))
@@ -181,7 +312,7 @@ export function bindAllEvents(): void {
   let igeDragCur: { x: number; y: number } | null = null
   let igePanning = false
   let igePanLast = { x: 0, y: 0 }
-  let igeSpace = false
+  const igeSpace = false
 
   function renderIge(): void {
     if (!igeCanvas || !igeModal || igeModal.classList.contains('hidden')) return
@@ -197,7 +328,7 @@ export function bindAllEvents(): void {
     const sx = (wx: number) => W / 2 + (wx - igeCam.x) * igeCam.zoom
     const sy = (wy: number) => H / 2 + (wy - igeCam.y) * igeCam.zoom
     c.fillStyle = 'rgba(7, 11, 20, 0.7)'
-    c.fillRect(sx(0), sy(MAIN_DECK_TOP), 13200 * igeCam.zoom, (2800 - MAIN_DECK_TOP) * igeCam.zoom)
+    c.fillRect(sx(0), sy(MAIN_DECK_TOP), 13200 * igeCam.zoom, (BEDROCK_TOP - MAIN_DECK_TOP) * igeCam.zoom)
     c.strokeStyle = 'rgba(56,189,248,0.45)'
     c.setLineDash([6, 4])
     c.beginPath(); c.moveTo(sx(0), sy(MAIN_DECK_TOP)); c.lineTo(sx(13200), sy(MAIN_DECK_TOP)); c.stroke()
@@ -210,10 +341,6 @@ export function bindAllEvents(): void {
       c.strokeStyle = i === igeSelected ? '#fbbf24' : UNIFIED_EDGE_HIGHLIGHT
       c.lineWidth = i === igeSelected ? 2.5 : 1.5
       c.strokeRect(sx(s.x), sy(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom)
-    }
-    for (const sp of FFA_SPAWN_POINTS) {
-      c.fillStyle = '#facc15'
-      c.beginPath(); c.arc(sx(sp.x), sy(sp.y), 4.5, 0, Math.PI * 2); c.fill()
     }
     for (const am of AMMO_SPOTS) {
       c.fillStyle = '#22c55e'
@@ -232,10 +359,11 @@ export function bindAllEvents(): void {
       c.strokeRect(sx(x), sy(y), w * igeCam.zoom, h * igeCam.zoom)
     }
     const st = document.getElementById('igeStatus')
-    if (st) st.textContent = `${igeSolids.length} 块 · 统一高亮 ${UNIFIED_EDGE_HIGHLIGHT}`
+    if (st) st.textContent = `${igeSolids.length} 块`
   }
 
   document.getElementById('openEditorBtn')?.addEventListener('click', () => {
+    if (!isHostAuthority()) return
     if (igeModal) {
       igeModal.classList.remove('hidden')
       igeModal.classList.add('flex')
@@ -307,7 +435,7 @@ export function bindAllEvents(): void {
     localStorage.setItem('pvp-custom-map', JSON.stringify({ name: '自定义地图', solids: igeSolids }))
     igeModal?.classList.add('hidden')
     igeModal?.classList.remove('flex')
-    showToast(`✅ 已将编辑器地图（${igeSolids.length} 块）实时应用到当前对局！`)
+    showToast('✅ 已应用地图')
   })
   document.getElementById('igeExportPng')?.addEventListener('click', () => {
     const off = document.createElement('canvas')
@@ -317,7 +445,7 @@ export function bindAllEvents(): void {
     c.save(); c.scale(off.width / 13200, off.height / 4400)
     const pat = getTerrainPattern(c, 'block')
     c.fillStyle = pat ?? '#162032'
-    c.fillRect(0, 2800, 13200, 1600)
+    c.fillRect(0, BEDROCK_TOP, 13200, 4400 - BEDROCK_TOP)
     for (const s of igeSolids) {
       c.fillStyle = pat ?? '#162032'
       c.fillRect(s.x, s.y, s.w, s.h)
@@ -385,34 +513,33 @@ export function bindAllEvents(): void {
     igeCam.zoom = Math.max(0.05, Math.min(0.8, igeCam.zoom * Math.exp(-e.deltaY * 0.0012)))
     renderIge()
   }, { passive: false })
-  document.getElementById('openAdminBtn')?.addEventListener('click', () => { window.open('./admin.html', '_blank') })
+  document.getElementById('openAdminBtn')?.addEventListener('click', () => {
+    if (!isHostAuthority()) return
+    const pm = document.getElementById('paramsModal')
+    if (pm) {
+      pm.classList.remove('hidden')
+      pm.classList.add('flex')
+      syncParamsToUI()
+      showToast('📊 已打开参数与武器数值调校面板')
+    }
+  })
   document.getElementById('interactBannerBtn')?.addEventListener('click', () => {
     if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {
       const lobby = document.getElementById('lobbyModal')
       lobby?.classList.remove('hidden')
       lobby?.classList.add('flex')
       updateSpawnPointButtonsUI()
+      syncLobbyRoleUI()
     } else {
       inputQueue.interact = true
       trySelectCapturedFlagSpawnByKey()
     }
   })
 
-  // ── 对战模式按钮组：自由混战 / 双队对抗 ──
-  function applyTeamButtons(): void {
-    document.querySelectorAll('.team-select-btn').forEach((b) => {
-      const t = b.getAttribute('data-team')
-      const enabled = mode.current === '2teams' ? (t === 'red' || t === 'blue') : (t === 'ffa')
-      const sel = t === localPlayer.team
-      ;(b as HTMLButtonElement).disabled = !enabled
-      b.className = 'team-select-btn px-3 py-2 rounded-xl text-left transition flex items-center justify-between ' +
-        (sel ? 'border-2 border-indigo-400 bg-indigo-500/20 ' : 'border border-slate-700 bg-slate-950/60 ') +
-        (enabled ? '' : 'opacity-40 cursor-not-allowed')
-    })
-  }
   function applyMode(nextMode: 'ffa' | '2teams'): void {
+    if (!isHostAuthority()) return
     if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
-      showToast('⚠️ 切换对战模式需在待机/阵亡整备时进行')
+      showToast('⚠️ 需在待机或阵亡时切换')
       return
     }
     mode.current = nextMode
@@ -421,15 +548,18 @@ export function bindAllEvents(): void {
       b.className = 'mode-btn px-3 py-2 rounded-xl text-left transition border ' +
         (sel ? 'border-2 border-emerald-400 bg-emerald-500/20' : 'border border-slate-700 bg-slate-950/60 hover:border-slate-500')
     })
-    if (nextMode === 'ffa') localPlayer.team = 'ffa'
-    else if (localPlayer.team !== 'blue') localPlayer.team = 'red'
+    if (nextMode === 'ffa') {
+      localPlayer.team = 'ffa'
+    } else if (!mode.allowFfaInTeams && localPlayer.team === 'ffa') {
+      localPlayer.team = 'red'
+    } else if (localPlayer.team !== 'blue' && localPlayer.team !== 'ffa') {
+      localPlayer.team = 'red'
+    }
     syncBotsCount(bots.length)
-    applyTeamButtons()
+    syncTeamButtonsUI()
     updateTeamCountUI()
     updateSpawnPointButtonsUI()
-    showToast(nextMode === 'ffa'
-      ? '🟡 自由混战：全员皆敌（占领正中旗帜后可选中正中复活点）'
-      : '⚔️ 双队对抗（红队 vs 蓝队）：左右基地部署，占领正中旗帜后可按 E 选中复活点')
+    broadcastHostRoomParams()
   }
   document.querySelectorAll('.mode-btn').forEach((b) => {
     b.addEventListener('click', () => applyMode((b.getAttribute('data-mode') || 'ffa') as 'ffa' | '2teams'))
@@ -439,8 +569,17 @@ export function bindAllEvents(): void {
     btn.addEventListener('click', () => {
       if ((btn as HTMLButtonElement).disabled) return
       const chosen = (btn.getAttribute('data-team') || 'red') as TeamId
+      if (mode.current === '2teams' && chosen === 'ffa' && !mode.allowFfaInTeams) {
+        showToast('🚫 房主已禁止 FFA 身份')
+        return
+      }
       localPlayer.team = chosen
-      applyTeamButtons()
+      if (isHostAuthority()) {
+        syncBotsCount(bots.length)
+      } else if (netState.role === 'client') {
+        sendClientLoadoutToHost(false)
+      }
+      syncTeamButtonsUI()
       updateTeamCountUI()
       updateSpawnPointButtonsUI()
     })
@@ -448,6 +587,7 @@ export function bindAllEvents(): void {
 
   document.getElementById('playerNameInput')?.addEventListener('input', (e) => {
     localPlayer.name = (e.target as HTMLInputElement).value.trim() || 'SkyHunter'
+    if (netState.role === 'client') sendClientLoadoutToHost(false)
   })
 
   const lobbyModal = document.getElementById('lobbyModal')
@@ -455,24 +595,39 @@ export function bindAllEvents(): void {
     lobbyModal?.classList.remove('hidden')
     lobbyModal?.classList.add('flex')
     updateSpawnPointButtonsUI()
+    syncLobbyRoleUI()
   })
+
   document.getElementById('startBattleBtn')?.addEventListener('click', () => {
-    if (!localPlayer.deployed || localPlayer.respawnTimer > 0) applyPendingLoadoutAndSpawn()
+    if (uiState.lobbyRole === 'client' && netState.role !== 'client') {
+      const raw = cleanRoomIdString((document.getElementById('peerRemoteIdInput') as HTMLInputElement | null)?.value || '')
+      if (raw) {
+        void joinHostRoom(raw)
+      }
+    }
+    if (!localPlayer.deployed || localPlayer.respawnTimer > 0) {
+      applyPendingLoadoutAndSpawn()
+    } else if (netState.role === 'client') {
+      sendClientLoadoutToHost(true)
+    }
     lobbyModal?.classList.add('hidden')
     lobbyModal?.classList.remove('flex')
   })
+
   document.getElementById('inputDeviceDetectBadge')?.addEventListener('click', () => setTouchLayerVisible(!touchState.enabled, false))
   document.getElementById('toggleTouchBtn')?.addEventListener('click', () => setTouchLayerVisible(!touchState.enabled, false))
   document.getElementById('resetTerrainBtn')?.addEventListener('click', () => {
+    if (!isHostAuthority()) return
     world.resetMatch()
     pendingLoadout.spawnPointId = 'base'
     localPlayer.selectedSpawnId = 'base'
     updateSpawnPointButtonsUI()
-    showToast('全图可破坏障碍物与正中旗帜状态已重置')
+    showToast('✅ 已重置地形')
   })
 
   const paramsModal = document.getElementById('paramsModal')
   const openParams = (): void => {
+    if (!isHostAuthority()) return
     paramsModal?.classList.remove('hidden')
     paramsModal?.classList.add('flex')
     syncParamsToUI()
@@ -480,24 +635,28 @@ export function bindAllEvents(): void {
   const closeParams = (): void => {
     paramsModal?.classList.add('hidden')
     paramsModal?.classList.remove('flex')
+    broadcastHostRoomParams()
   }
   document.getElementById('openParamsBtn')?.addEventListener('click', openParams)
   document.getElementById('lobbyOpenParamsBtn')?.addEventListener('click', openParams)
   document.getElementById('closeParamsBtn')?.addEventListener('click', closeParams)
   document.getElementById('resetParamsBtn')?.addEventListener('click', () => {
+    if (!isHostAuthority()) return
     resetPhysicsParams()
     world.config = { ...DEFAULT_CONFIG }
     syncParamsToUI()
-    showToast('已恢复默认参数')
+    broadcastHostRoomParams()
+    showToast('✅ 已恢复默认')
   })
 
-  bindRangeParam('paramGravity', 'valGravity', '', (v) => setPhysicsParams({ gravity: v }))
-  bindRangeParam('paramMoveSpeed', 'valMoveSpeed', '', (v) => setPhysicsParams({ moveSpeed: v }))
-  bindRangeParam('paramJetpackAccel', 'valJetpackAccel', '', (v) => setPhysicsParams({ jetpackAccel: v }))
-  bindRangeParam('paramJetpackMaxUp', 'valJetpackMaxUp', '', (v) => setPhysicsParams({ jetpackMaxUp: v }))
+  bindRangeParam('paramGravity', 'valGravity', '', (v) => { setPhysicsParams({ gravity: v }); broadcastHostRoomParams() })
+  bindRangeParam('paramMoveSpeed', 'valMoveSpeed', '', (v) => { setPhysicsParams({ moveSpeed: v }); broadcastHostRoomParams() })
+  bindRangeParam('paramJetpackAccel', 'valJetpackAccel', '', (v) => { setPhysicsParams({ jetpackAccel: v }); broadcastHostRoomParams() })
+  bindRangeParam('paramJetpackMaxUp', 'valJetpackMaxUp', '', (v) => { setPhysicsParams({ jetpackMaxUp: v }); broadcastHostRoomParams() })
   bindRangeParam('paramMaxHp', 'valMaxHp', '', (v) => {
     world.config.maxHp = v
     for (const p of world.players) { p.maxHp = v; if (p.hp > v) p.hp = v }
+    broadcastHostRoomParams()
   })
   bindRangeParam('paramHeadRadius', 'valHeadRadius', '', (v) => { world.config.headRadius = v })
   bindRangeParam('paramWepDamage', 'valWepDamage', '', (v) => { WEAPONS[paramState.weaponIdx].damage = v })
@@ -511,13 +670,16 @@ export function bindAllEvents(): void {
   bindRangeParam('paramMineRadius', 'valMineRadius', '', (v) => { world.config.mineTriggerRadius = v })
   bindRangeParam('paramMortarDmg', 'valMortarDmg', '', (v) => { world.config.mortarDamage = v })
   bindRangeParam('paramMortarRadius', 'valMortarRadius', '', (v) => { world.config.mortarRadius = v })
-  bindRangeParam('paramRespawnDelay', 'valRespawnDelay', 's', (v) => { world.config.respawnDelay = v })
+  bindRangeParam('paramRespawnDelay', 'valRespawnDelay', 's', (v) => { world.config.respawnDelay = v; broadcastHostRoomParams() })
   bindRangeParam('paramDollMax', 'valDollMax', '', (v) => { world.config.dollMaxCharges = v })
 
   // 触屏双摇杆
   function bindJoystick(zoneEl: HTMLElement | null, stickEl: HTMLElement | null, isAim: boolean): void {
     if (!zoneEl || !stickEl) return
-    const maxDist = 46
+    const maxDist = 52
+    const ascendHintEl = document.getElementById('touchMoveAscendBadge')
+    const aimFireHintEl = document.getElementById('touchAimFireBadge')
+
     const handleMove = (clientX: number, clientY: number): void => {
       const rect = zoneEl.getBoundingClientRect()
       let dx = clientX - (rect.left + rect.width / 2)
@@ -525,8 +687,30 @@ export function bindAllEvents(): void {
       const dist = Math.hypot(dx, dy)
       if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist }
       stickEl.style.transform = `translate(${dx}px, ${dy}px)`
-      if (isAim) { touchState.aimX = dx / maxDist; touchState.aimY = dy / maxDist }
-      else { touchState.moveX = dx / maxDist; touchState.moveY = dy / maxDist }
+      const nx = dx / maxDist
+      const ny = dy / maxDist
+      if (isAim) {
+        touchState.aimX = nx
+        touchState.aimY = ny
+        const firing = Math.hypot(nx, ny) > 0.42
+        stickEl.className = firing
+          ? 'w-14 h-14 rounded-full bg-rose-500/85 border-2 border-amber-200 shadow-[0_0_18px_rgba(244,63,94,0.85)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
+          : 'w-14 h-14 rounded-full bg-rose-500/55 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
+        if (aimFireHintEl) aimFireHintEl.textContent = firing ? '🔥 射击' : '🎯 瞄准'
+      } else {
+        touchState.moveX = nx
+        touchState.moveY = ny
+        const ascending = ny < -0.26
+        stickEl.className = ascending
+          ? 'w-14 h-14 rounded-full bg-cyan-300/85 border-2 border-white shadow-[0_0_20px_rgba(34,211,238,0.9)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
+          : 'w-14 h-14 rounded-full bg-sky-400/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
+        if (ascendHintEl) {
+          ascendHintEl.textContent = ascending ? '🚀 升空' : '▲ 升空'
+          ascendHintEl.className = ascending
+            ? 'text-[10px] font-extrabold text-cyan-200 bg-cyan-500/30 px-2 py-0.5 rounded-full border border-cyan-300/60'
+            : 'text-[10px] font-bold text-sky-200/75'
+        }
+      }
     }
     zoneEl.addEventListener('touchstart', (e) => {
       e.preventDefault()
@@ -539,7 +723,9 @@ export function bindAllEvents(): void {
     zoneEl.addEventListener('touchmove', (e) => {
       e.preventDefault()
       for (const t of Array.from(e.changedTouches)) {
-        if ((isAim && t.identifier === touchState.aimId) || (!isAim && t.identifier === touchState.moveId)) handleMove(t.clientX, t.clientY)
+        if ((isAim && t.identifier === touchState.aimId) || (!isAim && t.identifier === touchState.moveId)) {
+          handleMove(t.clientX, t.clientY)
+        }
       }
     }, { passive: false })
     const endTouch = (e: TouchEvent): void => {
@@ -547,9 +733,16 @@ export function bindAllEvents(): void {
         if (isAim && t.identifier === touchState.aimId) {
           touchState.aimActive = false; touchState.aimX = 0; touchState.aimY = 0
           stickEl.style.transform = 'translate(0px, 0px)'
+          stickEl.className = 'w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75'
+          if (aimFireHintEl) aimFireHintEl.textContent = '瞄准 / 外推开火'
         } else if (!isAim && t.identifier === touchState.moveId) {
           touchState.moveActive = false; touchState.moveX = 0; touchState.moveY = 0
           stickEl.style.transform = 'translate(0px, 0px)'
+          stickEl.className = 'w-14 h-14 rounded-full bg-sky-400/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75'
+          if (ascendHintEl) {
+            ascendHintEl.textContent = '▲ 升空'
+            ascendHintEl.className = 'text-[10px] font-bold text-sky-200/75'
+          }
         }
       }
     }
@@ -559,23 +752,39 @@ export function bindAllEvents(): void {
   bindJoystick(document.getElementById('touchMoveZone'), document.getElementById('touchMoveStick'), false)
   bindJoystick(document.getElementById('touchAimZone'), document.getElementById('touchAimStick'), true)
 
-  applyTeamButtons()
+  syncTeamButtonsUI()
   document.querySelectorAll('.mode-btn').forEach((b) => {
     const sel = b.getAttribute('data-mode') === mode.current
     b.className = 'mode-btn px-3 py-2 rounded-xl text-left transition border ' +
       (sel ? 'border-2 border-emerald-400 bg-emerald-500/20' : 'border border-slate-700 bg-slate-950/60 hover:border-slate-500')
   })
 
-  const boostBtn = document.getElementById('touchBoostBtn')
-  boostBtn?.addEventListener('touchstart', (e) => { e.preventDefault(); touchState.boostButtonDown = true }, { passive: false })
-  boostBtn?.addEventListener('touchend', () => { touchState.boostButtonDown = false })
-  document.getElementById('touchGrenadeBtn')?.addEventListener('click', () => {
+  const triggerSecondaryTouch = (e?: Event) => {
+    if (e && e.cancelable) e.preventDefault()
     inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
-  })
-  document.getElementById('touchReloadBtn')?.addEventListener('click', () => { inputQueue.reload = true })
-  document.getElementById('touchInteractBtn')?.addEventListener('click', () => {
+  }
+  const triggerReloadTouch = (e?: Event) => {
+    if (e && e.cancelable) e.preventDefault()
+    inputQueue.reload = true
+  }
+  const triggerInteractTouch = (e?: Event) => {
+    if (e && e.cancelable) e.preventDefault()
     inputQueue.interact = true
     trySelectCapturedFlagSpawnByKey()
-  })
+  }
+
+  const touchGrenBtn = document.getElementById('touchGrenadeBtn')
+  touchGrenBtn?.addEventListener('touchstart', triggerSecondaryTouch, { passive: false })
+  touchGrenBtn?.addEventListener('click', () => triggerSecondaryTouch())
+
+  const touchRelBtn = document.getElementById('touchReloadBtn')
+  touchRelBtn?.addEventListener('touchstart', triggerReloadTouch, { passive: false })
+  touchRelBtn?.addEventListener('click', () => triggerReloadTouch())
+
+  const touchIntBtn = document.getElementById('touchInteractBtn')
+  touchIntBtn?.addEventListener('touchstart', triggerInteractTouch, { passive: false })
+  touchIntBtn?.addEventListener('click', () => triggerInteractTouch())
+
+  syncLobbyRoleUI('host')
   updateNetStatusUI()
 }

@@ -60,6 +60,8 @@ export interface WeaponDef {
   lifeSeconds?: number  // 弹丸存活时间（射程）：默认按武器给，999 = 无限射程
   /** 统一 UI 特性简述（与弹匣/备弹组合生成配装卡片文案） */
   traitDesc?: string
+  /** 持有该武器时自动获得 +1 挡连死副武器解锁（冲锋枪） */
+  extraSecondarySlot?: boolean
   color: string
 }
 
@@ -98,9 +100,9 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 2, name: '狙击步枪', shortName: '狙', isSupplyOnly: false,
     damage: 137, headshotMult: 2.5, pellets: 1, spread: 0.003,
-    speed: 4000, recoil: 390, magSize: 3, maxReserve: 15,
+    speed: 4000, recoil: 390, magSize: 10, maxReserve: 20,
     reloadTime: 2.8, fireDelay: 0.95, chargeSeconds: 0.50, terrainRadius: 16,   // 按下后读条 0.5s 自动发射
-    explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.6, fuelMult: 0.6, fovMult: 1.30, color: '#c084fc',
+    explosive: false, laser: true, pierceOnHeadshot: true, lifeSeconds: 999, moveSpeedMult: 0.85, fuelMult: 1.0, ascendMult: 0.85, fovMult: 1.30, color: '#c084fc',
     // 狙击擦边分级：正中（穿心）= 137，越靠碰撞箱边缘越低，最低 99。
     // edgeDamage 保留=99，作为「边缘命中上限」（连续分级的最低档即 99）。
     edgeDamage: 99, grazeDamageMin: 99,
@@ -136,7 +138,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 6, name: '引力枪', shortName: '引力枪', isSupplyOnly: true,
-    damage: 24, headshotMult: 1.6, pellets: 1, spread: 0.01,   // 伤害降低（=手枪）
+    damage: 37, headshotMult: 1.6, pellets: 1, spread: 0.01, grazeDamageMin: 30,   // 伤害调高=突击步枪(37)
     speed: 1100, recoil: 240, magSize: 6, maxReserve: 18,
     reloadTime: 2.2, fireDelay: 0.9, terrainRadius: 130, lifeSeconds: 2.2,
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.7,
@@ -155,7 +157,7 @@ export const WEAPONS: WeaponDef[] = [
     traitDesc: '移速最快 · 双倍飞行',
   },
   {
-    id: 8, name: '冲锋枪', shortName: '冲锋枪', isSupplyOnly: false,
+    id: 8, name: '冲锋枪', shortName: '冲锋枪', extraSecondarySlot: true, isSupplyOnly: false,
     damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24, grazeDamageMin: 20,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
     speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,     // 30/150
     reloadTime: 1.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高；换弹 1.2s
@@ -215,21 +217,34 @@ export const SECONDARIES: Record<string, SecondaryDef> = {
 }
 
 /** 判断某副手对当前玩家是否已解锁（满足连死阈值，或替身人偶持有补给箱充能） */
-export function isSecondaryUnlocked(secId: string, deathStreak: number, dollCharges = 0): boolean {
+/** 计算玩家的等效连死副手解锁档位（选用冲锋枪 weaponIndex===8 时自动获得连死 +1 挡的副武器选择权） */
+export function getEffectiveUnlockStreak(deathStreak: number, weaponIndex?: number): number {
+  const base = Math.max(0, Math.floor(deathStreak ?? 0))
+  const bonus = weaponIndex !== undefined && WEAPONS[weaponIndex]?.extraSecondarySlot ? 1 : 0
+  return base + bonus
+}
+
+/** 手榴弹充能上限 = 连死数（0 或 1 连死时为 baseMax=1，连死 N>=1 时上限为 N） */
+export function getPlayerFragMaxCharges(deathStreak: number, baseMax = 1): number {
+  return Math.max(baseMax, Math.floor(deathStreak ?? 0))
+}
+
+/** 判断某副手对当前玩家是否已解锁（满足连死阈值/冲锋枪+1挡，或替身人偶持有补给箱充能） */
+export function isSecondaryUnlocked(secId: string, deathStreak: number, dollCharges = 0, weaponIndex?: number): boolean {
   const def = SECONDARIES[secId]
   if (!def) return false
   if (secId === 'doll' && dollCharges > 0) return true
-  return (deathStreak ?? 0) >= def.unlockStreak
+  return getEffectiveUnlockStreak(deathStreak, weaponIndex) >= def.unlockStreak
 }
 
 /** 获取当前已解锁的全部副手 ID 列表（按平衡性从低到高排序） */
-export function getUnlockedSecondaries(deathStreak: number, dollCharges = 0): string[] {
-  return SECONDARY_UNLOCK_ORDER.filter(id => isSecondaryUnlocked(id, deathStreak, dollCharges))
+export function getUnlockedSecondaries(deathStreak: number, dollCharges = 0, weaponIndex?: number): string[] {
+  return SECONDARY_UNLOCK_ORDER.filter(id => isSecondaryUnlocked(id, deathStreak, dollCharges, weaponIndex))
 }
 
 /** 获取当前连死层数下已解锁的最高阶副手 ID */
-export function getHighestUnlockedSecondary(deathStreak: number, dollCharges = 0): string {
-  const s = Math.max(0, Math.floor(deathStreak ?? 0))
+export function getHighestUnlockedSecondary(deathStreak: number, dollCharges = 0, weaponIndex?: number): string {
+  const s = getEffectiveUnlockStreak(deathStreak, weaponIndex)
   for (let i = SECONDARY_UNLOCK_ORDER.length - 1; i >= 0; i--) {
     const id = SECONDARY_UNLOCK_ORDER[i]
     if (s >= SECONDARIES[id].unlockStreak) return id

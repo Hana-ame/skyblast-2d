@@ -21,10 +21,10 @@ export interface TouchState {
 export class InputMapper {
   map(t: TouchState): Intent[] {
     const out: Intent[] = []
-    if (t.moveX !== 0) out.push({ t: 'move', dir: Math.sign(t.moveX) as -1 | 1 })
+    out.push({ t: 'move', dir: t.moveX === 0 ? 0 : (Math.sign(t.moveX) as -1 | 1) })
     if (t.jump) out.push({ t: 'jump' })
     out.push({ t: 'jetpack', on: t.jetpack })
-    if (t.dive) out.push({ t: 'dive', on: true })
+    out.push({ t: 'dive', on: Boolean(t.dive) })
     out.push({ t: 'aim', angle: t.aimAngle })
     out.push({ t: 'fire', on: t.fire })
     if (t.reload) out.push({ t: 'reload' })

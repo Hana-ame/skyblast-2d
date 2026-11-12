@@ -3,113 +3,122 @@
   // src/core/wrap.ts
   var WORLD_W = 13200;
   var WORLD_H = 4400;
-  var SURFACE_Y = 2800;
 
   // src/core/map.ts
   var CEILING_TOP = 280;
   var CEILING_THICK = 80;
+  var BEDROCK_TOP = 4160;
   var WALL_THICK = 60;
-  var MAIN_DECK_TOP = 1760;
-  var MAIN_DECK_THICK = 40;
-  var ARCH_CENTER_TOP = 680;
+  var UNDERGROUND_FLOOR_THICK = 120;
+  var MAIN_DECK_TOP = 3280;
+  var MAIN_DECK_THICK = 160;
+  var FIRST_COVER_HEIGHT = 140;
+  var CENTER_SHAFT_W = 280;
+  var CENTER_SHAFT_X0 = (WORLD_W - CENTER_SHAFT_W) / 2;
+  var CENTER_SHAFT_X1 = CENTER_SHAFT_X0 + CENTER_SHAFT_W;
+  var GROUND_PIT_OPEN_W = 240;
+  var GROUND_PIT_DEPTH = 80;
+  var GROUND_PIT_FLOOR_TOP = MAIN_DECK_TOP + GROUND_PIT_DEPTH;
+  var GROUND_PIT_FLOOR_THICK = MAIN_DECK_THICK - GROUND_PIT_DEPTH;
+  var SKY_SQUARE_SIZE = 260;
+  var ARCH_CENTER_TOP = 980;
+  var GAUSS_CENTER_PERCH_X = WORLD_W / 2;
+  var GAUSS_CENTER_PERCH_Y = WORLD_H / 2;
+  var STAIR_SMALL_SQUARE_SIZE = 80;
+  var M249_PERCH_SIZE = 100;
+  var M249_PERCH_Y = 520;
+  var M249_LEFT_PERCH_X = 3380;
+  var M249_RIGHT_PERCH_X = WORLD_W - M249_LEFT_PERCH_X - M249_PERCH_SIZE;
   var UNIFIED_EDGE_HIGHLIGHT = "#38bdf8";
-  function defaultMapData() {
-    const solids = [
-      // ── 1. 四面封闭边界（顶部完整无入口天花板 + 左右全高封闭墙；底部由世界内置 SURFACE_Y=2800 封闭） ──
-      { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: "platform" },
-      { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
-      { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
-      // ── 2. 天空拱形浮空方块群（有上有下高低交错，正中 x=6600 放置复活点与旗帜） ──
-      ...SKY_ARCH_BLOCKS(),
-      // ── 3. 中层地表主平台（y=1760，出生点所在平面）+ 左翼高掩体柱 ──
-      // 左翼出生台与主平台（x=500..680 留 180px 狭窄竖井通往地下地道）
-      { x: WALL_THICK, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
-      { x: 680, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
-      // 左翼出生点旁高耸掩体柱（对应设计图左侧出生点旁高框）
-      { x: 740, y: 1440, w: 120, h: 320, kind: "cover" },
-      // 右翼主平台与出生台（x=12520..12700 留 180px 狭窄竖井通往地下地道）
-      { x: 8e3, y: MAIN_DECK_TOP, w: 4520, h: MAIN_DECK_THICK, kind: "platform" },
-      { x: 12700, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
-      // ── 4. 地下区域（y > 1760）：全部采用实心岩体围合成狭窄地道（高 120~160px，竖井宽 160~260px） ──
-      ...UNDERGROUND_NARROW_TUNNEL_SOLIDS()
+  function mirrorSolid(s) {
+    return {
+      x: WORLD_W - s.x - s.w,
+      y: s.y,
+      w: s.w,
+      h: s.h,
+      kind: s.kind
+    };
+  }
+  function mirrorPairs(leftSolids) {
+    return [
+      ...leftSolids,
+      ...leftSolids.map(mirrorSolid)
     ];
-    return { name: "\u5C01\u95ED\u62F1\u9876\xB7\u5730\u4E0B\u72ED\u9053\u7ADE\u6280\u573A", solids };
+  }
+  function defaultMapData() {
+    const leftThickGroundWithPits = [
+      { x: WALL_THICK, y: MAIN_DECK_TOP, w: 440, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 740, y: MAIN_DECK_TOP - FIRST_COVER_HEIGHT, w: 120, h: FIRST_COVER_HEIGHT, kind: "cover" },
+      { x: 680, y: MAIN_DECK_TOP, w: 980, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 1660, y: GROUND_PIT_FLOOR_TOP, w: GROUND_PIT_OPEN_W, h: GROUND_PIT_FLOOR_THICK, kind: "platform" },
+      { x: 1900, y: MAIN_DECK_TOP, w: 960, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 2860, y: GROUND_PIT_FLOOR_TOP, w: GROUND_PIT_OPEN_W, h: GROUND_PIT_FLOOR_THICK, kind: "platform" },
+      { x: 3100, y: MAIN_DECK_TOP, w: 1260, h: MAIN_DECK_THICK, kind: "platform" },
+      { x: 4360, y: GROUND_PIT_FLOOR_TOP, w: GROUND_PIT_OPEN_W, h: GROUND_PIT_FLOOR_THICK, kind: "platform" },
+      { x: 4600, y: MAIN_DECK_TOP, w: 1400, h: MAIN_DECK_THICK, kind: "platform" }
+    ];
+    const solids = [
+      // 1. 四面封闭边界
+      { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: "platform" },
+      ...mirrorPairs([
+        { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: BEDROCK_TOP - (CEILING_TOP + CEILING_THICK), kind: "platform" }
+      ]),
+      // 2. 空中交错正方形拱桥 (y=2940→980) + 左右对称双 M249 阶梯（正中高斯枪无垫脚方块实体）
+      ...SKY_ARCH_BLOCKS(),
+      ...SYMMETRIC_CORNER_STAIRCASE_BLOCKS(),
+      // 3. 完整连续无空洞的主地面（y=3280..3440）+ 左右对称改矮的首个挡板方块 + 6 处可站人凹陷坑
+      ...mirrorPairs(leftThickGroundWithPits),
+      // 4. 三层薄地板地下隧道（y=3440..4160）
+      ...UNDERGROUND_THREE_LAYER_TUNNEL_SOLIDS()
+    ];
+    return { name: "\u9AD8\u8038\u65B9\u5F62\u62F1\u6865\xB7\u6B63\u4E2D\u60AC\u6D6E\u9AD8\u65AF\u67AA\xB7\u4E94\u636E\u70B9\xB7\u4E09\u5C42\u8584\u677F\u7ADE\u6280\u573A", solids };
   }
   function SKY_ARCH_BLOCKS() {
+    const S = SKY_SQUARE_SIZE;
+    const leftSquares = [
+      { x: 1080, y: 2940, w: S, h: S, kind: "block" },
+      { x: 1500, y: 2660, w: S, h: S, kind: "block" },
+      { x: 1920, y: 2380, w: S, h: S, kind: "block" },
+      { x: 2340, y: 2480, w: S, h: S, kind: "block" },
+      { x: 2760, y: 2180, w: S, h: S, kind: "block" },
+      { x: 3180, y: 1900, w: S, h: S, kind: "block" },
+      { x: 3600, y: 2e3, w: S, h: S, kind: "block" },
+      { x: 4020, y: 1700, w: S, h: S, kind: "block" },
+      { x: 4440, y: 1420, w: S, h: S, kind: "block" },
+      { x: 4860, y: 1520, w: S, h: S, kind: "block" },
+      { x: 5280, y: 1240, w: S, h: S, kind: "block" },
+      { x: 5700, y: 1340, w: S, h: S, kind: "block" },
+      { x: 6120, y: 1080, w: S, h: S, kind: "block" }
+    ];
     return [
-      // 左侧阶梯上升段
-      { x: 1200, y: 1280, w: 200, h: 360, kind: "block" },
-      { x: 1680, y: 1080, w: 420, h: 240, kind: "block" },
-      { x: 2740, y: 700, w: 720, h: 220, kind: "block" },
-      // 拱顶左峰（高）
-      { x: 3940, y: 560, w: 880, h: 220, kind: "block" },
-      // 左中交错块（下沉，体现“有上有下”）
-      { x: 5220, y: 760, w: 560, h: 220, kind: "block" },
-      // 正中央主方块（x=6200..7000，中心 x=6600，顶面 y=680：放置正中旗帜与复活点）
-      { x: 6200, y: ARCH_CENTER_TOP, w: 800, h: 220, kind: "block" },
-      // 拱顶右峰（高，体现“有上有下”）
-      { x: 7420, y: 560, w: 720, h: 220, kind: "block" },
-      // 右中交错块（下沉）
-      { x: 8580, y: 740, w: 720, h: 240, kind: "block" },
-      // 右侧阶梯下降段
-      { x: 9700, y: 920, w: 580, h: 260, kind: "block" },
-      { x: 10680, y: 1080, w: 440, h: 280, kind: "block" },
-      { x: 11480, y: 1240, w: 200, h: 360, kind: "block" },
-      { x: 12020, y: 1320, w: 200, h: 340, kind: "block" }
+      ...mirrorPairs(leftSquares),
+      { x: 6470, y: ARCH_CENTER_TOP, w: S, h: S, kind: "block" }
     ];
   }
-  function UNDERGROUND_NARROW_TUNNEL_SOLIDS() {
-    return [
-      // ── A. 左右浅层狭道顶部悬挂掩体块（对应设计图主平台横线下方的掩体块） ──
-      { x: 1800, y: 1800, w: 260, h: 60, kind: "cover" },
-      { x: 3e3, y: 1800, w: 260, h: 70, kind: "cover" },
-      { x: 4100, y: 1800, w: 220, h: 60, kind: "cover" },
-      { x: 9e3, y: 1800, w: 180, h: 60, kind: "cover" },
-      { x: 1e4, y: 1800, w: 240, h: 60, kind: "cover" },
-      { x: 11100, y: 1800, w: 340, h: 70, kind: "block" },
-      // ── B. 左右两侧地下实心岩层（围合出左侧 x=500..680 与右侧 x=12520..12700 的 L 型狭窄地道） ──
-      // 左端外侧全高地下实心墙（x=60..500, y=1800..2660，底部预留 y=2660..2800 底层贯通狭道）
-      { x: WALL_THICK, y: 1800, w: 440, h: 860, kind: "block" },
-      // 左侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=1280..1440 联络竖井）
-      { x: 680, y: 2040, w: 600, h: 320, kind: "block" },
-      { x: 1440, y: 2040, w: 1060, h: 320, kind: "block" },
-      // 左侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
-      { x: 680, y: 2500, w: 1820, h: 160, kind: "block" },
-      // 右端外侧全高地下实心墙（x=12700..13140, y=1800..2660）
-      { x: 12700, y: 1800, w: 440, h: 860, kind: "block" },
-      // 右侧浅层狭道（y=1800..2040）与深层 L 狭道（y=2360..2500）之间的厚实岩层（预留 x=11760..11920 联络竖井）
-      { x: 10700, y: 2040, w: 1060, h: 320, kind: "block" },
-      { x: 11920, y: 2040, w: 600, h: 320, kind: "block" },
-      // 右侧深层 L 狭道（y=2360..2500）与底层狭道（y=2660..2800）之间的隔层岩体
-      { x: 10700, y: 2500, w: 1820, h: 160, kind: "block" },
-      // ── C. 中央地下顶盖与中央下沉狭窄井道（y=1800..2160） ──
-      // 左中顶盖岩层（x=2500..5200, y=2040..2160，厚 120px，上方为浅层狭道，下方为 y=2160..2280 地下上层狭道）
-      { x: 2500, y: 2040, w: 2700, h: 120, kind: "platform" },
-      // 右中顶盖岩层（x=8000..10700, y=2040..2160，厚 120px）
-      { x: 8e3, y: 2040, w: 2700, h: 120, kind: "platform" },
-      // 中央咽喉区左肩巨石（x=5380..6260, y=1800..2160，留出 x=5200..5380 宽 180px 的西侧下沉竖井）
-      { x: 5380, y: 1800, w: 880, h: 360, kind: "block" },
-      // 中央咽喉区右肩巨石（留出 x=6260..6660 中央竖井、x=7020..7360 东侧竖井及 x=7820..8000 边缘竖井）
-      { x: 6660, y: 1800, w: 360, h: 360, kind: "block" },
-      { x: 7360, y: 1800, w: 460, h: 360, kind: "block" },
-      // ── D. 中央地下迷宫核心岩体群（围合出上 y=2160..2280、中 y=2380..2500、下 y=2660..2800 三层狭窄横道与多条狭窄竖井） ──
-      // 1. 左侧竖直巨岩（左留 x=2500..2660 竖井，右留 x=3220..3380 竖井）
-      { x: 2660, y: 2280, w: 560, h: 380, kind: "block" },
-      // 2. 左中上层横岩（上留 y=2160..2280 狭道，下留 y=2380..2500 狭道）
-      { x: 3380, y: 2280, w: 2240, h: 100, kind: "block" },
-      // 3. 左中下层横岩（上留 y=2380..2500 狭道，下留 y=2660..2800 底层狭道）
-      { x: 3380, y: 2500, w: 2240, h: 160, kind: "block" },
-      // 4. 正中竖直巨柱（左留 x=5620..5820 竖井，右留 x=6380..6640 核心中央竖井）
-      { x: 5820, y: 2280, w: 560, h: 380, kind: "block" },
-      // 5. 右中上层横岩（预留 x=7020..7180 狭窄竖井供垂直机动与射击）
-      { x: 6640, y: 2280, w: 380, h: 100, kind: "block" },
-      { x: 7180, y: 2280, w: 1920, h: 100, kind: "block" },
-      // 6. 右中下层横岩（预留 x=7020..7180 狭窄竖井）
-      { x: 6640, y: 2500, w: 380, h: 160, kind: "block" },
-      { x: 7180, y: 2500, w: 1920, h: 160, kind: "block" },
-      // 7. 右侧竖直巨岩（左留 x=9100..9260 竖井，右留 x=10540..10700 竖井）
-      { x: 9260, y: 2280, w: 1280, h: 380, kind: "block" }
+  function SYMMETRIC_CORNER_STAIRCASE_BLOCKS() {
+    const s = STAIR_SMALL_SQUARE_SIZE;
+    const leftStaircase = [
+      { x: 4780, y: 1040, w: s, h: s, kind: "block" },
+      { x: 4320, y: 860, w: s, h: s, kind: "block" },
+      { x: 3860, y: 680, w: s, h: s, kind: "block" },
+      { x: M249_LEFT_PERCH_X, y: M249_PERCH_Y, w: M249_PERCH_SIZE, h: M249_PERCH_SIZE, kind: "block" }
     ];
+    return mirrorPairs(leftStaircase);
+  }
+  function UNDERGROUND_THREE_LAYER_TUNNEL_SOLIDS() {
+    const leftUnderground = [
+      { x: WALL_THICK, y: 3440, w: 440, h: 560, kind: "block" },
+      { x: 680, y: 3600, w: 1820, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 680, y: 3880, w: 820, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 1680, y: 3880, w: 820, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 2680, y: 3600, w: 280, h: 400, kind: "block" },
+      { x: 3220, y: 3600, w: 280, h: 400, kind: "block" },
+      { x: 3680, y: 3600, w: 1060, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 4940, y: 3600, w: 1060, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 3680, y: 3880, w: 2320, h: UNDERGROUND_FLOOR_THICK, kind: "platform" },
+      { x: 6180, y: MAIN_DECK_TOP, w: 280, h: 4e3 - MAIN_DECK_TOP, kind: "block" }
+    ];
+    return mirrorPairs(leftUnderground);
   }
   function carveTunnelInSolids(solids, carve, minSize = 20) {
     const cx0 = carve.x;
@@ -197,9 +206,14 @@
 
   // src/core/sim/landmarks.ts
   var CEILING_STAND = 264;
+  var GROUND_STAND = BEDROCK_TOP - 60;
   var MAIN_DECK_STAND = MAIN_DECK_TOP - 16;
   var CENTER_RESPAWN_X = 6600;
   var CENTER_RESPAWN_Y = ARCH_CENTER_TOP - 16;
+  var M249_LEFT_SKY_X = M249_LEFT_PERCH_X + M249_PERCH_SIZE / 2;
+  var M249_RIGHT_SKY_X = M249_RIGHT_PERCH_X + M249_PERCH_SIZE / 2;
+  var M249_SKY_Y = M249_PERCH_Y - 16;
+  var GRAVITY_BOTTOM_Y = BEDROCK_TOP - 16;
   var CENTER_RESPAWN_POINT = {
     id: "cp_c",
     code: "C",
@@ -208,17 +222,30 @@
     y: CENTER_RESPAWN_Y
   };
   var FFA_SPAWN_POINTS = [
-    { x: 1180, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u7FFC\u5E73\u53F0" },
-    { x: 2400, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u5E73\u53F0" },
-    { x: 3100, y: 700 - 16, team: "ffa", label: "FFA\xB7\u897F\u62F1\u6D6E\u5C9B" },
-    { x: 4380, y: 560 - 16, team: "ffa", label: "FFA\xB7\u5DE6\u5CF0\u62F1\u5C9B" },
-    { x: 4500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u5730\u9053" },
-    { x: 5500, y: 760 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u62F1\u5C9B" },
-    { x: 7780, y: 560 - 16, team: "ffa", label: "FFA\xB7\u53F3\u5CF0\u62F1\u5C9B" },
-    { x: 8500, y: 2500 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u5730\u9053" },
-    { x: 9990, y: 920 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u62F1\u6D6E\u5C9B" },
-    { x: 10800, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u5E73\u53F0" },
-    { x: 12020, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u7FFC\u5E73\u53F0" }
+    { x: 1170, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u7FFC\u5730\u9762" },
+    { x: 1630, y: 2660 - 16, team: "ffa", label: "FFA\xB7\u897F\u4F4E\u65B9\u5C9B" },
+    { x: 2050, y: 2380 - 16, team: "ffa", label: "FFA\xB7\u897F\u4E2D\u65B9\u5C9B" },
+    { x: 2380, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u5730\u9762" },
+    { x: 2470, y: 2480 - 16, team: "ffa", label: "FFA\xB7\u897F\u5916\u65B9\u5C9B" },
+    { x: 3310, y: 1900 - 16, team: "ffa", label: "FFA\xB7\u897F\u4E2D\u62F1\u5C9B" },
+    { x: 3730, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u897F\u4E2D\u5730\u9762" },
+    { x: 3730, y: 2e3 - 16, team: "ffa", label: "FFA\xB7\u897F\u9AD8\u65B9\u5C9B" },
+    { x: 4210, y: 3600 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u4E0A\u5C42\u5730\u9053" },
+    { x: 4300, y: 3880 - 16, team: "ffa", label: "FFA\xB7\u897F\u533A\u4E2D\u5C42\u5730\u9053" },
+    { x: 4570, y: 1420 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u897F\u9AD8\u65B9\u5C9B" },
+    { x: 5300, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u5FC3\u897F\u5730\u9762" },
+    { x: 7900, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u5FC3\u4E1C\u5730\u9762" },
+    { x: 8630, y: 1420 - 16, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u9AD8\u65B9\u5C9B" },
+    { x: 8900, y: 3880 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u4E2D\u5C42\u5730\u9053" },
+    { x: 8990, y: 3600 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u533A\u4E0A\u5C42\u5730\u9053" },
+    { x: 9470, y: 2e3 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u9AD8\u65B9\u5C9B" },
+    { x: 9470, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u4E2D\u5730\u9762" },
+    { x: 9890, y: 1900 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u4E2D\u62F1\u5C9B" },
+    { x: 10730, y: 2480 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u5916\u65B9\u5C9B" },
+    { x: 10820, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E2D\u4E1C\u5730\u9762" },
+    { x: 11150, y: 2380 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u4E2D\u65B9\u5C9B" },
+    { x: 11570, y: 2660 - 16, team: "ffa", label: "FFA\xB7\u4E1C\u4F4E\u65B9\u5C9B" },
+    { x: 12030, y: MAIN_DECK_STAND, team: "ffa", label: "FFA\xB7\u4E1C\u7FFC\u5730\u9762" }
   ];
   var SPAWN_POINTS = [
     { x: 260, y: MAIN_DECK_STAND, team: "red" },
@@ -227,13 +254,18 @@
     ...FFA_SPAWN_POINTS.map(({ x, y, team }) => ({ x, y, team }))
   ];
   var AMMO_SPOTS = [
-    { x: 4950, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u897F\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
-    { x: 5500, y: 760 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
-    { x: 6320, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u897F\u4FA7\u5F39\u836F\u70B9" },
-    { x: 6880, y: CENTER_RESPAWN_Y, area: "\u6B63\u4E2D\u62F1\u9876\xB7\u4E1C\u4FA7\u5F39\u836F\u70B9" },
-    { x: 7780, y: 560 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u62F1\u6865\u5F39\u836F\u70B9" },
-    { x: 8250, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E3B\u5E73\u53F0\u5185\u4FA7\u5F39\u836F\u70B9" },
-    { x: 6500, y: 2800 - 16, area: "\u5730\u4E0B\u4E2D\u592E\u72ED\u9053\xB7\u6838\u5FC3\u5F39\u836F\u70B9" }
+    { x: 4950, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u897F\xB7\u4E3B\u5730\u9762\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 4570, y: 1420 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u4E2D\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 5410, y: 1240 - 16, area: "\u4E2D\u5FC3\u897F\xB7\u5185\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 6250, y: 1080 - 16, area: "\u6B63\u4E2D\u897F\u4FA7\xB7\u62F1\u9876\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 6950, y: 1080 - 16, area: "\u6B63\u4E2D\u4E1C\u4FA7\xB7\u62F1\u9876\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 7790, y: 1240 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u5185\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 8630, y: 1420 - 16, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E2D\u62F1\u65B9\u5C9B\u5F39\u836F\u70B9" },
+    { x: 8250, y: MAIN_DECK_STAND, area: "\u4E2D\u5FC3\u4E1C\xB7\u4E3B\u5730\u9762\u5185\u4FA7\u5F39\u836F\u70B9" },
+    { x: 4200, y: 3600 - 16, area: "\u5730\u4E0B\u897F\u533A\xB7\u4E00\u5C42\u901A\u9053\u5F39\u836F\u70B9" },
+    { x: 9e3, y: 3600 - 16, area: "\u5730\u4E0B\u4E1C\u533A\xB7\u4E00\u5C42\u901A\u9053\u5F39\u836F\u70B9" },
+    { x: 3090, y: 4160 - 16, area: "\u5730\u4E0B\u897F\u533A\xB7\u5E95\u5C42\u901A\u9053\u5F39\u836F\u70B9" },
+    { x: 10110, y: 4160 - 16, area: "\u5730\u4E0B\u4E1C\u533A\xB7\u5E95\u5C42\u901A\u9053\u5F39\u836F\u70B9" }
   ];
   var MORTARS_INIT = [
     { id: "mortar_left", name: "\u897F\u533A\u8FEB\u51FB\u70AE", x: 920, y: CEILING_STAND, angle: -Math.PI * 0.28, power: 24 },
@@ -243,24 +275,58 @@
     { id: "mortar_right", name: "\u4E1C\u533A\u8FEB\u51FB\u70AE", x: 12260, y: CEILING_STAND, angle: -Math.PI * 0.72, power: 24 }
   ];
   var RANDOM_SPAWN_CANDIDATES = [
-    { x: 1180, y: MAIN_DECK_STAND - 20 },
-    { x: 2400, y: MAIN_DECK_STAND - 20 },
-    { x: 3600, y: MAIN_DECK_STAND - 20 },
-    { x: 4700, y: MAIN_DECK_STAND - 20 },
-    { x: 3100, y: 700 - 36 },
-    { x: 4380, y: 560 - 36 },
-    { x: 5500, y: 760 - 36 },
+    { x: 1170, y: MAIN_DECK_STAND - 20 },
+    { x: 1480, y: MAIN_DECK_STAND - 20 },
+    { x: 2100, y: MAIN_DECK_STAND - 20 },
+    { x: 2380, y: MAIN_DECK_STAND - 20 },
+    { x: 2680, y: MAIN_DECK_STAND - 20 },
+    { x: 3350, y: MAIN_DECK_STAND - 20 },
+    { x: 3730, y: MAIN_DECK_STAND - 20 },
+    { x: 4120, y: MAIN_DECK_STAND - 20 },
+    { x: 4900, y: MAIN_DECK_STAND - 20 },
+    { x: 5300, y: MAIN_DECK_STAND - 20 },
+    { x: 5720, y: MAIN_DECK_STAND - 20 },
+    { x: 1630, y: 2660 - 36 },
+    { x: 2050, y: 2380 - 36 },
+    { x: 2470, y: 2480 - 36 },
+    { x: 2890, y: 2180 - 36 },
+    { x: 3310, y: 1900 - 36 },
+    { x: 3730, y: 2e3 - 36 },
+    { x: 4150, y: 1700 - 36 },
+    { x: 4570, y: 1420 - 36 },
+    { x: 4990, y: 1520 - 36 },
+    { x: 5410, y: 1240 - 36 },
+    { x: 5830, y: 1340 - 36 },
+    { x: 6250, y: 1080 - 36 },
     { x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y - 24 },
-    { x: 7780, y: 560 - 36 },
-    { x: 8940, y: 740 - 36 },
-    { x: 9990, y: 920 - 36 },
-    { x: 8500, y: MAIN_DECK_STAND - 20 },
-    { x: 9600, y: MAIN_DECK_STAND - 20 },
-    { x: 10800, y: MAIN_DECK_STAND - 20 },
-    { x: 12020, y: MAIN_DECK_STAND - 20 },
-    { x: 4500, y: 2500 - 24 },
-    { x: 6500, y: 2800 - 24 },
-    { x: 8500, y: 2500 - 24 }
+    { x: 6950, y: 1080 - 36 },
+    { x: 7370, y: 1340 - 36 },
+    { x: 7790, y: 1240 - 36 },
+    { x: 8210, y: 1520 - 36 },
+    { x: 8630, y: 1420 - 36 },
+    { x: 9050, y: 1700 - 36 },
+    { x: 9470, y: 2e3 - 36 },
+    { x: 9890, y: 1900 - 36 },
+    { x: 10310, y: 2180 - 36 },
+    { x: 10730, y: 2480 - 36 },
+    { x: 11150, y: 2380 - 36 },
+    { x: 11570, y: 2660 - 36 },
+    { x: 7480, y: MAIN_DECK_STAND - 20 },
+    { x: 8300, y: MAIN_DECK_STAND - 20 },
+    { x: 9470, y: MAIN_DECK_STAND - 20 },
+    { x: 10820, y: MAIN_DECK_STAND - 20 }
+  ];
+  var CP_INITS = [
+    { id: "cp_a", code: "A", name: "\u636E\u70B9A\xB7\u5730\u4E0B\u4E2D\u897F", x: 5470, y: 3880 - 16, ownerTeam: null },
+    { id: "cp_b", code: "B", name: "\u636E\u70B9B\xB7\u897F\u62F1\u534A\u8DEF", x: 3730, y: 2e3 - 16, ownerTeam: null },
+    { id: "cp_c", code: "C", name: "\u6B63\u4E2D\u590D\u6D3B\u70B9", x: CENTER_RESPAWN_X, y: CENTER_RESPAWN_Y, ownerTeam: null },
+    { id: "cp_d", code: "D", name: "\u636E\u70B9D\xB7\u4E1C\u62F1\u534A\u8DEF", x: 9470, y: 2e3 - 16, ownerTeam: null },
+    { id: "cp_e", code: "E", name: "\u636E\u70B9E\xB7\u5730\u4E0B\u4E2D\u4E1C", x: 7730, y: 3880 - 16, ownerTeam: null },
+    { id: "cp_f", code: "F", name: "\u636E\u70B9F\xB7\u897F\u5916\u5730\u9762", x: 2380, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_g", code: "G", name: "\u636E\u70B9G\xB7\u897F\u5185\u5730\u9762", x: 3730, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_h", code: "H", name: "\u636E\u70B9H\xB7\u4E1C\u5185\u5730\u9762", x: 9470, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_i", code: "I", name: "\u636E\u70B9I\xB7\u4E1C\u5916\u5730\u9762", x: 10820, y: MAIN_DECK_STAND, ownerTeam: null },
+    { id: "cp_j", code: "J", name: "\u636E\u70B9J\xB7\u897F\u533A\u5730\u9053", x: 1590, y: 3600 - 16, ownerTeam: null }
   ];
 
   // src/core/sim/spatial.ts
@@ -346,19 +412,30 @@
     if (kind === "tunnel_bg" || kind === "pipe_bg" || kind === "building_bg") return "tunnel";
     return "unifiedPanel";
   }
+  var lastPatternCamX = 0;
+  var lastPatternCamY = 0;
   function getTerrainPattern(ctx2, kind) {
     const key = texKindOf(kind);
     const hit = cache.get(key);
     if (hit) return hit;
     const cv = key === "tunnel" ? makeTex(96, paintTunnelBg) : makeTex(96, paintUnifiedTechPanel);
     const pat = ctx2.createPattern(cv, "repeat");
-    if (pat) cache.set(key, pat);
+    if (pat) {
+      if (typeof DOMMatrix !== "undefined" && typeof pat.setTransform === "function") {
+        pat.setTransform(new DOMMatrix().translate(-lastPatternCamX, -lastPatternCamY));
+      }
+      cache.set(key, pat);
+    }
     return pat;
   }
   function syncTerrainPatterns(camX, camY) {
+    lastPatternCamX = camX;
+    lastPatternCamY = camY;
     if (typeof DOMMatrix === "undefined") return;
     const m = new DOMMatrix().translate(-camX, -camY);
-    for (const pat of cache.values()) pat.setTransform(m);
+    for (const pat of cache.values()) {
+      if (typeof pat.setTransform === "function") pat.setTransform(m);
+    }
   }
 
   // src/web/main-editor.ts
@@ -370,7 +447,7 @@
   var statusEl = document.getElementById("status");
   var brushInput = document.getElementById("brushSize");
   var brushLabel = document.getElementById("brushLabel");
-  var camera = { x: WORLD_W / 2, y: SURFACE_Y / 2, zoom: 0.11 };
+  var camera = { x: WORLD_W / 2, y: BEDROCK_TOP / 2, zoom: 0.11 };
   var brushKind = "platform";
   var brushTiles = 1;
   var map = loadInitial();
@@ -406,12 +483,12 @@
       const a = localStorage.getItem(EDITOR_KEY);
       if (a) {
         const m = sanitizeMapData(JSON.parse(a));
-        if (m) return m;
+        if (m && m.name === defaultMapData().name) return m;
       }
       const b = localStorage.getItem(GAME_KEY);
       if (b) {
         const m = sanitizeMapData(JSON.parse(b));
-        if (m) return m;
+        if (m && m.name === defaultMapData().name) return m;
       }
     } catch {
     }
@@ -503,9 +580,9 @@
     const margin = 48;
     const availW = Math.max(400, canvas.width - 420 - margin);
     const availH = Math.max(300, canvas.height - margin * 2);
-    camera.zoom = Math.max(0.05, Math.min(availW / WORLD_W, availH / (SURFACE_Y + 300)));
+    camera.zoom = Math.max(0.05, Math.min(availW / WORLD_W, availH / (BEDROCK_TOP + 300)));
     camera.x = WORLD_W / 2 - 180 / camera.zoom;
-    camera.y = (SURFACE_Y + 200) / 2;
+    camera.y = (BEDROCK_TOP + 200) / 2;
   }
   function updateStatus() {
     if (statusEl) statusEl.textContent = `${map.solids.length} \u5757 \xB7 \u7EDF\u4E00\u9AD8\u4EAE ${UNIFIED_EDGE_HIGHLIGHT}`;
@@ -530,17 +607,17 @@
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const ugTop = sy(MAIN_DECK_TOP);
-    const gy = sy(SURFACE_Y);
+    const gy = sy(BEDROCK_TOP);
     ctx.fillStyle = "rgba(7, 11, 20, 0.55)";
     ctx.fillRect(sx(0), ugTop, WORLD_W * camera.zoom, gy - ugTop);
     ctx.fillStyle = "#131c2e";
-    ctx.fillRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - SURFACE_Y) * camera.zoom);
+    ctx.fillRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - BEDROCK_TOP) * camera.zoom);
     ctx.strokeStyle = UNIFIED_EDGE_HIGHLIGHT;
     ctx.lineWidth = 2;
-    ctx.strokeRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - SURFACE_Y) * camera.zoom);
+    ctx.strokeRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - BEDROCK_TOP) * camera.zoom);
     ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(sx(0), sy(0), WORLD_W * camera.zoom, SURFACE_Y * camera.zoom);
+    ctx.strokeRect(sx(0), sy(0), WORLD_W * camera.zoom, BEDROCK_TOP * camera.zoom);
     if (showGrid && camera.zoom > 0.08) {
       const step = camera.zoom > 0.22 ? 200 : 400;
       ctx.strokeStyle = "rgba(51, 65, 85, 0.35)";
@@ -549,9 +626,9 @@
       for (let x = 0; x <= WORLD_W; x += step) {
         const px = sx(x);
         ctx.moveTo(px, sy(0));
-        ctx.lineTo(px, sy(SURFACE_Y));
+        ctx.lineTo(px, sy(BEDROCK_TOP));
       }
-      for (let y = 0; y <= SURFACE_Y; y += step) {
+      for (let y = 0; y <= BEDROCK_TOP; y += step) {
         const py = sy(y);
         ctx.moveTo(sx(0), py);
         ctx.lineTo(sx(WORLD_W), py);
@@ -568,7 +645,7 @@
     ctx.stroke();
     ctx.fillStyle = "rgba(125, 211, 252, 0.78)";
     ctx.font = "bold 11px Inter, sans-serif";
-    ctx.fillText("\u25BC \u51FA\u751F\u70B9\u5E73\u9762 (y=1760) \u4EE5\u4E0B\uFF1A\u5730\u4E0B\u72ED\u7A84\u5730\u9053\u533A", sx(140), ugTop - 6);
+    ctx.fillText("\u25BC \u4E3B\u5730\u9762 (y=2400..2640 \u539A240px+\u51F9\u9677\u5751) \u4EE5\u4E0B\uFF1A\u5730\u677F\u4E0B\u8D2F\u901A\u5730\u9053\u4E0E\u56DB\u5C42\u6DF1\u9083\u5730\u4E0B\u72ED\u9053\u533A (y=2640..4160)", sx(140), ugTop - 6);
     ctx.restore();
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
@@ -617,7 +694,7 @@
         const px = sx(sp.x);
         const py = sy(sp.y);
         ctx.save();
-        if (sp.team === "ffa") {
+        if (false) {
           ctx.fillStyle = "#facc15";
           ctx.strokeStyle = "#0f172a";
           ctx.lineWidth = 1.5;
@@ -786,7 +863,7 @@
       return;
     }
     const wx = clampToWorld(p.x, WORLD_W - SNAP);
-    const wy = clampToWorld(p.y, SURFACE_Y - SNAP);
+    const wy = clampToWorld(p.y, BEDROCK_TOP - SNAP);
     if (e.button === 2) {
       pushHistory();
       erasing = true;
@@ -823,7 +900,7 @@
   canvas.addEventListener("mousemove", (e) => {
     const rect = canvas.getBoundingClientRect();
     const p = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-    mouseWorld = { x: clampToWorld(p.x, WORLD_W - SNAP), y: clampToWorld(p.y, SURFACE_Y - SNAP) };
+    mouseWorld = { x: clampToWorld(p.x, WORLD_W - SNAP), y: clampToWorld(p.y, BEDROCK_TOP - SNAP) };
     if (panning) {
       camera.x -= (e.clientX - panLast.x) / camera.zoom;
       camera.y -= (e.clientY - panLast.y) / camera.zoom;
@@ -841,7 +918,7 @@
       const o = dragState.orig;
       if (dragState.mode === "move") {
         sel.x = Math.max(0, Math.min(WORLD_W - sel.w, snap(o.x + dx)));
-        sel.y = Math.max(0, Math.min(SURFACE_Y - sel.h, snap(o.y + dy)));
+        sel.y = Math.max(0, Math.min(BEDROCK_TOP - sel.h, snap(o.y + dy)));
       } else {
         let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
         if (dragState.mode.includes("w")) x0 = Math.min(x1 - SNAP, snap(o.x + dx));
@@ -851,7 +928,7 @@
         sel.x = Math.max(0, x0);
         sel.y = Math.max(0, y0);
         sel.w = Math.max(SNAP, Math.min(WORLD_W - sel.x, x1 - sel.x));
-        sel.h = Math.max(SNAP, Math.min(SURFACE_Y - sel.y, y1 - sel.y));
+        sel.h = Math.max(SNAP, Math.min(BEDROCK_TOP - sel.y, y1 - sel.y));
       }
       updateSelectionInfo();
       return;
@@ -905,7 +982,7 @@
     const s = map.solids[selected];
     map.solids.push({
       x: Math.min(WORLD_W - s.w, s.x + 80),
-      y: Math.min(SURFACE_Y - s.h, s.y + 80),
+      y: Math.min(BEDROCK_TOP - s.h, s.y + 80),
       w: s.w,
       h: s.h,
       kind: s.kind
@@ -965,13 +1042,13 @@
     c.save();
     c.scale(scale, scale);
     c.fillStyle = "rgba(7, 11, 20, 0.72)";
-    c.fillRect(0, MAIN_DECK_TOP, WORLD_W, SURFACE_Y - MAIN_DECK_TOP);
+    c.fillRect(0, MAIN_DECK_TOP, WORLD_W, BEDROCK_TOP - MAIN_DECK_TOP);
     const pat = getTerrainPattern(c, "earth");
     c.fillStyle = pat ?? "#162032";
-    c.fillRect(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y);
+    c.fillRect(0, BEDROCK_TOP, WORLD_W, WORLD_H - BEDROCK_TOP);
     c.strokeStyle = UNIFIED_EDGE_HIGHLIGHT;
     c.lineWidth = 6;
-    c.strokeRect(3, SURFACE_Y + 3, WORLD_W - 6, WORLD_H - SURFACE_Y - 6);
+    c.strokeRect(3, BEDROCK_TOP + 3, WORLD_W - 6, WORLD_H - BEDROCK_TOP - 6);
     for (const s of map.solids) {
       c.fillStyle = getTerrainPattern(c, s.kind) ?? "#162032";
       c.fillRect(s.x, s.y, s.w, s.h);
@@ -982,7 +1059,7 @@
       c.strokeRect(s.x + 2.5, s.y + 2.5, s.w - 5, s.h - 5);
     }
     for (const sp of SPAWN_POINTS) {
-      if (sp.team === "ffa") {
+      if (false) {
         c.fillStyle = "#facc15";
         c.beginPath();
         c.arc(sp.x, sp.y - 12, 26, 0, Math.PI * 2);
@@ -1057,7 +1134,7 @@
       if (e.code === "ArrowLeft") sel.x = Math.max(0, sel.x - step);
       if (e.code === "ArrowRight") sel.x = Math.min(WORLD_W - sel.w, sel.x + step);
       if (e.code === "ArrowUp") sel.y = Math.max(0, sel.y - step);
-      if (e.code === "ArrowDown") sel.y = Math.min(SURFACE_Y - sel.h, sel.y + step);
+      if (e.code === "ArrowDown") sel.y = Math.min(BEDROCK_TOP - sel.h, sel.y + step);
       updateSelectionInfo();
     }
   });
@@ -1179,8 +1256,8 @@
       name: "\u81EA\u5B9A\u4E49\u5C01\u95ED\u7ADE\u6280\u573A",
       solids: [
         { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: "platform" },
-        { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" },
-        { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: "platform" }
+        { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: BEDROCK_TOP - (CEILING_TOP + CEILING_THICK), kind: "platform" },
+        { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: BEDROCK_TOP - (CEILING_TOP + CEILING_THICK), kind: "platform" }
       ]
     };
     selected = -1;

@@ -12,7 +12,7 @@ import {
   formatWeaponAmmoText, formatWeaponCardSubtitle, formatSecondaryButtonTitle, formatSecondaryCardSubtitle,
 } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
-import type { WorldEvent } from '../src/core/types.ts'
+import type { WorldEvent, TeamId } from '../src/core/types.ts'
 import { encodeServerMsgBinary, decodeServerMsgBinary } from '../src/net/protocol/BinaryCodec.ts'
 import { expandBeamSegments, worldSegLength } from '../src/web/render/beamGeometry.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
@@ -314,8 +314,8 @@ test('护栏·友伤开关行为：关闭后队友不掉血，开启后掉血', 
     const shooter = w.addPlayer('S', 'red')
     const mate = w.addPlayer('M', 'red')       // 同队
     shooter.weaponIndex = weaponIdx
-    shooter.pos = { x: 3000, y: 2784 }
-    mate.pos = { x: 3200, y: 2784 }
+    shooter.pos = { x: 2200, y: 3264 }
+    mate.pos = { x: 2400, y: 3264 }
     return { w, shooter, mate }
   }
   // 突击步枪（默认关闭友伤）：队友 100 血
@@ -1225,4 +1225,344 @@ test('护栏·补给拾取广播带完整身份信息（playerId/playerName/weap
   assert.equal(typeof ev!.weaponId, 'number', 'event carries the weaponId')
   assert.ok(ev!.weaponName, 'event carries the weaponName')
   assert.ok(ev!.x !== undefined && ev!.y !== undefined, 'event carries the crate position for the sparkle effect')
+})
+
+test('护栏·AI 固定路线巡逻：主地面/高空拱桥/地下通道三条固定巡逻路线路标均在安全空地且可顺畅巡逻', async () => {
+  const g = globalThis as unknown as Record<string, unknown>
+  if (!g.window) g.window = globalThis
+  if (!g.localStorage) g.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+  if (!g.document) {
+    g.document = {
+      getElementById: () => ({
+        getContext: () => ({}),
+        style: {},
+        classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+        addEventListener: () => {},
+        querySelectorAll: () => [],
+      }),
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+    }
+  }
+
+  const { world: appWorld, bots: appBots, localPlayer: appPlayer } = await import('../src/web/app/context.ts')
+  const { PATROL_ROUTES, syncBotsCount, botInput, getBotPatrolStatus, setBotPatrolRoute } = await import('../src/web/game/bots.ts')
+
+  // 1. 三条固定巡逻路线的所有路标点均不嵌入实心墙体，且站在实心地板上方
+  for (const [routeId, waypoints] of Object.entries(PATROL_ROUTES)) {
+    assert.ok(waypoints.length >= 10, `patrol route ${routeId} has sufficient waypoints (${waypoints.length})`)
+    for (const wp of waypoints) {
+      assert.equal(
+        appWorld.bodyOverlapsAt(wp.x, wp.y),
+        false,
+        `patrol waypoint ${routeId}:${wp.label} (${wp.x},${wp.y}) must not overlap solids`,
+      )
+      assert.equal(
+        appWorld.terrain.isSolidAt(wp.x, wp.y + 20),
+        true,
+        `patrol waypoint ${routeId}:${wp.label} (${wp.x},${wp.y}) must have solid floor beneath`,
+      )
+    }
+  }
+
+  // 2. 实测三条固定巡逻路线在物理步进中能连续推进并覆盖多个路标点
+  appPlayer.deployed = false
+  appPlayer.alive = false
+  syncBotsCount(3)
+  for (const b of appBots) b.team = 'red'
+
+  appBots[0].pos = { x: 260, y: 3264 }
+  setBotPatrolRoute(appBots[0], 'main_deck', 0, 1)
+
+  appBots[1].pos = { x: 980, y: 3264 }
+  setBotPatrolRoute(appBots[1], 'sky_arch', 1, 1)
+
+  appBots[2].pos = { x: 260, y: 3264 }
+  setBotPatrolRoute(appBots[2], 'underground', 0, 1)
+
+  const visited = [new Set<number>(), new Set<number>(), new Set<number>()]
+  for (let t = 0; t < 1800; t++) {
+    const inputs = new Map<number, WorldInput>()
+    for (let i = 0; i < appBots.length; i++) {
+      const b = appBots[i]
+      inputs.set(b.id, botInput(b))
+      visited[i].add(getBotPatrolStatus(b).waypointIdx)
+    }
+    appWorld.step(DT, inputs)
+  }
+
+  assert.ok(visited[0].size >= 8, `main_deck patrol visits >=8 waypoints in 30s, got ${visited[0].size}`)
+  assert.ok(visited[1].size >= 8, `sky_arch patrol visits >=8 waypoints in 30s, got ${visited[1].size}`)
+  assert.ok(visited[2].size >= 6, `underground patrol visits >=6 waypoints in 30s, got ${visited[2].size}`)
+})
+
+
+test('护栏·重生点数量翻倍与按 E 选中不跨图错位：10据点/24FFA/40随机候选点齐全，按E严格选中当前同层据点', async () => {
+  const { CP_INITS, FFA_SPAWN_POINTS, RANDOM_SPAWN_CANDIDATES } = await import('../src/core/sim/landmarks.ts')
+  assert.equal(CP_INITS.length, 10, 'flag respawn points doubled from 5 to 10')
+  assert.equal(FFA_SPAWN_POINTS.length, 24, 'FFA spawn points doubled from 12 to 24')
+  assert.equal(RANDOM_SPAWN_CANDIDATES.length, 40, 'random spawn candidates doubled from 20 to 40')
+
+  const w = new World(8801, defaultMapData())
+  w.config.randomSpawn = false
+  const p = w.addPlayer('Tester', 'red')
+
+  // 设 cp_a 已占领，但玩家站在未占领的 cp_c 处按 E -> 绝不能错位选中远处的 cp_a
+  const cpA = w.capturePoints.find(c => c.id === 'cp_a')!
+  const cpC = w.capturePoints.find(c => c.id === 'cp_c')!
+  cpA.ownerTeam = 'red'
+  cpA.progress = 100
+  p.pos = { x: cpC.x, y: cpC.y }
+  w.step(DT, new Map([[p.id, input({ interact: true })]]))
+  assert.equal(p.selectedSpawnId, 'base', 'pressing E at uncaptured cp_c must not mis-select distant cp_a')
+
+  // 对全部 10 个据点逐一验证：占领后站在该据点按 E 均精确选中自身，重生落点无错位
+  for (const cp of w.capturePoints) {
+    cp.ownerTeam = 'red'
+    cp.progress = 100
+    p.pos = { x: cp.x, y: cp.y }
+    w.step(DT, new Map([[p.id, input({ interact: true })]]))
+    assert.equal(p.selectedSpawnId, cp.id, `pressing E at ${cp.id} selects ${cp.id} accurately`)
+    w.deploy(p)
+    assert.ok(Math.abs(p.pos.x - cp.x) <= 50 && Math.abs(p.pos.y - cp.y) <= 4, `respawning at ${cp.id} lands on platform without offset`)
+  }
+})
+
+
+test('护栏·旗帜两阶段读条(敌方100→0中立化→己方0→100占领)与半截续占、地面光圈同色', async () => {
+  const { getFlagPalette, TEAM_PALETTE, NEUTRAL_FLAG_PALETTE } = await import('../src/web/sprites.ts')
+  const w = new World(8901, defaultMapData())
+  w.config.randomSpawn = false
+  const redP = w.addPlayer('RedPlayer', 'red')
+  const redMate = w.addPlayer('RedMate', 'red')
+  const blueP = w.addPlayer('BlueEnemy', 'blue')
+  redP.pos = { x: 260, y: 3264 }
+  redMate.pos = { x: 260, y: 3264 }
+  blueP.pos = { x: 12940, y: 3264 }
+
+  const cp = w.capturePoints.find(c => c.id === 'cp_c')!
+  assert.equal(getFlagPalette(cp).color, NEUTRAL_FLAG_PALETTE.color)
+
+  // 1) 蓝队先将中立据点从 0% 占领到 100%
+  blueP.pos = { x: cp.x, y: cp.y }
+  for (let i = 0; i < 300 && cp.ownerTeam !== 'blue'; i++) {
+    w.step(DT, new Map([[redP.id, input()], [redMate.id, input()], [blueP.id, input()]]))
+  }
+  assert.equal(cp.ownerTeam, 'blue' as TeamId)
+  assert.equal(cp.progress, 100)
+  assert.equal(getFlagPalette(cp).color, TEAM_PALETTE.blue.color)
+
+  // 2) 蓝队离开，红队站上去夺取：必须先从蓝队的 100% 递减到 0%，再从红队的 0% 递增到 100%
+  blueP.pos = { x: 12940, y: 3264 }
+  redP.pos = { x: cp.x, y: cp.y }
+
+  // 推进约 1 秒（约减少 45%）：此时进度应在 40%~70% 之间，且仍属蓝队颜色（正在中和敌方进度 100→0）
+  for (let i = 0; i < 60; i++) {
+    w.step(DT, new Map([[redP.id, input()], [redMate.id, input()], [blueP.id, input()]]))
+  }
+  const midDrain = cp.progress
+  assert.ok(midDrain > 25 && midDrain < 85, `enemy flag drains gradually from 100 toward 0, cur=${midDrain.toFixed(1)}%`)
+  assert.equal(cp.ownerTeam, 'blue' as TeamId, 'still owned by blue until progress drains to 0')
+  assert.equal(getFlagPalette(cp).color, TEAM_PALETTE.blue.color, 'flag & ground ring remain blue while draining 100->0')
+
+  // 若此时蓝队回防踩住（红队离开），蓝队应能从 midDrain 直接回升恢复到 100%
+  redP.pos = { x: 260, y: 3264 }
+  blueP.pos = { x: cp.x, y: cp.y }
+  for (let i = 0; i < 150 && cp.progress < 100; i++) {
+    w.step(DT, new Map([[redP.id, input()], [redMate.id, input()], [blueP.id, input()]]))
+  }
+  assert.equal(cp.progress, 100, 'defending team restores partially drained flag back to 100%')
+  assert.equal(cp.ownerTeam, 'blue' as TeamId)
+
+  // 3) 红队双人（玩家+队友）协同站上去：先将蓝队 100% 削减至 0%（中立化），随后无缝从红队 0% 读条至 100%
+  blueP.pos = { x: 12940, y: 3264 }
+  redP.pos = { x: cp.x, y: cp.y }
+  redMate.pos = { x: cp.x + 25, y: cp.y }
+  let sawNeutralized = false
+  let sawRedClimbingFromZero = false
+  let minProgressSeen = 100
+  for (let i = 0; i < 400 && cp.ownerTeam !== 'red'; i++) {
+    w.step(DT, new Map([[redP.id, input()], [redMate.id, input()], [blueP.id, input()]]))
+    if (cp.progress < minProgressSeen) minProgressSeen = cp.progress
+    if (cp.ownerTeam === null && cp.capturingTeam === 'red' && cp.progress > 0 && cp.progress < 50) {
+      sawNeutralized = true
+      sawRedClimbingFromZero = true
+      assert.equal(getFlagPalette(cp).color, TEAM_PALETTE.red.color, 'once neutralized past 0%, flag & ring turn red for 0->100 climb')
+    }
+  }
+  assert.ok(minProgressSeen < 10, `progress drained down through 0 before climbing (min=${minProgressSeen.toFixed(1)}%)`)
+  assert.ok(sawNeutralized && sawRedClimbingFromZero, 'transitioned cleanly from enemy 100->0 to own 0->100')
+  assert.equal(cp.ownerTeam, 'red' as TeamId)
+  assert.equal(cp.progress, 100)
+})
+
+test('护栏·联机功能全链路审阅修复：按键松开归零不卡移动、跨端二进制字典无崩溃、复活点ID同步与WebRTC防重通道', async () => {
+  const { InputMapper } = await import('../src/input/InputMapper.ts')
+  const { applyIntents } = await import('../src/net/ServerSim.ts')
+  const { encodeServerMsgBinary, decodeServerMsgBinary, resetBinaryCodecState } = await import('../src/net/protocol/BinaryCodec.ts')
+  const { configureWebRtcUnreliableChannel } = await import('../src/net/transport/Peer.ts')
+
+  // 1) 验证联机客户端松开 A/D (moveX=0) 与 S (dive=false) 时立即发送归零意图，绝不卡死在持续移动或下潜状态
+  const mapper = new InputMapper()
+  let state = input()
+  state = applyIntents(state, mapper.map({ moveX: 1, aimAngle: 0, fire: false, jump: false, jetpack: false, dive: true, reload: false }))
+  assert.equal(state.move, 1)
+  assert.equal(state.dive, true)
+  state = applyIntents(state, mapper.map({ moveX: 0, aimAngle: 0, fire: false, jump: false, jetpack: false, dive: false, reload: false }))
+  assert.equal(state.move, 0, 'releasing move key immediately resets move to 0')
+  assert.equal(state.dive, false, 'releasing dive key immediately resets dive to false')
+
+  // 2) 验证跨标签页/跨设备二进制解码（模拟远端解码器从未调用过 encodeServerMsgBinary）且同步 selectedSpawnId
+  const w = new World(9001, defaultMapData())
+  const p = w.addPlayer('NetClient', 'red')
+  p.selectedSpawnId = 'cp_c'
+  const bin = encodeServerMsgBinary({ snap: w.snapshot(), events: [] })
+  resetBinaryCodecState() // 重置模拟全新客户端进程/标签页状态
+  const dec = decodeServerMsgBinary(bin)
+  assert.ok(dec, 'fresh client tab decodes fast-facility snapshot without RangeError')
+  assert.equal(dec!.snap.capturePoints.length, 10)
+  assert.equal(dec!.snap.capturePoints[2].id, 'cp_c')
+  const decPlayer = dec!.snap.players.find(x => x.id === p.id)!
+  assert.equal(decPlayer.selectedSpawnId, 'cp_c', 'selectedSpawnId preserved across binary codec')
+  assert.equal(decPlayer.name, 'NetClient', 'player name preserved')
+
+  // 3) 验证已处于 skyblast-kcp 无序通道时不重复创建未协商的 DataChannel
+  let createCalls = 0
+  const connAlreadyKcp = {
+    dataChannel: { label: 'skyblast-kcp', readyState: 'open', binaryType: 'arraybuffer' } as unknown as RTCDataChannel,
+    peerConnection: {
+      createDataChannel() { createCalls++; return {} },
+    } as unknown as RTCPeerConnection,
+    send() {},
+    on() {},
+    close() {},
+  }
+  const br = configureWebRtcUnreliableChannel(connAlreadyKcp, () => {})
+  assert.equal(createCalls, 0, 'does not create duplicate unnegotiated skyblast-kcp DataChannel')
+  assert.equal(br.isCustomDataChannel(), true)
+})
+
+test('护栏·特性开关(Feature Flags)默认全开与完整战术HUD重构：6项特性开关全部默认开启(true)、支持实时切换，且新版全景HUD元素齐全', async () => {
+  const { featureFlags, DEFAULT_FEATURE_FLAGS, FEATURE_FLAG_META, setFeatureFlag, toggleFeatureFlag, resetAllFeatureFlags, world: appWorld } = await import('../src/web/app/context.ts')
+  // 1) 全部 6 项特性开关默认均为开启 (true)
+  assert.equal(FEATURE_FLAG_META.length, 6, '6 feature flags defined')
+  for (const item of FEATURE_FLAG_META) {
+    assert.equal(DEFAULT_FEATURE_FLAGS[item.key], true, `default flag ${item.key} must be true`)
+    assert.equal(featureFlags[item.key], true, `initial runtime flag ${item.key} must be true`)
+  }
+
+  // 2) 测试动态切换与重置
+  assert.equal(toggleFeatureFlag('lagCompensation'), false)
+  assert.equal(featureFlags.lagCompensation, false)
+  assert.equal(appWorld.lagCompensationEnabled, false, 'toggling lagCompensation syncs to world.lagCompensationEnabled')
+  setFeatureFlag('minimapRadar', false)
+  assert.equal(featureFlags.minimapRadar, false)
+  resetAllFeatureFlags()
+  for (const item of FEATURE_FLAG_META) {
+    assert.equal(featureFlags[item.key], true, `flag ${item.key} restored to true after reset`)
+  }
+  assert.equal(appWorld.lagCompensationEnabled, true)
+
+  // 3) 校验小地图严格屏蔽敌方位置（仅显示自身与同阵营友军）
+  const { isFriendlyOnMinimap } = await import('../src/web/app/hud.ts')
+  const { localPlayer: lp, mode: appMode } = await import('../src/web/app/context.ts')
+  appMode.current = '2teams'
+  lp.team = 'red'
+  const selfP = { ...lp, id: lp.id, team: 'red' as const }
+  const allyP = { ...lp, id: lp.id + 100, team: 'red' as const }
+  const enemyBlue = { ...lp, id: lp.id + 101, team: 'blue' as const }
+  const enemyFfa = { ...lp, id: lp.id + 102, team: 'ffa' as const }
+  assert.equal(isFriendlyOnMinimap(selfP), true, 'minimap shows localPlayer')
+  assert.equal(isFriendlyOnMinimap(allyP), true, 'minimap shows same-team ally in 2teams')
+  assert.equal(isFriendlyOnMinimap(enemyBlue), false, 'minimap strictly hides enemy blue player')
+  assert.equal(isFriendlyOnMinimap(enemyFfa), false, 'minimap strictly hides enemy ffa player')
+
+  // 4) 校验已彻底删除占点音效 (capture_tick / capture_done)
+  const audioSrc = readFileSync(new URL('../src/web/app/audio.ts', import.meta.url), 'utf8')
+  const eventsSrc = readFileSync(new URL('../src/web/app/events.ts', import.meta.url), 'utf8')
+  const hudSrc = readFileSync(new URL('../src/web/app/hud.ts', import.meta.url), 'utf8')
+  assert.equal(audioSrc.includes('capture_tick') || audioSrc.includes('capture_done'), false, 'no capture sound in audio.ts')
+  assert.equal(eventsSrc.includes('capture_done'), false, 'no capture_done sound in events.ts')
+  assert.equal(hudSrc.includes('capture_tick'), false, 'no capture_tick sound in hud.ts')
+
+  // 5) 校验右上角雷达替代顶栏 A~J 旗帜条、底部武器 HUD 回退上一版、死亡界面使用小地图选复活点
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+  assert.equal(html.includes('id="hudFlagStatusStrip"'), false, 'top A~J flag pill strip removed and replaced by top-right radar')
+  assert.equal(html.includes('id="hudQuickLoadoutStrip"'), false, 'bottom weapon HUD reverted to previous clean version')
+  // 校验顶栏已移除 KD 与旧记分板，且系统工具栏默认隐藏（需点击 #toggleSysBarBtn 展开）
+  assert.equal(html.includes('id="hudTopKdText"'), false, 'KD removed from top HUD (only visible on death screen)')
+  assert.equal(html.includes('id="scoreRed"'), false, 'old top scoreboard replaced by top-right minimap')
+  const sysBarMatch = /<div id="topSystemToolbar"[^>]*class="([^"]*)"/.exec(html)
+  assert.ok(sysBarMatch && sysBarMatch[1].includes('hidden'), 'topSystemToolbar is hidden by default until triggered')
+
+  for (const id of [
+    'hudCurrentSpawnBtn',
+    'hudHpBarWrap',
+    'hudHpBar',
+    'hudStreakCountBadge',
+    'hudUnlockTierPips',
+    'hudActiveBuffsText',
+    'toggleSysBarBtn',
+    'topSystemToolbar',
+    'toggleFlagsHudBtn',
+    'hudFlagsPanel',
+    'hudMinimapPanel',
+    'hudMinimapCanvas',
+    'deathMinimapPanel',
+    'deathMinimapCanvas',
+    'deathSelectedSpawnBadge',
+    'deathSpawnBaseBtn',
+    'hudCaptureProgressCard',
+    'hudCapCardTitle',
+    'hudCapCardBar',
+    'lobbyFlagsCard',
+  ]) {
+    assert.ok(html.includes(`id="${id}"`), `HUD element #${id} exists in docs/index.html`)
+  }
+
+  // 6) 校验 AI 最短路径进攻敌方原始出生点（排除 Flag）与自动找掩体逻辑
+  const { getEnemyOriginalBaseSpawn, findNearestCoverPosition, botInput } = await import('../src/web/game/bots.ts')
+  const redBot = appWorld.addPlayer('RedAssaulter', 'red')
+  const blueBot = appWorld.addPlayer('BlueAssaulter', 'blue')
+  // 即使全图据点被红队占领，AI 重生点仍固定为 'base'（排除 flag）
+  for (const cp of appWorld.capturePoints) { cp.ownerTeam = 'red'; cp.progress = 100 }
+  botInput(redBot)
+  assert.equal(redBot.selectedSpawnId, 'base', 'AI strictly excludes flags and always uses original base spawn')
+  assert.equal(getEnemyOriginalBaseSpawn(redBot).x, 12940, 'Red AI targets Blue original base spawn (x=12940)')
+  assert.equal(getEnemyOriginalBaseSpawn(blueBot).x, 260, 'Blue AI targets Red original base spawn (x=260)')
+
+  // 验证交战找掩体：在 redBot 附近放置掩体，面对右侧敌人时自动识别掩体左侧背弹位
+  redBot.pos = { x: 2000, y: 3264 }
+  blueBot.pos = { x: 2500, y: 3264 }
+  appWorld.obstacles.push({
+    id: 'test_cover_box', x: 2060, y: 3204, w: 56, h: 76,
+    hp: 240, maxHp: 240, kind: 'box', color: '#334155', borderColor: '#38bdf8', label: '测试掩体',
+  })
+  const coverPos = findNearestCoverPosition(redBot, blueBot)
+  assert.ok(coverPos !== null, 'AI locates nearby cover when engaging enemy')
+  assert.ok(coverPos!.x < 2060, 'AI chooses the sheltered side of the cover opposite the enemy')
+
+  // 7) 校验 handleEvents 处理本机击杀事件时不抛未声明引用错误，且能自动将失效副手退回手榴弹
+  const { handleEvents } = await import('../src/web/app/events.ts')
+  const { pendingLoadout } = await import('../src/web/app/context.ts')
+  lp.deathStreak = 0
+  lp.weaponIndex = 1
+  pendingLoadout.weaponIndex = 1
+  pendingLoadout.secondaryType = 'shield'
+  lp.secondary = 'shield'
+  handleEvents([{
+    kind: 'kill',
+    attackerId: lp.id,
+    killerId: lp.id,
+    victimId: blueBot.id,
+    killerName: lp.name,
+    killerTeam: lp.team,
+    victimName: blueBot.name,
+    victimTeam: blueBot.team,
+    weaponLabel: '突击步枪',
+    x: lp.pos.x,
+    y: lp.pos.y,
+  }])
+  assert.equal(pendingLoadout.secondaryType, 'frag', 'handleEvents safely resets invalidated secondary to frag on local kill')
+  assert.equal(lp.secondary, 'frag')
 })

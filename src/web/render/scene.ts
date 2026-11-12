@@ -1,7 +1,7 @@
 // web/render.ts —— 场景渲染（地形/精灵/光束/粒子/背景），只读上下文状态
 import {
   ctx, canvas, camera, screenFx, world, localPlayer, pendingLoadout, effects, beams, mouse,
-  worldStars, worldGlows,
+  worldStars, worldGlows, featureFlags,
 } from '../app/context.ts'
 import { WEAPONS } from '../../core/weapons.ts'
 import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, clamp } from '../../core/wrap.ts'
@@ -10,12 +10,18 @@ import { expandBeamSegments } from './beamGeometry.ts'
 import { getTerrainPattern, syncTerrainPatterns } from '../textures.ts'
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
-  drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, drawMineSprite,
+  drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, getFlagPalette, drawMineSprite,
   drawGrenadeSprite, drawAirstrikeSprite, drawProjectileSprite, drawDeco, drawJumpPad,
 } from '../sprites.ts'
 
 export function renderScene(): void {
   if (!ctx || !canvas) return
+  const targetW = Math.max(320, Math.round(window.innerWidth || document.documentElement?.clientWidth || canvas.clientWidth || 1024))
+  const targetH = Math.max(240, Math.round(window.innerHeight || document.documentElement?.clientHeight || canvas.clientHeight || 640))
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW
+    canvas.height = targetH
+  }
   const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
   const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
   const targetFov = localPlayer.mountedTowerId
@@ -119,27 +125,14 @@ export function renderScene(): void {
     }
   }
 
-  // 1.2 左右基地出生点光环与全图均匀分布的 FFA 出生点信标
+  // 1.2 左右基地出生点光环（FFA 出生点已拆到独立数组 FFA_SPAWN_POINTS，此处只画红蓝基地）
   for (const sp of SPAWN_POINTS) {
-    if (sp.team === 'green') continue // 正中复活点在占领点层与旗帜一起绘制
+    if (sp.team === 'green' || sp.team === 'ffa') continue // 只画红蓝基地，隐藏绿/FFA 出生点标记
     const px = sx(sp.x)
     const py = sy(sp.y)
     if (!inView(px, py, 120)) continue
     ctx.save()
-    if (sp.team === 'ffa') {
-      ctx.translate(px, py + 12)
-      ctx.fillStyle = 'rgba(234, 179, 8, 0.22)'
-      ctx.strokeStyle = '#facc15'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.ellipse(0, 0, 22, 6, 0, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.stroke()
-      ctx.font = 'bold 10px Inter, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillStyle = '#fde047'
-      ctx.fillText('🟡 FFA出生点', 0, 16)
-    } else {
+    {
       ctx.translate(px, py - 42)
       // 对应设计图左蓝椭圆、右红椭圆基地传送门
       const isLeft = sp.x < WORLD_W / 2
@@ -176,40 +169,62 @@ export function renderScene(): void {
     drawObstacleSprite(ctx, ob, ox, oy)
   }
 
-  // 3. 占领点（正中 cp_c 同时绘制旗帜与复活点信标）
+  // 3. 占领点（同时绘制与旗帜颜色严格一致的地面光圈与复活点信标）
   for (const cp of world.capturePoints) {
     const cx = sx(cp.x)
     const cy = sy(cp.y)
     if (!inView(cx, cy, 160)) continue
-    if (cp.id === 'cp_c') {
+    if (cp.y > 400) {
       const selectable = isCapturePointSelectable(cp, localPlayer.team)
       const isSelected = selectable && (localPlayer.selectedSpawnId === cp.id || pendingLoadout.spawnPointId === cp.id)
+      const pal = getFlagPalette(cp)
       ctx.save()
-      ctx.translate(cx, cy + 12)
+      ctx.translate(cx, cy + 16)
       const pulse = 0.65 + 0.35 * Math.sin(world.tick * 0.1)
-      ctx.fillStyle = isSelected
-        ? `rgba(16, 185, 129, ${0.28 * pulse})`
-        : selectable
-          ? `rgba(56, 189, 248, ${0.24 * pulse})`
-          : 'rgba(148, 163, 184, 0.14)'
-      ctx.strokeStyle = isSelected ? '#10b981' : selectable ? '#38bdf8' : '#64748b'
-      ctx.lineWidth = 2.5
+      // 地面光圈填充与描边严格采用旗帜同一套调色板 (pal.glow / pal.color)
+      ctx.fillStyle = pal.glow
+      ctx.strokeStyle = pal.color
+      ctx.lineWidth = isSelected ? 3.5 : 2.5
+      ctx.globalAlpha = isSelected ? 1 : (selectable ? 0.82 + 0.18 * pulse : 0.78)
       ctx.beginPath()
-      ctx.ellipse(0, 0, 44, 11, 0, 0, Math.PI * 2)
+      ctx.ellipse(0, 0, 44, 10, 0, 0, Math.PI * 2)
       ctx.fill()
       ctx.stroke()
+      if (isSelected) {
+        // 选中态叠加同色系内环高亮，不改变旗帜对应光圈色相
+        ctx.strokeStyle = pal.light
+        ctx.lineWidth = 1.6
+        ctx.beginPath()
+        ctx.ellipse(0, 0, 34, 7, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      if (featureFlags.captureHudRing && cp.progress > 0 && cp.progress < 100) {
+        // 地面占点进度外弧（随 cp.progress 0..100% 动态环绕地面光圈）
+        const pctRad = (Math.min(100, Math.max(0, cp.progress)) / 100) * Math.PI * 2
+        ctx.strokeStyle = pal.light
+        ctx.lineWidth = 3.2
+        ctx.beginPath()
+        ctx.ellipse(0, 0, 50, 12.5, 0, -Math.PI / 2, -Math.PI / 2 + pctRad)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+      const labelTxt = isSelected
+        ? `✅ 已选中【${cp.name}】`
+        : selectable
+          ? `⚡ ${cp.name} [按 E 选中]`
+          : `🔒 ${cp.name}（占领后可选）`
       ctx.font = 'bold 11px Inter, sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillStyle = isSelected ? '#6ee7b7' : selectable ? '#7dd3fc' : '#cbd5e1'
-      ctx.fillText(
-        isSelected
-          ? '✅ 已选中正中复活点'
-          : selectable
-            ? '⚡ 正中复活点 [按 E 选中]'
-            : '🔒 正中复活点（占领旗帜后可选）',
-        0,
-        24,
-      )
+      const tw = ctx.measureText(labelTxt).width + 14
+      ctx.fillStyle = 'rgba(2, 6, 23, 0.82)'
+      ctx.strokeStyle = pal.color
+      ctx.lineWidth = isSelected ? 1.8 : 1.2
+      ctx.beginPath()
+      ctx.roundRect(-tw / 2, 12, tw, 18, 6)
+      ctx.fill()
+      ctx.stroke()
+      ctx.fillStyle = (cp.ownerTeam ?? cp.capturingTeam) ? pal.light : '#cbd5e1'
+      ctx.fillText(labelTxt, 0, 25)
       ctx.restore()
     }
     drawFlagSprite(ctx, cp, cx, cy, world.tick)

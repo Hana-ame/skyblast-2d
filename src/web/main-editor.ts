@@ -4,10 +4,10 @@
 //   - 支持选择/移动/8向手柄缩放、属性数值精调、对称镜像、快速预设印章、全景小地图导航与高清全景 PNG 导出
 import {
   defaultMapData, sanitizeMapData, carveTunnelInSolids,
-  MAIN_DECK_TOP, CEILING_TOP, CEILING_THICK, WALL_THICK, UNIFIED_EDGE_HIGHLIGHT,
+  MAIN_DECK_TOP, BEDROCK_TOP, CEILING_TOP, CEILING_THICK, WALL_THICK, UNIFIED_EDGE_HIGHLIGHT,
 } from '../core/map.ts'
 import type { MapData, MapSolid, MapSolidKind } from '../core/map.ts'
-import { WORLD_W, WORLD_H, SURFACE_Y } from '../core/wrap.ts'
+import { WORLD_W, WORLD_H } from '../core/wrap.ts'
 import { SPAWN_POINTS, FFA_SPAWN_POINTS, AMMO_SPOTS, CENTER_RESPAWN_POINT } from '../core/sim/world.ts'
 import { getTerrainPattern, syncTerrainPatterns } from './textures.ts'
 
@@ -21,7 +21,7 @@ const statusEl = document.getElementById('status') as HTMLElement
 const brushInput = document.getElementById('brushSize') as HTMLInputElement
 const brushLabel = document.getElementById('brushLabel') as HTMLElement
 
-const camera = { x: WORLD_W / 2, y: SURFACE_Y / 2, zoom: 0.11 }
+const camera = { x: WORLD_W / 2, y: BEDROCK_TOP / 2, zoom: 0.11 }
 let brushKind: MapSolidKind = 'platform'
 let brushTiles = 1
 let map: MapData = loadInitial()
@@ -70,12 +70,12 @@ function loadInitial(): MapData {
     const a = localStorage.getItem(EDITOR_KEY)
     if (a) {
       const m = sanitizeMapData(JSON.parse(a))
-      if (m) return m
+      if (m && m.name === defaultMapData().name) return m
     }
     const b = localStorage.getItem(GAME_KEY)
     if (b) {
       const m = sanitizeMapData(JSON.parse(b))
-      if (m) return m
+      if (m && m.name === defaultMapData().name) return m
     }
   } catch { /* ignore */ }
   return defaultMapData()
@@ -177,9 +177,9 @@ function fitToWindow(): void {
   const margin = 48
   const availW = Math.max(400, canvas.width - 420 - margin)
   const availH = Math.max(300, canvas.height - margin * 2)
-  camera.zoom = Math.max(0.05, Math.min(availW / WORLD_W, availH / (SURFACE_Y + 300)))
+  camera.zoom = Math.max(0.05, Math.min(availW / WORLD_W, availH / (BEDROCK_TOP + 300)))
   camera.x = WORLD_W / 2 - (180 / camera.zoom)
-  camera.y = (SURFACE_Y + 200) / 2
+  camera.y = (BEDROCK_TOP + 200) / 2
 }
 
 function updateStatus(): void {
@@ -205,23 +205,23 @@ function render(): void {
   ctx.fillStyle = sky
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  // 地下区域暗色背景衬底（y = MAIN_DECK_TOP..SURFACE_Y）
+  // 地下区域暗色背景衬底（y = MAIN_DECK_TOP..BEDROCK_TOP）
   const ugTop = sy(MAIN_DECK_TOP)
-  const gy = sy(SURFACE_Y)
+  const gy = sy(BEDROCK_TOP)
   ctx.fillStyle = 'rgba(7, 11, 20, 0.55)'
   ctx.fillRect(sx(0), ugTop, WORLD_W * camera.zoom, gy - ugTop)
 
   // 底部基岩（统一纹理 + 统一 #38bdf8 高亮）
   ctx.fillStyle = '#131c2e'
-  ctx.fillRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - SURFACE_Y) * camera.zoom)
+  ctx.fillRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - BEDROCK_TOP) * camera.zoom)
   ctx.strokeStyle = UNIFIED_EDGE_HIGHLIGHT
   ctx.lineWidth = 2
-  ctx.strokeRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - SURFACE_Y) * camera.zoom)
+  ctx.strokeRect(sx(0), gy, WORLD_W * camera.zoom, (WORLD_H - BEDROCK_TOP) * camera.zoom)
 
   // 世界外框
   ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)'
   ctx.lineWidth = 1.5
-  ctx.strokeRect(sx(0), sy(0), WORLD_W * camera.zoom, SURFACE_Y * camera.zoom)
+  ctx.strokeRect(sx(0), sy(0), WORLD_W * camera.zoom, BEDROCK_TOP * camera.zoom)
 
   // 网格
   if (showGrid && camera.zoom > 0.08) {
@@ -231,9 +231,9 @@ function render(): void {
     ctx.beginPath()
     for (let x = 0; x <= WORLD_W; x += step) {
       const px = sx(x)
-      ctx.moveTo(px, sy(0)); ctx.lineTo(px, sy(SURFACE_Y))
+      ctx.moveTo(px, sy(0)); ctx.lineTo(px, sy(BEDROCK_TOP))
     }
-    for (let y = 0; y <= SURFACE_Y; y += step) {
+    for (let y = 0; y <= BEDROCK_TOP; y += step) {
       const py = sy(y)
       ctx.moveTo(sx(0), py); ctx.lineTo(sx(WORLD_W), py)
     }
@@ -251,7 +251,7 @@ function render(): void {
   ctx.stroke()
   ctx.fillStyle = 'rgba(125, 211, 252, 0.78)'
   ctx.font = 'bold 11px Inter, sans-serif'
-  ctx.fillText('▼ 出生点平面 (y=1760) 以下：地下狭窄地道区', sx(140), ugTop - 6)
+  ctx.fillText('▼ 主地面 (y=2400..2640 厚240px+凹陷坑) 以下：地板下贯通地道与四层深邃地下狭道区 (y=2640..4160)', sx(140), ugTop - 6)
   ctx.restore()
 
   // 地图实心方块（统一标志性复合装甲贴图 + 统一边缘高亮色 #38bdf8）
@@ -309,7 +309,7 @@ function render(): void {
       const px = sx(sp.x)
       const py = sy(sp.y)
       ctx.save()
-      if (sp.team === 'ffa') {
+      if (false && sp.team === 'ffa') {
         ctx.fillStyle = '#facc15'
         ctx.strokeStyle = '#0f172a'
         ctx.lineWidth = 1.5
@@ -507,7 +507,7 @@ canvas.addEventListener('mousedown', (e) => {
     return
   }
   const wx = clampToWorld(p.x, WORLD_W - SNAP)
-  const wy = clampToWorld(p.y, SURFACE_Y - SNAP)
+  const wy = clampToWorld(p.y, BEDROCK_TOP - SNAP)
   if (e.button === 2) {
     pushHistory()
     erasing = true
@@ -546,7 +546,7 @@ canvas.addEventListener('mousedown', (e) => {
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect()
   const p = screenToWorld(e.clientX - rect.left, e.clientY - rect.top)
-  mouseWorld = { x: clampToWorld(p.x, WORLD_W - SNAP), y: clampToWorld(p.y, SURFACE_Y - SNAP) }
+  mouseWorld = { x: clampToWorld(p.x, WORLD_W - SNAP), y: clampToWorld(p.y, BEDROCK_TOP - SNAP) }
   if (panning) {
     camera.x -= (e.clientX - panLast.x) / camera.zoom
     camera.y -= (e.clientY - panLast.y) / camera.zoom
@@ -561,7 +561,7 @@ canvas.addEventListener('mousemove', (e) => {
     const o = dragState.orig
     if (dragState.mode === 'move') {
       sel.x = Math.max(0, Math.min(WORLD_W - sel.w, snap(o.x + dx)))
-      sel.y = Math.max(0, Math.min(SURFACE_Y - sel.h, snap(o.y + dy)))
+      sel.y = Math.max(0, Math.min(BEDROCK_TOP - sel.h, snap(o.y + dy)))
     } else {
       let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h
       if (dragState.mode.includes('w')) x0 = Math.min(x1 - SNAP, snap(o.x + dx))
@@ -571,7 +571,7 @@ canvas.addEventListener('mousemove', (e) => {
       sel.x = Math.max(0, x0)
       sel.y = Math.max(0, y0)
       sel.w = Math.max(SNAP, Math.min(WORLD_W - sel.x, x1 - sel.x))
-      sel.h = Math.max(SNAP, Math.min(SURFACE_Y - sel.y, y1 - sel.y))
+      sel.h = Math.max(SNAP, Math.min(BEDROCK_TOP - sel.y, y1 - sel.y))
     }
     updateSelectionInfo()
     return
@@ -619,7 +619,7 @@ function duplicateSelected(): void {
   const s = map.solids[selected]
   map.solids.push({
     x: Math.min(WORLD_W - s.w, s.x + 80),
-    y: Math.min(SURFACE_Y - s.h, s.y + 80),
+    y: Math.min(BEDROCK_TOP - s.h, s.y + 80),
     w: s.w,
     h: s.h,
     kind: s.kind,
@@ -688,15 +688,15 @@ function exportPanoramaPng(): void {
 
   // 地下背景带
   c.fillStyle = 'rgba(7, 11, 20, 0.72)'
-  c.fillRect(0, MAIN_DECK_TOP, WORLD_W, SURFACE_Y - MAIN_DECK_TOP)
+  c.fillRect(0, MAIN_DECK_TOP, WORLD_W, BEDROCK_TOP - MAIN_DECK_TOP)
 
   // 底部基岩
   const pat = getTerrainPattern(c, 'earth')
   c.fillStyle = pat ?? '#162032'
-  c.fillRect(0, SURFACE_Y, WORLD_W, WORLD_H - SURFACE_Y)
+  c.fillRect(0, BEDROCK_TOP, WORLD_W, WORLD_H - BEDROCK_TOP)
   c.strokeStyle = UNIFIED_EDGE_HIGHLIGHT
   c.lineWidth = 6
-  c.strokeRect(3, SURFACE_Y + 3, WORLD_W - 6, WORLD_H - SURFACE_Y - 6)
+  c.strokeRect(3, BEDROCK_TOP + 3, WORLD_W - 6, WORLD_H - BEDROCK_TOP - 6)
 
   // 全部地形块（统一贴图 + #38bdf8 边缘高亮）
   for (const s of map.solids) {
@@ -711,7 +711,7 @@ function exportPanoramaPng(): void {
 
   // 绘制基地、均匀分布 FFA 出生点、正中旗帜复活点、近中心弹药刷新点
   for (const sp of SPAWN_POINTS) {
-    if (sp.team === 'ffa') {
+    if (false && sp.team === 'ffa') {
       c.fillStyle = '#facc15'
       c.beginPath()
       c.arc(sp.x, sp.y - 12, 26, 0, Math.PI * 2)
@@ -783,7 +783,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowLeft') sel.x = Math.max(0, sel.x - step)
     if (e.code === 'ArrowRight') sel.x = Math.min(WORLD_W - sel.w, sel.x + step)
     if (e.code === 'ArrowUp') sel.y = Math.max(0, sel.y - step)
-    if (e.code === 'ArrowDown') sel.y = Math.min(SURFACE_Y - sel.h, sel.y + step)
+    if (e.code === 'ArrowDown') sel.y = Math.min(BEDROCK_TOP - sel.h, sel.y + step)
     updateSelectionInfo()
   }
 })
@@ -911,8 +911,8 @@ document.getElementById('btnClear')?.addEventListener('click', () => {
     name: '自定义封闭竞技场',
     solids: [
       { x: 0, y: CEILING_TOP, w: WORLD_W, h: CEILING_THICK, kind: 'platform' },
-      { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: 'platform' },
-      { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: SURFACE_Y - (CEILING_TOP + CEILING_THICK), kind: 'platform' },
+      { x: 0, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: BEDROCK_TOP - (CEILING_TOP + CEILING_THICK), kind: 'platform' },
+      { x: WORLD_W - WALL_THICK, y: CEILING_TOP + CEILING_THICK, w: WALL_THICK, h: BEDROCK_TOP - (CEILING_TOP + CEILING_THICK), kind: 'platform' },
     ],
   }
   selected = -1

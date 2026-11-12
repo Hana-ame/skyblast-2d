@@ -93,19 +93,31 @@ export function texKindOf(kind: string): string {
   return 'unifiedPanel'
 }
 
+let lastPatternCamX = 0
+let lastPatternCamY = 0
+
 export function getTerrainPattern(ctx: CanvasRenderingContext2D, kind: string): CanvasPattern | null {
   const key = texKindOf(kind)
   const hit = cache.get(key)
   if (hit) return hit
   const cv = key === 'tunnel' ? makeTex(96, paintTunnelBg) : makeTex(96, paintUnifiedTechPanel)
   const pat = ctx.createPattern(cv, 'repeat')
-  if (pat) cache.set(key, pat)
+  if (pat) {
+    if (typeof DOMMatrix !== 'undefined' && typeof pat.setTransform === 'function') {
+      pat.setTransform(new DOMMatrix().translate(-lastPatternCamX, -lastPatternCamY))
+    }
+    cache.set(key, pat)
+  }
   return pat
 }
 
 /** 把地形贴图的锚点补偿到相机世界坐标：贴图随世界一起移动 */
 export function syncTerrainPatterns(camX: number, camY: number): void {
+  lastPatternCamX = camX
+  lastPatternCamY = camY
   if (typeof DOMMatrix === 'undefined') return
   const m = new DOMMatrix().translate(-camX, -camY)
-  for (const pat of cache.values()) pat.setTransform(m)
+  for (const pat of cache.values()) {
+    if (typeof pat.setTransform === 'function') pat.setTransform(m)
+  }
 }
