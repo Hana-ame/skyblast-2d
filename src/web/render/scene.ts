@@ -8,6 +8,7 @@ import { WORLD_W, WORLD_H, SURFACE_Y, wrapX, wrapY, wrapDeltaX, wrapDeltaY, clam
 import { JUMP_PADS, SPAWN_POINTS, isCapturePointSelectable } from '../../core/sim/world.ts'
 import { expandBeamSegments } from './beamGeometry.ts'
 import { getTerrainPattern, syncTerrainPatterns } from '../textures.ts'
+import { getRenderPos } from '../game/interp.ts'
 import {
   drawPlayerSprite, drawPlayerTag, drawObstacleSprite, drawCrateSprite, drawAmmoSprite,
   drawMortarSprite, drawTowerSprite, drawWarpSprite, drawFlagSprite, getFlagPalette, drawMineSprite,
@@ -393,8 +394,11 @@ export function renderScene(): void {
       }
     }
 
-    const px = sx(p.pos.x)
-    const py = sy(p.pos.y)
+    // 高刷屏渲染插值：用上一 tick 与当前 tick 之间的中间位置，
+    // 避免 58% 的帧里角色完全静止、其余帧一次跳 4px 的顿挫感。
+    const rp = getRenderPos(p.id, p.pos.x, p.pos.y)
+    const px = sx(rp.x)
+    const py = sy(rp.y)
     if (!inView(px, py)) continue
 
     drawPlayerSprite(ctx, p, px, py, {

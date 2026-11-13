@@ -9,6 +9,7 @@ import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { playProceduralSound } from '../app/audio.ts'
 import { installDiag, diagRecordFrame, diagMark } from '../app/diag.ts'
+import { capturePrevPositions, buildPositionOverlay } from './interp.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
@@ -220,6 +221,9 @@ export function startGameLoop(): void {
     const tStepsBegin = performance.now()
 
     while (acc >= FIXED && guard < 4) {
+      // 推进前记录当前实体位置，供渲染插值使用（消除高刷屏上的实体跳变）
+      capturePrevPositions(world.players)
+      capturePrevPositions(world.projectiles)
       const pIn = buildLocalInput()
       inputQueue.interact = false
       inputQueue.reload = false
@@ -304,6 +308,11 @@ export function startGameLoop(): void {
     }
 
     if (shouldRender) {
+      // 用 acc 剩余量作为插值系数：本帧若已推进 tick，acc 是「超出的部分」，
+      // 1 - acc/FIXED 正好表示当前显示时刻处在上一 tick 与当前 tick 之间的比例。
+      const interpAlpha = 1 - Math.max(0, Math.min(1, acc / FIXED))
+      buildPositionOverlay(world.players, interpAlpha)
+      buildPositionOverlay(world.projectiles, interpAlpha)
       // 相机跟随按「真实帧时间」平滑，而不是绑在固定 tick 上。
       // 原因：逻辑固定 60Hz，但高刷屏（如 143Hz）多数帧不会推进 tick，
       // 若相机只在 tick 内更新，60% 的帧相机纹丝不动、其余帧一次跳 1~6px，

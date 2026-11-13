@@ -12445,6 +12445,49 @@
     updateNetStatusUI();
   }
 
+  // src/web/game/interp.ts
+  var posOverlay = /* @__PURE__ */ new Map();
+  var prevPos = /* @__PURE__ */ new Map();
+  function capturePrevPositions(entities) {
+    prevPos.clear();
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (!e) continue;
+      let slot2 = prevPos.get(e.id);
+      if (!slot2) {
+        slot2 = { x: 0, y: 0 };
+        prevPos.set(e.id, slot2);
+      }
+      slot2.x = e.pos.x;
+      slot2.y = e.pos.y;
+    }
+  }
+  function buildPositionOverlay(entities, alpha) {
+    posOverlay.clear();
+    const a = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (!e) continue;
+      const prev = prevPos.get(e.id);
+      if (!prev) continue;
+      const dx = e.pos.x - prev.x;
+      const dy = e.pos.y - prev.y;
+      if (Math.abs(dx) > 400 || Math.abs(dy) > 400) continue;
+      let slot2 = posOverlay.get(e.id);
+      if (!slot2) {
+        slot2 = { x: 0, y: 0 };
+        posOverlay.set(e.id, slot2);
+      }
+      slot2.x = prev.x + dx * a;
+      slot2.y = prev.y + dy * a;
+    }
+  }
+  function getRenderPos(id, fallbackX, fallbackY) {
+    const o = posOverlay.get(id);
+    if (!o) return { x: fallbackX, y: fallbackY };
+    return o;
+  }
+
   // src/web/render/beamGeometry.ts
   var WRAP_OFFSETS_X = [-WORLD_W, 0, WORLD_W];
   var WRAP_OFFSETS_Y = [-WORLD_H, 0, WORLD_H];
@@ -12803,8 +12846,9 @@
           ctx.restore();
         }
       }
-      const px = sx(p.pos.x);
-      const py = sy(p.pos.y);
+      const rp = getRenderPos(p.id, p.pos.x, p.pos.y);
+      const px = sx(rp.x);
+      const py = sy(rp.y);
       if (!inView(px, py)) continue;
       drawPlayerSprite(ctx, p, px, py, {
         tick: world.tick,
@@ -13258,6 +13302,8 @@
       let guard = 0;
       const tStepsBegin = performance.now();
       while (acc >= FIXED && guard < 4) {
+        capturePrevPositions(world.players);
+        capturePrevPositions(world.projectiles);
         const pIn = buildLocalInput();
         inputQueue.interact = false;
         inputQueue.reload = false;
@@ -13333,6 +13379,9 @@
         guard++;
       }
       if (shouldRender) {
+        const interpAlpha = 1 - Math.max(0, Math.min(1, acc / FIXED));
+        buildPositionOverlay(world.players, interpAlpha);
+        buildPositionOverlay(world.projectiles, interpAlpha);
         updateCameraTracking(rawDt);
         const tRender = performance.now();
         const stepMs = tRender - tStepsBegin;
