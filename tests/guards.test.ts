@@ -13,7 +13,7 @@ import {
 } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
 import type { WorldEvent, TeamId } from '../src/core/types.ts'
-import { encodeServerMsgBinary, decodeServerMsgBinary } from '../src/net/protocol/BinaryCodec.ts'
+import { encodeServerMsgBinary, decodeServerMsgBinary, resetBinaryCodecState } from '../src/net/protocol/BinaryCodec.ts'
 import { expandBeamSegments, worldSegLength } from '../src/web/render/beamGeometry.ts'
 import { WORLD_W, WORLD_H } from '../src/core/wrap.ts'
 import { emptyWorld, input, DT } from './helpers.ts'
@@ -1822,4 +1822,157 @@ test('guard: mobile PWA installable and auto fullscreen landscape support', asyn
   assert.equal(typeof fsMod.enterFullscreenAndLandscape, 'function')
   assert.equal(typeof fsMod.syncLandscapeOrientation, 'function')
   assert.equal(typeof fsMod.getElementLandscapeMetrics, 'function')
+})
+
+// ── 第三阶段深度代码审查与升级修复回归护栏 ──
+test('护栏·霰弹边装边打射速惩罚生效：满匣射击间隔 0.42s，打断换弹或空仓边装边打完整周期 0.87s', () => {
+  const shotgun = WEAPONS[0]
+  assert.equal(shotgun.fireDelay, 0.42)
+  assert.ok(Math.abs(shotgun.fireDelay * (shotgun.shellReloadFireDelayMult ?? 1) - 0.87) < 1e-6)
+
+  // 1) 满匣正常射击（未处于换弹状态）：射击冷却严格为 0.42s
+  const wFull = new World(71001, { name: 'shotgun-full-delay', solids: [] })
+  wFull.config.randomSpawn = false
+  const pFull = wFull.addPlayer('FullShooter', 'ffa')
+  pFull.weaponIndex = 0
+  pFull.ammo[0] = 8
+  pFull.reserveAmmo[0] = 72
+  wFull.step(DT, new Map([[pFull.id, input({ fire: true, aim: 0 })]]))
+  assert.ok(Math.abs(pFull.fireCooldown - 0.42) < 1e-6, `full-mag shot fireCooldown should be 0.42s, got ${pFull.fireCooldown}`)
+
+  // 2) 半匣换弹中途按开火打断换弹（边装边打）：射击冷却应用 shellReloadFireDelayMult 惩罚为 0.87s
+  const wInterrupt = new World(71002, { name: 'shotgun-interrupt-delay', solids: [] })
+  wInterrupt.config.randomSpawn = false
+  const pInt = wInterrupt.addPlayer('IntShooter', 'ffa')
+  pInt.weaponIndex = 0
+  pInt.ammo[0] = 3
+  pInt.reserveAmmo[0] = 72
+  wInterrupt.startReload(pInt)
+  assert.equal(pInt.reloading, true)
+  wInterrupt.step(DT, new Map([[pInt.id, input({ fire: true, aim: 0 })]]))
+  assert.equal(pInt.reloading, false, 'shell reload interrupted by firing')
+  assert.ok(Math.abs(pInt.fireCooldown - 0.87) < 1e-6, `interrupting shell reload should apply 0.87s cooldown, got ${pInt.fireCooldown}`)
+
+  // 3) 空仓按住开火（打空最后 1 发 -> 冷却 -> 塞 1 发 -> 击发）：两次击发之间的总耗时应约为 0.87s
+  const wCycle = new World(71003, { name: 'shotgun-empty-cycle', solids: [] })
+  wCycle.config.randomSpawn = false
+  const pCyc = wCycle.addPlayer('CycleShooter', 'ffa')
+  pCyc.weaponIndex = 0
+  pCyc.ammo[0] = 1
+  pCyc.reserveAmmo[0] = 72
+  wCycle.step(DT, new Map([[pCyc.id, input({ fire: true, aim: 0 })]]))
+  wCycle.drainEvents()
+  let ticksToNextShot = 0
+  for (let i = 0; i < 90; i++) {
+    wCycle.step(DT, new Map([[pCyc.id, input({ fire: true, aim: 0 })]]))
+    ticksToNextShot++
+    if (wCycle.drainEvents().some(e => e.kind === 'projectile_spawn')) break
+  }
+  const cycleSeconds = ticksToNextShot * DT
+  assert.ok(Math.abs(cycleSeconds - 0.87) <= 0.04, `empty-mag shell-reload fire cycle should be ~0.87s, got ${cycleSeconds.toFixed(3)}s`)
+})
+
+test('护栏·设施占用安全释放：瞭望塔/迫击炮在玩家阵亡、替身人偶回溯、断线移除与重置对局时绝不死锁', () => {
+  const w = new World(72001)
+  w.config.randomSpawn = false
+  const p1 = w.addPlayer('TowerUser', 'red')
+  const p2 = w.addPlayer('Killer', 'blue')
+  const tw = w.watchtowers[0]
+  const m = w.mortars[0]
+
+  // 1) 登上瞭望塔后被击杀：必须自动释放 tw.operatorId 与 p1.mountedTowerId
+  p1.pos = { x: tw.x, y: tw.y }
+  w.step(DT, new Map([[p1.id, input({ interact: true })]]))
+  assert.equal(tw.operatorId, p1.id)
+  assert.equal(p1.mountedTowerId, tw.id)
+  w.damagePlayer(p1, 999, undefined, true, false, p2.id, p2.team, '狙')
+  assert.equal(tw.operatorId, null, 'watchtower operatorId cleared on player death')
+  assert.equal(p1.mountedTowerId, null, 'player mountedTowerId cleared on death')
+
+  // 2) 替身人偶锚定后登上瞭望塔，触发人偶回溯时必须自动释放瞭望塔
+  w.deploy(p1)
+  p1.dollCharges = 1
+  p1.secondary = 'doll'
+  p1.pos = { x: 2000, y: 3264 }
+  w.step(DT, new Map([[p1.id, input({ secondary: { type: 'doll', targetX: 2000, targetY: 3264 } })]]))
+  assert.ok(p1.doll !== null)
+  p1.pos = { x: tw.x, y: tw.y }
+  w.step(DT, new Map([[p1.id, input({ interact: true })]]))
+  assert.equal(tw.operatorId, p1.id)
+  w.damagePlayer(p1, 999, undefined, false, false, p2.id, p2.team, '火箭筒')
+  assert.equal(tw.operatorId, null, 'watchtower operatorId cleared on doll recall')
+  assert.equal(p1.mountedTowerId, null, 'player mountedTowerId cleared on doll recall')
+
+  // 3) 玩家操控迫击炮或瞭望塔期间断线 (removePlayer)：必须释放设施并清理索引
+  const guest = w.addPlayer('GuestDisconnect', 'blue')
+  guest.pos = { x: m.x, y: m.y }
+  w.step(DT, new Map([[guest.id, input({ interact: true })]]))
+  assert.equal(m.operatorId, guest.id)
+  w.removePlayer(guest.id)
+  assert.equal(m.operatorId, null, 'mortar operatorId released when guest disconnects')
+  assert.equal(w.playerById.has(guest.id), false)
+})
+
+test('护栏·二进制协议与客户端预测保真：recoilVel/chargeAim/lastPrimaryIndex 编解码无损、弹丸缓存自动回收与截断包防崩溃', () => {
+  resetBinaryCodecState()
+  const w = new World(73001, { name: 'codec-fidelity', solids: [] })
+  w.config.randomSpawn = false
+  const p = w.addPlayer('SniperRecoil', 'red')
+  p.weaponIndex = 4 // 特武高斯枪
+  p.lastPrimaryIndex = 8 // 原常规主武器为冲锋枪
+  p.recoilVel = { x: -420, y: 180 }
+  p.chargeTimer = 0.25
+  p.chargeAim = -1.12
+
+  const bin = encodeServerMsgBinary({ snap: w.snapshot(), events: [] })
+  const dec = decodeServerMsgBinary(bin)!
+  const dp = dec.snap.players.find(x => x.id === p.id)!
+  assert.equal(dp.lastPrimaryIndex, 8, 'lastPrimaryIndex preserved across binary codec when holding supply weapon')
+  assert.ok(dp.recoilVel && Math.abs(dp.recoilVel.x - (-420)) < 1 && Math.abs(dp.recoilVel.y - 180) < 1, 'recoilVel preserved across binary codec')
+  assert.ok(dp.chargeAim !== undefined && Math.abs(dp.chargeAim - (-1.12)) < 0.01, 'chargeAim preserved across binary codec while charging')
+
+  // 验证截断/损坏二进制包绝不抛 RangeError
+  for (let cut = 0; cut < Math.min(40, bin.byteLength); cut++) {
+    assert.doesNotThrow(() => decodeServerMsgBinary(bin.subarray(0, cut)), `truncated binary packet (${cut}B) must not throw RangeError`)
+  }
+})
+
+test('护栏·智能AI战术开关(smartBotTactics)与自定义地图/平衡参数兼容性校验', async () => {
+  const { isCompatibleSavedMap, defaultMapData } = await import('../src/core/map.ts')
+  const { sanitizeOverrides } = await import('../src/core/balanceOverrides.ts')
+  const { setFeatureFlag, world: appWorld } = await import('../src/web/app/context.ts')
+  const { findThreatenedFriendlyFlag } = await import('../src/web/game/bots.ts')
+
+  // 1) 自定义地图兼容性：保留当前默认图、局内保存的「自定义地图」、编辑器清空的「自定义封闭竞技场」及用户命名图，仅过滤旧版内置默认图
+  const solids = [{ x: 100, y: 3000, w: 200, h: 40, kind: 'platform' as const }]
+  assert.equal(isCompatibleSavedMap({ name: defaultMapData().name, solids }), true)
+  assert.equal(isCompatibleSavedMap({ name: '自定义地图', solids }), true)
+  assert.equal(isCompatibleSavedMap({ name: '自定义封闭竞技场', solids }), true)
+  assert.equal(isCompatibleSavedMap({ name: 'MyDuelMap', solids }), true)
+  assert.equal(isCompatibleSavedMap({ name: '旧版封闭式立体竞技场', solids }), false)
+
+  // 2) 新增平衡性参数可被 sanitizeOverrides 正确识别与夹取
+  const ov = sanitizeOverrides({
+    weapons: { 0: { shellReloadFireDelayMult: 2.2, grazeDamageMin: 20 }, 3: { blastFalloffExponent: 2.0 } },
+    config: { shieldHp: 140, shieldDuration: 6, obstacleDefaultHp: 300, teleportCastTime: 0.5 },
+  })
+  assert.ok(ov)
+  assert.equal(ov!.weapons!['0'].shellReloadFireDelayMult, 2.2)
+  assert.equal(ov!.weapons!['0'].grazeDamageMin, 20)
+  assert.equal(ov!.weapons!['3'].blastFalloffExponent, 2.0)
+  assert.equal(ov!.config!.shieldHp, 140)
+  assert.equal(ov!.config!.teleportCastTime, 0.5)
+
+  // 3) 智能 AI 战术开关：开启时可感知同层掉进度的己方旗帜，关闭时不触发
+  const bot = appWorld.addPlayer('TacticBot', 'red')
+  const cp = appWorld.capturePoints.find(c => c.id === 'cp_e') ?? appWorld.capturePoints[0]
+  cp.ownerTeam = 'red'
+  cp.progress = 55
+  bot.pos = { x: cp.x + 300, y: cp.y }
+  setFeatureFlag('smartBotTactics', true)
+  assert.equal(findThreatenedFriendlyFlag(bot)?.id, cp.id, 'smartBotTactics detects draining friendly flag on same layer')
+  setFeatureFlag('smartBotTactics', false)
+  assert.equal(findThreatenedFriendlyFlag(bot), null, 'disabling smartBotTactics disables flag reinforcement scan')
+  setFeatureFlag('smartBotTactics', true)
+  appWorld.removePlayer(bot.id)
 })

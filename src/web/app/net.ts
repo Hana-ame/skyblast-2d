@@ -458,8 +458,7 @@ function acceptIncomingKcpGuest(
 
   conn.on('close', () => {
     netState.hostGuests.delete(guestPlayer.id)
-    world.players = world.players.filter(p => p.id !== guestPlayer.id)
-    world.playerById.delete(guestPlayer.id)
+    world.removePlayer(guestPlayer.id)
     netState.peerCount = netState.hostGuests.size
     updateTeamCountUI()
     updateNetStatusUI()
@@ -549,6 +548,11 @@ function applyAuthoritativeSnapshotToClientWorld(snap: WorldSnapshot): void {
   world.ammoPacks = interp.ammoPacks
   world.supplyCrates = interp.supplyCrates
   world.mortars = interp.mortars
+  for (let i = 0; i < world.watchtowers.length; i++) {
+    const tw = world.watchtowers[i]
+    const op = interp.players.find(p => p.alive && p.deployed && p.mountedTowerId === tw.id)
+    tw.operatorId = op ? op.id : null
+  }
 
   const myId = netState.clientSession?.playerId ?? localPlayer.id
   const meInSnap = world.playerById.get(myId)
@@ -948,8 +952,7 @@ export async function joinHostRoom(rawRoomString: string): Promise<void> {
 /** 断开当前 PeerJS / WebRTC KCP 联机 */
 export function leaveMultiplayerRoom(): void {
   for (const slot of netState.hostGuests.values()) {
-    world.players = world.players.filter(p => p.id !== slot.playerId)
-    world.playerById.delete(slot.playerId)
+    world.removePlayer(slot.playerId)
   }
   for (const fn of netState.cleanupFns) {
     try { fn() } catch { /* ignore */ }

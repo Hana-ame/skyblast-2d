@@ -4,6 +4,7 @@ import { WEAPONS, DEFAULT_CONFIG } from './weapons.ts'
 import type { WeaponDef, GameConfig } from './weapons.ts'
 
 export const OVERRIDES_STORAGE_KEY = 'skyblast_balance_overrides_v1'
+export const LEGACY_BALANCE_KEY = 'pvp-balance-overrides-v1'
 /** 兼容既有 localStorage key（游戏/后台/文档统一用这个） */
 export const BALANCE_KEY = OVERRIDES_STORAGE_KEY
 
@@ -14,8 +15,8 @@ export interface BalanceOverrides {
 }
 
 export const WEAPON_NUMERIC_KEYS: (keyof WeaponDef)[] = [
-  'damage', 'headshotMult', 'pellets', 'spread', 'speed', 'recoil',
-  'magSize', 'maxReserve', 'reloadTime', 'fireDelay', 'terrainRadius',
+  'damage', 'grazeDamageMin', 'headshotMult', 'pellets', 'spread', 'speed', 'recoil',
+  'magSize', 'maxReserve', 'reloadTime', 'fireDelay', 'shellReloadFireDelayMult', 'terrainRadius', 'blastFalloffExponent',
   'gravityScale', 'bounces', 'dragPerSecond', 'chargeSeconds',
   'damagePerSecond', 'ammoPerSecond',
   'moveSpeedMult', 'fuelMult', 'ascendMult', 'fovMult',
@@ -26,6 +27,7 @@ export const WEAPON_BOOL_KEYS: (keyof WeaponDef)[] = ['explosive', 'pierceOnHead
 export const CONFIG_NUMERIC_KEYS: (keyof GameConfig)[] = [
   'maxHp', 'respawnDelay', 'headRadius', 'grenadeDamage', 'grenadeRadius', 'grenadeFuse',
   'fragMaxCharges', 'fragRechargeSeconds', 'dollMaxCharges', 'dollDuration',
+  'shieldHp', 'shieldDuration', 'obstacleDefaultHp', 'teleportCastTime',
   'mortarDamage', 'mortarRadius', 'watchtowerDuration', 'watchtowerFovMult',
 ]
 export const CONFIG_BOOL_KEYS: (keyof GameConfig)[] = ['randomSpawn', 'loadoutLock', 'grenadeFriendlyFire', 'grenadeSelfDamage']
@@ -37,9 +39,9 @@ const num = (v: unknown): number | null => {
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n))
 
 const WEAPON_BOUNDS: Partial<Record<keyof WeaponDef, [number, number]>> = {
-  damage: [0, 2000], headshotMult: [0.5, 10], pellets: [1, 32], spread: [0, 1.5],
+  damage: [0, 2000], grazeDamageMin: [0, 2000], headshotMult: [0.5, 10], pellets: [1, 32], spread: [0, 1.5],
   speed: [50, 10000], recoil: [0, 5000], magSize: [1, 500], maxReserve: [0, 2000],
-  reloadTime: [0.05, 30], fireDelay: [0, 10], terrainRadius: [0, 400],
+  reloadTime: [0.05, 30], fireDelay: [0, 10], shellReloadFireDelayMult: [1, 5], terrainRadius: [0, 400], blastFalloffExponent: [0.5, 5],
   gravityScale: [0, 5], bounces: [0, 16], dragPerSecond: [0.05, 1], chargeSeconds: [0, 5],
   damagePerSecond: [0, 5000], ammoPerSecond: [0.1, 200],
   moveSpeedMult: [0.1, 5], fuelMult: [0.1, 5], ascendMult: [0.1, 5], fovMult: [1, 2],

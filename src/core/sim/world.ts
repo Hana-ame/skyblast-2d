@@ -86,7 +86,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   ownerTeamOf(id: number): TeamId {
     return (this.playerById.get(id) ?? this.players.find(p => p.id === id))?.team ?? 'ffa'
   }
-  recallDoll(p: PlayerState): void { recallDollState(this.events, p) }
+  recallDoll(p: PlayerState): void { recallDollState(this.events, p, this.mortars, this.watchtowers) }
   damagePlayer(
     t: PlayerState, amount: number, pr: Projectile | undefined, isHead: boolean, isPierced: boolean,
     attackerId?: number, attackerTeam?: TeamId, weaponLabel?: string,
@@ -192,8 +192,20 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     this.projectiles = []; this.grenades = []; this.airstrikes = []
     this.ammoSpawnTimer = 0
     this.scores = { red: 0, blue: 0, green: 0, ffa: 0 }
-    for (const p of this.players) p.selectedSpawnId = 'base'
+    this.stuckTicks.clear()
+    for (const p of this.players) {
+      p.selectedSpawnId = 'base'; p.mountedTowerId = null; p.watchtowerTimer = 0
+      if (p.recoilVel) { p.recoilVel.x = 0; p.recoilVel.y = 0 }
+    }
     this.rebuildSpatialBuckets()
+  }
+
+  removePlayer(playerId: number): void {
+    const idx = this.players.findIndex(p => p.id === playerId)
+    if (idx >= 0) this.players.splice(idx, 1)
+    this.playerById.delete(playerId); this.stuckTicks.delete(playerId); this.playerLagMs.delete(playerId)
+    for (const m of this.mortars) if (m.operatorId === playerId) m.operatorId = null
+    for (const tw of this.watchtowers) if (tw.operatorId === playerId) tw.operatorId = null
   }
 
   addPlayer(name = 'Player', team: TeamId = 'ffa'): PlayerState {
@@ -409,7 +421,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
     stepPlayerTeleport(this, p, dt)
 
-    if (w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
+    const interruptedShellReload = !!(w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0)
+    if (interruptedShellReload) {
       p.reloading = false; p.reloadTimer = 0
     }
 
@@ -442,7 +455,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
 
     if (p.doll) {
       p.doll.timer -= dt
-      if (p.doll.timer <= 0) recallDollState(this.events, p)
+      if (p.doll.timer <= 0) recallDollState(this.events, p, this.mortars, this.watchtowers)
     }
 
     const mountedNow = this.mortars.find(m => m.operatorId === p.id)
@@ -471,16 +484,16 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (p.chargeTimer > 0) {
         if (w.trackChargeAim) p.chargeAim = p.aim; p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
-          this.fire(p); p.chargeTimer = 0; p.chargeAim = undefined
+          this.fire(p, interruptedShellReload); p.chargeTimer = 0; p.chargeAim = undefined
         }
       }
     } else if (w.fire) {
-      this.fire(p)
+      this.fire(p, interruptedShellReload)
     }
     p.prevFireHeld = w.fire
   }
 
-  private fire(p: PlayerState): void {
+  private fire(p: PlayerState, interruptedShellReload = false): void {
     if (p.respawnTimer > 0 || !p.alive) return
     const m = this.mortars.find(mm => mm.operatorId === p.id)
     if (m) {
@@ -506,12 +519,20 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
       return
     }
+    const wasShellReloading = !!(wep.shellReload && (p.reloading || interruptedShellReload))
     if (wep.shellReload && p.reloading) {
       p.reloading = false; p.reloadTimer = 0
     }
     p.ammo[p.weaponIndex]--
-    p.fireCooldown = wep.fireDelay
-    if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
+    const enteringShellReload = !!(wep.shellReload && p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0)
+    if (wep.shellReload && (wasShellReloading || enteringShellReload) && (wep.shellReloadFireDelayMult ?? 1) > 1) {
+      const perShell = wep.reloadTime / Math.max(1, wep.magSize)
+      const targetCycle = wep.fireDelay * (wep.shellReloadFireDelayMult ?? 1)
+      p.fireCooldown = enteringShellReload ? Math.max(wep.fireDelay, targetCycle - perShell) : targetCycle
+    } else {
+      p.fireCooldown = wep.fireDelay
+    }
+    if (enteringShellReload) this.startReload(p)
 
     if (wep.recoil > 0) {
       const rk = recoilDelta(wep.recoil, p.aim)
@@ -550,6 +571,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       players: this.players.map(p => ({
         ...p,
         pos: { x: p.pos.x, y: p.pos.y }, vel: { x: p.vel.x, y: p.vel.y },
+        recoilVel: p.recoilVel ? { x: p.recoilVel.x, y: p.recoilVel.y } : undefined,
         ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
         teleportTarget: p.teleportTarget ? { x: p.teleportTarget.x, y: p.teleportTarget.y } : null,
         doll: p.doll ? { ...p.doll, pos: { x: p.doll.pos.x, y: p.doll.pos.y }, ammo: [...p.doll.ammo], reserveAmmo: [...p.doll.reserveAmmo] } : null,

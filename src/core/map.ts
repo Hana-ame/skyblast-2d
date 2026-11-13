@@ -226,3 +226,12 @@ export function sanitizeMapData(raw: unknown): MapData | null {
   if (solids.length === 0) return null
   return { name: typeof o.name === 'string' ? o.name : '自定义地图', solids }
 }
+
+/** 校验从 localStorage 加载的地图是否为有效的当前默认地图或用户自定义地图（自动过滤旧版内置默认地图快照） */
+export function isCompatibleSavedMap(m: MapData | null | undefined): m is MapData {
+  if (!m || !Array.isArray(m.solids) || m.solids.length === 0) return false
+  const name = m.name ?? ''
+  if (name === defaultMapData().name || name === '自定义地图' || name === '自定义封闭竞技场') return true
+  if (name.includes('拱桥') || name.includes('竞技场')) return false
+  return true
+}

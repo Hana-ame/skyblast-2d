@@ -1,6 +1,6 @@
 // core/sim/playerPhysics.ts —— 玩家运动学、AABB 滑动碰撞、穿模解算与无死锁多人分离
 // 同时导出纯函数 `predictLocalPlayerStep` 供客户端 StateSync 本地预测与服务器回滚重放（Reconciliation）直接复用！
-import { applyGravity, jetpack, jump, updateJetpackFuel, getPhysicsParams, stepRecoilVel, RECOIL_DISPLACEMENT_FACTOR } from './physics.ts'
+import { applyGravity, jetpack, jump, updateJetpackFuel, getPhysicsParams, stepRecoilVel, RECOIL_DISPLACEMENT_FACTOR, recoilDelta } from './physics.ts'
 import { TILE_SIZE } from '../terrain.ts'
 import type { Terrain } from '../terrain.ts'
 import { WEAPONS } from '../weapons.ts'
@@ -504,6 +504,30 @@ export function predictLocalPlayerStep(
   if (canJet) jetpack(p.vel, dt, wepCur.ascendMult ?? 1)
   p.jetpack = canJet
   p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax)
+
+  if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt)
+  const mountedMortar = mortars.find(m => m.operatorId === p.id)
+  if (!mountedMortar && w.fire && (wepCur.chargeSeconds ?? 0) <= 0 && !wepCur.beam) {
+    const canFireWhileReloading = !!wepCur.shellReload && (p.ammo[p.weaponIndex] ?? 0) > 0
+    if ((!p.reloading || canFireWhileReloading) && p.fireCooldown <= 0 && (p.ammo[p.weaponIndex] ?? 0) > 0) {
+      const wasShellReloading = !!(wepCur.shellReload && p.reloading)
+      if (wasShellReloading) { p.reloading = false; p.reloadTimer = 0 }
+      p.ammo[p.weaponIndex] = Math.max(0, (p.ammo[p.weaponIndex] ?? 0) - 1)
+      const enteringShellReload = !!(wepCur.shellReload && p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0)
+      if (wepCur.shellReload && (wasShellReloading || enteringShellReload) && (wepCur.shellReloadFireDelayMult ?? 1) > 1) {
+        const perShell = wepCur.reloadTime / Math.max(1, wepCur.magSize)
+        const targetCycle = wepCur.fireDelay * (wepCur.shellReloadFireDelayMult ?? 1)
+        p.fireCooldown = enteringShellReload ? Math.max(wepCur.fireDelay, targetCycle - perShell) : targetCycle
+      } else {
+        p.fireCooldown = wepCur.fireDelay
+      }
+      if (wepCur.recoil > 0) {
+        const rk = recoilDelta(wepCur.recoil, p.aim)
+        if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
+        p.recoilVel.x = rk.x; p.recoilVel.y = rk.y
+      }
+    }
+  }
 
   stepPlayerKinematic(p, w, dt, terrain, obstacles, undefined, undefined, mortars, watchtowers)
 }

@@ -219,6 +219,9 @@ test('BinaryCodecSession：多客户端 AOI 独立编码会话互不污染设施
 
 test('World：obstacleBroadBuckets 脏标记在掩体增删与受损销毁时即时同步更新', () => {
   const w = new World(99)
+  // Obstacle 要求 id 为 string 且必须带 color/borderColor/label。
+  // 注意：上游 zip 多次回退成 `{ id: 7777, ... }`（数字 id、缺三字段）导致 tsc 失败，
+  // 合并后需重新补全，勿再退回该写法。
   const ob = {
     id: '7777', x: 2000, y: 1200, w: 80, h: 80, hp: 240, maxHp: 240,
     color: '#334155', borderColor: '#38bdf8', label: 'test-obstacle',

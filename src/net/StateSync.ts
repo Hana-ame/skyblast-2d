@@ -282,6 +282,8 @@ function clonePlayerState(p: PlayerState): PlayerState {
     ...p,
     pos: { x: p.pos.x, y: p.pos.y },
     vel: { x: p.vel.x, y: p.vel.y },
+    recoilVel: p.recoilVel ? { x: p.recoilVel.x, y: p.recoilVel.y } : undefined,
+    teleportTarget: p.teleportTarget ? { x: p.teleportTarget.x, y: p.teleportTarget.y } : null,
     ammo: [...p.ammo],
     reserveAmmo: [...p.reserveAmmo],
     selectedSpawnId: p.selectedSpawnId,

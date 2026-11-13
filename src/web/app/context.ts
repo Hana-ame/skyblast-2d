@@ -1,8 +1,8 @@
 // web/app/context.ts —— 浏览器端共享上下文（画布/相机/权威世界/输入状态/特性Flag开关/表现层数据）
 // 工程化拆分的单一状态源：所有 app/* 模块只从这里读状态、通过其可变容器写状态。
 import { World, JUMP_PADS } from '../../core/sim/world.ts'
-import { sanitizeMapData, defaultMapData } from '../../core/map.ts'
-import { BALANCE_KEY, sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides } from '../../core/balanceOverrides.ts'
+import { sanitizeMapData, isCompatibleSavedMap } from '../../core/map.ts'
+import { BALANCE_KEY, LEGACY_BALANCE_KEY, sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides } from '../../core/balanceOverrides.ts'
 import { setPhysicsParams, getPhysicsParams } from '../../core/sim/physics.ts'
 import type { MapData } from '../../core/map.ts'
 import { Effects } from '../effects.ts'
@@ -127,7 +127,7 @@ function loadCustomMap(): MapData | undefined {
     const raw = localStorage.getItem('pvp-custom-map')
     if (!raw) return undefined
     const m = sanitizeMapData(JSON.parse(raw))
-    if (!m || m.name !== defaultMapData().name) return undefined
+    if (!isCompatibleSavedMap(m)) return undefined
     return m
   } catch { return undefined }
 }
@@ -135,7 +135,7 @@ export const customMap = loadCustomMap()
 
 function loadBalanceOverrides() {
   try {
-    const raw = localStorage.getItem(BALANCE_KEY)
+    const raw = localStorage.getItem(BALANCE_KEY) ?? localStorage.getItem(LEGACY_BALANCE_KEY)
     if (!raw) return null
     return sanitizeOverrides(JSON.parse(raw))
   } catch { return null }

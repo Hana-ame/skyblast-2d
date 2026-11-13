@@ -308,10 +308,12 @@ export function damagePlayerInWorld(
   t.shieldHp = 0
   t.shieldTimer = 0
   t.watchtowerTimer = 0
+  t.mountedTowerId = null
   t.teleportTimer = 0
   t.teleportTarget = null
-  const mk = ctx.mortars.find(m => m.operatorId === t.id)
-  if (mk) mk.operatorId = null
+  if (t.recoilVel) { t.recoilVel.x = 0; t.recoilVel.y = 0 }
+  for (const m of ctx.mortars) if (m.operatorId === t.id) m.operatorId = null
+  for (const tw of ctx.watchtowers) if (tw.operatorId === t.id) tw.operatorId = null
   const killer = ctx.playerById.get(atkId) ?? ctx.players.find(x => x.id === atkId)
   if (killer && atkId !== t.id) {
     killer.kills++

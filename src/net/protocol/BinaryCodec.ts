@@ -247,44 +247,52 @@ class ByteReader {
   }
 
   u8(): number {
+    if (this.offset + 1 > this.buf.byteLength) return 0
     return this.buf[this.offset++]
   }
 
   i8(): number {
+    if (this.offset + 1 > this.buf.byteLength) return 0
     return this.view.getInt8(this.offset++)
   }
 
   u16(): number {
+    if (this.offset + 2 > this.buf.byteLength) { this.offset = this.buf.byteLength; return 0 }
     const v = this.view.getUint16(this.offset, true)
     this.offset += 2
     return v
   }
 
   i16(): number {
+    if (this.offset + 2 > this.buf.byteLength) { this.offset = this.buf.byteLength; return 0 }
     const v = this.view.getInt16(this.offset, true)
     this.offset += 2
     return v
   }
 
   u32(): number {
+    if (this.offset + 4 > this.buf.byteLength) { this.offset = this.buf.byteLength; return 0 }
     const v = this.view.getUint32(this.offset, true)
     this.offset += 4
     return v
   }
 
   i32(): number {
+    if (this.offset + 4 > this.buf.byteLength) { this.offset = this.buf.byteLength; return 0 }
     const v = this.view.getInt32(this.offset, true)
     this.offset += 4
     return v
   }
 
   f32(): number {
+    if (this.offset + 4 > this.buf.byteLength) { this.offset = this.buf.byteLength; return 0 }
     const v = this.view.getFloat32(this.offset, true)
     this.offset += 4
     return v
   }
 
   f64(): number {
+    if (this.offset + 8 > this.buf.byteLength) { this.offset = this.buf.byteLength; return 0 }
     const v = this.view.getFloat64(this.offset, true)
     this.offset += 8
     return v
@@ -294,7 +302,7 @@ class ByteReader {
     const len = this.u16()
     if (len === 0) return ''
     const start = this.offset
-    const end = start + len
+    const end = Math.min(this.buf.byteLength, start + len)
     this.offset = end
     if (len <= 64) {
       let ascii = ''
@@ -692,6 +700,7 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
 
   let projectiles: Projectile[]
   if (!isDeltaProjectiles) {
+    sess.decodedBallisticProjs.clear()
     const prjCount = r.u16()
     projectiles = new Array(prjCount)
     for (let i = 0; i < prjCount; i++) {
@@ -701,17 +710,21 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
     }
   } else {
     const dtTicks = sess.lastDecodedTick > 0 && tick > sess.lastDecodedTick ? (tick - sess.lastDecodedTick) : 1
+    const activeShortIds = new Set<number>()
     const fullCount = r.u16()
     const freshProjs: Projectile[] = new Array(fullCount)
     for (let i = 0; i < fullCount; i++) {
       const pr = decodeProjectile(r)
       freshProjs[i] = pr
-      sess.decodedBallisticProjs.set(pr.id & 0xffff, pr)
+      const sid = pr.id & 0xffff
+      activeShortIds.add(sid)
+      sess.decodedBallisticProjs.set(sid, pr)
     }
     const keptCount = r.u16()
     const keptProjs: Projectile[] = []
     for (let i = 0; i < keptCount; i++) {
       const shortId = r.u16()
+      activeShortIds.add(shortId)
       const cached = sess.decodedBallisticProjs.get(shortId)
       if (cached) {
         stepClientProjectilesDeadReckoning([cached], (1 / 60) * dtTicks)
@@ -722,6 +735,9 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
           hitTargets: [...cached.hitTargets],
         })
       }
+    }
+    for (const oldKey of sess.decodedBallisticProjs.keys()) {
+      if (!activeShortIds.has(oldKey)) sess.decodedBallisticProjs.delete(oldKey)
     }
     projectiles = [...freshProjs, ...keptProjs]
   }
@@ -973,7 +989,13 @@ function encodePlayer(w: ByteWriter, p: PlayerState, sess: BinaryCodecSession): 
   w.u16(clamp(Math.round(p.fuel * 1000), 0, 65535))
   w.u16(p.kills)
   w.u16(p.deaths)
-  const dollAndSec = (clamp(p.dollCharges, 0, 7) & 0x07) | ((secIdx & 0x07) << 3)
+  const hasRecoilVel = Boolean(p.recoilVel && (Math.abs(p.recoilVel.x) > 0.5 || Math.abs(p.recoilVel.y) > 0.5))
+  const hasDiffLastPrimary = Boolean(p.lastPrimaryIndex !== undefined && p.lastPrimaryIndex !== p.weaponIndex)
+  const dollAndSec =
+    (clamp(p.dollCharges, 0, 7) & 0x07) |
+    ((secIdx & 0x07) << 3) |
+    (hasRecoilVel ? 64 : 0) |
+    (hasDiffLastPrimary ? 128 : 0)
   w.u8(dollAndSec)
   w.u8(clamp(p.deathStreak ?? 0, 0, 255))
   if (sess.encodedPlayerNames.get(p.id) === p.name) {
@@ -1019,7 +1041,10 @@ function encodePlayer(w: ByteWriter, p: PlayerState, sess: BinaryCodecSession): 
   }
   if (timerMask & 2) w.u16(qTimerMs(p.reloadTimer))
   if (timerMask & 4) w.u16(qTimerMs(p.fireCooldown))
-  if (timerMask & 8) w.u16(qTimerMs(p.chargeTimer))
+  if (timerMask & 8) {
+    w.u16(qTimerMs(p.chargeTimer))
+    w.i16(qAim(p.chargeAim ?? p.aim))
+  }
   if (timerMask & 16) w.u16(qTimerMs(p.secondaryCooldown))
   if (timerMask & 32) w.u16(qTimerMs(p.fragRechargeTimer))
   if (timerMask & 64) {
@@ -1038,6 +1063,16 @@ function encodePlayer(w: ByteWriter, p: PlayerState, sess: BinaryCodecSession): 
       w.u16(qPosX(p.teleportTarget.x))
       w.u16(qPosY(p.teleportTarget.y))
     }
+  }
+
+  if (hasRecoilVel && p.recoilVel) {
+    w.ensure(4)
+    w.i16(qVel(p.recoilVel.x))
+    w.i16(qVel(p.recoilVel.y))
+  }
+  if (hasDiffLastPrimary) {
+    w.ensure(1)
+    w.u8((p.lastPrimaryIndex ?? p.weaponIndex) & 0x0f)
   }
 
   if (p.doll) {
@@ -1088,6 +1123,8 @@ function decodePlayer(r: ByteReader, sess: BinaryCodecSession): PlayerState {
   const dollAndSec = r.u8()
   const dollCharges = dollAndSec & 0x07
   const secIdx = (dollAndSec >> 3) & 0x07
+  const hasRecoilVel = !!(dollAndSec & 64)
+  const hasDiffLastPrimary = !!(dollAndSec & 128)
   const secondary = SECONDARY_UNLOCK_ORDER[secIdx] ?? 'frag'
   const deathStreak = r.u8()
   const nameCached = r.u8() === 1
@@ -1118,7 +1155,12 @@ function decodePlayer(r: ByteReader, sess: BinaryCodecSession): PlayerState {
   }
   const reloadTimer = (timerMask & 2) ? uTimerMs(r.u16()) : 0
   const fireCooldown = (timerMask & 4) ? uTimerMs(r.u16()) : 0
-  const chargeTimer = (timerMask & 8) ? uTimerMs(r.u16()) : 0
+  let chargeTimer = 0
+  let chargeAim: number | undefined = undefined
+  if (timerMask & 8) {
+    chargeTimer = uTimerMs(r.u16())
+    chargeAim = uAim(r.i16())
+  }
   const secondaryCooldown = (timerMask & 16) ? uTimerMs(r.u16()) : 0
   const fragRechargeTimer = (timerMask & 32) ? uTimerMs(r.u16()) : 0
   let shieldHp = 0
@@ -1145,6 +1187,9 @@ function decodePlayer(r: ByteReader, sess: BinaryCodecSession): PlayerState {
       teleportTarget = { x: uPosX(r.u16()), y: uPosY(r.u16()) }
     }
   }
+
+  const recoilVel = hasRecoilVel ? { x: uVel(r.i16()), y: uVel(r.i16()) } : undefined
+  const lastPrimaryIndex = hasDiffLastPrimary ? (r.u8() & 0x0f) : (WEAPONS[weaponIndex]?.isSupplyOnly ? 1 : weaponIndex)
 
   let doll: PlayerState['doll'] = null
   if (hasDoll) {
@@ -1175,10 +1220,10 @@ function decodePlayer(r: ByteReader, sess: BinaryCodecSession): PlayerState {
   }
 
   return {
-    id, pos: { x: px, y: py }, vel: { x: vx, y: vy }, aim,
+    id, pos: { x: px, y: py }, vel: { x: vx, y: vy }, recoilVel, aim,
     team, name, hp, maxHp, alive, deployed, onGround,
-    weaponIndex, ammo, reserveAmmo,
-    reloading, reloadTimer, fireCooldown, chargeTimer,
+    weaponIndex, lastPrimaryIndex, ammo, reserveAmmo,
+    reloading, reloadTimer, fireCooldown, chargeTimer, chargeAim,
     secondary, secondaryCooldown, fragCharges, fragRechargeTimer,
     jetpack, fuel, shieldHp, shieldTimer, watchtowerTimer, mountedTowerId, warpCooldown,
     teleportTimer, teleportTarget, doll, dollCharges, respawnTimer, kills, deaths, deathStreak, selectedSpawnId,

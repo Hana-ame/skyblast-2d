@@ -6,6 +6,7 @@ import type {
   CapturePoint, Landmine, Projectile, Grenade, Airstrike,
 } from '../core/types.ts'
 import { WEAPONS, DEFAULT_CONFIG } from '../core/weapons.ts'
+import { getPhysicsParams } from '../core/sim/physics.ts'
 
 export interface TeamPalette { color: string; light: string; dark: string; glow: string }
 export const TEAM_PALETTE: Record<string, TeamPalette> = {
@@ -102,7 +103,7 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
   ctx.fillRect(packX + 1, -10, 5.5, 3)
   ctx.fillRect(packX + 1, -2, 5.5, 2)
   // 背包侧燃料液位条
-  const fuelMax = Math.max(0.5, wep.fuelMult ?? 1)
+  const fuelMax = Math.max(0.1, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
   const fuelRatio = Math.max(0, Math.min(1, p.fuel / fuelMax))
   ctx.fillStyle = '#090d16'
   ctx.fillRect(packX + 2.2, -6, 3, 8)

@@ -3,7 +3,7 @@ import { WEAPONS, DEFAULT_CONFIG } from '../core/weapons.ts'
 import type { WeaponDef, GameConfig } from '../core/weapons.ts'
 import { getPhysicsParams, setPhysicsParams } from '../core/sim/physics.ts'
 import {
-  BALANCE_KEY, sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides,
+  BALANCE_KEY, LEGACY_BALANCE_KEY, sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides,
   WEAPON_NUMERIC_KEYS, WEAPON_BOOL_KEYS, CONFIG_NUMERIC_KEYS, CONFIG_BOOL_KEYS,
 } from '../core/balanceOverrides.ts'
 import type { BalanceOverrides } from '../core/balanceOverrides.ts'
@@ -20,7 +20,7 @@ const basePhysics = { ...getPhysicsParams() }
 // 载入已保存覆盖，显示当前生效值
 let saved: BalanceOverrides | null = null
 try {
-  const raw = localStorage.getItem(BALANCE_KEY)
+  const raw = localStorage.getItem(BALANCE_KEY) ?? localStorage.getItem(LEGACY_BALANCE_KEY)
   if (raw) saved = sanitizeOverrides(JSON.parse(raw))
 } catch { /* ignore */ }
 if (saved?.weapons) applyWeaponOverrides(saved.weapons)
@@ -164,8 +164,13 @@ function setStatus(msg: string): void {
 function save(): BalanceOverrides | null {
   const ov = buildOverrides()
   const hasAny = !!ov.weapons || !!ov.config || !!ov.physics
-  if (hasAny) localStorage.setItem(BALANCE_KEY, JSON.stringify(ov))
-  else localStorage.removeItem(BALANCE_KEY)
+  if (hasAny) {
+    localStorage.setItem(BALANCE_KEY, JSON.stringify(ov))
+    localStorage.setItem(LEGACY_BALANCE_KEY, JSON.stringify(ov))
+  } else {
+    localStorage.removeItem(BALANCE_KEY)
+    localStorage.removeItem(LEGACY_BALANCE_KEY)
+  }
   setStatus(hasAny ? '已保存覆盖（下次启动游戏生效）' : '与默认值一致，已清除覆盖')
   return hasAny ? ov : null
 }
@@ -175,6 +180,7 @@ document.getElementById('btnApply')?.addEventListener('click', () => { save(); w
 document.getElementById('btnGame')?.addEventListener('click', () => { window.location.href = './index.html' })
 document.getElementById('btnReset')?.addEventListener('click', () => {
   localStorage.removeItem(BALANCE_KEY)
+  localStorage.removeItem(LEGACY_BALANCE_KEY)
   localStorage.removeItem('pvp-physics-params-v2')
   setStatus('已恢复默认，正在刷新…')
   window.location.reload()

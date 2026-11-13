@@ -7,14 +7,14 @@
 //   3. 固定路线巡逻（Fixed-Route Patrol）：
 //      - AI 移动完全遵循预设的三条固定巡逻路线（主地面路线 `main_deck`、高空拱桥路线 `sky_arch`、地下通道路线 `underground`），在路标点之间往返循环巡逻，绝不因为隔墙追踪敌人坐标而卡死在墙角或地板下；
 //      - 巡逻过程中实时检测直接视线（hasLOS）：有直接视线时瞄准敌人开火，无直接视线时枪口朝向当前巡逻行进方向继续按固定路线推进。
-import { botNames, bots, world, localPlayer, mode, MAX_BOT_COUNT } from '../app/context.ts'
+import { botNames, bots, world, localPlayer, mode, MAX_BOT_COUNT, featureFlags } from '../app/context.ts'
 import { updateTeamCountUI, updateSpawnPointButtonsUI } from '../app/hud.ts'
 import { WEAPONS, isSecondaryUnlocked } from '../../core/weapons.ts'
 import { MAIN_DECK_TOP } from '../../core/map.ts'
 import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { findObstacleAt } from '../../core/sim/spatial.ts'
 import { defaultWorldInput } from '../../core/types.ts'
-import type { WorldInput, PlayerState, TeamId } from '../../core/types.ts'
+import type { WorldInput, PlayerState, TeamId, CapturePoint } from '../../core/types.ts'
 
 /** 常规可用主武器池（突击步枪、霰弹枪、冲锋枪、狙击步枪、手枪、火箭筒） */
 const BOT_PRIMARY_POOL = [1, 0, 8, 2, 7, 3, 1, 8]
@@ -568,6 +568,29 @@ function updateBotSelectedSpawn(bot: PlayerState, _mem: BotMemory): void {
   bot.selectedSpawnId = 'base'
 }
 
+/** 智能 AI 战术：扫描同层正在掉进度的本队旗帜或正被敌方夺取的据点，返回最近的目标据点以优先增援 */
+export function findThreatenedFriendlyFlag(bot: PlayerState): CapturePoint | null {
+  if (!featureFlags.smartBotTactics || bot.team === 'ffa') return null
+  let best: CapturePoint | null = null
+  let bestScore = Infinity
+  for (let i = 0; i < world.capturePoints.length; i++) {
+    const cp = world.capturePoints[i]
+    if (Math.abs(cp.y - bot.pos.y) > 200) continue
+    const isDrainingOwn = cp.ownerTeam === bot.team && cp.progress < 100
+    const isEnemyCapturing = cp.ownerTeam === null && cp.capturingTeam !== null && cp.capturingTeam !== bot.team && cp.progress > 0
+    if (!isDrainingOwn && !isEnemyCapturing) continue
+    const dx = Math.abs(cp.x - bot.pos.x)
+    if (dx > 2800) continue
+    const urgency = isDrainingOwn ? (100 - cp.progress) * 8 : cp.progress * 6
+    const score = dx - urgency
+    if (score < bestScore) {
+      bestScore = score
+      best = cp
+    }
+  }
+  return best
+}
+
 function hasOpenShaftAbove(bx: number, by: number): boolean {
   for (let dy = 42; dy <= 122; dy += 26) {
     if (world.terrain.isSolidAt(bx - 6, by - dy) || world.terrain.isSolidAt(bx + 6, by - dy)) {
@@ -582,6 +605,10 @@ function advancePatrolWaypoint(bot: PlayerState, mem: BotMemory, route: PatrolWa
   if (!mem.manualRouteLocked) {
     const bx = bot.pos.x
     const by = bot.pos.y
+    const threatenedCp = findThreatenedFriendlyFlag(bot)
+    if (threatenedCp && Math.abs(threatenedCp.x - bx) > 85) {
+      mem.patrolDir = threatenedCp.x >= bx ? 1 : -1
+    }
     const r = nextBotRand(mem)
     // 在东西两端入口或中央竖井口附近，有一定概率切换巡逻层（主地面 / 空岛拱桥 / 地下通道）
     if (mem.routeId === 'main_deck' && Math.abs(by - (MAIN_DECK_TOP - 16)) < 45) {
@@ -940,8 +967,8 @@ export function botInput(bot: PlayerState): WorldInput {
 
   const maxFuel = getBotMaxFuel(bot)
 
-  // 交战时的适度随机机动（仅在非手动锁定巡逻路线、未处于解卡/过坑跳跃时生效）
-  if (!mem.manualRouteLocked && mem.unstuckTimer <= 0 && hasLOS && target && dist < 920 && Math.abs(rawDy) < 260) {
+  // 交战时的适度随机机动（仅在启用 smartBotTactics、非手动锁定巡逻路线、未处于解卡/过坑跳跃时生效）
+  if (featureFlags.smartBotTactics && !mem.manualRouteLocked && mem.unstuckTimer <= 0 && hasLOS && target && dist < 920 && Math.abs(rawDy) < 260) {
     const stepEdgeDanger = !world.terrain.isSolidAt(bx + mem.tacticMove * 44, bot.pos.y + 24)
     if (!stepEdgeDanger) {
       w.move = mem.tacticMove
@@ -954,8 +981,8 @@ export function botInput(bot: PlayerState): WorldInput {
     if (bot.onGround) w.jump = true
   }
 
-  // 掩体躲避逻辑：仅在真正需要掩护（换弹/残血/空仓）且未处于出掩体冷却时前往掩体，彻底消除在掩体旁满血往返打转
-  if (!mem.manualRouteLocked && mem.unstuckTimer <= 0 && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
+  // 掩体躲避逻辑：仅在启用 smartBotTactics 且真正需要掩护（换弹/残血/空仓）时前往掩体，彻底消除在掩体旁满血往返打转
+  if (featureFlags.smartBotTactics && !mem.manualRouteLocked && mem.unstuckTimer <= 0 && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
     let cover = mem.coverCache ?? null
     if (mem.coverCacheTick === undefined || world.tick - mem.coverCacheTick >= 8 || mem.coverCacheTargetId !== target.id) {
       cover = findNearestCoverPosition(bot, target)
@@ -1044,6 +1071,14 @@ export function botInput(bot: PlayerState): WorldInput {
   }
 
   const streak = bot.deathStreak ?? 0
+  const threatenedCpNow = findThreatenedFriendlyFlag(bot)
+  if (featureFlags.smartBotTactics && threatenedCpNow && Math.abs(threatenedCpNow.x - bx) < 260) {
+    if (isSecondaryUnlocked('shield', streak, bot.dollCharges ?? 0, bot.weaponIndex) && bot.shieldHp <= 0) {
+      bot.secondary = 'shield'
+    } else if (isSecondaryUnlocked('obstacle', streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
+      bot.secondary = 'obstacle'
+    }
+  }
   if (!isSecondaryUnlocked(bot.secondary, streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
     bot.secondary = 'frag'
   }

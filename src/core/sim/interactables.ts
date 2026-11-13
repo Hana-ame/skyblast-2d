@@ -136,10 +136,23 @@ export function getNearbyInteractablePrompt(
 }
 
 /** 替身人偶回溯（死亡触发 或 10s 到期触发） */
-export function recallDollState(events: WorldEvent[], p: PlayerState): void {
+export function recallDollState(
+  events: WorldEvent[],
+  p: PlayerState,
+  mortars?: Mortar[],
+  watchtowers?: Watchtower[],
+): void {
   if (!p.doll) return
   const d = p.doll
   p.doll = null
+  if (mortars) {
+    for (const m of mortars) if (m.operatorId === p.id) m.operatorId = null
+  }
+  if (watchtowers) {
+    for (const tw of watchtowers) if (tw.operatorId === p.id || tw.id === p.mountedTowerId) tw.operatorId = null
+  }
+  p.mountedTowerId = null
+  p.watchtowerTimer = 0
   p.pos = { x: wrapX(d.pos.x), y: d.pos.y }
   p.vel = { x: 0, y: 0 }
   p.hp = Math.max(1, d.hp)

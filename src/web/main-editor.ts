@@ -3,7 +3,7 @@
 //   - 支持“挖狭窄地道 (carve)”工具，直接在地下实心岩层中切割狭窄通道
 //   - 支持选择/移动/8向手柄缩放、属性数值精调、对称镜像、快速预设印章、全景小地图导航与高清全景 PNG 导出
 import {
-  defaultMapData, sanitizeMapData, carveTunnelInSolids,
+  defaultMapData, sanitizeMapData, isCompatibleSavedMap, carveTunnelInSolids,
   MAIN_DECK_TOP, BEDROCK_TOP, CEILING_TOP, CEILING_THICK, WALL_THICK, UNIFIED_EDGE_HIGHLIGHT,
 } from '../core/map.ts'
 import type { MapData, MapSolid, MapSolidKind } from '../core/map.ts'
@@ -70,12 +70,12 @@ function loadInitial(): MapData {
     const a = localStorage.getItem(EDITOR_KEY)
     if (a) {
       const m = sanitizeMapData(JSON.parse(a))
-      if (m && m.name === defaultMapData().name) return m
+      if (isCompatibleSavedMap(m)) return m
     }
     const b = localStorage.getItem(GAME_KEY)
     if (b) {
       const m = sanitizeMapData(JSON.parse(b))
-      if (m && m.name === defaultMapData().name) return m
+      if (isCompatibleSavedMap(m)) return m
     }
   } catch { /* ignore */ }
   return defaultMapData()
@@ -251,7 +251,7 @@ function render(): void {
   ctx.stroke()
   ctx.fillStyle = 'rgba(125, 211, 252, 0.78)'
   ctx.font = 'bold 11px Inter, sans-serif'
-  ctx.fillText('▼ 主地面 (y=2400..2640 厚240px+凹陷坑) 以下：地板下贯通地道与四层深邃地下狭道区 (y=2640..4160)', sx(140), ugTop - 6)
+  ctx.fillText('▼ 主地面 (y=3280..3440 厚160px+凹陷坑) 以下：三层薄地板地下隧道区 (y=3440..4160)', sx(140), ugTop - 6)
   ctx.restore()
 
   // 地图实心方块（统一标志性复合装甲贴图 + 统一边缘高亮色 #38bdf8）
