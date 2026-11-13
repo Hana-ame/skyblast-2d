@@ -158,6 +158,12 @@ export function renderScene(): void {
 
   // 1. 地形图元（程序化贴图）
   syncTerrainPatterns(camera.x, camera.y)
+  // 性能：描边样式对所有地形块完全一致，提到循环外只设一次；
+  // 并把所有块的描边合并进同一条 path 一次性 stroke。
+  // 原来每块都 strokeRect 且重复设置 strokeStyle/lineWidth，在真机 GPU 上全是多余的状态切换。
+  ctx.strokeStyle = '#38bdf8'
+  ctx.lineWidth = 2
+  ctx.beginPath()
   for (let ri = 0; ri < world.terrain.rects.length; ri++) {
     const r = world.terrain.rects[ri]
     if (r.kind.startsWith('deco_')) continue
@@ -182,9 +188,8 @@ export function renderScene(): void {
           ctx.fillStyle = 'rgba(2, 6, 23, 0.45)'
           ctx.fillRect(left, top + r.h - 3, r.w, 3)
         }
-        ctx.strokeStyle = '#38bdf8'
-        ctx.lineWidth = 2
-        ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2)
+        // 只累进 path，循环结束后统一 stroke
+        ctx.rect(left + 1, top + 1, r.w - 2, r.h - 2)
         if (r.label && (r.kind === 'building_roof' || r.kind === 'pipe_wall' || r.kind === 'bridge')) {
           ctx.fillStyle = 'rgba(226, 232, 240, 0.75)'
           ctx.font = 'bold 12px Inter, sans-serif'
@@ -194,6 +199,7 @@ export function renderScene(): void {
       }
     }
   }
+  ctx.stroke()
 
   // 1.2 左右基地出生点光环
   for (let i = 0; i < SPAWN_POINTS.length; i++) {

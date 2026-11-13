@@ -12478,6 +12478,9 @@
       ctx.restore();
     }
     syncTerrainPatterns(camera.x, camera.y);
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
     for (let ri = 0; ri < world.terrain.rects.length; ri++) {
       const r = world.terrain.rects[ri];
       if (r.kind.startsWith("deco_")) continue;
@@ -12502,9 +12505,7 @@
             ctx.fillStyle = "rgba(2, 6, 23, 0.45)";
             ctx.fillRect(left, top + r.h - 3, r.w, 3);
           }
-          ctx.strokeStyle = "#38bdf8";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2);
+          ctx.rect(left + 1, top + 1, r.w - 2, r.h - 2);
           if (r.label && (r.kind === "building_roof" || r.kind === "pipe_wall" || r.kind === "bridge")) {
             ctx.fillStyle = "rgba(226, 232, 240, 0.75)";
             ctx.font = "bold 12px Inter, sans-serif";
@@ -12514,6 +12515,7 @@
         }
       }
     }
+    ctx.stroke();
     for (let i = 0; i < SPAWN_POINTS.length; i++) {
       const sp = SPAWN_POINTS[i];
       if (sp.team === "green" || sp.team === "ffa") continue;
