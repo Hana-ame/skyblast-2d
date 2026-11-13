@@ -4190,7 +4190,8 @@
         ovParams: 0,
         ovEditor: 0,
         hidden: 0,
-        heapMB: -1
+        heapMB: -1,
+        missedFrames: 0
       };
       frames[index] = r;
     }
@@ -4234,6 +4235,7 @@
     r.ovEditor = overlayVisible("inGameEditorModal");
     r.hidden = typeof document !== "undefined" && document.hidden ? 1 : 0;
     r.heapMB = heapMB();
+    r.missedFrames = dt > 0 ? Math.max(1, Math.round(dt / 16.6667)) : 0;
     diagStats.frames++;
     diagStats.totalBusyMs += busyMs;
     if (busyMs > diagStats.maxBusyMs) diagStats.maxBusyMs = busyMs;
@@ -4366,7 +4368,99 @@
     } catch {
     }
     diagMark("env", collectEnv());
+    try {
+      const p = probeEnvironment();
+      Object.assign(lastEnvProbe, p);
+      diagMark("env-probe", { ...p });
+      measureRefresh((hz, fps) => {
+        diagMark("refresh-probe", { hz, fps });
+      });
+    } catch {
+    }
     void ctx2;
+  }
+  function probeEnvironment() {
+    const probe = {
+      refreshHz: 0,
+      measuredFps: 0,
+      webglRenderer: "unknown",
+      canvasAccel: "unknown",
+      cores: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : 0,
+      deviceMemory: typeof navigator !== "undefined" ? navigator.deviceMemory ?? -1 : -1,
+      batterySaver: false,
+      visibility: typeof document !== "undefined" ? document.visibilityState : "unknown",
+      dpr: typeof devicePixelRatio === "number" ? devicePixelRatio : 1,
+      viewport: typeof window !== "undefined" ? `${window.innerWidth}x${window.innerHeight}` : "n/a"
+    };
+    try {
+      const c = document.createElement("canvas");
+      const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+      if (gl) {
+        const ext = gl.getExtension("WEBGL_debug_renderer_info");
+        probe.webglRenderer = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "webgl(no-debug-info)";
+      } else {
+        probe.webglRenderer = "webgl-unavailable";
+      }
+    } catch {
+    }
+    try {
+      const cv = document.createElement("canvas");
+      const c2 = cv.getContext("2d");
+      const attrs = c2?.getContextAttributes?.();
+      const soft = /swiftshader|software|llvmpipe|basic render/i.test(probe.webglRenderer);
+      probe.canvasAccel = soft ? "likely-software (webgl renderer looks software)" : attrs?.willReadFrequently ? "cpu (willReadFrequently)" : "likely-hardware";
+    } catch {
+    }
+    try {
+      const nav = navigator;
+      if (typeof nav.getBattery === "function") {
+        void nav.getBattery().then((b) => {
+          probe.batterySaver = !b.charging;
+        }).catch(() => {
+        });
+      }
+    } catch {
+    }
+    return probe;
+  }
+  function measureRefresh(onDone) {
+    if (typeof window === "undefined" || typeof requestAnimationFrame === "undefined") return;
+    const stamps = [];
+    let n = 0;
+    const t0 = performance.now();
+    const tick = (ts) => {
+      stamps.push(ts);
+      n++;
+      if (performance.now() - t0 < 1500 && n < 400) requestAnimationFrame(tick);
+      else {
+        const dts = [];
+        for (let i = 1; i < stamps.length; i++) dts.push(stamps[i] - stamps[i - 1]);
+        dts.sort((a, b) => a - b);
+        const median = dts.length ? dts[Math.floor(dts.length / 2)] : 0;
+        const hz = median > 0 ? Math.round(1e3 / median) : 0;
+        const span = stamps.length > 1 ? stamps[stamps.length - 1] - stamps[0] : 0;
+        const fps = span > 0 ? Math.round((stamps.length - 1) / span * 1e3) : 0;
+        lastEnvProbe.refreshHz = hz;
+        lastEnvProbe.measuredFps = fps;
+        onDone?.(hz, fps);
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+  var lastEnvProbe = {
+    refreshHz: 0,
+    measuredFps: 0,
+    webglRenderer: "unknown",
+    canvasAccel: "unknown",
+    cores: 0,
+    deviceMemory: -1,
+    batterySaver: false,
+    visibility: "unknown",
+    dpr: 1,
+    viewport: "n/a"
+  };
+  function getEnvProbe() {
+    return { ...lastEnvProbe };
   }
   function collectEnv() {
     try {
@@ -4428,6 +4522,7 @@
     return {
       generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
       env: collectEnv(),
+      envProbe: { ...lastEnvProbe },
       stats: {
         ...diagStats,
         busyP50: Math.round(percentile(buses, 0.5) * 1e3) / 1e3,
@@ -4448,6 +4543,24 @@
     lines.push("=== SkyBlast 2D \u8BCA\u65AD\u65E5\u5FD7 ===");
     lines.push(`\u65F6\u95F4: ${rep.generatedAt}`);
     lines.push(`\u73AF\u5883: ${JSON.stringify(rep.env)}`);
+    const ep = rep.envProbe;
+    if (ep) {
+      lines.push("");
+      lines.push("--- \u771F\u673A\u73AF\u5883\u63A2\u6D4B\uFF08\u5224\u65AD\u662F\u5426\u8F6F\u4EF6\u6E32\u67D3/\u662F\u5426\u6389\u5E27\u7684\u5173\u952E\uFF09 ---");
+      lines.push(`\u663E\u793A\u5668\u5237\u65B0\u7387: ${ep.refreshHz}Hz  \xB7  \u5B9E\u6D4B rAF FPS: ${ep.measuredFps}`);
+      lines.push(`WebGL \u6E32\u67D3\u5668: ${ep.webglRenderer}`);
+      lines.push(`Canvas \u52A0\u901F: ${ep.canvasAccel}`);
+      lines.push(`CPU \u6838\u5FC3 ${ep.cores} \xB7 \u5185\u5B58 ${ep.deviceMemory}GB \xB7 DPR ${ep.dpr} \xB7 \u89C6\u53E3 ${ep.viewport}`);
+      lines.push(`\u7701\u7535\u6A21\u5F0F: ${ep.batterySaver ? "\u5F00\uFF08\u4F1A\u9650\u5236 rAF\uFF09" : "\u5173"} \xB7 \u53EF\u89C1\u6027: ${ep.visibility}`);
+      const soft = /swiftshader|software|llvmpipe|basic render/i.test(ep.webglRenderer);
+      if (soft) {
+        lines.push("\u26A0\uFE0F \u68C0\u6D4B\u5230\u8F6F\u4EF6\u6E32\u67D3\uFF08\u65E0 GPU \u52A0\u901F\uFF09\uFF1A\u753B\u9762\u5361\u987F\u6E90\u4E8E\u6D4F\u89C8\u5668/\u9A71\u52A8\u672A\u542F\u7528\u786C\u4EF6\u52A0\u901F\uFF0C");
+        lines.push('   \u4E0D\u662F\u6E38\u620F\u4EE3\u7801\u95EE\u9898\u3002\u8BF7\u5728\u6D4F\u89C8\u5668\u8BBE\u7F6E\u91CC\u5F00\u542F"\u4F7F\u7528\u786C\u4EF6\u52A0\u901F"\uFF0C\u6216\u66F4\u65B0\u663E\u5361\u9A71\u52A8\u3002');
+      }
+      if (ep.refreshHz > 0 && ep.measuredFps > 0 && ep.measuredFps < ep.refreshHz * 0.85) {
+        lines.push(`\u26A0\uFE0F \u5B9E\u6D4B FPS(${ep.measuredFps}) \u660E\u663E\u4F4E\u4E8E\u5237\u65B0\u7387(${ep.refreshHz})\uFF1A\u5B58\u5728\u6389\u5E27\u3002`);
+      }
+    }
     lines.push("");
     lines.push(`\u91C7\u6837: ${s.frames} \u5E27 / ${s.durationSec}s\uFF0C\u5E73\u5747 ${s.fpsAvg} FPS`);
     lines.push(`\u6389\u5E27\u8BA1\u6570: >24ms ${s.gapsOver24} \u6B21\uFF0C>50ms ${s.gapsOver50} \u6B21\uFF0C>100ms ${s.gapsOver100} \u6B21`);
@@ -13408,7 +13521,11 @@
     enable: () => diagSetEnabled(true),
     disable: () => diagSetEnabled(false),
     enabled: () => diagIsEnabled(),
-    mark: (kind, detail) => diagMark(kind, detail)
+    mark: (kind, detail) => diagMark(kind, detail),
+    /** 环境探测：刷新率/GPU 渲染器/Canvas 加速状态 —— 判断是否软件渲染 */
+    envProbe: () => getEnvProbe(),
+    /** 重新采样刷新率与实际 FPS（约 1.5s） */
+    measureRefresh: () => measureRefresh()
   };
   (function loadSavedParams() {
     try {

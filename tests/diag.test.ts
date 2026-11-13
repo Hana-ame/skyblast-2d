@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   diagRecordFrame, diagMark, diagFrames, buildReport, reportToText,
   diagReset, diagSetEnabled, diagIsEnabled, diagStats,
+  probeEnvironment,
 } from '../src/web/app/diag.ts'
 import type { FrameCtx } from '../src/web/app/diag.ts'
 
@@ -148,4 +149,36 @@ test('诊断器：后台标签页节流的超长 gap 不计入掉帧统计（避
   assert.equal(diagStats.throttledGaps, 0)
   const rep = buildReport()
   assert.ok(reportToText(rep).includes('后台节流'))
+})
+
+test('诊断器：missedFrames 按 60Hz 期望正确换算掉帧数', () => {
+  diagReset()
+  diagSetEnabled(true)
+  let t = prime(50000)
+  t += 16.7; diagRecordFrame(t, parts(), ctx())   // 正常 1 帧
+  t += 33.4; diagRecordFrame(t, parts(), ctx())   // 掉一帧 -> missed 2
+  t += 50.1; diagRecordFrame(t, parts(), ctx())   // 掉两帧 -> missed 3
+  const fs = diagFrames()
+  const tail = fs.slice(-3)
+  assert.equal(tail[0].missedFrames, 1)
+  assert.equal(tail[1].missedFrames, 2)
+  assert.equal(tail[2].missedFrames, 3)
+})
+
+test('诊断器：真机环境探测在 Node 下安全返回结构且报告包含 envProbe 与软件渲染告警', () => {
+  // Node 下没有 window/document，probeEnvironment 必须安全降级而不是抛错
+  const probe = probeEnvironment()
+  assert.equal(typeof probe, 'object')
+  assert.ok(typeof probe.refreshHz === 'number')
+  assert.ok(typeof probe.webglRenderer === 'string')
+  assert.ok(typeof probe.canvasAccel === 'string')
+
+  diagReset(); diagSetEnabled(true)
+  let t = prime(60000)
+  t += 16.7; diagRecordFrame(t, parts(), ctx())
+  const rep = buildReport()
+  assert.ok(rep.envProbe, '报告必须包含 envProbe')
+  assert.ok(typeof rep.envProbe.refreshHz === 'number')
+  const txt = reportToText(rep)
+  assert.ok(txt.includes('真机环境探测'), '摘要必须含环境探测段')
 })

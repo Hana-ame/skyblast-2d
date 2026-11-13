@@ -20,6 +20,7 @@ import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/
 import {
   installDiag, diagExport, reportToText, buildReport, diagFrames, diagTable,
   diagReset, diagSetEnabled, diagIsEnabled, diagStats, diagMark,
+  probeEnvironment, getEnvProbe, measureRefresh,
 } from './app/diag.ts'
 
 // ── 启动 ──
@@ -89,6 +90,10 @@ installDiag()
   disable: () => diagSetEnabled(false),
   enabled: () => diagIsEnabled(),
   mark: (kind: string, detail?: Record<string, unknown>) => diagMark(kind, detail),
+  /** 环境探测：刷新率/GPU 渲染器/Canvas 加速状态 —— 判断是否软件渲染 */
+  envProbe: () => getEnvProbe(),
+  /** 重新采样刷新率与实际 FPS（约 1.5s） */
+  measureRefresh: () => measureRefresh(),
 }
 ;(function loadSavedParams(): void {
   try {

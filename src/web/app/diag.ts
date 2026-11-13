@@ -49,6 +49,30 @@ export interface FrameRec {
   hidden: number
   /** 堆用量 MB（Chrome 专有，其它浏览器为 -1） */
   heapMB: number
+  /** 本帧距上一帧跨越的 rAF 次数估计（1=正常，2=掉了一帧）；用 dt/期望帧时估算 */
+  missedFrames: number
+}
+
+/** 真机专属环境探测：显示器刷新率、GPU 加速状态、实际合成器帧率 */
+export interface DiagEnvProbe {
+  /** 用 rAF 采样估算的显示器刷新率（Hz），0 表示未测出 */
+  refreshHz: number
+  /** 估算 FPS */
+  measuredFps: number
+  /** WebGL 渲染器字符串（判断是否 SwiftShader/软件渲染） */
+  webglRenderer: string
+  /** Canvas 2D 是否走 GPU 加速（Chrome 专有判定） */
+  canvasAccel: string
+  /** navigator.hardwareConcurrency / deviceMemory */
+  cores: number
+  deviceMemory: number
+  /** 是否处于省电模式（Chrome 专有） */
+  batterySaver: boolean
+  /** 页面可见性 */
+  visibility: string
+  /** 设备像素比与视口 */
+  dpr: number
+  viewport: string
 }
 
 export interface StutterRec {
@@ -133,7 +157,7 @@ function slot(index: number): FrameRec {
       hp: 0, alive: 0, deployed: 0, wep: 0, camX: 0, camY: 0,
       canvasW: 0, canvasH: 0, dpr: 0,
       ovDeath: 0, ovLobby: 0, ovParams: 0, ovEditor: 0,
-      hidden: 0, heapMB: -1,
+      hidden: 0, heapMB: -1, missedFrames: 0,
     }
     frames[index] = r
   }
@@ -198,6 +222,8 @@ export function diagRecordFrame(
   r.ovEditor = overlayVisible('inGameEditorModal')
   r.hidden = typeof document !== 'undefined' && document.hidden ? 1 : 0
   r.heapMB = heapMB()
+  // 相对 60Hz 少画了几帧（1 = 正常；2 = 掉一帧；3 = 掉两帧）
+  r.missedFrames = dt > 0 ? Math.max(1, Math.round(dt / 16.6667)) : 0
 
   diagStats.frames++
   diagStats.totalBusyMs += busyMs
@@ -352,9 +378,105 @@ export function installDiag(ctx?: () => FrameCtx): void {
     })
   } catch { /* ignore */ }
 
-  // 环境信息（只取一次）
+  // 环境信息（只取一次）+ 真机专属探测
   diagMark('env', collectEnv())
+  try {
+    const p = probeEnvironment()
+    Object.assign(lastEnvProbe, p)
+    diagMark('env-probe', { ...p })
+    // 采样 1.5s 估算刷新率与实际 FPS
+    measureRefresh((hz, fps) => {
+      diagMark('refresh-probe', { hz, fps })
+    })
+  } catch { /* ignore */ }
   void ctx
+}
+
+/** 真机环境探测：这些是区分"真卡顿"与"软件渲染正常"的关键。
+ *  在软件渲染（SwiftShader）环境下这里会显示软件渲染器，而真机应显示真实 GPU。 */
+export function probeEnvironment(): DiagEnvProbe {
+  const probe: DiagEnvProbe = {
+    refreshHz: 0,
+    measuredFps: 0,
+    webglRenderer: 'unknown',
+    canvasAccel: 'unknown',
+    cores: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0,
+    deviceMemory: typeof navigator !== 'undefined'
+      ? (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? -1
+      : -1,
+    batterySaver: false,
+    visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+    dpr: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1,
+    viewport: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : 'n/a',
+  }
+  // WebGL 渲染器：能判断是否被降级到软件渲染（SwiftShader = 无 GPU 加速）
+  try {
+    const c = document.createElement('canvas')
+    const gl = (c.getContext('webgl') || c.getContext('experimental-webgl')) as WebGLRenderingContext | null
+    if (gl) {
+      const ext = gl.getExtension('WEBGL_debug_renderer_info')
+      probe.webglRenderer = ext
+        ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
+        : 'webgl(no-debug-info)'
+    } else {
+      probe.webglRenderer = 'webgl-unavailable'
+    }
+  } catch { /* ignore */ }
+  // Canvas2D 加速状态：Chrome 会在 getContextAttributes 里暴露；
+  // 拿不到时用 willReadFrequently 与已知软件渲染器名推断
+  try {
+    const cv = document.createElement('canvas')
+    const c2 = cv.getContext('2d')
+    const attrs = c2?.getContextAttributes?.() as { willReadFrequently?: boolean } | null
+    const soft = /swiftshader|software|llvmpipe|basic render/i.test(probe.webglRenderer)
+    probe.canvasAccel = soft
+      ? 'likely-software (webgl renderer looks software)'
+      : (attrs?.willReadFrequently ? 'cpu (willReadFrequently)' : 'likely-hardware')
+  } catch { /* ignore */ }
+  // 省电模式（Chrome 专有 getBattery）
+  try {
+    const nav = navigator as unknown as { getBattery?: () => Promise<{ charging: boolean }> }
+    if (typeof nav.getBattery === 'function') {
+      void nav.getBattery().then(b => { probe.batterySaver = !b.charging }).catch(() => {})
+    }
+  } catch { /* ignore */ }
+  return probe
+}
+
+/** 用 rAF 采样估算显示器刷新率与实际 FPS（约 1.5 秒）。返回后回调写入 probe。 */
+export function measureRefresh(onDone?: (hz: number, fps: number) => void): void {
+  if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') return
+  const stamps: number[] = []
+  let n = 0
+  const t0 = performance.now()
+  const tick = (ts: number): void => {
+    stamps.push(ts)
+    n++
+    if (performance.now() - t0 < 1500 && n < 400) requestAnimationFrame(tick)
+    else {
+      const dts: number[] = []
+      for (let i = 1; i < stamps.length; i++) dts.push(stamps[i] - stamps[i - 1])
+      dts.sort((a, b) => a - b)
+      const median = dts.length ? dts[Math.floor(dts.length / 2)] : 0
+      const hz = median > 0 ? Math.round(1000 / median) : 0
+      const span = stamps.length > 1 ? stamps[stamps.length - 1] - stamps[0] : 0
+      const fps = span > 0 ? Math.round(((stamps.length - 1) / span) * 1000) : 0
+      lastEnvProbe.refreshHz = hz
+      lastEnvProbe.measuredFps = fps
+      onDone?.(hz, fps)
+    }
+  }
+  requestAnimationFrame(tick)
+}
+
+/** 最近一次环境探测结果（collectEnv/probeEnvironment 会更新它） */
+const lastEnvProbe: DiagEnvProbe = {
+  refreshHz: 0, measuredFps: 0, webglRenderer: 'unknown', canvasAccel: 'unknown',
+  cores: 0, deviceMemory: -1, batterySaver: false, visibility: 'unknown', dpr: 1, viewport: 'n/a',
+}
+
+export function getEnvProbe(): DiagEnvProbe {
+  return { ...lastEnvProbe }
 }
 
 function collectEnv(): Record<string, unknown> {
@@ -398,6 +520,8 @@ export function diagFrames(): FrameRec[] {
 export interface DiagReport {
   generatedAt: string
   env: Record<string, unknown>
+  /** 真机环境探测：刷新率/实际FPS/GPU 渲染器/加速状态 —— 判断是否软件渲染的关键 */
+  envProbe: DiagEnvProbe
   stats: typeof diagStats & {
     busyP50: number
     busyP95: number
@@ -431,6 +555,7 @@ export function buildReport(): DiagReport {
   return {
     generatedAt: new Date().toISOString(),
     env: collectEnv(),
+    envProbe: { ...lastEnvProbe },
     stats: {
       ...diagStats,
       busyP50: Math.round(percentile(buses, 0.5) * 1000) / 1000,
@@ -453,6 +578,24 @@ export function reportToText(rep = buildReport()): string {
   lines.push('=== SkyBlast 2D 诊断日志 ===')
   lines.push(`时间: ${rep.generatedAt}`)
   lines.push(`环境: ${JSON.stringify(rep.env)}`)
+  const ep = rep.envProbe
+  if (ep) {
+    lines.push('')
+    lines.push('--- 真机环境探测（判断是否软件渲染/是否掉帧的关键） ---')
+    lines.push(`显示器刷新率: ${ep.refreshHz}Hz  ·  实测 rAF FPS: ${ep.measuredFps}`)
+    lines.push(`WebGL 渲染器: ${ep.webglRenderer}`)
+    lines.push(`Canvas 加速: ${ep.canvasAccel}`)
+    lines.push(`CPU 核心 ${ep.cores} · 内存 ${ep.deviceMemory}GB · DPR ${ep.dpr} · 视口 ${ep.viewport}`)
+    lines.push(`省电模式: ${ep.batterySaver ? '开（会限制 rAF）' : '关'} · 可见性: ${ep.visibility}`)
+    const soft = /swiftshader|software|llvmpipe|basic render/i.test(ep.webglRenderer)
+    if (soft) {
+      lines.push('⚠️ 检测到软件渲染（无 GPU 加速）：画面卡顿源于浏览器/驱动未启用硬件加速，')
+      lines.push('   不是游戏代码问题。请在浏览器设置里开启"使用硬件加速"，或更新显卡驱动。')
+    }
+    if (ep.refreshHz > 0 && ep.measuredFps > 0 && ep.measuredFps < ep.refreshHz * 0.85) {
+      lines.push(`⚠️ 实测 FPS(${ep.measuredFps}) 明显低于刷新率(${ep.refreshHz})：存在掉帧。`)
+    }
+  }
   lines.push('')
   lines.push(`采样: ${s.frames} 帧 / ${s.durationSec}s，平均 ${s.fpsAvg} FPS`)
   lines.push(`掉帧计数: >24ms ${s.gapsOver24} 次，>50ms ${s.gapsOver50} 次，>100ms ${s.gapsOver100} 次`)
