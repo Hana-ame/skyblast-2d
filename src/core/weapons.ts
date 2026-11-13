@@ -90,7 +90,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
-    damage: 33, headshotMult: 2.2, pellets: 1, spread: 0.045, grazeDamageMin: 27,   // 命中主体正中最高 33；擦边按几何质量线性降到 27
+    damage: 33, headshotMult: 2.2, pellets: 1, spread: 0.06, grazeDamageMin: 27,   // 命中主体正中最高 33；擦边按几何质量线性降到 27；散布 0.045->0.06（3.44°）：近距 150px 仍必中，300px 命中率约 74%->56%，仍明显准于 M249(0.11)/手枪(0.09)
     speed: 1500, recoil: 84, magSize: 30, maxReserve: 90,    // 30/90
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',

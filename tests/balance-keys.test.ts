@@ -168,3 +168,23 @@ test('逐武器「移动倍率 / 飞行容量倍率」确实进入物理计算�
   assert.ok(/fuelMax = getPhysicsParams\(\)\.jetpackFuel \* \(wepCur\.fuelMult \?\? 1\)/.test(world),
     'world.ts 必须用 fuelMult 缩放飞行容量上限')
 })
+
+test('突击步枪散布：0.06 且处于「比精准枪松、比机枪紧」的合理区间', () => {
+  const rifle = WEAPONS[1]
+  const m249 = WEAPONS[5]
+  const pistol = WEAPONS[7]
+  const sniper = WEAPONS[2]
+
+  assert.equal(rifle.name, '突击步枪')
+  assert.equal(rifle.spread, 0.06, '突击步枪散布应为 0.06（3.44°）')
+
+  // 排序不变量：狙击 < 突击步枪 < 手枪 / M249
+  assert.ok(sniper.spread! < rifle.spread!, `狙击(${sniper.spread}) 必须比突击步枪(${rifle.spread}) 精准`)
+  assert.ok(rifle.spread! < m249.spread!, `突击步枪(${rifle.spread}) 必须比 M249(${m249.spread}) 精准`)
+  assert.ok(rifle.spread! < pistol.spread!, `突击步枪(${rifle.spread}) 必须比手枪(${pistol.spread}) 精准`)
+
+  // 近距不至于打不中：150px 处最大横向偏移应小于身体半宽（10px）
+  const bodyHalfW = 10
+  const offset150 = 150 * Math.tan(rifle.spread! / 2)
+  assert.ok(offset150 < bodyHalfW, `150px 处偏移 ±${offset150.toFixed(1)}px 应小于身体半宽 ${bodyHalfW}px（近距必须可靠）`)
+})
