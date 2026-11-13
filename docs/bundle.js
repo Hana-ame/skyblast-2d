@@ -3840,7 +3840,7 @@
     }
   }
   var canvas = document.getElementById("gameCanvas");
-  var ctx = canvas ? canvas.getContext("2d") : null;
+  var ctx = canvas ? canvas.getContext("2d", { alpha: false, desynchronized: true }) : null;
   var camera = { x: 6600, y: 1500, fovFactor: 1 };
   var screenFx = { shake: 0 };
   var resizeDebounceMs = 120;

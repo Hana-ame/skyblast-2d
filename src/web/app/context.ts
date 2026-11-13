@@ -66,7 +66,14 @@ export function resetAllFeatureFlags(): void {
 
 // ── 画布与相机 ──
 export const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement
-export const ctx = canvas ? canvas.getContext('2d')! : null
+// 关键性能参数：
+//  - alpha:false —— 游戏每帧都整屏不透明绘制（先铺天空渐变再画内容），透明通道毫无用处，
+//    开着会让合成器每帧多做一次全屏 alpha 混合。关掉可省一遍全屏处理。
+//  - desynchronized:true —— 允许绕过部分合成同步，降低输入到显示的延迟（真机更明显）。
+// 两者都只在创建时生效，故必须在首次 getContext 时传入。
+export const ctx = canvas
+  ? canvas.getContext('2d', { alpha: false, desynchronized: true })
+  : null
 export const camera = { x: 6600, y: 1500, fovFactor: 1.0 }
 export const screenFx = { shake: 0 }
 
