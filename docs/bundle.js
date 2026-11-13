@@ -13249,6 +13249,11 @@
     window.setInterval(() => {
       const now = performance.now();
       if (document.hidden || now - lastFrame > 120 && netState.role !== "offline") {
+        diagMark("keepalive-takeover", {
+          sinceLastFrameMs: Math.round(now - lastFrame),
+          hidden: typeof document !== "undefined" && document.hidden ? 1 : 0,
+          role: netState.role
+        });
         stepLoopTick(now, false);
       }
     }, 32);

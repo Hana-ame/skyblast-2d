@@ -323,6 +323,13 @@ export function startGameLoop(): void {
   window.setInterval(() => {
     const now = performance.now()
     if (document.hidden || (now - lastFrame > 120 && netState.role !== 'offline')) {
+      // 记录保活接管：真机上如果频繁出现这条标记，说明 rAF 被长时间挂起，
+      // 而 keepalive 与 rAF 的交替接管本身会放大顿挫（两个时钟争抢同一条推进路径）。
+      diagMark('keepalive-takeover', {
+        sinceLastFrameMs: Math.round(now - lastFrame),
+        hidden: typeof document !== 'undefined' && document.hidden ? 1 : 0,
+        role: netState.role,
+      })
       stepLoopTick(now, false)
     }
   }, 32)

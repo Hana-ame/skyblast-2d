@@ -66,6 +66,14 @@ input, select, textarea {
   display: block;
   cursor: crosshair;
   z-index: 1;
+  /* 把 canvas 提升为独立合成层，并隔离其内部布局/绘制影响范围。
+     canvas 每帧整屏重绘；若与上层 HUD（血条、小地图、击杀播报）同层，
+     那些 DOM 元素一变化就会连带 canvas 区域一起重新合成。
+     contain:layout paint 让浏览器知道 canvas 内部的绘制不外溢、外部变化也不影响它；
+     will-change:transform 提示合成器为它单独建层。
+     两者都不改变尺寸（尺寸仍由 100vw/100vh 决定），因此不影响现有布局。 */
+  contain: layout paint;
+  will-change: transform;
 }
 #igeCanvas {
   width: 100%;
