@@ -39,9 +39,6 @@ export interface WeaponDef {
   /** 逐发装填：true 时每次只装 1 发，单发耗时 = reloadTime / magSize；
    *  装填完一发即可击发（霰弹枪）。false/缺省 = 一次性装满整匣。 */
   shellReload?: boolean
-  /** 逐发装填武器「边装边打」时的射击间隔倍率（>1 更慢）。
-   *  满弹匣时用 fireDelay；装填中开枪则用 fireDelay * 本值。缺省 1。 */
-  shellReloadFireDelayMult?: number
   /** 爆炸衰减指数（默认 1 = 线性）。越大越陡：近爆点保持高伤，稍远迅速衰减。
    *  只影响玩家伤害的半径衰减，不改爆炸范围 terrainRadius。 */
   blastFalloffExponent?: number
@@ -83,8 +80,10 @@ export const WEAPONS: WeaponDef[] = [
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
     damage: 24, headshotMult: 1.0, pellets: 8, spread: 0.24, grazeDamageMin: 20, shellReload: true,   // 伤害=手枪弹；每颗弹丸独立擦边；逐发装填
     speed: 1000, recoil: 1560, magSize: 8, maxReserve: 72,   // 后坐力 ×2
-    // 满匣射击间隔 0.42s（原 0.58s）；「边装边打」保持原 0.87s 不变 → 倍率 0.87/0.42≈2.0714
-    reloadTime: 1.5, fireDelay: 0.42, shellReloadFireDelayMult: 2.0714285714285716, terrainRadius: 12,
+    // 射击间隔 0.42s；装填单发 1.5/8=0.1875s。二者是唯一决定节奏的两个量：
+    // 弹匣内有弹时「打-打」= 0.42s，打空后「打-装填-打」= 0.42 + 0.1875 ≈ 0.61s，
+    // 自然满足「打-装填-打 比 打-打 长」，无需任何额外倍率。
+    reloadTime: 1.5, fireDelay: 0.42, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
     falloffStart: 200, falloffEnd: 700, falloffMin: 0.45,   // 霰弹随距离衰减（中距仍可用）
     traitDesc: '近距高伤 · 全中致死',

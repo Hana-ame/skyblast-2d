@@ -1101,11 +1101,12 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   assert.ok(w2.projectiles.length - projBefore >= shotgun.pellets,
     `firing one shell produces ${shotgun.pellets} pellets, got ${w2.projectiles.length - projBefore}`)
 
-  // ③ 开火打断换弹后，弹匣里还有存货 → 松手也不会自动续装（只有打空才重新开始换弹）
+  // ③ 逐发装填的霰弹：只要弹匣未满且有备弹就继续装填（装满 magSize 才停）。
+  //    注意：没有「打空才装」这条额外机制——那不是三个机制之一。
   const ammoAfterFire = q.ammo[0]
-  for (let i = 0; i < 300; i++) w2.step(DT, new Map([[q.id, input()]]))
-  assert.equal(q.ammo[0], ammoAfterFire, `no auto top-up while shells remain (${ammoAfterFire})`)
-  assert.equal(q.reloading, false, 'reload stays interrupted until the magazine is empty')
+  for (let i = 0; i < 900; i++) w2.step(DT, new Map([[q.id, input()]]))
+  assert.equal(q.ammo[0], shotgun.magSize, `shell-by-shell reload keeps loading until the tube is full (${ammoAfterFire} -> ${q.ammo[0]})`)
+  assert.equal(q.reloading, false, 'reload stops once the tube is full')
 
   // ④ 按下射击立刻停止换弹；打空后重新开始换弹
   const w3 = new World(47002, { name: 'shell-interrupt', solids: [] })
@@ -1119,8 +1120,13 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   for (let i = 0; i < 40; i++) w3.step(DT, new Map([[r.id, input()]]))
   assert.ok(r.ammo[0] > 0, `shells loaded before firing (ammo=${r.ammo[0]})`)
   assert.equal(r.reloading, true, 'still reloading before the shot')
+  const ammoBeforeShot = r.ammo[0]
   w3.step(DT, new Map([[r.id, input({ fire: true, aim: 0 })]]))
-  assert.equal(r.reloading, false, 'pressing fire interrupts the shell reload')
+  assert.equal(r.ammo[0], ammoBeforeShot - 1, 'the shot consumes exactly one shell')
+  // 击发会中断当前这次单发装填，并立即为下一发重新开始装填（弹匣未满 + 有备弹）。
+  // 这正是「打-装填-打」节奏的来源：每次开火后紧接着开始装填下一发。
+  assert.equal(r.reloadTimer, r.reloadTimer, 'sanity')
+  assert.equal(r.reloading, true, 'firing restarts the shell reload for the next shell')
   // 打空后应重新开始换弹
   for (let i = 0; i < 400; i++) {
     w3.step(DT, new Map([[r.id, input({ fire: true, aim: 0 })]]))
@@ -1825,51 +1831,82 @@ test('guard: mobile PWA installable and auto fullscreen landscape support', asyn
 })
 
 // ── 第三阶段深度代码审查与升级修复回归护栏 ──
-test('护栏·霰弹边装边打射速惩罚生效：满匣射击间隔 0.42s，打断换弹或空仓边装边打完整周期 0.87s', () => {
+test('护栏·霰弹节奏由三个机制决定：逐发装填 + 装填时间 + 开火间隔（无额外倍率）', () => {
   const shotgun = WEAPONS[0]
-  assert.equal(shotgun.fireDelay, 0.42)
-  assert.ok(Math.abs(shotgun.fireDelay * (shotgun.shellReloadFireDelayMult ?? 1) - 0.87) < 1e-6)
+  // 只允许存在这三个量决定节奏，不许再有 shellReloadFireDelayMult 之类的额外机制
+  assert.equal(shotgun.fireDelay, 0.42, '开火间隔')
+  assert.equal(shotgun.reloadTime, 1.5, '整匣装填时间')
+  assert.equal(shotgun.magSize, 8, '逐发装填的弹匣容量')
+  assert.equal(shotgun.shellReload, true, '逐发装填开关')
+  assert.ok(!('shellReloadFireDelayMult' in shotgun), '不得再引入额外射速倍率机制')
 
-  // 1) 满匣正常射击（未处于换弹状态）：射击冷却严格为 0.42s
-  const wFull = new World(71001, { name: 'shotgun-full-delay', solids: [] })
-  wFull.config.randomSpawn = false
-  const pFull = wFull.addPlayer('FullShooter', 'ffa')
-  pFull.weaponIndex = 0
-  pFull.ammo[0] = 8
-  pFull.reserveAmmo[0] = 72
-  wFull.step(DT, new Map([[pFull.id, input({ fire: true, aim: 0 })]]))
-  assert.ok(Math.abs(pFull.fireCooldown - 0.42) < 1e-6, `full-mag shot fireCooldown should be 0.42s, got ${pFull.fireCooldown}`)
+  const perShell = shotgun.reloadTime / shotgun.magSize   // 0.1875s
 
-  // 2) 半匣换弹中途按开火打断换弹（边装边打）：射击冷却应用 shellReloadFireDelayMult 惩罚为 0.87s
-  const wInterrupt = new World(71002, { name: 'shotgun-interrupt-delay', solids: [] })
-  wInterrupt.config.randomSpawn = false
-  const pInt = wInterrupt.addPlayer('IntShooter', 'ffa')
-  pInt.weaponIndex = 0
-  pInt.ammo[0] = 3
-  pInt.reserveAmmo[0] = 72
-  wInterrupt.startReload(pInt)
-  assert.equal(pInt.reloading, true)
-  wInterrupt.step(DT, new Map([[pInt.id, input({ fire: true, aim: 0 })]]))
-  assert.equal(pInt.reloading, false, 'shell reload interrupted by firing')
-  assert.ok(Math.abs(pInt.fireCooldown - 0.87) < 1e-6, `interrupting shell reload should apply 0.87s cooldown, got ${pInt.fireCooldown}`)
-
-  // 3) 空仓按住开火（打空最后 1 发 -> 冷却 -> 塞 1 发 -> 击发）：两次击发之间的总耗时应约为 0.87s
-  const wCycle = new World(71003, { name: 'shotgun-empty-cycle', solids: [] })
-  wCycle.config.randomSpawn = false
-  const pCyc = wCycle.addPlayer('CycleShooter', 'ffa')
-  pCyc.weaponIndex = 0
-  pCyc.ammo[0] = 1
-  pCyc.reserveAmmo[0] = 72
-  wCycle.step(DT, new Map([[pCyc.id, input({ fire: true, aim: 0 })]]))
-  wCycle.drainEvents()
-  let ticksToNextShot = 0
-  for (let i = 0; i < 90; i++) {
-    wCycle.step(DT, new Map([[pCyc.id, input({ fire: true, aim: 0 })]]))
-    ticksToNextShot++
-    if (wCycle.drainEvents().some(e => e.kind === 'projectile_spawn')) break
+  /** 按住开火 ticks 帧，返回每次击发的时刻（秒） */
+  function fireTimes(seed: number, ammo: number, ticks = 300, pre?: (w: World, p: any) => void): number[] {
+    const w = new World(seed, { name: 'shotgun-cadence', solids: [] })
+    w.config.randomSpawn = false
+    w.terrain.grid.fill(0)
+    const p = w.addPlayer('S', 'ffa')
+    p.weaponIndex = 0
+    p.ammo[0] = ammo
+    p.reserveAmmo[0] = 72
+    p.pos = { x: 6600, y: 3200 }
+    pre?.(w, p)
+    const out: number[] = []
+    let t = 0
+    for (let i = 0; i < ticks; i++) {
+      w.step(DT, new Map([[p.id, input({ fire: true, aim: 0 })]]))
+      t += DT
+      if (w.drainEvents().some(e => e.kind === 'projectile_spawn')) out.push(t)
+    }
+    return out
   }
-  const cycleSeconds = ticksToNextShot * DT
-  assert.ok(Math.abs(cycleSeconds - 0.87) <= 0.04, `empty-mag shell-reload fire cycle should be ~0.87s, got ${cycleSeconds.toFixed(3)}s`)
+  const gapsOf = (ts: number[]) => ts.slice(1).map((x, i) => x - ts[i])
+
+  // 1) 打-打：满匣连射，间隔严格等于 fireDelay
+  const fullGaps = gapsOf(fireTimes(81001, 8, 200))
+  assert.ok(fullGaps.length > 5, '满匣应能连续击发多次')
+  const fullSteady = fullGaps.slice(0, 6)            // 前 6 发都在满匣内（8 发）
+  for (const g of fullSteady) {
+    assert.ok(Math.abs(g - shotgun.fireDelay) <= DT + 1e-6,
+      `打-打 间隔应≈fireDelay(${shotgun.fireDelay}s)，实测 ${g.toFixed(3)}s`)
+  }
+
+  // 2) 打-装填-打：打空 1 发后，间隔 = fireDelay + 单发装填时间
+  const emptyGaps = gapsOf(fireTimes(81002, 1, 300))
+  assert.ok(emptyGaps.length > 5, '空匣持续开火应持续击发')
+  const expectCycle = shotgun.fireDelay + perShell
+  for (const g of emptyGaps.slice(0, 6)) {
+    assert.ok(Math.abs(g - expectCycle) <= 2 * DT + 1e-6,
+      `打-装填-打 间隔应≈fireDelay+单发装填=${expectCycle.toFixed(3)}s，实测 ${g.toFixed(3)}s`)
+  }
+
+  // 3) 核心不变量：打-装填-打 必须严格长于 打-打
+  const fullAvg = fullSteady.reduce((a, b) => a + b, 0) / fullSteady.length
+  const emptyAvg = emptyGaps.slice(0, 6).reduce((a, b) => a + b, 0) / 6
+  assert.ok(emptyAvg > fullAvg + perShell * 0.8,
+    `打-装填-打(${emptyAvg.toFixed(3)}s) 必须显著长于 打-打(${fullAvg.toFixed(3)}s)，差值应≈单发装填 ${perShell.toFixed(3)}s`)
+
+  // 4) 装填确实逐发进行，不是一次性装满
+  const w2 = new World(81004, { name: 'shotgun-shells', solids: [] })
+  w2.config.randomSpawn = false
+  w2.terrain.grid.fill(0)
+  const p2 = w2.addPlayer('Shell', 'ffa')
+  p2.weaponIndex = 0
+  p2.ammo[0] = 0
+  p2.reserveAmmo[0] = 72
+  p2.pos = { x: 6600, y: 3200 }
+  w2.startReload(p2)
+  let shellsAfterOne = -1
+  for (let i = 0; i < 20; i++) {
+    w2.step(DT, new Map([[p2.id, input({})]]))
+    if (p2.ammo[0] >= 1) { shellsAfterOne = i + 1; break }
+  }
+  assert.ok(shellsAfterOne > 0, '装填应逐发装入')
+  assert.equal(p2.ammo[0], 1, `单发装填耗时到点只应装入 1 发，实测 ${p2.ammo[0]} 发`)
+  assert.ok(Math.abs(shellsAfterOne * DT - perShell) <= 2 * DT,
+    `单发装填耗时应≈${perShell.toFixed(3)}s，实测 ${(shellsAfterOne * DT).toFixed(3)}s`)
 })
 
 test('护栏·设施占用安全释放：瞭望塔/迫击炮在玩家阵亡、替身人偶回溯、断线移除与重置对局时绝不死锁', () => {
@@ -1953,11 +1990,11 @@ test('护栏·智能AI战术开关(smartBotTactics)与自定义地图/平衡参�
 
   // 2) 新增平衡性参数可被 sanitizeOverrides 正确识别与夹取
   const ov = sanitizeOverrides({
-    weapons: { 0: { shellReloadFireDelayMult: 2.2, grazeDamageMin: 20 }, 3: { blastFalloffExponent: 2.0 } },
+    weapons: { 0: { fireDelay: 0.5, grazeDamageMin: 20 }, 3: { blastFalloffExponent: 2.0 } },
     config: { shieldHp: 140, shieldDuration: 6, obstacleDefaultHp: 300, teleportCastTime: 0.5 },
   })
   assert.ok(ov)
-  assert.equal(ov!.weapons!['0'].shellReloadFireDelayMult, 2.2)
+  assert.equal(ov!.weapons!['0'].fireDelay, 0.5)
   assert.equal(ov!.weapons!['0'].grazeDamageMin, 20)
   assert.equal(ov!.weapons!['3'].blastFalloffExponent, 2.0)
   assert.equal(ov!.config!.shieldHp, 140)

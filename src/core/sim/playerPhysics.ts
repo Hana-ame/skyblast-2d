@@ -510,17 +510,11 @@ export function predictLocalPlayerStep(
   if (!mountedMortar && w.fire && (wepCur.chargeSeconds ?? 0) <= 0 && !wepCur.beam) {
     const canFireWhileReloading = !!wepCur.shellReload && (p.ammo[p.weaponIndex] ?? 0) > 0
     if ((!p.reloading || canFireWhileReloading) && p.fireCooldown <= 0 && (p.ammo[p.weaponIndex] ?? 0) > 0) {
-      const wasShellReloading = !!(wepCur.shellReload && p.reloading)
-      if (wasShellReloading) { p.reloading = false; p.reloadTimer = 0 }
+      // 与 World.fire 严格同构：击发中断装填，开火间隔只取 fireDelay，
+      // 不引入 shellReloadFireDelayMult 之类的额外倍率。
+      if (wepCur.shellReload && p.reloading) { p.reloading = false; p.reloadTimer = 0 }
       p.ammo[p.weaponIndex] = Math.max(0, (p.ammo[p.weaponIndex] ?? 0) - 1)
-      const enteringShellReload = !!(wepCur.shellReload && p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0)
-      if (wepCur.shellReload && (wasShellReloading || enteringShellReload) && (wepCur.shellReloadFireDelayMult ?? 1) > 1) {
-        const perShell = wepCur.reloadTime / Math.max(1, wepCur.magSize)
-        const targetCycle = wepCur.fireDelay * (wepCur.shellReloadFireDelayMult ?? 1)
-        p.fireCooldown = enteringShellReload ? Math.max(wepCur.fireDelay, targetCycle - perShell) : targetCycle
-      } else {
-        p.fireCooldown = wepCur.fireDelay
-      }
+      p.fireCooldown = wepCur.fireDelay
       if (wepCur.recoil > 0) {
         const rk = recoilDelta(wepCur.recoil, p.aim)
         if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }

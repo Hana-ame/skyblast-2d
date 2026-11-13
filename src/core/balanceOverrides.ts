@@ -16,7 +16,7 @@ export interface BalanceOverrides {
 
 export const WEAPON_NUMERIC_KEYS: (keyof WeaponDef)[] = [
   'damage', 'grazeDamageMin', 'headshotMult', 'pellets', 'spread', 'speed', 'recoil',
-  'magSize', 'maxReserve', 'reloadTime', 'fireDelay', 'shellReloadFireDelayMult', 'terrainRadius', 'blastFalloffExponent',
+  'magSize', 'maxReserve', 'reloadTime', 'fireDelay', 'terrainRadius', 'blastFalloffExponent',
   'gravityScale', 'bounces', 'dragPerSecond', 'chargeSeconds',
   'damagePerSecond', 'ammoPerSecond',
   'moveSpeedMult', 'fuelMult', 'ascendMult', 'fovMult',
@@ -41,7 +41,7 @@ const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.m
 const WEAPON_BOUNDS: Partial<Record<keyof WeaponDef, [number, number]>> = {
   damage: [0, 2000], grazeDamageMin: [0, 2000], headshotMult: [0.5, 10], pellets: [1, 32], spread: [0, 1.5],
   speed: [50, 10000], recoil: [0, 5000], magSize: [1, 500], maxReserve: [0, 2000],
-  reloadTime: [0.05, 30], fireDelay: [0, 10], shellReloadFireDelayMult: [1, 5], terrainRadius: [0, 400], blastFalloffExponent: [0.5, 5],
+  reloadTime: [0.05, 30], fireDelay: [0, 10], terrainRadius: [0, 400], blastFalloffExponent: [0.5, 5],
   gravityScale: [0, 5], bounces: [0, 16], dragPerSecond: [0.05, 1], chargeSeconds: [0, 5],
   damagePerSecond: [0, 5000], ammoPerSecond: [0.1, 200],
   moveSpeedMult: [0.1, 5], fuelMult: [0.1, 5], ascendMult: [0.1, 5], fovMult: [1, 2],

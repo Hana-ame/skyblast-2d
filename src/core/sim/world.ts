@@ -421,12 +421,13 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
     stepPlayerTeleport(this, p, dt)
 
-    const interruptedShellReload = !!(w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0)
-    if (interruptedShellReload) {
-      p.reloading = false; p.reloadTimer = 0
-    }
-
     if (p.reloading) {
+      // 逐发装填的武器在开火冷却期间不推进装填计数器：
+      // 这样「打 -> 等冷却 -> 装填 -> 打」的装填时间是真正额外叠加的，
+      // 使「打-装填-打」必然长于「打-打」。三个机制各自独立、互不抵消：
+      //   1) fireDelay      决定连续射击的间隔
+      //   2) reloadTime/mag 决定单发装填耗时
+      //   3) shellReload    决定逐发装填并允许装填中击发
       if (!wepCur.shellReload || p.fireCooldown <= 0) p.reloadTimer -= dt
       if (p.reloadTimer <= 0) {
         const wep = WEAPONS[p.weaponIndex]
@@ -484,16 +485,16 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (p.chargeTimer > 0) {
         if (w.trackChargeAim) p.chargeAim = p.aim; p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
-          this.fire(p, interruptedShellReload); p.chargeTimer = 0; p.chargeAim = undefined
+          this.fire(p); p.chargeTimer = 0; p.chargeAim = undefined
         }
       }
     } else if (w.fire) {
-      this.fire(p, interruptedShellReload)
+      this.fire(p)
     }
     p.prevFireHeld = w.fire
   }
 
-  private fire(p: PlayerState, interruptedShellReload = false): void {
+  private fire(p: PlayerState): void {
     if (p.respawnTimer > 0 || !p.alive) return
     const m = this.mortars.find(mm => mm.operatorId === p.id)
     if (m) {
@@ -519,20 +520,21 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
       return
     }
-    const wasShellReloading = !!(wep.shellReload && (p.reloading || interruptedShellReload))
+    // 逐发装填：击发会中断正在进行的装填（下次开火若弹匣未满会重新开始装填）。
     if (wep.shellReload && p.reloading) {
       p.reloading = false; p.reloadTimer = 0
     }
     p.ammo[p.weaponIndex]--
-    const enteringShellReload = !!(wep.shellReload && p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0)
-    if (wep.shellReload && (wasShellReloading || enteringShellReload) && (wep.shellReloadFireDelayMult ?? 1) > 1) {
-      const perShell = wep.reloadTime / Math.max(1, wep.magSize)
-      const targetCycle = wep.fireDelay * (wep.shellReloadFireDelayMult ?? 1)
-      p.fireCooldown = enteringShellReload ? Math.max(wep.fireDelay, targetCycle - perShell) : targetCycle
-    } else {
-      p.fireCooldown = wep.fireDelay
-    }
-    if (enteringShellReload) this.startReload(p)
+    // 开火间隔只由 fireDelay 决定。装填对间隔的额外影响不在这里硬编码：
+    // 装填期间 reloadTimer 按「装填时间」推进，而装填进行中开火间隔又被
+    // fireDelay 与「装填未完成」共同约束，两者叠加自然使
+    // 「打-装填-打」长于「打-打」。不要引入任何额外倍率。
+    p.fireCooldown = wep.fireDelay
+    // 自动装填：逐发装填的霰弹只要没打满就继续装；其他武器打空才装。
+    const needReload = wep.shellReload
+      ? p.ammo[p.weaponIndex] < wep.magSize
+      : p.ammo[p.weaponIndex] <= 0
+    if (needReload && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {
       const rk = recoilDelta(wep.recoil, p.aim)
