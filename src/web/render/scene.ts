@@ -357,8 +357,9 @@ export function renderScene(): void {
   for (let i = 0; i < world.landmines.length; i++) {
     const m = world.landmines[i]
     if (m.respawnTimer > 0) continue
-    const mx = sx(m.pos.x)
-    const my = sy(m.pos.y)
+    const rm = getRenderPos('m', m.id, m.pos.x, m.pos.y)
+    const mx = sx(rm.x)
+    const my = sy(rm.y)
     if (!inView(mx, my)) continue
     drawMineSprite(ctx, m, mx, my, world.tick, world.config.mineTriggerRadius)
   }
@@ -396,7 +397,7 @@ export function renderScene(): void {
 
     // 高刷屏渲染插值：用上一 tick 与当前 tick 之间的中间位置，
     // 避免 58% 的帧里角色完全静止、其余帧一次跳 4px 的顿挫感。
-    const rp = getRenderPos(p.id, p.pos.x, p.pos.y)
+    const rp = getRenderPos('p', p.id, p.pos.x, p.pos.y)
     const px = sx(rp.x)
     const py = sy(rp.y)
     if (!inView(px, py)) continue
@@ -607,22 +608,26 @@ export function renderScene(): void {
   // 12. 手雷 / 弹丸 / 空袭信标
   for (let i = 0; i < world.grenades.length; i++) {
     const g = world.grenades[i]
-    const gx = sx(g.pos.x)
-    const gy = sy(g.pos.y)
+    const rg = getRenderPos('g', g.id, g.pos.x, g.pos.y)
+    const gx = sx(rg.x)
+    const gy = sy(rg.y)
     if (!inView(gx, gy)) continue
     drawGrenadeSprite(ctx, g, gx, gy, world.tick)
   }
   for (let i = 0; i < world.projectiles.length; i++) {
     const pr = world.projectiles[i]
-    const px = sx(pr.pos.x)
-    const py = sy(pr.pos.y)
+    // 弹丸速度可达 780px/s：60Hz 逻辑下一步跳 13px，144Hz 下必须插值才连贯
+    const rpr = getRenderPos('pr', pr.id, pr.pos.x, pr.pos.y)
+    const px = sx(rpr.x)
+    const py = sy(rpr.y)
     if (!inView(px, py, 200)) continue
     drawProjectileSprite(ctx, pr, px, py, world.tick)
   }
   for (let i = 0; i < world.airstrikes.length; i++) {
     const st = world.airstrikes[i]
-    const ax = sx(st.pos.x)
-    const ay = sy(st.pos.y)
+    const rst = getRenderPos('as', st.id, st.pos.x, st.pos.y)
+    const ax = sx(rst.x)
+    const ay = sy(rst.y)
     if (!inView(ax, ay, 60)) continue
     drawAirstrikeSprite(ctx, st, ax, ay, world.tick)
   }

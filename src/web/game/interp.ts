@@ -11,16 +11,27 @@
 
 export interface InterpPos { x: number; y: number }
 
-/** 单帧渲染用的位置覆盖表：id -> 插值后位置（世界坐标） */
-const posOverlay = new Map<number, InterpPos>()
-/** 上一 tick 记录的位置快照：id -> {x,y} */
-const prevPos = new Map<number, InterpPos>()
+/** 单帧渲染用的位置覆盖表：key -> 插值后位置（世界坐标） */
+const posOverlay = new Map<string, InterpPos>()
+/** 上一 tick 记录的位置快照：key -> {x,y} */
+const prevPos = new Map<string, InterpPos>()
+
+/**
+ * 实体类别。**必须**参与 key —— 各类实体的 id 空间互相独立且都从 1 开始
+ * （玩家 id 1..8、弹丸 id 也从 1 开始，且弹丸销毁后 id 会被复用），
+ * 只用数字 id 做 key 会让玩家与弹丸互相覆盖插值位置，画面直接错乱。
+ */
+export type InterpKind = 'p' | 'pr' | 'g' | 'm' | 'as'
 
 export interface InterpEntity {
   id: number
   pos: { x: number; y: number }
   /** 是否参与插值（弹丸/玩家等移动实体） */
   alive?: boolean
+}
+
+function keyOf(kind: InterpKind, id: number): string {
+  return kind + id
 }
 
 /**
@@ -31,21 +42,22 @@ export interface InterpEntity {
  * 若每次 clear 会把先写入的那一类抹掉，导致该类实体永远没有插值基准。
  * 改为按 id 覆盖 + 定期清理已不存在的 id（见 prunePrevPositions）。
  */
-export function capturePrevPositions(entities: ArrayLike<InterpEntity>): void {
+export function capturePrevPositions(kind: InterpKind, entities: ArrayLike<InterpEntity>): void {
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i]
     if (!e) continue
+    const key = keyOf(kind, e.id)
     // 复用对象避免每次分配
-    let slot = prevPos.get(e.id)
-    if (!slot) { slot = { x: 0, y: 0 }; prevPos.set(e.id, slot) }
+    let slot = prevPos.get(key)
+    if (!slot) { slot = { x: 0, y: 0 }; prevPos.set(key, slot) }
     slot.x = e.pos.x
     slot.y = e.pos.y
-    liveIds.add(e.id)
+    liveIds.add(key)
   }
 }
 
-/** 本轮捕获涉及到的 id（用于清理消失的实体，避免 prevPos 无限增长） */
-const liveIds = new Set<number>()
+/** 本轮捕获涉及到的 key（用于清理消失的实体，避免 prevPos 无限增长） */
+const liveIds = new Set<string>()
 
 /** 每帧所有类别都捕获完后调用：移除本帧未出现的 id */
 export function prunePrevPositions(): void {
@@ -60,21 +72,22 @@ export function prunePrevPositions(): void {
  * 在渲染之前调用：按 alpha (0..1) 在上一 tick 与当前 tick 位置之间插值，
  * 结果写入 posOverlay，渲染层通过 getRenderPos 读取。
  */
-export function buildPositionOverlay(entities: ArrayLike<InterpEntity>, alpha: number): void {
+export function buildPositionOverlay(kind: InterpKind, entities: ArrayLike<InterpEntity>, alpha: number): void {
   // 注意：这里**不能** clear —— 玩家与弹丸分两次调用，clear 会抹掉先计算的那一类。
   // 每帧开始时由 beginOverlayFrame() 统一清空。
   const a = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i]
     if (!e) continue
-    const prev = prevPos.get(e.id)
+    const key = keyOf(kind, e.id)
+    const prev = prevPos.get(key)
     if (!prev) continue
     // 传送/重生等大幅位移不做插值（否则会出现穿墙滑行）
     const dx = e.pos.x - prev.x
     const dy = e.pos.y - prev.y
     if (Math.abs(dx) > 400 || Math.abs(dy) > 400) continue
-    let slot = posOverlay.get(e.id)
-    if (!slot) { slot = { x: 0, y: 0 }; posOverlay.set(e.id, slot) }
+    let slot = posOverlay.get(key)
+    if (!slot) { slot = { x: 0, y: 0 }; posOverlay.set(key, slot) }
     slot.x = prev.x + dx * a
     slot.y = prev.y + dy * a
   }
@@ -86,15 +99,15 @@ export function beginOverlayFrame(): void {
 }
 
 /** 渲染时读取插值后的位置；没有覆盖则回退到实体真实位置 */
-export function getRenderPos(id: number, fallbackX: number, fallbackY: number): InterpPos {
-  const o = posOverlay.get(id)
+export function getRenderPos(kind: InterpKind, id: number, fallbackX: number, fallbackY: number): InterpPos {
+  const o = posOverlay.get(keyOf(kind, id))
   if (!o) return { x: fallbackX, y: fallbackY }
   return o
 }
 
 /** 是否有该 id 的插值覆盖 */
-export function hasRenderPos(id: number): boolean {
-  return posOverlay.has(id)
+export function hasRenderPos(kind: InterpKind, id: number): boolean {
+  return posOverlay.has(keyOf(kind, id))
 }
 
 /** 清空（换局/重置时用） */

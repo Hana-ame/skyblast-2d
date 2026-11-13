@@ -12448,18 +12448,22 @@
   // src/web/game/interp.ts
   var posOverlay = /* @__PURE__ */ new Map();
   var prevPos = /* @__PURE__ */ new Map();
-  function capturePrevPositions(entities) {
+  function keyOf(kind, id) {
+    return kind + id;
+  }
+  function capturePrevPositions(kind, entities) {
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
       if (!e) continue;
-      let slot2 = prevPos.get(e.id);
+      const key = keyOf(kind, e.id);
+      let slot2 = prevPos.get(key);
       if (!slot2) {
         slot2 = { x: 0, y: 0 };
-        prevPos.set(e.id, slot2);
+        prevPos.set(key, slot2);
       }
       slot2.x = e.pos.x;
       slot2.y = e.pos.y;
-      liveIds.add(e.id);
+      liveIds.add(key);
     }
   }
   var liveIds = /* @__PURE__ */ new Set();
@@ -12473,20 +12477,21 @@
     }
     liveIds.clear();
   }
-  function buildPositionOverlay(entities, alpha) {
+  function buildPositionOverlay(kind, entities, alpha) {
     const a = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
       if (!e) continue;
-      const prev = prevPos.get(e.id);
+      const key = keyOf(kind, e.id);
+      const prev = prevPos.get(key);
       if (!prev) continue;
       const dx = e.pos.x - prev.x;
       const dy = e.pos.y - prev.y;
       if (Math.abs(dx) > 400 || Math.abs(dy) > 400) continue;
-      let slot2 = posOverlay.get(e.id);
+      let slot2 = posOverlay.get(key);
       if (!slot2) {
         slot2 = { x: 0, y: 0 };
-        posOverlay.set(e.id, slot2);
+        posOverlay.set(key, slot2);
       }
       slot2.x = prev.x + dx * a;
       slot2.y = prev.y + dy * a;
@@ -12495,8 +12500,8 @@
   function beginOverlayFrame() {
     posOverlay.clear();
   }
-  function getRenderPos(id, fallbackX, fallbackY) {
-    const o = posOverlay.get(id);
+  function getRenderPos(kind, id, fallbackX, fallbackY) {
+    const o = posOverlay.get(keyOf(kind, id));
     if (!o) return { x: fallbackX, y: fallbackY };
     return o;
   }
@@ -12817,8 +12822,9 @@
     for (let i = 0; i < world.landmines.length; i++) {
       const m = world.landmines[i];
       if (m.respawnTimer > 0) continue;
-      const mx = sx(m.pos.x);
-      const my = sy(m.pos.y);
+      const rm = getRenderPos("m", m.id, m.pos.x, m.pos.y);
+      const mx = sx(rm.x);
+      const my = sy(rm.y);
       if (!inView(mx, my)) continue;
       drawMineSprite(ctx, m, mx, my, world.tick, world.config.mineTriggerRadius);
     }
@@ -12859,7 +12865,7 @@
           ctx.restore();
         }
       }
-      const rp = getRenderPos(p.id, p.pos.x, p.pos.y);
+      const rp = getRenderPos("p", p.id, p.pos.x, p.pos.y);
       const px = sx(rp.x);
       const py = sy(rp.y);
       if (!inView(px, py)) continue;
@@ -13082,22 +13088,25 @@
     }
     for (let i = 0; i < world.grenades.length; i++) {
       const g = world.grenades[i];
-      const gx = sx(g.pos.x);
-      const gy = sy(g.pos.y);
+      const rg = getRenderPos("g", g.id, g.pos.x, g.pos.y);
+      const gx = sx(rg.x);
+      const gy = sy(rg.y);
       if (!inView(gx, gy)) continue;
       drawGrenadeSprite(ctx, g, gx, gy, world.tick);
     }
     for (let i = 0; i < world.projectiles.length; i++) {
       const pr = world.projectiles[i];
-      const px = sx(pr.pos.x);
-      const py = sy(pr.pos.y);
+      const rpr = getRenderPos("pr", pr.id, pr.pos.x, pr.pos.y);
+      const px = sx(rpr.x);
+      const py = sy(rpr.y);
       if (!inView(px, py, 200)) continue;
       drawProjectileSprite(ctx, pr, px, py, world.tick);
     }
     for (let i = 0; i < world.airstrikes.length; i++) {
       const st = world.airstrikes[i];
-      const ax = sx(st.pos.x);
-      const ay = sy(st.pos.y);
+      const rst = getRenderPos("as", st.id, st.pos.x, st.pos.y);
+      const ax = sx(rst.x);
+      const ay = sy(rst.y);
       if (!inView(ax, ay, 60)) continue;
       drawAirstrikeSprite(ctx, st, ax, ay, world.tick);
     }
@@ -13316,8 +13325,11 @@
       const tStepsBegin = performance.now();
       const willStep = acc >= FIXED;
       if (willStep) {
-        capturePrevPositions(world.players);
-        capturePrevPositions(world.projectiles);
+        capturePrevPositions("p", world.players);
+        capturePrevPositions("pr", world.projectiles);
+        capturePrevPositions("g", world.grenades);
+        capturePrevPositions("m", world.landmines);
+        capturePrevPositions("as", world.airstrikes);
         prunePrevPositions();
       }
       while (acc >= FIXED && guard < 4) {
@@ -13398,8 +13410,11 @@
       if (shouldRender) {
         const interpAlpha = Math.max(0, Math.min(1, acc / FIXED));
         beginOverlayFrame();
-        buildPositionOverlay(world.players, interpAlpha);
-        buildPositionOverlay(world.projectiles, interpAlpha);
+        buildPositionOverlay("p", world.players, interpAlpha);
+        buildPositionOverlay("pr", world.projectiles, interpAlpha);
+        buildPositionOverlay("g", world.grenades, interpAlpha);
+        buildPositionOverlay("m", world.landmines, interpAlpha);
+        buildPositionOverlay("as", world.airstrikes, interpAlpha);
         updateCameraTracking(rawDt);
         const tRender = performance.now();
         const stepMs = tRender - tStepsBegin;

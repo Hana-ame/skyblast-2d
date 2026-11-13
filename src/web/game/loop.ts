@@ -225,8 +225,11 @@ export function startGameLoop(): void {
     // 第二次捕获会覆盖基准，导致插值落后一帧（画面比实际慢一步）。
     const willStep = acc >= FIXED
     if (willStep) {
-      capturePrevPositions(world.players)
-      capturePrevPositions(world.projectiles)
+      capturePrevPositions('p', world.players)
+      capturePrevPositions('pr', world.projectiles)
+      capturePrevPositions('g', world.grenades)
+      capturePrevPositions('m', world.landmines)
+      capturePrevPositions('as', world.airstrikes)
       prunePrevPositions()
     }
     while (acc >= FIXED && guard < 4) {
@@ -322,8 +325,11 @@ export function startGameLoop(): void {
       // 用 1 - acc/FIXED 会让 58% 的帧位置向后倒退，产生抖动。
       const interpAlpha = Math.max(0, Math.min(1, acc / FIXED))
       beginOverlayFrame()
-      buildPositionOverlay(world.players, interpAlpha)
-      buildPositionOverlay(world.projectiles, interpAlpha)
+      buildPositionOverlay('p', world.players, interpAlpha)
+      buildPositionOverlay('pr', world.projectiles, interpAlpha)
+      buildPositionOverlay('g', world.grenades, interpAlpha)
+      buildPositionOverlay('m', world.landmines, interpAlpha)
+      buildPositionOverlay('as', world.airstrikes, interpAlpha)
       // 相机跟随按「真实帧时间」平滑，而不是绑在固定 tick 上。
       // 原因：逻辑固定 60Hz，但高刷屏（如 143Hz）多数帧不会推进 tick，
       // 若相机只在 tick 内更新，60% 的帧相机纹丝不动、其余帧一次跳 1~6px，
