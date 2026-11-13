@@ -13178,7 +13178,7 @@
     }
     return w;
   }
-  function updateCameraTracking() {
+  function updateCameraTracking(dtSec = FIXED) {
     const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
     let mounted = false;
     for (let i = 0; i < world.mortars.length; i++) {
@@ -13188,12 +13188,14 @@
       }
     }
     const targetFov = localPlayer.mountedTowerId ? 2 : mounted ? 1 : wep.fovMult || 1;
-    camera.fovFactor += (targetFov - camera.fovFactor) * 0.12;
+    const fovK = 1 - Math.pow(1 - 0.12, Math.max(1e-3, dtSec) * 60);
+    camera.fovFactor += (targetFov - camera.fovFactor) * fovK;
     if (localPlayer.deployed) {
       const tx = localPlayer.pos.x;
       const ty = localPlayer.pos.y - 12;
-      camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2);
-      camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2);
+      const k = 1 - Math.pow(1 - 0.2, Math.max(1e-3, dtSec) * 60);
+      camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * k);
+      camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * k);
     }
   }
   function onLocalDeath() {
@@ -13327,11 +13329,11 @@
           beams[i].life -= FIXED;
           if (beams[i].life <= 0) beams.splice(i, 1);
         }
-        updateCameraTracking();
         acc -= FIXED;
         guard++;
       }
       if (shouldRender) {
+        updateCameraTracking(rawDt);
         const tRender = performance.now();
         const stepMs = tRender - tStepsBegin;
         renderScene();

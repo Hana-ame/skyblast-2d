@@ -128,7 +128,7 @@ function buildLocalInput(): WorldInput {
   return w
 }
 
-function updateCameraTracking(): void {
+function updateCameraTracking(dtSec = FIXED): void {
   const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
   let mounted = false
   for (let i = 0; i < world.mortars.length; i++) {
@@ -137,13 +137,19 @@ function updateCameraTracking(): void {
   const targetFov = localPlayer.mountedTowerId
     ? 2.0
     : (mounted ? 1.0 : (wep.fovMult || 1.0))
-  camera.fovFactor += (targetFov - camera.fovFactor) * 0.12
+  // 帧率无关的指数平滑：每 1/60 秒收敛比例约 0.12，换算成任意 dt
+  const fovK = 1 - Math.pow(1 - 0.12, Math.max(1e-3, dtSec) * 60)
+
+  camera.fovFactor += (targetFov - camera.fovFactor) * fovK
 
   if (localPlayer.deployed) {
     const tx = localPlayer.pos.x
     const ty = localPlayer.pos.y - 12
-    camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2)
-    camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2)
+    // 原每 tick 0.2 的收敛率 -> 每秒 60 次的等效指数平滑；
+    // 这里按真实帧时间换算，使 60Hz / 143Hz / 240Hz 下相机速度一致且逐帧连续。
+    const k = 1 - Math.pow(1 - 0.2, Math.max(1e-3, dtSec) * 60)
+    camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * k)
+    camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * k)
   }
 }
 
@@ -293,12 +299,17 @@ export function startGameLoop(): void {
         beams[i].life -= FIXED
         if (beams[i].life <= 0) beams.splice(i, 1)
       }
-      updateCameraTracking()
       acc -= FIXED
       guard++
     }
 
     if (shouldRender) {
+      // 相机跟随按「真实帧时间」平滑，而不是绑在固定 tick 上。
+      // 原因：逻辑固定 60Hz，但高刷屏（如 143Hz）多数帧不会推进 tick，
+      // 若相机只在 tick 内更新，60% 的帧相机纹丝不动、其余帧一次跳 1~6px，
+      // 形成明显 judder（帧率统计完全正常却"看着卡"）。
+      // 改为每帧按 rawDt 做指数插值后，任何刷新率下相机都逐帧平滑移动。
+      updateCameraTracking(rawDt)
       const tRender = performance.now()
       const stepMs = tRender - tStepsBegin
       renderScene()
