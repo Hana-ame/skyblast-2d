@@ -314,9 +314,13 @@ export function startGameLoop(): void {
     }
 
     if (shouldRender) {
-      // 用 acc 剩余量作为插值系数：本帧若已推进 tick，acc 是「超出的部分」，
-      // 1 - acc/FIXED 正好表示当前显示时刻处在上一 tick 与当前 tick 之间的比例。
-      const interpAlpha = 1 - Math.max(0, Math.min(1, acc / FIXED))
+      // 插值系数 = acc / FIXED（注意不是 1 - acc/FIXED，那是反的）。
+      // 语义推导：acc 是「已累积、还没用掉的时间」，取值范围 0..FIXED。
+      //   acc 接近 0      => 刚跑完一个 tick，显示位置应贴近 prev（上一 tick）
+      //   acc 接近 FIXED  => 即将跑下一个 tick，显示位置应贴近 cur（当前 tick）
+      // 所以显示 = prev + (cur - prev) * (acc/FIXED)。
+      // 用 1 - acc/FIXED 会让 58% 的帧位置向后倒退，产生抖动。
+      const interpAlpha = Math.max(0, Math.min(1, acc / FIXED))
       beginOverlayFrame()
       buildPositionOverlay(world.players, interpAlpha)
       buildPositionOverlay(world.projectiles, interpAlpha)

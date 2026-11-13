@@ -80,3 +80,46 @@ test('插值：alpha 超出 0..1 会被夹紧', () => {
   buildPositionOverlay(ents, 5)
   assert.equal(getRenderPos(1, 0, 0).x, 100, '大于 1 的 alpha 夹到 1')
 })
+
+test('插值：一帧内多次 tick 时基准与插值方向正确（不会倒退）', () => {
+  // 确定性模拟：玩家匀速右移，144Hz 显示，验证渲染位置单调不倒退。
+  // 这条测试专门防「alpha 用 1-acc/FIXED（反了）」这类 bug：
+  // 反了会让 58% 的帧位置向后跳，肉眼就是抖动。
+  clearInterp()
+  const FIXED = 1 / 60
+  const hz = 144
+  const frameDt = 1 / hz
+  const speed = 200
+  const ent = { id: 7, pos: { x: 0, y: 0 } }
+  const list = [ent]
+  let acc = FIXED * 0.5
+  const rendered: number[] = []
+  for (let f = 0; f < 200; f++) {
+    acc += frameDt
+    const willStep = acc >= FIXED
+    if (willStep) {
+      capturePrevPositions(list)
+      prunePrevPositions()
+    }
+    while (acc >= FIXED) {
+      ent.pos.x += speed * FIXED     // 模拟 world.step 推进
+      acc -= FIXED
+    }
+    const alpha = Math.max(0, Math.min(1, acc / FIXED))
+    beginOverlayFrame()
+    buildPositionOverlay(list, alpha)
+    rendered.push(getRenderPos(7, ent.pos.x, ent.pos.y).x)
+  }
+  // 渲染位置必须单调不减（匀速右移不该出现任何倒退）
+  let backwards = 0
+  let maxBack = 0
+  for (let i = 1; i < rendered.length; i++) {
+    const d = rendered[i] - rendered[i - 1]
+    if (d < -0.001) { backwards++; if (-d > maxBack) maxBack = -d }
+  }
+  assert.equal(backwards, 0, `渲染位置出现 ${backwards} 次倒退（最大 ${maxBack.toFixed(2)}px），说明插值方向反了`)
+  // 并且应该确实有前进（不是一直不动）
+  let forward = 0
+  for (let i = 1; i < rendered.length; i++) if (rendered[i] - rendered[i - 1] > 0.001) forward++
+  assert.ok(forward > 150, `应有大量前进帧，实际 ${forward}`)
+})

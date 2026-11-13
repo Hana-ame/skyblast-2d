@@ -13396,7 +13396,7 @@
         guard++;
       }
       if (shouldRender) {
-        const interpAlpha = 1 - Math.max(0, Math.min(1, acc / FIXED));
+        const interpAlpha = Math.max(0, Math.min(1, acc / FIXED));
         beginOverlayFrame();
         buildPositionOverlay(world.players, interpAlpha);
         buildPositionOverlay(world.projectiles, interpAlpha);
