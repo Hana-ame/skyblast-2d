@@ -5,6 +5,7 @@ import { getPhysicsParams, setPhysicsParams } from '../core/sim/physics.ts'
 import {
   BALANCE_KEY, LEGACY_BALANCE_KEY, sanitizeOverrides, applyWeaponOverrides, applyConfigOverrides,
   WEAPON_NUMERIC_KEYS, WEAPON_BOOL_KEYS, CONFIG_NUMERIC_KEYS, CONFIG_BOOL_KEYS,
+  PHYSICS_KEYS,
 } from '../core/balanceOverrides.ts'
 import type { BalanceOverrides } from '../core/balanceOverrides.ts'
 
@@ -112,7 +113,9 @@ h2p.textContent = '物理参数'
 physSection.append(h2p)
 const pfields = document.createElement('div')
 pfields.className = 'fields'
-for (const key of Object.keys(basePhysics)) {
+// 用 PHYSICS_KEYS 作为**唯一来源**：UI 渲染与 sanitizeOverrides 的白名单必须同源，
+// 否则会出现"后台能调、保存后被清洗丢弃"的静默失效（曾经跳到只剩 6 个且含错名）。
+for (const key of PHYSICS_KEYS) {
   pfields.append(field(key, numInput(physicsView[key], 'any', (n) => { physicsView[key] = n; setPhysicsParams(physicsView) })))
 }
 physSection.append(pfields)
@@ -149,7 +152,7 @@ function buildOverrides(): BalanceOverrides {
   if (Object.keys(cfg).length > 0) out.config = cfg as Partial<GameConfig>
 
   const phys: Record<string, number> = {}
-  for (const key of Object.keys(basePhysics)) {
+  for (const key of PHYSICS_KEYS) {
     const baseVal = (basePhysics as Record<string, number>)[key]
     if (physicsView[key] !== baseVal) phys[key] = physicsView[key]
   }

@@ -22,13 +22,39 @@ export const WEAPON_NUMERIC_KEYS: (keyof WeaponDef)[] = [
   'moveSpeedMult', 'fuelMult', 'ascendMult', 'fovMult',
   'falloffStart', 'falloffEnd', 'falloffMin', 'lifeSeconds', 'farRange', 'farDamage', 'edgeDamage',
 ]
-export const WEAPON_BOOL_KEYS: (keyof WeaponDef)[] = ['explosive', 'pierceOnHeadshot', 'pierceAll', 'passWalls', 'friendlyFire', 'selfDamage']
+export const WEAPON_BOOL_KEYS: (keyof WeaponDef)[] = [
+  'explosive', 'pierceOnHeadshot', 'pierceAll', 'passWalls', 'friendlyFire', 'selfDamage',
+  // 机制开关（此前调不到）：逐发装填/激光/火箭/光束/引力球/额外副武器槽
+  'shellReload', 'laser', 'rocket', 'beam', 'isGravityOrb', 'extraSecondarySlot',
+]
+
+/** 物理参数可调键：必须与 core/sim/physics.ts 的 PhysicsParams 字段**完全一致**。
+ *  历史 bug：这里曾写死 6 个且其中 jumpVelocity / jetpackThrust 根本不是真实字段名
+ *  （真名是 jumpImpulse / jetpackAccel），导致后台调了参数却在保存清洗时被丢弃、
+ *  重启游戏不生效；同时 mass / maxFall / jetpackDrain / jetpackRecharge 完全调不到。 */
+export const PHYSICS_KEYS = [
+  'mass', 'gravity', 'moveSpeed', 'jumpImpulse', 'maxFall',
+  'jetpackAccel', 'jetpackMaxUp', 'jetpackFuel', 'jetpackDrain', 'jetpackRecharge',
+] as const
+export type PhysicsKey = (typeof PHYSICS_KEYS)[number]
+const PHYSICS_BOUNDS: Partial<Record<PhysicsKey, [number, number]>> = {
+  mass: [0.1, 20], gravity: [-5000, 10000], moveSpeed: [0, 3000],
+  jumpImpulse: [0, 3000], maxFall: [0, 6000],
+  jetpackAccel: [0, 20000], jetpackMaxUp: [0, 3000],
+  jetpackFuel: [0.01, 20], jetpackDrain: [0.01, 50], jetpackRecharge: [0, 50],
+}
 
 export const CONFIG_NUMERIC_KEYS: (keyof GameConfig)[] = [
   'maxHp', 'respawnDelay', 'headRadius', 'grenadeDamage', 'grenadeRadius', 'grenadeFuse',
   'fragMaxCharges', 'fragRechargeSeconds', 'dollMaxCharges', 'dollDuration',
   'shieldHp', 'shieldDuration', 'obstacleDefaultHp', 'teleportCastTime',
   'mortarDamage', 'mortarRadius', 'watchtowerDuration', 'watchtowerFovMult',
+  // 此前缺失：地雷 / 空袭 / 迫击炮冷却 / 手枪基础值 / 占点 / 弹药补给
+  'mineDamage', 'mineTriggerRadius', 'mineRespawnTime',
+  'airstrikeDamage', 'airstrikeRadius', 'mortarCooldown',
+  'pistolDamage', 'pistolHeadshotMult',
+  'captureRadius', 'captureRate',
+  'ammoPackInterval', 'ammoPackMaxActive', 'supplyRespawnTime',
 ]
 export const CONFIG_BOOL_KEYS: (keyof GameConfig)[] = ['randomSpawn', 'loadoutLock', 'grenadeFriendlyFire', 'grenadeSelfDamage']
 
@@ -85,7 +111,7 @@ export function sanitizeOverrides(raw: unknown): BalanceOverrides | null {
     for (const k of CONFIG_NUMERIC_KEYS) {
       if (k in c) {
         const n = num(c[k])
-        if (n !== null) (clean as Record<string, number>)[k] = clamp(n, 0, 10000)
+        if (n !== null) (clean as Record<string, number>)[k] = clamp(n, 0, 1e6)
       }
     }
     for (const k of CONFIG_BOOL_KEYS) {
@@ -97,10 +123,13 @@ export function sanitizeOverrides(raw: unknown): BalanceOverrides | null {
   if (r.physics && typeof r.physics === 'object') {
     const ph = r.physics as Record<string, unknown>
     const clean: Record<string, number> = {}
-    for (const k of ['gravity', 'moveSpeed', 'jumpVelocity', 'jetpackThrust', 'jetpackMaxUp', 'jetpackFuel']) {
+    for (const k of PHYSICS_KEYS) {
       if (k in ph) {
         const n = num(ph[k])
-        if (n !== null) clean[k] = clamp(n, -5000, 10000)
+        if (n !== null) {
+          const b = PHYSICS_BOUNDS[k] ?? [-5000, 10000]
+          clean[k] = clamp(n, b[0], b[1])
+        }
       }
     }
     if (Object.keys(clean).length > 0) out.physics = clean
