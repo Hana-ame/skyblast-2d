@@ -97,7 +97,7 @@ export function weaponViolations(): Violation[] {
   }
   if (shotgun && shotgun.pellets !== 8) add('rule.shotgunpellets', '霰弹必须 8 弹丸')
   if (shotgun && shotgun.headshotMult !== 1) add('rule.shotgunhead', '霰弹无爆头加成')
-  if (shotgun && Math.abs((shotgun.fireDelay ?? 0) - 0.42) > 1e-9) add('rule.shotgunfire', '霰弹满匣射击间隔必须为 0.42s（提升射速）')
+  if (shotgun && Math.abs((shotgun.fireDelay ?? 0) - 0.38) > 1e-9) add('rule.shotgunfire', '霰弹射击间隔必须为 0.38s')
   if (laser) {
     const dur = laser.magSize / (laser.ammoPerSecond ?? 1)
     if (Math.abs(dur - 4) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 4 秒')

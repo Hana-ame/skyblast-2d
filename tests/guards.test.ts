@@ -1101,12 +1101,28 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   assert.ok(w2.projectiles.length - projBefore >= shotgun.pellets,
     `firing one shell produces ${shotgun.pellets} pellets, got ${w2.projectiles.length - projBefore}`)
 
-  // ③ 逐发装填的霰弹：只要弹匣未满且有备弹就继续装填（装满 magSize 才停）。
-  //    注意：没有「打空才装」这条额外机制——那不是三个机制之一。
+  // ③ 装填的**触发条件**是打空（ammo<=0）；未打空时不会自动补装。
+  //    但一旦触发，逐发装填会一直装到满匣（见 world.stepReload 的 stillNeeds）。
   const ammoAfterFire = q.ammo[0]
-  for (let i = 0; i < 900; i++) w2.step(DT, new Map([[q.id, input()]]))
-  assert.equal(q.ammo[0], shotgun.magSize, `shell-by-shell reload keeps loading until the tube is full (${ammoAfterFire} -> ${q.ammo[0]})`)
-  assert.equal(q.reloading, false, 'reload stops once the tube is full')
+  assert.ok(ammoAfterFire > 0, 'tube still has shells after the shot')
+  if (ammoAfterFire < shotgun.magSize) {
+    for (let i = 0; i < 600; i++) w2.step(DT, new Map([[q.id, input()]]))
+    assert.equal(q.ammo[0], ammoAfterFire, `未打空不应自动补装（保持 ${ammoAfterFire} 发）`)
+    assert.equal(q.reloading, false, '未打空不进入装填状态')
+  }
+
+  // 打空后触发装填，并且逐发一直装到满匣才停
+  const wEmpty = new World(47011, { name: 'shell-fill', solids: [] })
+  wEmpty.config.randomSpawn = false
+  const e = wEmpty.addPlayer('E', 'ffa')
+  e.weaponIndex = 0
+  e.ammo[0] = 0
+  e.reserveAmmo[0] = 32
+  e.pos = { x: 6600, y: 2200 }
+  wEmpty.startReload(e)
+  for (let i = 0; i < 900; i++) wEmpty.step(DT, new Map([[e.id, input()]]))
+  assert.equal(e.ammo[0], shotgun.magSize, `逐发装填必须一直装到满匣（实际 ${e.ammo[0]}/${shotgun.magSize}）`)
+  assert.equal(e.reloading, false, 'reload stops once the tube is full')
 
   // ④ 按下射击立刻停止换弹；打空后重新开始换弹
   const w3 = new World(47002, { name: 'shell-interrupt', solids: [] })
@@ -1123,10 +1139,11 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
   const ammoBeforeShot = r.ammo[0]
   w3.step(DT, new Map([[r.id, input({ fire: true, aim: 0 })]]))
   assert.equal(r.ammo[0], ammoBeforeShot - 1, 'the shot consumes exactly one shell')
-  // 击发会中断当前这次单发装填，并立即为下一发重新开始装填（弹匣未满 + 有备弹）。
-  // 这正是「打-装填-打」节奏的来源：每次开火后紧接着开始装填下一发。
-  assert.equal(r.reloadTimer, r.reloadTimer, 'sanity')
-  assert.equal(r.reloading, true, 'firing restarts the shell reload for the next shell')
+  // 击发会中断当前这次逐发装填。装填的**触发条件只有打空**（ammo<=0），
+  // 所以弹匣还有弹时开火后不会立刻重新开始装填 —— 这正是「只有打空才自动装填」。
+  if (r.ammo[0] > 0) {
+    assert.equal(r.reloading, false, '未打空：开火中断装填后不会自动重新开始')
+  }
   // 打空后应重新开始换弹
   for (let i = 0; i < 400; i++) {
     w3.step(DT, new Map([[r.id, input({ fire: true, aim: 0 })]]))
@@ -1834,9 +1851,10 @@ test('guard: mobile PWA installable and auto fullscreen landscape support', asyn
 test('护栏·霰弹节奏由三个机制决定：逐发装填 + 装填时间 + 开火间隔（无额外倍率）', () => {
   const shotgun = WEAPONS[0]
   // 只允许存在这三个量决定节奏，不许再有 shellReloadFireDelayMult 之类的额外机制
-  assert.equal(shotgun.fireDelay, 0.42, '开火间隔')
+  assert.equal(shotgun.fireDelay, 0.38, '开火间隔')
   assert.equal(shotgun.reloadTime, 1.5, '整匣装填时间')
   assert.equal(shotgun.magSize, 8, '逐发装填的弹匣容量')
+  assert.equal(shotgun.maxReserve, 32, '最大备弹')
   assert.equal(shotgun.shellReload, true, '逐发装填开关')
   assert.ok(!('shellReloadFireDelayMult' in shotgun), '不得再引入额外射速倍率机制')
 
@@ -1850,7 +1868,7 @@ test('护栏·霰弹节奏由三个机制决定：逐发装填 + 装填时间 + 
     const p = w.addPlayer('S', 'ffa')
     p.weaponIndex = 0
     p.ammo[0] = ammo
-    p.reserveAmmo[0] = 72
+    p.reserveAmmo[0] = 32
     p.pos = { x: 6600, y: 3200 }
     pre?.(w, p)
     const out: number[] = []
@@ -1895,7 +1913,7 @@ test('护栏·霰弹节奏由三个机制决定：逐发装填 + 装填时间 + 
   const p2 = w2.addPlayer('Shell', 'ffa')
   p2.weaponIndex = 0
   p2.ammo[0] = 0
-  p2.reserveAmmo[0] = 72
+  p2.reserveAmmo[0] = 32
   p2.pos = { x: 6600, y: 3200 }
   w2.startReload(p2)
   let shellsAfterOne = -1

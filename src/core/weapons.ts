@@ -79,11 +79,11 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 0, name: '霰弹枪', shortName: '霰弹', isSupplyOnly: false,
     damage: 24, headshotMult: 1.0, pellets: 8, spread: 0.24, grazeDamageMin: 20, shellReload: true,   // 伤害=手枪弹；每颗弹丸独立擦边；逐发装填
-    speed: 1000, recoil: 1560, magSize: 8, maxReserve: 72,   // 后坐力 ×2
+    speed: 1000, recoil: 1560, magSize: 8, maxReserve: 32,   // 后坐力 ×2
     // 射击间隔 0.42s；装填单发 1.5/8=0.1875s。二者是唯一决定节奏的两个量：
     // 弹匣内有弹时「打-打」= 0.42s，打空后「打-装填-打」= 0.42 + 0.1875 ≈ 0.61s，
     // 自然满足「打-装填-打 比 打-打 长」，无需任何额外倍率。
-    reloadTime: 1.5, fireDelay: 0.42, terrainRadius: 12,
+    reloadTime: 1.5, fireDelay: 0.38, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
     falloffStart: 200, falloffEnd: 700, falloffMin: 0.45,   // 霰弹随距离衰减（中距仍可用）
     traitDesc: '近距高伤 · 全中致死',

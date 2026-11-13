@@ -377,14 +377,14 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[8].maxReserve, 150, 'SMG reserve 150')   // 霰弹=手枪弹 24；M249=突击(37，擦边分级 30~37)；引力枪/手枪/冲锋枪 24
   for (const id of [4, 5, 6]) assert.ok(WEAPONS[id].isSupplyOnly, `weapon ${id} supply-only`)
   for (const id of [0, 1, 2, 3, 7, 8]) assert.ok(!WEAPONS[id].isSupplyOnly, `weapon ${id} normal primary`)
-  // 霰弹：8 弹丸 ×19 伤害；弹匣 8/72；无爆头加成
+  // 霰弹：8 弹丸；弹匣 8/32；无爆头加成；射击间隔 0.38s
   assert.equal(WEAPONS[0].pellets, 8, 'shotgun 8 pellets')
   assert.equal(WEAPONS[0].damage, 24, 'shotgun damage equals pistol bullet')
   assert.equal(WEAPONS[0].recoil, 1560, 'shotgun recoil doubled')
   assert.equal(WEAPONS[0].magSize, 8, 'shotgun magazine 8')
-  assert.equal(WEAPONS[0].maxReserve, 72, 'shotgun reserve 72')
+  assert.equal(WEAPONS[0].maxReserve, 32, 'shotgun reserve 32')
   assert.equal(WEAPONS[0].headshotMult, 1.0, 'no headshot bonus')
-  assert.equal(WEAPONS[0].fireDelay, 0.42, 'shotgun full-mag fire interval 0.42s')
+  assert.equal(WEAPONS[0].fireDelay, 0.38, 'shotgun fire interval 0.38s')
   assert.equal(WEAPONS[2].lifeSeconds, 999, 'sniper infinite range')
   assert.ok((WEAPONS[2].chargeSeconds ?? 0) >= 0.5, 'sniper needs aim charge time (balance)')
   assert.equal(WEAPONS[3].lifeSeconds, 999, 'bazooka infinite range')

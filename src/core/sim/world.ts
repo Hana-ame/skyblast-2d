@@ -530,11 +530,10 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     // fireDelay 与「装填未完成」共同约束，两者叠加自然使
     // 「打-装填-打」长于「打-打」。不要引入任何额外倍率。
     p.fireCooldown = wep.fireDelay
-    // 自动装填：逐发装填的霰弹只要没打满就继续装；其他武器打空才装。
-    const needReload = wep.shellReload
-      ? p.ammo[p.weaponIndex] < wep.magSize
-      : p.ammo[p.weaponIndex] <= 0
-    if (needReload && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
+    // 自动装填：所有武器（含逐发装填的霰弹）都只在**打空**后开始装填。
+    // 霰弹一旦开始逐发装填会一直装到满（见 stepReload 里的 stillNeeds），
+    // 但不会因为「弹匣没满」就自动补装 —— 装填的触发条件只有 ammo<=0。
+    if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) this.startReload(p)
 
     if (wep.recoil > 0) {
       const rk = recoilDelta(wep.recoil, p.aim)
