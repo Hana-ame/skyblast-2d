@@ -92,11 +92,20 @@ input, select, textarea {
   border-radius: 3px;
 }
 .glass-panel {
-  /* 不使用 backdrop-filter：它压在每帧重绘的 gameCanvas 之上时，会强制合成器每帧
-     重新模糊背景，把 60fps 拉到 20-30fps（真机更明显）。改用不透明深色底，
-     视觉差异极小但不再有每帧模糊开销。 */
-  background: rgba(15, 23, 42, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+/* 高频 60Hz JS 驱动进度条禁用 CSS transition，消除每帧启动/取消过渡动画的合成器抖动 */
+#hudHpBar,
+#hudShieldBar,
+#hudFuelBar,
+#hudCapCardBar,
+#reloadProgressBar,
+#reloadDockBottomBar,
+#deathRespawnProgressBar,
+#deathRankSelfBar,
+#grenadeCdOverlay {
+  transition: none !important;
 }
 .kill-item {
   animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1);
@@ -162,7 +171,7 @@ input, select, textarea {
 .items-end { align-items: flex-end; }
 .items-start { align-items: flex-start; }
 .justify-between { justify-content: space-between; }
-.justify-center { justify-content: center; }
+.justify-center { justify-content: justify-center; }
 .justify-end { justify-content: flex-end; }
 .shrink-0 { flex-shrink: 0; }
 .col-span-2 { grid-column: span 2 / span 2; }
@@ -459,7 +468,7 @@ input, select, textarea {
 .text-slate-600 { color: rgb(71, 85, 105); }
 .text-slate-950 { color: rgb(2, 6, 23); }
 .text-white { color: rgb(255, 255, 255); }
-.backdrop-blur-md { /* 见 .glass-panel 说明：禁用全屏/常驻 blur 以保住帧率 */ }
+.backdrop-blur-md { background-color: rgba(2, 6, 23, 0.92); }
 .drop-shadow { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.65)); }
 .opacity-0 { opacity: 0; }
 .opacity-100 { opacity: 1; }
@@ -480,7 +489,7 @@ input, select, textarea {
 .shadow-\[0_0_24px_rgba\(244\,63\,94\,0\.18\)\] { box-shadow: 0 0 24px rgba(244,63,94,0.18); }
 .shadow-\[0_0_28px_rgba\(16\,185\,129\,0\.45\)\] { box-shadow: 0 0 28px rgba(16,185,129,0.45); }
 .ring-1 { box-shadow: 0 0 0 1px var(--tw-ring-color, rgba(52, 211, 153, 0.75)); }
-.transition { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
+.transition { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
 .transition-all { transition-property: all; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
 .transition-transform { transition-property: transform; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
 .duration-100 { transition-duration: 100ms; }

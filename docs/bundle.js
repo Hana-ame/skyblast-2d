@@ -23,7 +23,7 @@
   };
   var P = { ...defaults };
   function getPhysicsParams() {
-    return { ...P };
+    return P;
   }
   function setPhysicsParams(overrides) {
     P = { ...P, ...overrides };
@@ -406,12 +406,12 @@
       name: "\u7A81\u51FB\u6B65\u67AA",
       shortName: "\u7A81\u51FB\u6B65\u67AA",
       isSupplyOnly: false,
-      damage: 37,
+      damage: 33,
       headshotMult: 2.2,
       pellets: 1,
       spread: 0.045,
-      grazeDamageMin: 30,
-      // 命中主体 37；擦边按几何质量线性降到 30（大多数命中 33~34）
+      grazeDamageMin: 27,
+      // 命中主体正中最高 33；擦边按几何质量线性降到 27
       speed: 1500,
       recoil: 84,
       magSize: 30,
@@ -540,12 +540,12 @@
       name: "M249",
       shortName: "M249",
       isSupplyOnly: true,
-      damage: 37,
+      damage: 33,
       headshotMult: 1.8,
       pellets: 1,
       spread: 0.11,
-      grazeDamageMin: 30,
-      // 与突击步枪同步（37，擦边降到 30）
+      grazeDamageMin: 27,
+      // 与突击步枪同步（正中最高 33，擦边降到 27）
       speed: 1300,
       recoil: 66,
       magSize: 120,
@@ -553,7 +553,7 @@
       reloadTime: 3,
       fireDelay: 0.06,
       terrainRadius: 8,
-      // M249 伤害=突击(37，同步擦边分级)，高射速补给枪
+      // M249 伤害=突击(33，同步擦边分级)，高射速补给枪
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.78,
@@ -567,12 +567,12 @@
       name: "\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 37,
+      damage: 33,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
-      grazeDamageMin: 30,
-      // 伤害调高=突击步枪(37)
+      grazeDamageMin: 27,
+      // 伤害同步=突击步枪(33)
       speed: 1100,
       recoil: 240,
       magSize: 6,
@@ -1005,10 +1005,10 @@
     return null;
   }
   function findObstacleAt(obstacles, obstacleBroadBuckets, x, y, pad = 0) {
-    const wx = wrapX(x);
+    const wx = x >= 0 && x < WORLD_W ? x : wrapX(x);
     if (obstacleBroadBuckets && pad <= OBSTACLE_BROAD_PAD) {
       const list = obstacleBroadBuckets[bucketIdx(wx)];
-      return list ? obstacleAtBucket(list, wx, y, pad) : null;
+      return list && list.length > 0 ? obstacleAtBucket(list, wx, y, pad) : null;
     }
     for (let i = 0; i < obstacles.length; i++) {
       const ob = obstacles[i];
@@ -1026,12 +1026,15 @@
     const steps = Math.max(1, Math.ceil(dist / 4));
     const tGrid = terrain.grid;
     const invSteps = 1 / steps;
+    const hasObs = obstacles.length > 0;
     for (let k = 1; k < steps; k++) {
       const f = k * invSteps;
-      const px = wrapX(x1 + dx * f);
-      const py = wrapY(y1 + dy * f);
-      if (tGrid[(py / 20 | 0) * GRID_W + (px / 20 | 0)] !== 0) return true;
-      if (findObstacleAt(obstacles, obstacleBroadBuckets, px, py)) return true;
+      let px = x1 + dx * f;
+      if (px >= WORLD_W || px < 0) px = wrapX(px);
+      let py = y1 + dy * f;
+      if (py >= WORLD_H || py < 0) py = wrapY(py);
+      if (tGrid[(py * 0.05 | 0) * GRID_W + (px * 0.05 | 0)] !== 0) return true;
+      if (hasObs && findObstacleAt(obstacles, obstacleBroadBuckets, px, py)) return true;
     }
     return false;
   }
@@ -1041,33 +1044,36 @@
     const len = Math.hypot(dx, dy);
     if (len <= 1e-6) return { x: x1, y: y1, dx: 0, dy: 0, shortened: false };
     const steps = Math.max(1, Math.ceil(len / 3));
-    let lastX = x1;
-    let lastY = y1;
+    const tGrid = terrain.grid;
+    const invSteps = 1 / steps;
     let lastDx = 0;
     let lastDy = 0;
     for (let k = 1; k <= steps; k++) {
-      const curDx = dx * k / steps;
-      const curDy = dy * k / steps;
-      const px = wrapX(x1 + curDx);
-      const py = wrapY(y1 + curDy);
-      if (terrain.isSolidAt(px, py)) {
-        return { x: lastX, y: lastY, dx: lastDx, dy: lastDy, shortened: true };
+      const f = k * invSteps;
+      const curDx = dx * f;
+      const curDy = dy * f;
+      let px = x1 + curDx;
+      if (px >= WORLD_W || px < 0) px = wrapX(px);
+      let py = y1 + curDy;
+      if (py >= WORLD_H || py < 0) py = wrapY(py);
+      if (tGrid[(py * 0.05 | 0) * GRID_W + (px * 0.05 | 0)] !== 0) {
+        return { x: wrapX(x1 + lastDx), y: wrapY(y1 + lastDy), dx: lastDx, dy: lastDy, shortened: true };
       }
-      lastX = px;
-      lastY = py;
       lastDx = curDx;
       lastDy = curDy;
     }
     return { x: wrapX(x1 + dx), y: wrapY(y1 + dy), dx, dy, shortened: false };
   }
   function checkBodyOverlapsAt(terrain, obstacles, x, y, obstacleBroadBuckets) {
-    const wx = wrapX(x);
+    const wx = x >= 0 && x < WORLD_W ? x : wrapX(x);
     const halfW = 10;
     const tGrid = terrain.grid;
     const gx0 = Math.floor((wx - halfW) / TILE_SIZE);
     const gx1 = Math.floor((wx + halfW) / TILE_SIZE);
-    const gy0 = Math.floor(wrapY(y - 30) / TILE_SIZE);
-    const gy1 = Math.floor(wrapY(y + 16) / TILE_SIZE);
+    const wyTop = y - 30 >= 0 && y - 30 < WORLD_H ? y - 30 : wrapY(y - 30);
+    const wyBot = y + 16 >= 0 && y + 16 < WORLD_H ? y + 16 : wrapY(y + 16);
+    const gy0 = Math.floor(wyTop / TILE_SIZE);
+    const gy1 = Math.floor(wyBot / TILE_SIZE);
     for (let gx = gx0; gx <= gx1; gx++) {
       const gxx = gx >= 0 && gx < GRID_W ? gx : (gx % GRID_W + GRID_W) % GRID_W;
       for (let gy = gy0; gy <= gy1; gy++) {
@@ -1085,7 +1091,7 @@
       }
     }
     const obList = obstacleBroadBuckets ? obstacleBroadBuckets[bucketIdx(wx)] : obstacles;
-    if (obList) {
+    if (obList && obList.length > 0) {
       for (let i = 0; i < obList.length; i++) {
         const ob = obList[i];
         if (ob.hp <= 0) continue;
@@ -1155,15 +1161,25 @@
     if (ay + 16 <= by - 30 || ay - 30 >= by + 16) return false;
     return Math.abs(wrapDeltaX(ax, bx)) < 20;
   }
-  function playerHitsPoint(playerBroadBuckets, x, y, selfId) {
+  function playerHitsPoint(playerBroadBuckets, x, y, selfId, curSelfX, curSelfY, nextSelfX, nextSelfY) {
     const list = playerBroadBuckets[bucketIdx(x)];
-    if (!list) return false;
+    if (!list || list.length === 0) return false;
     for (let i = 0; i < list.length; i++) {
       const other = list[i];
       if (other.id === selfId) continue;
       if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
       if (y <= other.pos.y - 30 || y >= other.pos.y + 16) continue;
-      if (Math.abs(wrapDeltaX(x, other.pos.x)) <= 10) return true;
+      if (Math.abs(wrapDeltaX(x, other.pos.x)) <= 10) {
+        if (curSelfX !== void 0 && curSelfY !== void 0 && bodiesOverlap(curSelfX, curSelfY, other.pos.x, other.pos.y)) {
+          if (nextSelfX !== void 0 && Math.abs(wrapDeltaX(nextSelfX, other.pos.x)) > Math.abs(wrapDeltaX(curSelfX, other.pos.x)) + 1e-4) {
+            continue;
+          }
+          if (nextSelfY !== void 0 && nextSelfY < curSelfY && curSelfY <= other.pos.y) {
+            continue;
+          }
+        }
+        return true;
+      }
     }
     return false;
   }
@@ -1190,26 +1206,21 @@
         const t = list[i];
         if (t.id === other.id) continue;
         if (!t.deployed || !t.alive || t.respawnTimer > 0) continue;
-        if (bodiesOverlap(nx, other.pos.y, t.pos.x, t.pos.y)) return;
+        if (bodiesOverlap(nx, other.pos.y, t.pos.x, t.pos.y)) {
+          const wasOverlapping = bodiesOverlap(other.pos.x, other.pos.y, t.pos.x, t.pos.y);
+          if (!wasOverlapping) return;
+          const prevDist = Math.abs(wrapDeltaX(other.pos.x, t.pos.x));
+          const nextDist = Math.abs(wrapDeltaX(nx, t.pos.x));
+          if (nextDist <= prevDist) return;
+        }
       }
     }
     other.pos.x = nx;
   }
   function torsoBlockedAt(terrain, obstacles, obstacleBroadBuckets, x, y) {
     const wx = wrapX(x);
-    const pts = [
-      [wx - 10, y - 4],
-      [wx + 10, y - 4],
-      [wx, y - 6],
-      [wx - 10, y - 26],
-      [wx + 10, y - 26],
-      [wx, y - 30]
-    ];
-    for (const [px, py] of pts) {
-      if (terrain.isSolidAt(px, py)) return true;
-      if (findObstacleAt(obstacles, obstacleBroadBuckets, px, py)) return true;
-    }
-    return false;
+    const checkPt = (px, py) => terrain.isSolidAt(px, py) || findObstacleAt(obstacles, obstacleBroadBuckets, px, py) !== null;
+    return checkPt(wx - 10, y - 4) || checkPt(wx + 10, y - 4) || checkPt(wx, y - 6) || checkPt(wx - 10, y - 26) || checkPt(wx + 10, y - 26) || checkPt(wx, y - 30);
   }
   function ensureFreePosition(terrain, obstacles, obstacleBroadBuckets, p) {
     if (!torsoBlockedAt(terrain, obstacles, obstacleBroadBuckets, p.pos.x, p.pos.y)) return false;
@@ -1236,22 +1247,39 @@
     for (let iter = 0; iter < 6; iter++) {
       if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, p.pos.y, obstacleBroadBuckets)) break;
       const wx = wrapX(p.pos.x);
-      const pick = { v: null };
+      let bestDx = 0;
+      let bestDy = 0;
       let bestLen = Infinity;
+      let found = false;
       const consider = (tileL, tileR, tileT, tileB) => {
         if (!(tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16)) return;
-        const cand = [
-          { dx: tileL - halfW, dy: 0 },
-          { dx: tileR + halfW, dy: 0 },
-          { dx: 0, dy: tileB + 30 },
-          { dx: 0, dy: tileT - 16 }
-        ];
-        for (const c of cand) {
-          const len = Math.abs(c.dx) + Math.abs(c.dy);
-          if (len < bestLen) {
-            bestLen = len;
-            pick.v = c;
-          }
+        const d1 = tileL - halfW;
+        if (Math.abs(d1) < bestLen) {
+          bestLen = Math.abs(d1);
+          bestDx = d1;
+          bestDy = 0;
+          found = true;
+        }
+        const d2 = tileR + halfW;
+        if (Math.abs(d2) < bestLen) {
+          bestLen = Math.abs(d2);
+          bestDx = d2;
+          bestDy = 0;
+          found = true;
+        }
+        const d3 = tileB + 30;
+        if (Math.abs(d3) < bestLen) {
+          bestLen = Math.abs(d3);
+          bestDx = 0;
+          bestDy = d3;
+          found = true;
+        }
+        const d4 = tileT - 16;
+        if (Math.abs(d4) < bestLen) {
+          bestLen = Math.abs(d4);
+          bestDx = 0;
+          bestDy = d4;
+          found = true;
         }
       };
       const gx0 = Math.floor((wx - halfW) / TILE_SIZE);
@@ -1268,15 +1296,16 @@
           consider(lx - TILE_SIZE / 2, lx + TILE_SIZE / 2, ly - TILE_SIZE / 2, ly + TILE_SIZE / 2);
         }
       }
-      for (const ob of obstacles) {
+      for (let i = 0; i < obstacles.length; i++) {
+        const ob = obstacles[i];
         if (ob.hp <= 0) continue;
         const lx = wrapDeltaX(wx, ob.x + ob.w / 2);
         const ly = wrapDeltaY(p.pos.y, ob.y + ob.h / 2);
         consider(lx - ob.w / 2, lx + ob.w / 2, ly - ob.h / 2, ly + ob.h / 2);
       }
-      if (pick.v) {
-        p.pos.x = wrapX(p.pos.x + pick.v.dx);
-        p.pos.y = wrapY(p.pos.y + pick.v.dy);
+      if (found) {
+        p.pos.x = wrapX(p.pos.x + bestDx);
+        p.pos.y = wrapY(p.pos.y + bestDy);
         moved = true;
       } else {
         ensureFreePosition(terrain, obstacles, obstacleBroadBuckets, p);
@@ -1286,18 +1315,18 @@
     }
     return moved;
   }
-  function hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, x, y) {
-    const wx = wrapX(x);
-    const wy = wrapY(y);
-    if (tGrid[(wy / 20 | 0) * GRID_W + (wx / 20 | 0)] !== 0) return true;
+  function hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, x, y, curSelfX, curSelfY, nextSelfX, nextSelfY) {
+    const wx = x >= 0 && x < 13200 ? x : wrapX(x);
+    const wy = y >= 0 && y < 4400 ? y : wrapY(y);
+    if (tGrid[(wy * 0.05 | 0) * GRID_W + (wx * 0.05 | 0)] !== 0) return true;
     if (findObstacleAt(obstacles, obstacleBroadBuckets, wx, y) !== null) return true;
-    if (playerBroadBuckets) return playerHitsPoint(playerBroadBuckets, wx, y, selfId);
+    if (playerBroadBuckets) return playerHitsPoint(playerBroadBuckets, wx, y, selfId, curSelfX, curSelfY, nextSelfX, nextSelfY);
     return false;
   }
-  function hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy) {
-    return hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy + BODY_BOTTOM) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy + BODY_BOTTOM) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy + BODY_BOTTOM) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy - BODY_TOP);
+  function hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy, curSelfX, curSelfY) {
+    return hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy - BODY_TOP, curSelfX, curSelfY, cx, cy);
   }
-  function stepPlayerKinematic(p, w, dt, terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, mortars, watchtowers) {
+  function stepPlayerKinematic(p, _w, dt, terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, mortars, watchtowers) {
     if (!p.alive || p.respawnTimer > 0) return;
     for (let i = 0; i < mortars.length; i++) {
       const mm = mortars[i];
@@ -1334,17 +1363,19 @@
     const tGrid = terrain.grid;
     if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };
     const rv = p.recoilVel;
-    const nx = wrapX(p.pos.x + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR);
-    if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y)) {
+    const curX = p.pos.x;
+    const curY = p.pos.y;
+    const nx = wrapX(curX + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR);
+    if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, curY, curX, curY)) {
       p.pos.x = nx;
-    } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y - 10)) {
+    } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, curY - 10, curX, curY)) {
       p.pos.x = nx;
       p.pos.y -= 10;
     } else {
       if (playerBroadBuckets) {
-        const blocker = playerBlockingAt(playerBroadBuckets, nx, p.pos.y, p.id);
+        const blocker = playerBlockingAt(playerBroadBuckets, nx, curY, p.id);
         if (blocker) {
-          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, blocker, Math.sign(nx - p.pos.x), 1.4);
+          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, blocker, Math.sign(wrapDeltaX(curX, nx)), 1.4);
         }
       }
       p.vel.x = 0;
@@ -1353,7 +1384,7 @@
     const vyTotal = p.vel.y + rv.y;
     const nyRaw = p.pos.y + p.vel.y * dt + rv.y * RECOIL_DISPLACEMENT_FACTOR;
     const ny = wrapY(nyRaw);
-    if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny)) {
+    if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny, p.pos.x, p.pos.y)) {
       p.pos.y = ny;
       p.onGround = false;
     } else {
@@ -1387,9 +1418,10 @@
           const upY = wrapY(upper.pos.y - oy);
           if (!terrain.isSolidAt(upper.pos.x, upY - 26)) upper.pos.y = upY;
         } else {
-          const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1;
-          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, b, dir, 0.6);
-          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, a, -dir, 0.6);
+          const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || (a.id < b.id ? 1 : -1);
+          const pushAmt = Math.min(2.4, Math.max(0.8, ox * 0.45));
+          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, b, dir, pushAmt);
+          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, a, -dir, pushAmt);
         }
         if (++nudged >= 3) break;
       }
@@ -1576,13 +1608,7 @@
     const obstacles = ctx2.obstacles;
     let hasReflectedOrWrapped = false;
     let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR);
-    const checkPlayersAt = (px, py, segStartX2, segStartY2, dirX, dirY, distFromSegStart) => {
-      if (!exitedSelf && !isPointInPlayerBeamHitbox(p, px, py, headR)) {
-        exitedSelf = true;
-      }
-      const bIdx = bucketIdx(px);
-      const pList = playerBroadBuckets[bIdx];
-      if (!pList || pList.length === 0) return;
+    const checkPlayersAt = (px, py, pList, segStartX2, segStartY2, dirX, dirY, distFromSegStart) => {
       for (let pi = 0; pi < pList.length; pi++) {
         const t = pList[pi];
         if (t.id === p.id) {
@@ -1593,16 +1619,28 @@
         if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue;
         const hitInfo = isPointInPlayerBeamHitbox(t, px, py, headR);
         if (!hitInfo) continue;
+        const localDist = Math.min(distFromSegStart, 64);
+        const checkStartX = wrapX(px - dirX * localDist);
+        const checkStartY = wrapY(py - dirY * localDist);
         if (lineBlockedByTerrain(
           ctx2.terrain,
           obstacles,
           obstacleBroadBuckets,
-          segStartX2,
-          segStartY2,
+          checkStartX,
+          checkStartY,
           t.pos.x,
           t.pos.y - 12,
-          dirX * distFromSegStart,
-          dirY * distFromSegStart
+          dirX * localDist,
+          dirY * localDist
+        )) continue;
+        if (lineBlockedByTerrain(
+          ctx2.terrain,
+          obstacles,
+          obstacleBroadBuckets,
+          px,
+          py,
+          t.pos.x,
+          t.pos.y - 12
         )) continue;
         hitPlayer.add(t.id);
         const mult = hitInfo.isHead ? wep.headshotMult : 1;
@@ -1629,13 +1667,14 @@
       const rawNx = x + dirX * step;
       const rawNy = y + dirY * step;
       const crossedSeam = rawNx < 0 || rawNx >= WORLD_W || rawNy < 0 || rawNy >= WORLD_H;
-      const nx = wrapX(rawNx);
-      const ny = wrapY(rawNy);
+      const nx = crossedSeam ? wrapX(rawNx) : rawNx;
+      const ny = crossedSeam ? wrapY(rawNy) : rawNy;
+      const bIdx = nx * INV_BUCKET_SIZE | 0;
       if (crossedSeam) {
-        const gxAfter = nx / 20 | 0;
-        const gyAfter = ny / 20 | 0;
+        const gxAfter = nx * 0.05 | 0;
+        const gyAfter = ny * 0.05 | 0;
         const nextIsTerrain = tGrid[gyAfter * GRID_W + gxAfter] !== 0;
-        const nextObsList = obstacleBroadBuckets[bucketIdx(nx)];
+        const nextObsList = obstacleBroadBuckets[bIdx];
         const nextOb = !nextIsTerrain && nextObsList && nextObsList.length > 0 ? obstacleAtBucket(nextObsList, nx, ny, 0) : null;
         const nextIsFree = !nextIsTerrain && !nextOb;
         if (nextIsFree) {
@@ -1654,7 +1693,11 @@
           segStartX = nx;
           segStartY = ny;
           travelled = 0;
-          checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0);
+          if (!exitedSelf && !isPointInPlayerBeamHitbox(p, nx, ny, headR)) exitedSelf = true;
+          const pListSeam = playerBroadBuckets[bIdx];
+          if (pListSeam && pListSeam.length > 0) {
+            checkPlayersAt(nx, ny, pListSeam, segStartX, segStartY, dirX, dirY, 0);
+          }
           continue;
         }
         if (bouncesLeft <= 0) {
@@ -1664,8 +1707,8 @@
           break;
         }
       }
-      const gx = nx / 20 | 0;
-      const gy = ny / 20 | 0;
+      const gx = nx * 0.05 | 0;
+      const gy = ny * 0.05 | 0;
       if (tGrid[gy * GRID_W + gx] !== 0) {
         if (travelled > 0) {
           const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled);
@@ -1676,8 +1719,8 @@
         }
         if (bouncesLeft <= 0) break;
         bouncesLeft--;
-        const prevGx = x / 20 | 0;
-        const prevGy = y / 20 | 0;
+        const prevGx = x * 0.05 | 0;
+        const prevGy = y * 0.05 | 0;
         const hitX = tGrid[prevGy * GRID_W + gx] !== 0;
         const hitY = tGrid[gy * GRID_W + prevGx] !== 0;
         if (hitX) dx = -dx;
@@ -1694,7 +1737,6 @@
         travelled = 0;
         continue;
       }
-      const bIdx = bucketIdx(nx);
       const obsList = obstacleBroadBuckets[bIdx];
       if (obsList && obsList.length > 0) {
         const ob = obstacleAtBucket(obsList, nx, ny, 0);
@@ -1731,7 +1773,13 @@
       x = nx;
       y = ny;
       travelled += step;
-      checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, travelled);
+      if (!exitedSelf && !isPointInPlayerBeamHitbox(p, nx, ny, headR)) {
+        exitedSelf = true;
+      }
+      const pList = playerBroadBuckets[bIdx];
+      if (pList && pList.length > 0) {
+        checkPlayersAt(nx, ny, pList, segStartX, segStartY, dirX, dirY, travelled);
+      }
     }
     ctx2.events.push({
       kind: "laser",
@@ -1829,8 +1877,8 @@
       const dy = pr.vel.y * dt;
       const dist = Math.hypot(dx, dy);
       const steps = Math.max(1, Math.ceil(dist / SUBSTEP_PX));
-      const sx = dx / steps;
-      const sy = dy / steps;
+      const sx2 = dx / steps;
+      const sy2 = dy / steps;
       let dead = false;
       const ownerTeam = ctx2.ownerTeamOf(pr.owner);
       const wep = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
@@ -1841,10 +1889,10 @@
       for (let step = 0; step < steps; step++) {
         const prevX = pr.pos.x;
         const prevY = pr.pos.y;
-        let nx = prevX + sx;
+        let nx = prevX + sx2;
         if (nx >= WORLD_W) nx -= WORLD_W;
         else if (nx < 0) nx += WORLD_W;
-        let ny = prevY + sy;
+        let ny = prevY + sy2;
         if (ny >= WORLD_H) ny -= WORLD_H;
         else if (ny < 0) ny += WORLD_H;
         pr.pos.x = nx;
@@ -1936,8 +1984,8 @@
             if (dead) break;
           }
         }
-        const gx = nx / 20 | 0;
-        const gy = ny / 20 | 0;
+        const gx = nx * 0.05 | 0;
+        const gy = ny * 0.05 | 0;
         if (tGrid[gy * GRID_W + gx] !== 0) {
           if (pr.passWalls) continue;
           if (pr.explosive) {
@@ -2236,7 +2284,8 @@
   function explodeInWorld(ctx2, cx, cy, radius, maxDamage, knockback, pr, ownerId, ownerTeam, weaponLabel, implosion = false) {
     const wCx = wrapX(cx);
     ctx2.events.push({ kind: "explosion", x: wCx, y: cy, radius });
-    for (const ob of [...ctx2.obstacles]) {
+    for (let i = ctx2.obstacles.length - 1; i >= 0; i--) {
+      const ob = ctx2.obstacles[i];
       const dx = wrapDeltaX(wCx, ob.x + ob.w / 2);
       const dOb = wrapDeltaY(ob.y, cy);
       const nearY = clamp(dOb, 0, ob.h);
@@ -2634,9 +2683,11 @@
   }
   function stepMapInteractables(ctx2, dt) {
     const capR = Math.max(150, ctx2.config.captureRadius + 35);
-    for (const cp of ctx2.capturePoints) {
+    const capRSq = capR * capR;
+    for (let ci = 0; ci < ctx2.capturePoints.length; ci++) {
+      const cp = ctx2.capturePoints[ci];
       if (cp.y <= 400) continue;
-      const presence = {};
+      let cRed = 0, cBlue = 0, cGreen = 0, cFfa = 0;
       for (let i = 0; i < ctx2.players.length; i++) {
         const p = ctx2.players[i];
         if (p.respawnTimer > 0 || !p.deployed || !p.alive) continue;
@@ -2644,15 +2695,32 @@
         if (dx >= capR) continue;
         const dy = wrapDeltaY(cp.y, p.pos.y);
         if (dy > 28 || dy < -115) continue;
-        if (Math.hypot(dx, dy) < capR) {
-          presence[p.team] = (presence[p.team] || 0) + 1;
+        if (dx * dx + dy * dy < capRSq) {
+          if (p.team === "red") cRed++;
+          else if (p.team === "blue") cBlue++;
+          else if (p.team === "green") cGreen++;
+          else cFfa++;
         }
       }
-      const entries = Object.entries(presence);
-      if (entries.length > 0) {
-        entries.sort((a, b) => b[1] - a[1]);
-        const [t, topCount] = entries[0];
-        const secondCount = entries.length > 1 ? entries[1][1] : 0;
+      let topTeam = null;
+      let topCount = 0;
+      let secondCount = 0;
+      const considerTeam = (tm, cnt) => {
+        if (cnt <= 0) return;
+        if (cnt > topCount) {
+          secondCount = topCount;
+          topCount = cnt;
+          topTeam = tm;
+        } else if (cnt > secondCount) {
+          secondCount = cnt;
+        }
+      };
+      considerTeam("red", cRed);
+      considerTeam("blue", cBlue);
+      considerTeam("green", cGreen);
+      considerTeam("ffa", cFfa);
+      if (topTeam !== null) {
+        const t = topTeam;
         const netCount = topCount - secondCount;
         if (netCount > 0) {
           const delta = ctx2.config.captureRate * dt * netCount;
@@ -2693,10 +2761,12 @@
         }
       }
     }
-    for (const m of ctx2.mortars) {
+    for (let i = 0; i < ctx2.mortars.length; i++) {
+      const m = ctx2.mortars[i];
       if (m.cooldown > 0) m.cooldown = Math.max(0, m.cooldown - dt);
     }
-    for (const crate of ctx2.supplyCrates) {
+    for (let ci = 0; ci < ctx2.supplyCrates.length; ci++) {
+      const crate = ctx2.supplyCrates[ci];
       if (!crate.active && crate.respawnTimer > 0) {
         crate.respawnTimer -= dt;
         if (crate.respawnTimer <= 0) crate.active = true;
@@ -2721,7 +2791,6 @@
             kind: "supply_pickup",
             playerId: p.id,
             playerName: p.name,
-            // 事件自带名字：客机即使反查不到也能正确显示
             weaponId: crate.kind === "doll" ? -1 : crate.weaponId,
             weaponName: crate.weaponName,
             x: crate.x,
@@ -3025,26 +3094,26 @@
       } else {
         p.lastPrimaryIndex = p.weaponIndex;
       }
-      let sx, sy;
+      let sx2, sy2;
       const wantedCp = p.selectedSpawnId && p.selectedSpawnId !== "base" ? this.capturePoints.find((c) => c.id === p.selectedSpawnId && isCapturePointSelectable(c, team)) : null;
       if (wantedCp) {
-        sx = wantedCp.x;
-        sy = wantedCp.y;
+        sx2 = wantedCp.x;
+        sy2 = wantedCp.y;
       } else if (this.config.randomSpawn) {
         const spot = RANDOM_SPAWN_CANDIDATES[this.rng.int(RANDOM_SPAWN_CANDIDATES.length)];
-        sx = spot.x + this.rng.range(-45, 45);
-        sy = spot.y;
+        sx2 = spot.x + this.rng.range(-45, 45);
+        sy2 = spot.y;
       } else if (team === "ffa") {
         const spot = FFA_SPAWN_POINTS[this.rng.int(FFA_SPAWN_POINTS.length)];
-        sx = spot.x;
-        sy = spot.y;
+        sx2 = spot.x;
+        sy2 = spot.y;
       } else {
         if (team === "red" || team === "blue" || team === "green") this.rng.int(1);
         const base = SPAWN_POINTS.find((s) => s.team === team) ?? SPAWN_POINTS[0];
-        sx = base.x;
-        sy = base.y;
+        sx2 = base.x;
+        sy2 = base.y;
       }
-      p.pos = { x: wrapX(sx + this.rng.range(-45, 45)), y: sy };
+      p.pos = { x: wrapX(sx2 + this.rng.range(-45, 45)), y: sy2 };
       p.vel = { x: 0, y: 0 };
       p.hp = this.config.maxHp;
       p.ammo = WEAPONS.map((w) => w.magSize);
@@ -3175,7 +3244,7 @@
           p.fireCooldown = Math.max(p.fireCooldown, 0.3);
         }
       }
-      const charging = p.chargeTimer > 0 && p.chargeAim !== void 0;
+      const charging = p.chargeTimer > 0 && p.chargeAim !== void 0 && !w.trackChargeAim;
       p.aim = charging ? p.chargeAim : w.aim;
       const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
       if (p.mountedTowerId) {
@@ -3272,6 +3341,7 @@
           }
         }
         if (p.chargeTimer > 0) {
+          if (w.trackChargeAim) p.chargeAim = p.aim;
           p.chargeTimer += dt;
           if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
             this.fire(p);
@@ -3714,25 +3784,25 @@
       }
     }
     /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
-    render(ctx2, screenOf, inView, sxFn, syFn) {
+    render(ctx2, screenOf, inView2, sxFn, syFn) {
       for (let i = 0; i < this.particles.length; i++) {
         const p = this.particles[i];
-        let sx;
-        let sy;
+        let sx2;
+        let sy2;
         if (sxFn && syFn) {
-          sx = sxFn(p.x);
-          sy = syFn(p.y);
+          sx2 = sxFn(p.x);
+          sy2 = syFn(p.y);
         } else {
           const s = screenOf(p.x, p.y);
-          sx = s.x;
-          sy = s.y;
+          sx2 = s.x;
+          sy2 = s.y;
         }
-        if (!inView(sx, sy)) continue;
+        if (!inView2(sx2, sy2)) continue;
         const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1;
         ctx2.globalAlpha = alpha;
         ctx2.fillStyle = p.color;
         ctx2.beginPath();
-        ctx2.arc(sx, sy, p.size, 0, Math.PI * 2);
+        ctx2.arc(sx2, sy2, p.size, 0, Math.PI * 2);
         ctx2.fill();
       }
       ctx2.globalAlpha = 1;
@@ -3860,7 +3930,8 @@
     aimX: 0,
     aimY: 0,
     lastAimAngle: 0,
-    wasGroundedBeforeAscend: false
+    wasGroundedBeforeAscend: false,
+    aimUsed: false
   };
   var inputQueue = { interact: false, secondary: null, reload: false };
   var effects = new Effects();
@@ -4497,6 +4568,108 @@
     window.setTimeout(() => item.remove(), 6500);
   }
 
+  // src/web/app/audio.ts
+  var audioCtx = null;
+  var activeOscCount = 0;
+  var MAX_ACTIVE_OSC = 12;
+  var lastPlayMs = {};
+  var SOUND_COOLDOWN_MS = {
+    shoot: 38,
+    laser: 95,
+    headshot: 45,
+    kill: 45,
+    explosion: 50,
+    shield_break: 60,
+    supply: 60
+  };
+  function getAudioCtx() {
+    if (!featureFlags.proceduralAudio) return null;
+    if (typeof window === "undefined") return null;
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return null;
+    if (!audioCtx) {
+      try {
+        audioCtx = new Ctor();
+      } catch {
+        return null;
+      }
+    }
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {
+      });
+    }
+    return audioCtx;
+  }
+  function warmupAudioCtx() {
+    getAudioCtx();
+  }
+  function playTone(ctx2, type, f0, f1, dur, vol, delay = 0) {
+    if (activeOscCount >= MAX_ACTIVE_OSC) return;
+    const t0 = ctx2.currentTime + delay;
+    const osc = ctx2.createOscillator();
+    const gain = ctx2.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(Math.max(20, Math.min(8e3, f0)), t0);
+    if (f1 !== f0) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(20, Math.min(8e3, f1)), t0 + Math.max(0.01, dur * 0.9));
+    }
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(1e-3, t0 + dur);
+    osc.connect(gain);
+    gain.connect(ctx2.destination);
+    activeOscCount++;
+    osc.onended = () => {
+      activeOscCount = Math.max(0, activeOscCount - 1);
+      try {
+        osc.disconnect();
+        gain.disconnect();
+      } catch {
+      }
+    };
+    osc.start(t0);
+    osc.stop(t0 + dur + 5e-3);
+  }
+  function playProceduralSound(kind, pitchHint = 1) {
+    if (!featureFlags.proceduralAudio) return;
+    const ms = typeof performance !== "undefined" ? performance.now() : 0;
+    const minCd = SOUND_COOLDOWN_MS[kind] ?? 40;
+    if (ms - (lastPlayMs[kind] ?? -9999) < minCd) return;
+    lastPlayMs[kind] = ms;
+    const ctx2 = getAudioCtx();
+    if (!ctx2) return;
+    try {
+      if (kind === "shoot") {
+        playTone(ctx2, "triangle", 260 * pitchHint, 68, 0.07, 0.055);
+        return;
+      }
+      if (kind === "laser") {
+        playTone(ctx2, "sawtooth", 880, 220, 0.09, 0.045);
+        return;
+      }
+      if (kind === "headshot") {
+        playTone(ctx2, "sine", 1180, 1560, 0.14, 0.075);
+        return;
+      }
+      if (kind === "kill") {
+        playTone(ctx2, "triangle", 587.33, 587.33, 0.12, 0.065, 0);
+        playTone(ctx2, "triangle", 880, 880, 0.12, 0.065, 0.055);
+        return;
+      }
+      if (kind === "shield_break") {
+        playTone(ctx2, "sawtooth", 740, 140, 0.17, 0.06);
+        return;
+      }
+      if (kind === "supply") {
+        playTone(ctx2, "sine", 440, 880, 0.17, 0.06);
+        return;
+      }
+      if (kind === "explosion") {
+        playTone(ctx2, "sawtooth", 120, 28, 0.22, 0.08);
+      }
+    } catch {
+    }
+  }
+
   // src/web/sprites.ts
   var TEAM_PALETTE = {
     red: { color: "#f43f5e", light: "#fda4af", dark: "#881337", glow: "rgba(244,63,94,0.35)" },
@@ -4509,6 +4682,31 @@
   var cachedHelmGrads = /* @__PURE__ */ new Map();
   var cachedVisorGrads = /* @__PURE__ */ new Map();
   var cachedShieldGrad = null;
+  var cachedJetFlameGrad = null;
+  var cachedCrateGlowDoll = null;
+  var cachedCrateGlowWep = null;
+  var cachedCrateGradDoll = null;
+  var cachedCrateGradWep = null;
+  var cachedAmmoGrad = null;
+  var cachedMortarBarrelGrad = null;
+  var cachedMineGradInstant = null;
+  var cachedMineGradNormal = null;
+  var cachedGrenadeGrad = null;
+  var cachedAirstrikeBeamGrad = null;
+  var cachedRocketFlameGrad = null;
+  var cachedRocketBodyGrad = null;
+  var cachedGravOrbGrad = null;
+  var cachedDecoLampGrad = null;
+  var cachedDecoWindowGrads = /* @__PURE__ */ new Map();
+  var cachedDecoBarrelGrads = /* @__PURE__ */ new Map();
+  var cachedDecoPipeGrads = /* @__PURE__ */ new Map();
+  var cachedJumpPadGlowGrad = null;
+  var RIVET_OFFSETS = [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1]
+  ];
   function roundRect(ctx2, x, y, w, h, r) {
     const rr = Math.min(r, w / 2, h / 2);
     ctx2.beginPath();
@@ -4560,11 +4758,13 @@
     if (opts.floating) {
       const flick = 0.78 + Math.sin(t * 0.95) * 0.22 + Math.cos(t * 1.7) * 0.1;
       const outerLen = 20 * flick;
-      const outerGrad = ctx2.createLinearGradient(nozzleX, 6, nozzleX, 6 + outerLen);
-      outerGrad.addColorStop(0, "rgba(56, 189, 248, 0.95)");
-      outerGrad.addColorStop(0.55, "rgba(14, 165, 233, 0.65)");
-      outerGrad.addColorStop(1, "rgba(2, 132, 199, 0)");
-      ctx2.fillStyle = outerGrad;
+      if (!cachedJetFlameGrad) {
+        cachedJetFlameGrad = ctx2.createLinearGradient(0, 6, 0, 28);
+        cachedJetFlameGrad.addColorStop(0, "rgba(56, 189, 248, 0.95)");
+        cachedJetFlameGrad.addColorStop(0.55, "rgba(14, 165, 233, 0.65)");
+        cachedJetFlameGrad.addColorStop(1, "rgba(2, 132, 199, 0)");
+      }
+      ctx2.fillStyle = cachedJetFlameGrad;
       ctx2.beginPath();
       ctx2.moveTo(nozzleX - 4, 6);
       ctx2.lineTo(nozzleX + 4, 6);
@@ -4704,7 +4904,7 @@
             ctx2.stroke();
           }
           ctx2.fillStyle = accent;
-          for (let sx = 10; sx <= 16; sx += 2.5) ctx2.fillRect(sx, -7.5, 1.6, 3);
+          for (let sx2 = 10; sx2 <= 16; sx2 += 2.5) ctx2.fillRect(sx2, -7.5, 1.6, 3);
           ctx2.fillStyle = metalDark;
           ctx2.fillRect(33, -9, 3, 5.5);
           break;
@@ -4984,8 +5184,8 @@
       ctx2.lineTo(left + 5, top + ob.h - 5);
       ctx2.stroke();
     } else {
+      ctx2.fillStyle = "rgba(0,0,0,0.2)";
       for (let y = top + 10; y < top + ob.h - 4; y += 11) {
-        ctx2.fillStyle = "rgba(0,0,0,0.2)";
         ctx2.fillRect(left + 2, y, ob.w - 4, 1.5);
       }
     }
@@ -4995,12 +5195,11 @@
     ctx2.stroke();
     ctx2.fillStyle = "rgba(226,232,240,0.45)";
     const pad = 4.5;
-    for (const [rx, ry] of [
-      [left + pad, top + pad],
-      [left + ob.w - pad, top + pad],
-      [left + pad, top + ob.h - pad],
-      [left + ob.w - pad, top + ob.h - pad]
-    ]) {
+    const innerW = ob.w - pad * 2;
+    const innerH = ob.h - pad * 2;
+    for (let i = 0; i < 4; i++) {
+      const rx = left + pad + RIVET_OFFSETS[i][0] * innerW;
+      const ry = top + pad + RIVET_OFFSETS[i][1] * innerH;
       ctx2.beginPath();
       ctx2.arc(rx, ry, 1.4, 0, Math.PI * 2);
       ctx2.fill();
@@ -5035,23 +5234,40 @@
     const bob = Math.sin(tick * 0.08 + crate.x * 0.01) * 1.8;
     ctx2.translate(0, bob);
     if (crate.active) {
-      const glow = ctx2.createRadialGradient(0, 14, 2, 0, 14, 26);
-      glow.addColorStop(0, crate.kind === "doll" ? "rgba(244,114,182,0.35)" : "rgba(56,189,248,0.32)");
-      glow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx2.fillStyle = glow;
+      if (crate.kind === "doll") {
+        if (!cachedCrateGlowDoll) {
+          cachedCrateGlowDoll = ctx2.createRadialGradient(0, 14, 2, 0, 14, 26);
+          cachedCrateGlowDoll.addColorStop(0, "rgba(244,114,182,0.35)");
+          cachedCrateGlowDoll.addColorStop(1, "rgba(0,0,0,0)");
+        }
+        ctx2.fillStyle = cachedCrateGlowDoll;
+      } else {
+        if (!cachedCrateGlowWep) {
+          cachedCrateGlowWep = ctx2.createRadialGradient(0, 14, 2, 0, 14, 26);
+          cachedCrateGlowWep.addColorStop(0, "rgba(56,189,248,0.32)");
+          cachedCrateGlowWep.addColorStop(1, "rgba(0,0,0,0)");
+        }
+        ctx2.fillStyle = cachedCrateGlowWep;
+      }
       ctx2.beginPath();
       ctx2.ellipse(0, 15, 24, 6, 0, 0, Math.PI * 2);
       ctx2.fill();
     }
-    const grad = ctx2.createLinearGradient(0, -16, 0, 16);
     if (crate.kind === "doll") {
-      grad.addColorStop(0, "#9d174d");
-      grad.addColorStop(1, "#4a044e");
+      if (!cachedCrateGradDoll) {
+        cachedCrateGradDoll = ctx2.createLinearGradient(0, -16, 0, 16);
+        cachedCrateGradDoll.addColorStop(0, "#9d174d");
+        cachedCrateGradDoll.addColorStop(1, "#4a044e");
+      }
+      ctx2.fillStyle = cachedCrateGradDoll;
     } else {
-      grad.addColorStop(0, "#1e3a8a");
-      grad.addColorStop(1, "#0f172a");
+      if (!cachedCrateGradWep) {
+        cachedCrateGradWep = ctx2.createLinearGradient(0, -16, 0, 16);
+        cachedCrateGradWep.addColorStop(0, "#1e3a8a");
+        cachedCrateGradWep.addColorStop(1, "#0f172a");
+      }
+      ctx2.fillStyle = cachedCrateGradWep;
     }
-    ctx2.fillStyle = grad;
     ctx2.strokeStyle = crate.color;
     ctx2.lineWidth = 2.2;
     roundRect(ctx2, -18, -16, 36, 32, 5);
@@ -5083,10 +5299,12 @@
   function drawAmmoSprite(ctx2, pack, dx, dy, tick) {
     ctx2.save();
     ctx2.translate(dx, dy - 16 + Math.sin(tick * 0.09 + pack.x * 0.01) * 1.4);
-    const grad = ctx2.createLinearGradient(0, -12, 0, 12);
-    grad.addColorStop(0, "#166534");
-    grad.addColorStop(1, "#052e16");
-    ctx2.fillStyle = grad;
+    if (!cachedAmmoGrad) {
+      cachedAmmoGrad = ctx2.createLinearGradient(0, -12, 0, 12);
+      cachedAmmoGrad.addColorStop(0, "#166534");
+      cachedAmmoGrad.addColorStop(1, "#052e16");
+    }
+    ctx2.fillStyle = cachedAmmoGrad;
     ctx2.strokeStyle = "#4ade80";
     ctx2.lineWidth = 2;
     roundRect(ctx2, -15, -12, 30, 24, 3.5);
@@ -5139,11 +5357,13 @@
     ctx2.save();
     ctx2.translate(0, -10);
     ctx2.rotate(m.angle);
-    const g = ctx2.createLinearGradient(0, -7, 0, 7);
-    g.addColorStop(0, "#94a3b8");
-    g.addColorStop(0.5, "#475569");
-    g.addColorStop(1, "#1e293b");
-    ctx2.fillStyle = g;
+    if (!cachedMortarBarrelGrad) {
+      cachedMortarBarrelGrad = ctx2.createLinearGradient(0, -7, 0, 7);
+      cachedMortarBarrelGrad.addColorStop(0, "#94a3b8");
+      cachedMortarBarrelGrad.addColorStop(0.5, "#475569");
+      cachedMortarBarrelGrad.addColorStop(1, "#1e293b");
+    }
+    ctx2.fillStyle = cachedMortarBarrelGrad;
     ctx2.strokeStyle = m.operatorId ? "#fde047" : "#f97316";
     ctx2.lineWidth = 2;
     roundRect(ctx2, 0, -7, 40, 14, 5);
@@ -5287,10 +5507,21 @@
     ctx2.beginPath();
     ctx2.arc(0, 0, triggerRadius, 0, Math.PI * 2);
     ctx2.stroke();
-    const g = ctx2.createRadialGradient(-3, -6, 2, 0, 0, 12);
-    g.addColorStop(0, m.instant ? "#38bdf8" : "#64748b");
-    g.addColorStop(1, m.instant ? "#075985" : "#1e293b");
-    ctx2.fillStyle = g;
+    if (m.instant) {
+      if (!cachedMineGradInstant) {
+        cachedMineGradInstant = ctx2.createRadialGradient(-3, -6, 2, 0, 0, 12);
+        cachedMineGradInstant.addColorStop(0, "#38bdf8");
+        cachedMineGradInstant.addColorStop(1, "#075985");
+      }
+      ctx2.fillStyle = cachedMineGradInstant;
+    } else {
+      if (!cachedMineGradNormal) {
+        cachedMineGradNormal = ctx2.createRadialGradient(-3, -6, 2, 0, 0, 12);
+        cachedMineGradNormal.addColorStop(0, "#64748b");
+        cachedMineGradNormal.addColorStop(1, "#1e293b");
+      }
+      ctx2.fillStyle = cachedMineGradNormal;
+    }
     ctx2.beginPath();
     ctx2.arc(0, 0, 12, Math.PI, 0);
     ctx2.fill();
@@ -5313,10 +5544,12 @@
     ctx2.save();
     ctx2.translate(dx, dy);
     ctx2.rotate(tick * 0.2);
-    const grad = ctx2.createRadialGradient(-2, -2, 1, 0, 0, 8);
-    grad.addColorStop(0, "#86efac");
-    grad.addColorStop(1, "#166534");
-    ctx2.fillStyle = grad;
+    if (!cachedGrenadeGrad) {
+      cachedGrenadeGrad = ctx2.createRadialGradient(-2, -2, 1, 0, 0, 8);
+      cachedGrenadeGrad.addColorStop(0, "#86efac");
+      cachedGrenadeGrad.addColorStop(1, "#166534");
+    }
+    ctx2.fillStyle = cachedGrenadeGrad;
     ctx2.beginPath();
     ctx2.arc(0, 0, 7, 0, Math.PI * 2);
     ctx2.fill();
@@ -5347,10 +5580,12 @@
     ctx2.beginPath();
     ctx2.arc(0, 0, 18 + pulse * 6, 0, Math.PI * 2);
     ctx2.stroke();
-    const beamGrad = ctx2.createLinearGradient(0, -400, 0, 0);
-    beamGrad.addColorStop(0, "rgba(239,68,68,0)");
-    beamGrad.addColorStop(1, `rgba(239,68,68,${0.35 + pulse * 0.2})`);
-    ctx2.fillStyle = beamGrad;
+    if (!cachedAirstrikeBeamGrad) {
+      cachedAirstrikeBeamGrad = ctx2.createLinearGradient(0, -400, 0, 0);
+      cachedAirstrikeBeamGrad.addColorStop(0, "rgba(239,68,68,0)");
+      cachedAirstrikeBeamGrad.addColorStop(1, "rgba(239,68,68,0.45)");
+    }
+    ctx2.fillStyle = cachedAirstrikeBeamGrad;
     ctx2.fillRect(-8, -400, 16, 400);
     ctx2.fillStyle = "#fecaca";
     ctx2.font = "bold 11px Inter, system-ui, sans-serif";
@@ -5365,23 +5600,27 @@
       ctx2.translate(dx, dy);
       ctx2.rotate(ang);
       const flame = 12 + Math.sin(tick * 1.4) * 5;
-      const fg = ctx2.createLinearGradient(-14, 0, -14 - flame, 0);
-      fg.addColorStop(0, "rgba(254, 243, 199, 0.95)");
-      fg.addColorStop(0.45, "rgba(251, 191, 36, 0.85)");
-      fg.addColorStop(0.8, "rgba(249, 115, 22, 0.55)");
-      fg.addColorStop(1, "rgba(249, 115, 22, 0)");
-      ctx2.fillStyle = fg;
+      if (!cachedRocketFlameGrad) {
+        cachedRocketFlameGrad = ctx2.createLinearGradient(-14, 0, -32, 0);
+        cachedRocketFlameGrad.addColorStop(0, "rgba(254, 243, 199, 0.95)");
+        cachedRocketFlameGrad.addColorStop(0.45, "rgba(251, 191, 36, 0.85)");
+        cachedRocketFlameGrad.addColorStop(0.8, "rgba(249, 115, 22, 0.55)");
+        cachedRocketFlameGrad.addColorStop(1, "rgba(249, 115, 22, 0)");
+      }
+      ctx2.fillStyle = cachedRocketFlameGrad;
       ctx2.beginPath();
       ctx2.moveTo(-12, -4.5);
       ctx2.lineTo(-12 - flame, 0);
       ctx2.lineTo(-12, 4.5);
       ctx2.closePath();
       ctx2.fill();
-      const bodyGrad = ctx2.createLinearGradient(0, -6, 0, 6);
-      bodyGrad.addColorStop(0, "#fda4af");
-      bodyGrad.addColorStop(0.5, "#f43f5e");
-      bodyGrad.addColorStop(1, "#9f1239");
-      ctx2.fillStyle = bodyGrad;
+      if (!cachedRocketBodyGrad) {
+        cachedRocketBodyGrad = ctx2.createLinearGradient(0, -6, 0, 6);
+        cachedRocketBodyGrad.addColorStop(0, "#fda4af");
+        cachedRocketBodyGrad.addColorStop(0.5, "#f43f5e");
+        cachedRocketBodyGrad.addColorStop(1, "#9f1239");
+      }
+      ctx2.fillStyle = cachedRocketBodyGrad;
       ctx2.strokeStyle = "#4c0519";
       ctx2.lineWidth = 1.5;
       roundRect(ctx2, -14, -5, 24, 10, 4);
@@ -5440,11 +5679,13 @@
     } else if (pr.isGravityOrb) {
       ctx2.save();
       ctx2.translate(dx, dy);
-      const grd = ctx2.createRadialGradient(0, 0, 2, 0, 0, 26);
-      grd.addColorStop(0, "rgba(233,213,255,0.95)");
-      grd.addColorStop(0.38, "rgba(168,85,247,0.62)");
-      grd.addColorStop(1, "rgba(168,85,247,0)");
-      ctx2.fillStyle = grd;
+      if (!cachedGravOrbGrad) {
+        cachedGravOrbGrad = ctx2.createRadialGradient(0, 0, 2, 0, 0, 26);
+        cachedGravOrbGrad.addColorStop(0, "rgba(233,213,255,0.95)");
+        cachedGravOrbGrad.addColorStop(0.38, "rgba(168,85,247,0.62)");
+        cachedGravOrbGrad.addColorStop(1, "rgba(168,85,247,0)");
+      }
+      ctx2.fillStyle = cachedGravOrbGrad;
       ctx2.beginPath();
       ctx2.arc(0, 0, 26, 0, Math.PI * 2);
       ctx2.fill();
@@ -5492,25 +5733,29 @@
     const top = dy - r.h / 2;
     switch (r.kind) {
       case "deco_window_lit": {
-        const flick = 0.75 + Math.sin(tick * 0.05 + r.x * 0.013) * 0.12;
         ctx2.save();
+        ctx2.translate(dx, dy);
         ctx2.globalAlpha = 0.9;
         ctx2.fillStyle = r.color;
-        ctx2.fillRect(left, top, r.w, r.h);
+        ctx2.fillRect(-r.w / 2, -r.h / 2, r.w, r.h);
         ctx2.strokeStyle = "rgba(15,23,42,0.75)";
         ctx2.lineWidth = 2;
-        ctx2.strokeRect(left, top, r.w, r.h);
+        ctx2.strokeRect(-r.w / 2, -r.h / 2, r.w, r.h);
         ctx2.beginPath();
-        ctx2.moveTo(left + r.w / 2, top);
-        ctx2.lineTo(left + r.w / 2, top + r.h);
-        ctx2.moveTo(left, top + r.h / 2);
-        ctx2.lineTo(left + r.w, top + r.h / 2);
+        ctx2.moveTo(0, -r.h / 2);
+        ctx2.lineTo(0, r.h / 2);
+        ctx2.moveTo(-r.w / 2, 0);
+        ctx2.lineTo(r.w / 2, 0);
         ctx2.stroke();
-        const g = ctx2.createRadialGradient(left + r.w / 2, top + r.h / 2, 2, left + r.w / 2, top + r.h / 2, r.w * 1.8);
-        g.addColorStop(0, `rgba(251, 191, 36, ${0.2 * flick})`);
-        g.addColorStop(1, "rgba(251, 191, 36, 0)");
+        let g = cachedDecoWindowGrads.get(r.w);
+        if (!g) {
+          g = ctx2.createRadialGradient(0, 0, 2, 0, 0, r.w * 1.8);
+          g.addColorStop(0, "rgba(251, 191, 36, 0.16)");
+          g.addColorStop(1, "rgba(251, 191, 36, 0)");
+          cachedDecoWindowGrads.set(r.w, g);
+        }
         ctx2.fillStyle = g;
-        ctx2.fillRect(left - r.w, top - r.h, r.w * 3, r.h * 3);
+        ctx2.fillRect(-r.w * 1.5, -r.h * 1.5, r.w * 3, r.h * 3);
         ctx2.restore();
         break;
       }
@@ -5523,24 +5768,27 @@
         break;
       case "deco_lamp": {
         ctx2.save();
+        ctx2.translate(dx, top);
         ctx2.strokeStyle = "#475569";
         ctx2.lineWidth = 3;
         ctx2.beginPath();
-        ctx2.moveTo(dx, top + r.h);
-        ctx2.lineTo(dx, top + 10);
+        ctx2.moveTo(0, r.h);
+        ctx2.lineTo(0, 10);
         ctx2.stroke();
         ctx2.fillStyle = "#1e293b";
-        ctx2.fillRect(dx - 7, top, 14, 10);
-        const g = ctx2.createRadialGradient(dx, top + 6, 2, dx, top + 6, 70);
-        g.addColorStop(0, "rgba(251,191,36,0.22)");
-        g.addColorStop(1, "rgba(251,191,36,0)");
-        ctx2.fillStyle = g;
+        ctx2.fillRect(-7, 0, 14, 10);
+        if (!cachedDecoLampGrad) {
+          cachedDecoLampGrad = ctx2.createRadialGradient(0, 6, 2, 0, 6, 70);
+          cachedDecoLampGrad.addColorStop(0, "rgba(251,191,36,0.22)");
+          cachedDecoLampGrad.addColorStop(1, "rgba(251,191,36,0)");
+        }
+        ctx2.fillStyle = cachedDecoLampGrad;
         ctx2.beginPath();
-        ctx2.arc(dx, top + 6, 70, 0, Math.PI * 2);
+        ctx2.arc(0, 6, 70, 0, Math.PI * 2);
         ctx2.fill();
         ctx2.fillStyle = "#fde68a";
         ctx2.beginPath();
-        ctx2.arc(dx, top + 6, 3.5, 0, Math.PI * 2);
+        ctx2.arc(0, 6, 3.5, 0, Math.PI * 2);
         ctx2.fill();
         ctx2.restore();
         break;
@@ -5605,8 +5853,8 @@
         ctx2.beginPath();
         ctx2.rect(left, top, r.w, r.h);
         ctx2.clip();
+        ctx2.fillStyle = "rgba(245,158,11,0.55)";
         for (let x = left - r.h; x < left + r.w; x += 14) {
-          ctx2.fillStyle = "rgba(245,158,11,0.55)";
           ctx2.beginPath();
           ctx2.moveTo(x, top + r.h);
           ctx2.lineTo(x + 7, top);
@@ -5620,33 +5868,43 @@
       }
       case "deco_barrel": {
         ctx2.save();
-        const g = ctx2.createLinearGradient(left, 0, left + r.w, 0);
-        g.addColorStop(0, "#92400e");
-        g.addColorStop(0.5, "#f59e0b");
-        g.addColorStop(1, "#78350f");
+        ctx2.translate(left, top);
+        let g = cachedDecoBarrelGrads.get(r.w);
+        if (!g) {
+          g = ctx2.createLinearGradient(0, 0, r.w, 0);
+          g.addColorStop(0, "#92400e");
+          g.addColorStop(0.5, "#f59e0b");
+          g.addColorStop(1, "#78350f");
+          cachedDecoBarrelGrads.set(r.w, g);
+        }
         ctx2.fillStyle = g;
-        roundRect(ctx2, left, top, r.w, r.h, 3);
+        roundRect(ctx2, 0, 0, r.w, r.h, 3);
         ctx2.fill();
         ctx2.strokeStyle = "#451a03";
         ctx2.lineWidth = 1.5;
         ctx2.stroke();
         ctx2.fillStyle = "rgba(0,0,0,0.35)";
-        ctx2.fillRect(left, top + 6, r.w, 2);
-        ctx2.fillRect(left, top + r.h - 8, r.w, 2);
+        ctx2.fillRect(0, 6, r.w, 2);
+        ctx2.fillRect(0, r.h - 8, r.w, 2);
         ctx2.restore();
         break;
       }
       case "deco_pipe_run": {
         ctx2.save();
-        const g = ctx2.createLinearGradient(0, top, 0, top + r.h);
-        g.addColorStop(0, "#0891b2");
-        g.addColorStop(0.5, "#22d3ee");
-        g.addColorStop(1, "#0e7490");
+        ctx2.translate(left, top);
+        let g = cachedDecoPipeGrads.get(r.h);
+        if (!g) {
+          g = ctx2.createLinearGradient(0, 0, 0, r.h);
+          g.addColorStop(0, "#0891b2");
+          g.addColorStop(0.5, "#22d3ee");
+          g.addColorStop(1, "#0e7490");
+          cachedDecoPipeGrads.set(r.h, g);
+        }
         ctx2.fillStyle = g;
-        roundRect(ctx2, left, top, r.w, r.h, 4);
+        roundRect(ctx2, 0, 0, r.w, r.h, 4);
         ctx2.fill();
         ctx2.fillStyle = "rgba(0,0,0,0.4)";
-        for (let x = left + 40; x < left + r.w; x += 120) ctx2.fillRect(x, top - 2, 6, r.h + 4);
+        for (let x = 40; x < r.w; x += 120) ctx2.fillRect(x, -2, 6, r.h + 4);
         ctx2.restore();
         break;
       }
@@ -5773,35 +6031,39 @@
   function drawJumpPad(ctx2, x, y, tick) {
     const pulse = 0.65 + 0.35 * Math.sin(tick * 0.12 + x * 0.01);
     ctx2.save();
-    const g = ctx2.createRadialGradient(x, y - 8, 3, x, y - 8, 46);
-    g.addColorStop(0, `rgba(56, 189, 248, ${0.3 * pulse})`);
-    g.addColorStop(1, "rgba(56, 189, 248, 0)");
-    ctx2.fillStyle = g;
+    ctx2.translate(x, y);
+    if (!cachedJumpPadGlowGrad) {
+      cachedJumpPadGlowGrad = ctx2.createRadialGradient(0, -8, 3, 0, -8, 46);
+      cachedJumpPadGlowGrad.addColorStop(0, "rgba(56, 189, 248, 0.26)");
+      cachedJumpPadGlowGrad.addColorStop(1, "rgba(56, 189, 248, 0)");
+    }
+    ctx2.fillStyle = cachedJumpPadGlowGrad;
     ctx2.beginPath();
-    ctx2.arc(x, y - 8, 46, 0, Math.PI * 2);
+    ctx2.arc(0, -8, 46, 0, Math.PI * 2);
     ctx2.fill();
     ctx2.fillStyle = "#0e7490";
     ctx2.strokeStyle = "#22d3ee";
     ctx2.lineWidth = 2;
     ctx2.beginPath();
-    ctx2.roundRect(x - 26, y - 12, 52, 12, 4);
+    ctx2.roundRect(-26, -12, 52, 12, 4);
     ctx2.fill();
     ctx2.stroke();
     const lift = Math.sin(tick * 0.12 + x * 0.01) * 3;
     ctx2.strokeStyle = `rgba(165, 243, 252, ${0.6 + 0.4 * pulse})`;
     ctx2.lineWidth = 3.5;
     ctx2.lineCap = "round";
-    for (const dy of [0, 8]) {
+    for (let i = 0; i < 2; i++) {
+      const dy = i * 8;
       ctx2.beginPath();
-      ctx2.moveTo(x - 12, y - 20 - dy + lift);
-      ctx2.lineTo(x, y - 30 - dy + lift);
-      ctx2.lineTo(x + 12, y - 20 - dy + lift);
+      ctx2.moveTo(-12, -20 - dy + lift);
+      ctx2.lineTo(0, -30 - dy + lift);
+      ctx2.lineTo(12, -20 - dy + lift);
       ctx2.stroke();
     }
     ctx2.font = "bold 10px Inter, system-ui, sans-serif";
     ctx2.textAlign = "center";
     ctx2.fillStyle = "rgba(165, 243, 252, 0.9)";
-    ctx2.fillText("\u5F39\u5C04", x, y + 12);
+    ctx2.fillText("\u5F39\u5C04", 0, 12);
     ctx2.restore();
   }
 
@@ -8059,7 +8321,7 @@
 
   // src/net/StateSync.ts
   var WORLD_W2 = 13200;
-  var WORLD_H3 = 4400;
+  var WORLD_H2 = 4400;
   var SNAP_THRESHOLD = 120;
   var SMOOTH_THRESHOLD = 0.5;
   var StateSync = class {
@@ -8311,7 +8573,7 @@
       if (!pa) return pb;
       return {
         ...pb,
-        pos: { x: lerpWrap(pa.pos.x, pb.pos.x, f, WORLD_W2), y: lerpWrap(pa.pos.y, pb.pos.y, f, WORLD_H3) },
+        pos: { x: lerpWrap(pa.pos.x, pb.pos.x, f, WORLD_W2), y: lerpWrap(pa.pos.y, pb.pos.y, f, WORLD_H2) },
         vel: { x: lerp(pa.vel.x, pb.vel.x, f), y: lerp(pa.vel.y, pb.vel.y, f) },
         doll: pb.doll
       };
@@ -8319,22 +8581,22 @@
     const projectiles = b.projectiles.map((p) => {
       const pa = prevProjMap.get(p.id);
       if (!pa) return p;
-      return { ...p, pos: { x: lerpWrap(pa.pos.x, p.pos.x, f, WORLD_W2), y: lerpWrap(pa.pos.y, p.pos.y, f, WORLD_H3) }, vel: { ...p.vel } };
+      return { ...p, pos: { x: lerpWrap(pa.pos.x, p.pos.x, f, WORLD_W2), y: lerpWrap(pa.pos.y, p.pos.y, f, WORLD_H2) }, vel: { ...p.vel } };
     });
     const grenades = b.grenades.map((g) => {
       const ga = prevGrenMap.get(g.id);
       if (!ga) return g;
-      return { ...g, pos: { x: lerpWrap(ga.pos.x, g.pos.x, f, WORLD_W2), y: lerpWrap(ga.pos.y, g.pos.y, f, WORLD_H3) }, vel: { ...g.vel } };
+      return { ...g, pos: { x: lerpWrap(ga.pos.x, g.pos.x, f, WORLD_W2), y: lerpWrap(ga.pos.y, g.pos.y, f, WORLD_H2) }, vel: { ...g.vel } };
     });
     const landmines = b.landmines.map((m) => {
       const ma = prevMineMap.get(m.id);
       if (!ma) return m;
-      return { ...m, pos: { x: lerpWrap(ma.pos.x, m.pos.x, f, WORLD_W2), y: lerpWrap(ma.pos.y, m.pos.y, f, WORLD_H3) }, vel: { ...m.vel } };
+      return { ...m, pos: { x: lerpWrap(ma.pos.x, m.pos.x, f, WORLD_W2), y: lerpWrap(ma.pos.y, m.pos.y, f, WORLD_H2) }, vel: { ...m.vel } };
     });
     const airstrikes = b.airstrikes.map((s) => {
       const sa = prevAirMap.get(s.id);
       if (!sa) return s;
-      return { ...s, pos: { x: lerpWrap(sa.pos.x, s.pos.x, f, WORLD_W2), y: lerpWrap(sa.pos.y, s.pos.y, f, WORLD_H3) } };
+      return { ...s, pos: { x: lerpWrap(sa.pos.x, s.pos.x, f, WORLD_W2), y: lerpWrap(sa.pos.y, s.pos.y, f, WORLD_H2) } };
     });
     return {
       ...b,
@@ -8364,90 +8626,6 @@
     }
   };
 
-  // src/web/app/audio.ts
-  var audioCtx = null;
-  var lastShootMs = 0;
-  function getAudioCtx() {
-    if (!featureFlags.proceduralAudio) return null;
-    if (typeof window === "undefined") return null;
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return null;
-    if (!audioCtx) {
-      try {
-        audioCtx = new Ctor();
-      } catch {
-        return null;
-      }
-    }
-    if (audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {
-      });
-    }
-    return audioCtx;
-  }
-  function playTone(ctx2, type, f0, f1, dur, vol, delay = 0) {
-    const t0 = ctx2.currentTime + delay;
-    const osc = ctx2.createOscillator();
-    const gain = ctx2.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(Math.max(20, Math.min(8e3, f0)), t0);
-    if (f1 !== f0) {
-      osc.frequency.exponentialRampToValueAtTime(Math.max(20, Math.min(8e3, f1)), t0 + Math.max(0.01, dur * 0.9));
-    }
-    gain.gain.setValueAtTime(vol, t0);
-    gain.gain.exponentialRampToValueAtTime(1e-3, t0 + dur);
-    osc.connect(gain);
-    gain.connect(ctx2.destination);
-    osc.onended = () => {
-      try {
-        osc.disconnect();
-        gain.disconnect();
-      } catch {
-      }
-    };
-    osc.start(t0);
-    osc.stop(t0 + dur + 5e-3);
-  }
-  function playProceduralSound(kind, pitchHint = 1) {
-    if (!featureFlags.proceduralAudio) return;
-    const ctx2 = getAudioCtx();
-    if (!ctx2) return;
-    try {
-      if (kind === "shoot") {
-        const ms = typeof performance !== "undefined" ? performance.now() : 0;
-        if (ms - lastShootMs < 35) return;
-        lastShootMs = ms;
-        playTone(ctx2, "triangle", 260 * pitchHint, 68, 0.07, 0.055);
-        return;
-      }
-      if (kind === "laser") {
-        playTone(ctx2, "sawtooth", 880, 220, 0.13, 0.05);
-        return;
-      }
-      if (kind === "headshot") {
-        playTone(ctx2, "sine", 1180, 1560, 0.14, 0.075);
-        return;
-      }
-      if (kind === "kill") {
-        playTone(ctx2, "triangle", 587.33, 587.33, 0.12, 0.065, 0);
-        playTone(ctx2, "triangle", 880, 880, 0.12, 0.065, 0.055);
-        return;
-      }
-      if (kind === "shield_break") {
-        playTone(ctx2, "sawtooth", 740, 140, 0.17, 0.06);
-        return;
-      }
-      if (kind === "supply") {
-        playTone(ctx2, "sine", 440, 880, 0.17, 0.06);
-        return;
-      }
-      if (kind === "explosion") {
-        playTone(ctx2, "sawtooth", 120, 28, 0.24, 0.085);
-      }
-    } catch {
-    }
-  }
-
   // src/web/app/events.ts
   var death = { info: null };
   function handleEvents(evs) {
@@ -8461,7 +8639,8 @@
         const vName = e.victimName ?? victimP?.name ?? "?";
         const vTeam = e.victimTeam ?? victimP?.team ?? "ffa";
         addKillFeed(kName, kTeam, vName, vTeam, e.weaponLabel ?? "", e.isHeadshot ?? e.headshot, e.isPierced);
-        playProceduralSound(e.isHeadshot ?? e.headshot ? "headshot" : "kill");
+        const isOwnKill = killer === localPlayer.id && e.victimId !== localPlayer.id;
+        if (isOwnKill) playProceduralSound(e.isHeadshot ?? e.headshot ? "headshot" : "kill");
         if ((e.killerId === localPlayer.id || e.attackerId === localPlayer.id) && !isSecondaryUnlocked(pendingLoadout.secondaryType, localPlayer.deathStreak ?? 0, localPlayer.dollCharges ?? 0, localPlayer.weaponIndex)) {
           pendingLoadout.secondaryType = "frag";
           localPlayer.secondary = "frag";
@@ -8506,9 +8685,18 @@
         }
       } else if (e.kind === "laser") {
         if (e.segments && e.segments.length > 0) {
-          const dur = e.duration ?? 0.14;
-          beams.push({ segments: e.segments, color: e.color ?? "#22d3ee", life: dur, maxLife: dur });
-          if (beams.length > 24) beams.shift();
+          const dur = e.duration ?? 0.06;
+          const color = e.color ?? "#22d3ee";
+          const existing = e.playerId !== void 0 ? beams.find((b) => b.playerId === e.playerId) : void 0;
+          if (existing) {
+            existing.segments = e.segments;
+            existing.color = color;
+            existing.life = dur;
+            existing.maxLife = dur;
+          } else {
+            beams.push({ playerId: e.playerId, segments: e.segments, color, life: dur, maxLife: dur });
+            if (beams.length > 12) beams.shift();
+          }
         }
         screenFx.shake = Math.max(screenFx.shake, 1.5);
         playProceduralSound("laser");
@@ -8780,7 +8968,7 @@
       guestPlayer.weaponIndex = initWeaponIdx;
       guestPlayer.lastPrimaryIndex = initWeaponIdx;
     }
-    if (typeof initSecondary === "string") {
+    if (typeof initSecondary === "string" && SECONDARIES[initSecondary] && isSecondaryUnlocked(initSecondary, guestPlayer.deathStreak ?? 0, guestPlayer.dollCharges ?? 0, guestPlayer.weaponIndex)) {
       guestPlayer.secondary = initSecondary;
     }
     guestPlayer.deployed = true;
@@ -8815,8 +9003,8 @@
             guestPlayer.weaponIndex = wIdx;
             guestPlayer.lastPrimaryIndex = wIdx;
           }
-          if (typeof parsed.secondary === "string") {
-            guestPlayer.secondary = parsed.secondary;
+          if (typeof parsed.secondary === "string" && SECONDARIES[parsed.secondary]) {
+            guestPlayer.secondary = isSecondaryUnlocked(parsed.secondary, guestPlayer.deathStreak ?? 0, guestPlayer.dollCharges ?? 0, guestPlayer.weaponIndex) ? parsed.secondary : "frag";
           }
           if (typeof parsed.spawnPointId === "string") {
             guestPlayer.selectedSpawnId = parsed.spawnPointId;
@@ -8924,8 +9112,6 @@
       Object.assign(localPlayer, meInSnap);
       localPlayer.selectedSpawnId = keepSpawnId;
     }
-    updateScoreboardUI();
-    updateHudUI();
   }
   function createHybridBroadcastWebRtcConn(bc, clientId, side) {
     const dataCbs = [];
@@ -9584,6 +9770,44 @@
   }
 
   // src/web/app/hud.ts
+  var domCache = /* @__PURE__ */ new Map();
+  var lastTextMap = /* @__PURE__ */ new WeakMap();
+  var lastWidthMap = /* @__PURE__ */ new WeakMap();
+  var lastHeightMap = /* @__PURE__ */ new WeakMap();
+  var lastClassMap = /* @__PURE__ */ new WeakMap();
+  function getEl(id) {
+    if (typeof document === "undefined" || typeof document.getElementById !== "function") return null;
+    let el = domCache.get(id);
+    if (!el) {
+      el = document.getElementById(id);
+      if (el) domCache.set(id, el);
+    }
+    return el ?? null;
+  }
+  function setTextIfChanged(el, val) {
+    if (!el) return;
+    if (lastTextMap.get(el) === val && el.textContent === val) return;
+    lastTextMap.set(el, val);
+    el.textContent = val;
+  }
+  function setWidthIfChanged(el, val) {
+    if (!el || !el.style) return;
+    if (lastWidthMap.get(el) === val) return;
+    lastWidthMap.set(el, val);
+    el.style.width = val;
+  }
+  function setHeightIfChanged(el, val) {
+    if (!el || !el.style) return;
+    if (lastHeightMap.get(el) === val) return;
+    lastHeightMap.set(el, val);
+    el.style.height = val;
+  }
+  function setClassIfChanged(el, cls) {
+    if (!el) return;
+    if (lastClassMap.get(el) === cls) return;
+    lastClassMap.set(el, cls);
+    el.className = cls;
+  }
   function isHostAuthority() {
     return netState.role !== "client" && uiState.lobbyRole !== "client";
   }
@@ -9617,10 +9841,10 @@
   function syncFeatureFlagsUI() {
     const keys2 = Object.keys(featureFlags);
     const enabledCount = keys2.filter((k) => featureFlags[k]).length;
-    const countEl = document.getElementById("hudFlagsCountText");
-    if (countEl) countEl.textContent = `${enabledCount}/${keys2.length}`;
-    const toggleBtn = document.getElementById("toggleFlagsHudBtn");
-    const panel = document.getElementById("hudFlagsPanel");
+    const countEl = getEl("hudFlagsCountText");
+    setTextIfChanged(countEl, `${enabledCount}/${keys2.length}`);
+    const toggleBtn = getEl("toggleFlagsHudBtn");
+    const panel = getEl("hudFlagsPanel");
     if (toggleBtn) {
       toggleBtn.className = uiState.flagsHudOpen ? "px-2 py-1 rounded-lg bg-emerald-400 text-slate-950 font-extrabold text-[11px] transition flex items-center gap-1 shadow-md" : "px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 text-[11px] font-extrabold transition flex items-center gap-1";
     }
@@ -9638,15 +9862,15 @@
         pill.className = "flag-state-pill px-2 py-0.5 rounded-md font-black text-[10px] shrink-0 " + (on ? "bg-emerald-400 text-slate-950" : "bg-slate-800 text-slate-400 border border-slate-700");
       }
     });
-    const mmPanel = document.getElementById("hudMinimapPanel");
+    const mmPanel = getEl("hudMinimapPanel");
     if (mmPanel) mmPanel.classList.toggle("hidden", !featureFlags.minimapRadar);
     if (!featureFlags.captureHudRing) {
-      document.getElementById("hudCaptureProgressCard")?.classList.add("hidden");
+      getEl("hudCaptureProgressCard")?.classList.add("hidden");
     }
   }
   function syncSysBarUI() {
-    const bar = document.getElementById("topSystemToolbar");
-    const btn = document.getElementById("toggleSysBarBtn");
+    const bar = getEl("topSystemToolbar");
+    const btn = getEl("toggleSysBarBtn");
     if (bar) bar.classList.toggle("hidden", !uiState.sysBarOpen);
     if (btn) {
       btn.className = uiState.sysBarOpen ? "glass-panel w-8 h-8 rounded-xl border border-cyan-400 bg-cyan-500/25 text-xs font-extrabold text-cyan-200 flex items-center justify-center shadow-xl transition" : "glass-panel w-8 h-8 rounded-xl border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-xs font-extrabold text-slate-200 flex items-center justify-center shadow-xl transition";
@@ -9685,8 +9909,8 @@
     if (!canDebug) {
       uiState.debugHudOpen = false;
     }
-    const toggleBtn = document.getElementById("toggleDebugHudBtn");
-    const panel = document.getElementById("debugHudPanel");
+    const toggleBtn = getEl("toggleDebugHudBtn");
+    const panel = getEl("debugHudPanel");
     if (toggleBtn) {
       toggleBtn.classList.toggle("hidden", !canDebug);
       toggleBtn.className = canDebug ? uiState.debugHudOpen ? "px-2 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-[11px] transition flex items-center gap-1 shadow-md" : "px-2 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-semibold text-[11px] transition flex items-center gap-1" : "hidden";
@@ -9711,20 +9935,24 @@
   }
   function updateDebugHudTelemetry(fps = 60) {
     if (!uiState.debugHudOpen || !isHostAuthority()) return;
-    const tickEl = document.getElementById("dbgTickText");
-    if (tickEl) tickEl.textContent = `Tick ${world.tick} \xB7 ${Math.round(fps)} FPS`;
-    const posEl = document.getElementById("dbgPosVelText");
-    if (posEl) {
-      posEl.textContent = `(${Math.round(localPlayer.pos.x)}, ${Math.round(localPlayer.pos.y)}) \xB7 v(${Math.round(localPlayer.vel.x)}, ${Math.round(localPlayer.vel.y)})`;
-    }
-    const entEl = document.getElementById("dbgEntitiesText");
+    const tickEl = getEl("dbgTickText");
+    setTextIfChanged(tickEl, `Tick ${world.tick} \xB7 ${Math.round(fps)} FPS`);
+    const posEl = getEl("dbgPosVelText");
+    setTextIfChanged(posEl, `(${Math.round(localPlayer.pos.x)}, ${Math.round(localPlayer.pos.y)}) \xB7 v(${Math.round(localPlayer.vel.x)}, ${Math.round(localPlayer.vel.y)})`);
+    const entEl = getEl("dbgEntitiesText");
     if (entEl) {
-      const activeCrates = world.supplyCrates.filter((c) => c.active).length;
-      entEl.textContent = `\u5F39\u4E38 ${world.projectiles.length} \xB7 \u63A9\u4F53 ${world.obstacles.length} \xB7 \u5F39\u836F ${world.ammoPacks.length} \xB7 \u7279\u6B66 ${activeCrates}`;
+      let activeCrates = 0;
+      for (let i = 0; i < world.supplyCrates.length; i++) {
+        if (world.supplyCrates[i].active) activeCrates++;
+      }
+      setTextIfChanged(entEl, `\u5F39\u4E38 ${world.projectiles.length} \xB7 \u63A9\u4F53 ${world.obstacles.length} \xB7 \u5F39\u836F ${world.ammoPacks.length} \xB7 \u7279\u6B66 ${activeCrates}`);
     }
-    const diagEl = document.getElementById("diagQuickStatus");
+    const diagEl = getEl("diagQuickStatus");
     if (diagEl) {
-      diagEl.textContent = `\u8BB0\u5F55\u4E2D \xB7 \u6389\u5E27>24ms ${diagStats.gapsOver24} \xB7 >50ms ${diagStats.gapsOver50} \xB7 >100ms ${diagStats.gapsOver100} \xB7 \u6700\u5DEE ${diagStats.worstGapMs}ms \xB7 CPU\u5CF0\u503C ${Math.round(diagStats.maxBusyMs * 10) / 10}ms`;
+      setTextIfChanged(
+        diagEl,
+        `\u8BB0\u5F55\u4E2D \xB7 \u6389\u5E27>24ms ${diagStats.gapsOver24} \xB7 >50ms ${diagStats.gapsOver50} \xB7 >100ms ${diagStats.gapsOver100} \xB7 \u6700\u5DEE ${diagStats.worstGapMs}ms \xB7 CPU\u5CF0\u503C ${Math.round(diagStats.maxBusyMs * 10) / 10}ms`
+      );
     }
   }
   function syncLobbyRoleUI(nextRole) {
@@ -9738,17 +9966,17 @@
     const isClient = uiState.lobbyRole === "client" || netState.role === "client";
     if (isClient) uiState.debugHudOpen = false;
     updateDebugHudVisibility();
-    const hostTab = document.getElementById("lobbyTabHostBtn");
-    const clientTab = document.getElementById("lobbyTabClientBtn");
+    const hostTab = getEl("lobbyTabHostBtn");
+    const clientTab = getEl("lobbyTabClientBtn");
     if (hostTab) {
       hostTab.className = !isClient ? "flex-1 py-2 px-4 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 font-extrabold text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow" : "flex-1 py-2 px-4 rounded-xl border border-slate-700 bg-slate-900/70 text-slate-400 hover:text-slate-200 font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2";
     }
     if (clientTab) {
       clientTab.className = isClient ? "flex-1 py-2 px-4 rounded-xl border-2 border-sky-400 bg-sky-500/20 text-sky-200 font-extrabold text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow" : "flex-1 py-2 px-4 rounded-xl border border-slate-700 bg-slate-900/70 text-slate-400 hover:text-slate-200 font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2";
     }
-    document.getElementById("hostKcpSection")?.classList.toggle("hidden", isClient);
-    document.getElementById("clientKcpSection")?.classList.toggle("hidden", !isClient);
-    document.getElementById("hostRoomParamsCard")?.classList.toggle("opacity-50", isClient);
+    getEl("hostKcpSection")?.classList.toggle("hidden", isClient);
+    getEl("clientKcpSection")?.classList.toggle("hidden", !isClient);
+    getEl("hostRoomParamsCard")?.classList.toggle("opacity-50", isClient);
     document.querySelectorAll(".mode-btn").forEach((btn) => {
       ;
       btn.disabled = isClient;
@@ -9761,18 +9989,16 @@
       btn.classList.toggle("opacity-40", isClient);
       btn.classList.toggle("cursor-not-allowed", isClient);
     });
-    const openParamsLobbyBtn = document.getElementById("lobbyOpenParamsBtn");
+    const openParamsLobbyBtn = getEl("lobbyOpenParamsBtn");
     if (openParamsLobbyBtn) {
       openParamsLobbyBtn.disabled = isClient;
       openParamsLobbyBtn.classList.toggle("hidden", isClient);
     }
     syncTeamButtonsUI();
-    const startBtnText = document.getElementById("startBattleBtnText");
-    if (startBtnText) {
-      startBtnText.textContent = "\u8FDB\u5165\u623F\u95F4";
-    }
+    const startBtnText = getEl("startBattleBtnText");
+    setTextIfChanged(startBtnText, "\u8FDB\u5165\u623F\u95F4");
     if (isClient) {
-      const inp = document.getElementById("peerRemoteIdInput");
+      const inp = getEl("peerRemoteIdInput");
       const raw = inp?.value?.trim() || "";
       if (raw) {
         probeHostRoomParamsByString(raw);
@@ -9781,36 +10007,40 @@
       }
     }
   }
+  var lastLoadoutTextSig = "";
   function syncLoadoutTextFromSingleSource() {
+    const sig = `${WEAPONS[0]?.magSize}:${WEAPONS[1]?.magSize}:${WEAPONS[2]?.magSize}:${world.config.fragRechargeSeconds}:${world.config.shieldHp}`;
+    if (sig === lastLoadoutTextSig) return;
+    lastLoadoutTextSig = sig;
     document.querySelectorAll(".death-wep-btn").forEach((btn) => {
       const slot2 = Number(btn.getAttribute("data-wep") || 0);
       const wep = WEAPONS[slot2];
       if (!wep) return;
       const divs = btn.querySelectorAll("div");
-      if (divs[0]) divs[0].textContent = wep.shortName;
-      if (divs[1]) divs[1].textContent = formatWeaponCardSubtitle(wep);
+      if (divs[0]) setTextIfChanged(divs[0], wep.shortName);
+      if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep));
     });
     document.querySelectorAll(".lobby-wep-btn").forEach((btn, idx) => {
       const slot2 = Number(btn.getAttribute("data-wep") || 0);
       const wep = WEAPONS[slot2];
       if (!wep) return;
       const divs = btn.querySelectorAll("div");
-      if (divs[0]) divs[0].textContent = `${idx + 1}. ${wep.shortName}`;
-      if (divs[1]) divs[1].textContent = formatWeaponCardSubtitle(wep);
+      if (divs[0]) setTextIfChanged(divs[0], `${idx + 1}. ${wep.shortName}`);
+      if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep));
     });
     document.querySelectorAll(".death-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
       const def = SECONDARIES[sec];
       if (!def) return;
-      btn.textContent = formatSecondaryButtonTitle(def, true);
+      setTextIfChanged(btn, formatSecondaryButtonTitle(def, true));
     });
     document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
       const def = SECONDARIES[sec];
       if (!def) return;
       const divs = btn.querySelectorAll("div");
-      if (divs[0]) divs[0].textContent = formatSecondaryButtonTitle(def, false);
-      if (divs[1]) divs[1].textContent = formatSecondaryCardSubtitle(def, world.config);
+      if (divs[0]) setTextIfChanged(divs[0], formatSecondaryButtonTitle(def, false));
+      if (divs[1]) setTextIfChanged(divs[1], formatSecondaryCardSubtitle(def, world.config));
     });
   }
   function updateHudWeaponButtons() {
@@ -9824,30 +10054,40 @@
     }
     document.querySelectorAll(".death-wep-btn").forEach((btn) => {
       const slot2 = Number(btn.getAttribute("data-wep") || 0);
-      btn.className = slot2 === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+      setClassIfChanged(
+        btn,
+        slot2 === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500"
+      );
     });
     document.querySelectorAll(".death-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
       const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx);
       const isSelected = sec === pendingLoadout.secondaryType;
-      btn.className = "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs transition " + (isSelected ? "border-2 border-rose-400 bg-rose-500/20 font-extrabold text-white" : unlocked ? "border-slate-600 bg-slate-900/90 font-semibold text-slate-200 hover:border-rose-400/60" : "border-slate-800 bg-slate-950/40 font-semibold text-slate-500 opacity-55 cursor-not-allowed");
+      setClassIfChanged(
+        btn,
+        "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs transition " + (isSelected ? "border-2 border-rose-400 bg-rose-500/20 font-extrabold text-white" : unlocked ? "border-slate-600 bg-slate-900/90 font-semibold text-slate-200 hover:border-rose-400/60" : "border-slate-800 bg-slate-950/40 font-semibold text-slate-500 opacity-55 cursor-not-allowed")
+      );
       btn.disabled = !unlocked;
     });
-    const streakNote = document.getElementById("deathSecNote");
-    if (streakNote) {
-      streakNote.textContent = wepIdx === 8 ? `+1\u6321` : "";
-    }
+    const streakNote = getEl("deathSecNote");
+    setTextIfChanged(streakNote, wepIdx === 8 ? `+1\u6321` : "");
     document.querySelectorAll(".lobby-wep-btn").forEach((btn) => {
       const slot2 = Number(btn.getAttribute("data-wep") || 0);
-      btn.className = slot2 === wepIdx ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+      setClassIfChanged(
+        btn,
+        slot2 === wepIdx ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500"
+      );
     });
     document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
       const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx);
       if (!unlocked) {
-        btn.className = "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60";
+        setClassIfChanged(btn, "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60");
       } else {
-        btn.className = sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500";
+        setClassIfChanged(
+          btn,
+          sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500"
+        );
       }
       ;
       btn.disabled = !unlocked;
@@ -9858,7 +10098,7 @@
     document.querySelectorAll(".spawn-select-btn").forEach((btn) => {
       const spId = btn.getAttribute("data-spawn") || "base";
       if (spId === "base") {
-        btn.textContent = isFfaTeam ? "\u{1F3B2} \u968F\u673A\u51FA\u751F" : "\u{1F3E0} \u57FA\u5730";
+        setTextIfChanged(btn, isFfaTeam ? "\u{1F3B2} \u968F\u673A\u51FA\u751F" : "\u{1F3E0} \u57FA\u5730");
       }
       let unlocked = spId === "base";
       if (spId !== "base") {
@@ -9866,9 +10106,9 @@
         unlocked = isCapturePointSelectable(cp, localPlayer.team);
       }
       const isSelected = pendingLoadout.spawnPointId === spId;
-      if (!unlocked) btn.className = "spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed";
-      else if (isSelected) btn.className = "spawn-select-btn px-2 py-1 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold";
-      else btn.className = "spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-700 bg-slate-900 text-slate-200 text-[11px] font-semibold hover:border-emerald-400/50";
+      if (!unlocked) setClassIfChanged(btn, "spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-800 bg-slate-950/40 text-slate-600 text-[11px] font-semibold cursor-not-allowed");
+      else if (isSelected) setClassIfChanged(btn, "spawn-select-btn px-2 py-1 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 text-[11px] font-extrabold");
+      else setClassIfChanged(btn, "spawn-select-btn px-2 py-1 rounded-lg border-2 border-slate-700 bg-slate-900 text-slate-200 text-[11px] font-semibold hover:border-emerald-400/50");
     });
     let label = isFfaTeam ? "\u{1F3B2} \u968F\u673A\u51FA\u751F" : "\u{1F3E0} \u57FA\u5730";
     const activeId = pendingLoadout.spawnPointId || localPlayer.selectedSpawnId || "base";
@@ -9881,12 +10121,8 @@
         localPlayer.selectedSpawnId = "base";
       }
     }
-    const curSpawnBtn = document.getElementById("hudCurrentSpawnBtn");
-    if (curSpawnBtn) curSpawnBtn.textContent = label;
-    const deathSpawnBadge = document.getElementById("deathSelectedSpawnBadge");
-    if (deathSpawnBadge) {
-      deathSpawnBadge.textContent = label;
-    }
+    setTextIfChanged(getEl("hudCurrentSpawnBtn"), label);
+    setTextIfChanged(getEl("deathSelectedSpawnBadge"), label);
     renderDeathMinimap();
   }
   function selectSpawnPointById(spId, silent = false) {
@@ -9901,7 +10137,6 @@
     localPlayer.selectedSpawnId = spId;
     updateSpawnPointButtonsUI();
     renderHudMinimap();
-    renderDeathMinimap();
     if (netState.role === "client") sendClientLoadoutToHost(false);
     if (!silent) {
       if (spId === "base") {
@@ -9926,7 +10161,7 @@
     selectSpawnPointById(next);
   }
   function handleMinimapClick(clientX, clientY, canvasId = "hudMinimapCanvas") {
-    const mm = document.getElementById(canvasId);
+    const mm = getEl(canvasId);
     if (!mm) return;
     const rect = mm.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -9998,7 +10233,7 @@
     if (netState.role === "client") sendClientLoadoutToHost(false);
   }
   function updateCaptureProgressCardUI() {
-    const card = document.getElementById("hudCaptureProgressCard");
+    const card = getEl("hudCaptureProgressCard");
     if (!card) return;
     if (!featureFlags.captureHudRing || !localPlayer.deployed || !localPlayer.alive || localPlayer.respawnTimer > 0) {
       card.classList.add("hidden");
@@ -10007,7 +10242,8 @@
     const capR = Math.max(150, world.config.captureRadius + 35);
     let activeCp = null;
     let bestDist = Infinity;
-    for (const cp of world.capturePoints) {
+    for (let i = 0; i < world.capturePoints.length; i++) {
+      const cp = world.capturePoints[i];
       if (cp.y <= 400) continue;
       const dx = Math.abs(wrapDeltaX(localPlayer.pos.x, cp.x));
       const dy = wrapDeltaY(cp.y, localPlayer.pos.y);
@@ -10023,14 +10259,15 @@
       return;
     }
     card.classList.remove("hidden");
-    const titleEl = document.getElementById("hudCapCardTitle");
-    const pctEl = document.getElementById("hudCapCardPct");
-    const barEl = document.getElementById("hudCapCardBar");
-    const phaseEl = document.getElementById("hudCapCardPhase");
-    const synEl = document.getElementById("hudCapCardSynergy");
+    const titleEl = getEl("hudCapCardTitle");
+    const pctEl = getEl("hudCapCardPct");
+    const barEl = getEl("hudCapCardBar");
+    const phaseEl = getEl("hudCapCardPhase");
+    const synEl = getEl("hudCapCardSynergy");
     let myCount = 0;
     let enemyCount = 0;
-    for (const p of world.players) {
+    for (let i = 0; i < world.players.length; i++) {
+      const p = world.players[i];
       if (!p.deployed || !p.alive || p.respawnTimer > 0) continue;
       const dx = Math.abs(wrapDeltaX(p.pos.x, activeCp.x));
       const dy = wrapDeltaY(activeCp.y, p.pos.y);
@@ -10043,43 +10280,50 @@
     const curTeam = activeCp.progress > 0 ? activeCp.ownerTeam ?? activeCp.capturingTeam : null;
     const isNeutralizing = curTeam !== null && curTeam !== localPlayer.team && activeCp.progress > 0;
     const isFullyOwned = activeCp.ownerTeam === localPlayer.team && activeCp.progress >= 100;
-    if (titleEl) titleEl.textContent = `\u{1F6A9} ${activeCp.code}`;
-    if (pctEl) pctEl.textContent = `${pct}%`;
+    setTextIfChanged(titleEl, `\u{1F6A9} ${activeCp.code}`);
+    setTextIfChanged(pctEl, `${pct}%`);
     if (synEl) {
       if (myCount >= 2 && !isFullyOwned) {
         synEl.classList.remove("hidden");
-        synEl.textContent = `\xD7${myCount}`;
+        setTextIfChanged(synEl, `\xD7${myCount}`);
       } else {
         synEl.classList.add("hidden");
       }
     }
     if (barEl) {
-      barEl.style.width = `${pct}%`;
+      setWidthIfChanged(barEl, `${pct}%`);
       const col = curTeam === "red" ? "bg-rose-500" : curTeam === "blue" ? "bg-sky-500" : curTeam === "ffa" ? "bg-amber-400" : "bg-slate-400";
-      barEl.className = `h-full transition-all duration-75 ${col}`;
+      setClassIfChanged(barEl, `h-full ${col}`);
     }
     if (phaseEl) {
       if (isFullyOwned) {
         const isSel = pendingLoadout.spawnPointId === activeCp.id || localPlayer.selectedSpawnId === activeCp.id;
-        phaseEl.textContent = isSel ? "\u2705 \u5DF2\u5B8C\u5168\u5360\u9886\u5E76\u9009\u4F5C\u590D\u6D3B\u70B9 (100%)" : "\u2705 \u5DF2\u5B8C\u5168\u5360\u9886 (100%) \xB7 \u6309 [E] \u9009\u4E3A\u590D\u6D3B\u70B9";
-        phaseEl.className = "text-[10px] font-bold text-emerald-300 text-center";
+        setTextIfChanged(
+          phaseEl,
+          isSel ? "\u2705 \u5DF2\u5B8C\u5168\u5360\u9886\u5E76\u9009\u4F5C\u590D\u6D3B\u70B9 (100%)" : "\u2705 \u5DF2\u5B8C\u5168\u5360\u9886 (100%) \xB7 \u6309 [E] \u9009\u4E3A\u590D\u6D3B\u70B9"
+        );
+        setClassIfChanged(phaseEl, "text-[10px] font-bold text-emerald-300 text-center");
       } else if (enemyCount > 0 && myCount <= enemyCount) {
-        phaseEl.textContent = `\u26A1 \u4E89\u593A\u53D7\u963B\uFF08\u5708\u5185\u6211\u65B9 ${myCount} : \u654C\u65B9 ${enemyCount}\uFF09`;
-        phaseEl.className = "text-[10px] font-bold text-amber-300 text-center";
+        setTextIfChanged(phaseEl, `\u26A1 \u4E89\u593A\u53D7\u963B\uFF08\u5708\u5185\u6211\u65B9 ${myCount} : \u654C\u65B9 ${enemyCount}\uFF09`);
+        setClassIfChanged(phaseEl, "text-[10px] font-bold text-amber-300 text-center");
       } else if (isNeutralizing) {
-        phaseEl.textContent = `\u2694\uFE0F \u9636\u6BB51\uFF1A\u4E2D\u548C\u654C\u65B9\u8FDB\u5EA6 (${pct}% \u2192 0% \u540E\u8F6C\u4E3A\u5DF1\u65B9\u5360\u9886)`;
-        phaseEl.className = "text-[10px] font-bold text-rose-300 text-center";
+        setTextIfChanged(phaseEl, `\u2694\uFE0F \u9636\u6BB51\uFF1A\u4E2D\u548C\u654C\u65B9\u8FDB\u5EA6 (${pct}% \u2192 0% \u540E\u8F6C\u4E3A\u5DF1\u65B9\u5360\u9886)`);
+        setClassIfChanged(phaseEl, "text-[10px] font-bold text-rose-300 text-center");
       } else {
-        phaseEl.textContent = `\u{1F6A9} \u9636\u6BB52\uFF1A\u5DF1\u65B9\u5360\u9886\u8BFB\u6761 (${pct}% \u2192 100%)`;
-        phaseEl.className = "text-[10px] font-bold text-cyan-300 text-center";
+        setTextIfChanged(phaseEl, `\u{1F6A9} \u9636\u6BB52\uFF1A\u5DF1\u65B9\u5360\u9886\u8BFB\u6761 (${pct}% \u2192 100%)`);
+        setClassIfChanged(phaseEl, "text-[10px] font-bold text-cyan-300 text-center");
       }
     }
   }
   var minimapBgCache = /* @__PURE__ */ new Map();
+  var MINIMAP_BASES = [
+    { team: "red", x: 260, y: 3264, color: "#f43f5e", label: "\u{1F3E0}\u7EA2" },
+    { team: "blue", x: 12940, y: 3264, color: "#0ea5e9", label: "\u{1F3E0}\u84DD" }
+  ];
   function getMinimapStaticBg(W, H) {
     if (typeof document === "undefined" || typeof document.createElement !== "function") return null;
     const key = `${W}x${H}:${world.terrain.rects.length}`;
-    let bg = minimapBgCache.get(key);
+    const bg = minimapBgCache.get(key);
     if (bg) return bg;
     const cv = document.createElement("canvas");
     if (typeof cv.getContext !== "function") return null;
@@ -10087,23 +10331,23 @@
     cv.height = H;
     const bc = cv.getContext("2d");
     if (!bc || typeof bc.fillRect !== "function") return null;
-    const sx = (wx) => wx / WORLD_W * W;
-    const sy = (wy) => wy / WORLD_H * H;
+    const sx2 = (wx) => wx / WORLD_W * W;
+    const sy2 = (wy) => wy / WORLD_H * H;
     bc.fillStyle = "#040814";
     bc.fillRect(0, 0, W, H);
     bc.strokeStyle = "rgba(56, 189, 248, 0.25)";
     bc.lineWidth = 1;
     if (typeof bc.beginPath === "function") {
       bc.beginPath();
-      bc.moveTo(0, sy(SURFACE_Y));
-      bc.lineTo(W, sy(SURFACE_Y));
+      bc.moveTo(0, sy2(SURFACE_Y));
+      bc.lineTo(W, sy2(SURFACE_Y));
       bc.stroke();
     }
     bc.fillStyle = "rgba(51, 65, 85, 0.75)";
     for (let i = 0; i < world.terrain.rects.length; i++) {
       const r = world.terrain.rects[i];
       if (r.kind.startsWith("deco_") || r.kind.endsWith("_bg")) continue;
-      bc.fillRect(sx(r.x), sy(r.y), Math.max(1.2, r.w / WORLD_W * W), Math.max(1.2, r.h / WORLD_H * H));
+      bc.fillRect(sx2(r.x), sy2(r.y), Math.max(1.2, r.w / WORLD_W * W), Math.max(1.2, r.h / WORLD_H * H));
     }
     minimapBgCache.set(key, cv);
     return cv;
@@ -10114,8 +10358,8 @@
     if (!c || typeof c.clearRect !== "function") return;
     const W = mm.width || (isDeathMap ? 528 : 252);
     const H = mm.height || (isDeathMap ? 168 : 82);
-    const sx = (wx) => wx / WORLD_W * W;
-    const sy = (wy) => wy / WORLD_H * H;
+    const scaleX = W / WORLD_W;
+    const scaleY = H / WORLD_H;
     const staticBg = typeof c.drawImage === "function" ? getMinimapStaticBg(W, H) : null;
     if (staticBg) {
       c.drawImage(staticBg, 0, 0);
@@ -10126,24 +10370,21 @@
       c.strokeStyle = "rgba(56, 189, 248, 0.25)";
       c.lineWidth = 1;
       c.beginPath();
-      c.moveTo(0, sy(SURFACE_Y));
-      c.lineTo(W, sy(SURFACE_Y));
+      c.moveTo(0, SURFACE_Y * scaleY);
+      c.lineTo(W, SURFACE_Y * scaleY);
       c.stroke();
       c.fillStyle = "rgba(51, 65, 85, 0.75)";
       for (let i = 0; i < world.terrain.rects.length; i++) {
         const r = world.terrain.rects[i];
         if (r.kind.startsWith("deco_") || r.kind.endsWith("_bg")) continue;
-        c.fillRect(sx(r.x), sy(r.y), Math.max(1.2, r.w / WORLD_W * W), Math.max(1.2, r.h / WORLD_H * H));
+        c.fillRect(r.x * scaleX, r.y * scaleY, Math.max(1.2, r.w * scaleX), Math.max(1.2, r.h * scaleY));
       }
     }
     const activeSpawnId = pendingLoadout.spawnPointId || localPlayer.selectedSpawnId || "base";
-    const bases = [
-      { team: "red", x: 260, y: 3264, color: "#f43f5e", label: "\u{1F3E0}\u7EA2" },
-      { team: "blue", x: 12940, y: 3264, color: "#0ea5e9", label: "\u{1F3E0}\u84DD" }
-    ];
-    for (const b of bases) {
-      const bx = sx(b.x);
-      const by = sy(b.y);
+    for (let i = 0; i < MINIMAP_BASES.length; i++) {
+      const b = MINIMAP_BASES[i];
+      const bx = b.x * scaleX;
+      const by = b.y * scaleY;
       const isMyBase = localPlayer.team === b.team;
       const isSelectedBase = isMyBase && activeSpawnId === "base";
       c.fillStyle = b.color;
@@ -10160,17 +10401,19 @@
         c.fillText(b.label, b.team === "red" ? bx + 6 : bx - 24, by - 5);
       }
     }
-    for (const cr of world.supplyCrates) {
+    for (let i = 0; i < world.supplyCrates.length; i++) {
+      const cr = world.supplyCrates[i];
       if (!cr.active) continue;
       c.fillStyle = cr.kind === "doll" ? "#f472b6" : "#fde047";
       const sz = isDeathMap ? 4 : 2.6;
-      c.fillRect(sx(cr.x) - sz / 2, sy(cr.y) - sz / 2, sz, sz);
+      c.fillRect(cr.x * scaleX - sz / 2, cr.y * scaleY - sz / 2, sz, sz);
     }
-    for (const cp of world.capturePoints) {
+    for (let i = 0; i < world.capturePoints.length; i++) {
+      const cp = world.capturePoints[i];
       if (cp.y <= 400) continue;
       const pal = getFlagPalette(cp);
-      const cx = sx(cp.x);
-      const cy = sy(cp.y);
+      const cx = cp.x * scaleX;
+      const cy = cp.y * scaleY;
       const selectable = isCapturePointSelectable(cp, localPlayer.team);
       const isSel = selectable && activeSpawnId === cp.id;
       const dotR = isDeathMap ? 5.2 : 3.1;
@@ -10204,11 +10447,12 @@
         c.fillText(cp.code, cx - (isDeathMap ? 3.2 : 2.2), cy - dotR - (isDeathMap ? 3 : 1.8));
       }
     }
-    for (const p of world.players) {
+    for (let i = 0; i < world.players.length; i++) {
+      const p = world.players[i];
       if (!isFriendlyOnMinimap(p)) continue;
       if (!p.deployed) continue;
-      const px = sx(p.pos.x);
-      const py = sy(p.pos.y);
+      const px = p.pos.x * scaleX;
+      const py = p.pos.y * scaleY;
       if (p.id === localPlayer.id) {
         if (!p.alive || p.respawnTimer > 0) {
           c.strokeStyle = "#f43f5e";
@@ -10241,110 +10485,113 @@
       const vh = canvas.height * camera.fovFactor / WORLD_H * H;
       c.strokeStyle = "rgba(226, 232, 240, 0.32)";
       c.lineWidth = 1;
-      c.strokeRect(sx(camera.x) - vw / 2, sy(camera.y) - vh / 2, vw, vh);
+      c.strokeRect(camera.x * scaleX - vw / 2, camera.y * scaleY - vh / 2, vw, vh);
     }
   }
   function renderHudMinimap() {
-    const panel = document.getElementById("hudMinimapPanel");
+    const panel = getEl("hudMinimapPanel");
     if (!featureFlags.minimapRadar) {
       panel?.classList.add("hidden");
       return;
     }
     panel?.classList.remove("hidden");
-    const coordEl = document.getElementById("hudZoneCoordText");
+    const coordEl = getEl("hudZoneCoordText");
     if (coordEl) {
       const px = Math.round(localPlayer.pos.x);
       const py = Math.round(localPlayer.pos.y);
       const zone = py < 1200 ? "\u9AD8\u7A7A\u62F1\u9876" : py < 2800 ? "\u4E2D\u5C42\u7A7A\u5C9B" : py <= SURFACE_Y + 40 ? "\u4E3B\u5730\u9762\u5C42" : "\u5730\u4E0B\u901A\u9053";
-      coordEl.textContent = `${px},${py} \xB7 ${zone}`;
+      setTextIfChanged(coordEl, `${px},${py} \xB7 ${zone}`);
     }
-    const mm = document.getElementById("hudMinimapCanvas");
+    const mm = getEl("hudMinimapCanvas");
     if (mm) drawTacticalMinimapOnCanvas(mm, false);
   }
   function renderDeathMinimap() {
-    const mm = document.getElementById("deathMinimapCanvas");
+    const mm = getEl("deathMinimapCanvas");
     if (mm) drawTacticalMinimapOnCanvas(mm, true);
   }
-  function updateHudUI() {
-    const nameEl = document.getElementById("hudPlayerName");
-    if (nameEl) nameEl.textContent = localPlayer.name;
-    const fovBadge = document.getElementById("hudSniperFovBadge");
+  function updateHudUI2() {
+    setTextIfChanged(getEl("hudPlayerName"), localPlayer.name);
+    const fovBadge = getEl("hudSniperFovBadge");
     if (fovBadge) {
       const wepForFov = WEAPONS[localPlayer.weaponIndex];
       if (localPlayer.mountedTowerId) {
-        fovBadge.textContent = "\u{1F5FC} 200%";
+        setTextIfChanged(fovBadge, "\u{1F5FC} 200%");
         fovBadge.classList.remove("hidden");
       } else if ((wepForFov?.fovMult ?? 1) > 1.01) {
         const charge = (wepForFov?.chargeSeconds ?? 0) > 0 && localPlayer.chargeTimer > 0 ? ` ${Math.min(100, Math.round(localPlayer.chargeTimer / (wepForFov?.chargeSeconds ?? 1) * 100))}%` : "";
-        fovBadge.textContent = `\u{1F52D} +30%${charge}`;
+        setTextIfChanged(fovBadge, `\u{1F52D} +30%${charge}`);
         fovBadge.classList.remove("hidden");
       } else fovBadge.classList.add("hidden");
     }
-    const hpBar = document.getElementById("hudHpBar");
-    if (hpBar) hpBar.style.width = clamp(localPlayer.hp / localPlayer.maxHp * 100, 0, 100) + "%";
-    const shieldBar = document.getElementById("hudShieldBar");
+    const hpPct = Math.round(clamp(localPlayer.hp / localPlayer.maxHp * 100, 0, 100));
+    setWidthIfChanged(getEl("hudHpBar"), `${hpPct}%`);
     const hasShield = localPlayer.shieldTimer > 0 && localPlayer.shieldHp > 0;
-    if (shieldBar) shieldBar.style.width = hasShield ? clamp(localPlayer.shieldHp / world.config.shieldHp * 100, 0, 100) + "%" : "0%";
-    const hpText = document.getElementById("hudHpText");
+    const shieldPct = hasShield ? Math.round(clamp(localPlayer.shieldHp / world.config.shieldHp * 100, 0, 100)) : 0;
+    setWidthIfChanged(getEl("hudShieldBar"), `${shieldPct}%`);
+    const hpText = getEl("hudHpText");
     if (hpText) {
       const hpNum = Math.max(0, Math.round(localPlayer.hp));
-      hpText.textContent = hasShield ? `\u2764\uFE0F${hpNum} + \u{1F6E1}\uFE0F${Math.round(localPlayer.shieldHp)}` : `${hpNum} / ${localPlayer.maxHp}`;
+      setTextIfChanged(
+        hpText,
+        hasShield ? `\u2764\uFE0F${hpNum} + \u{1F6E1}\uFE0F${Math.round(localPlayer.shieldHp)}` : `${hpNum} / ${localPlayer.maxHp}`
+      );
     }
-    const fuelBar = document.getElementById("hudFuelBar");
-    const fuelPctEl = document.getElementById("hudFuelPctText");
     const fuelMaxNow = getPhysicsParams().jetpackFuel * (WEAPONS[localPlayer.weaponIndex]?.fuelMult ?? 1);
     const fuelPct = Math.round(clamp(localPlayer.fuel / Math.max(1e-3, fuelMaxNow) * 100, 0, 100));
-    if (fuelBar) fuelBar.style.width = fuelPct + "%";
-    if (fuelPctEl) fuelPctEl.textContent = `\u{1F680} ${fuelPct}%`;
+    setWidthIfChanged(getEl("hudFuelBar"), `${fuelPct}%`);
+    setTextIfChanged(getEl("hudFuelPctText"), `\u{1F680} ${fuelPct}%`);
     const streak = localPlayer.deathStreak ?? 0;
     const dollCharges = localPlayer.dollCharges ?? 0;
-    const streakEl = document.getElementById("hudStreakCountBadge");
-    if (streakEl) streakEl.textContent = `\u8FDE\u6B7B ${streak}`;
-    const pipsEl = document.getElementById("hudUnlockTierPips");
+    setTextIfChanged(getEl("hudStreakCountBadge"), `\u8FDE\u6B7B ${streak}`);
+    const pipsEl = getEl("hudUnlockTierPips");
     if (pipsEl) {
-      const mark = (sec, req, icon) => isSecondaryUnlocked(sec, streak, dollCharges, localPlayer.weaponIndex) ? `${icon}\u2713` : `${icon}${req}`;
-      pipsEl.textContent = `\u{1F4A3}\u2713 ${mark("obstacle", 1, "\u{1F9F1}")} ${mark("shield", 2, "\u{1F6E1}\uFE0F")} ${mark("teleport", 3, "\u{1F300}")} ${mark("doll", 4, "\u{1F38E}")}`;
+      const wIdx = localPlayer.weaponIndex;
+      const p1 = isSecondaryUnlocked("obstacle", streak, dollCharges, wIdx) ? "\u{1F9F1}\u2713" : "\u{1F9F1}1";
+      const p2 = isSecondaryUnlocked("shield", streak, dollCharges, wIdx) ? "\u{1F6E1}\uFE0F\u2713" : "\u{1F6E1}\uFE0F2";
+      const p3 = isSecondaryUnlocked("teleport", streak, dollCharges, wIdx) ? "\u{1F300}\u2713" : "\u{1F300}3";
+      const p4 = isSecondaryUnlocked("doll", streak, dollCharges, wIdx) ? "\u{1F38E}\u2713" : "\u{1F38E}4";
+      setTextIfChanged(pipsEl, `\u{1F4A3}\u2713 ${p1} ${p2} ${p3} ${p4}`);
     }
-    const buffsEl = document.getElementById("hudActiveBuffsText");
+    const buffsEl = getEl("hudActiveBuffsText");
+    let mounted;
+    for (let i = 0; i < world.mortars.length; i++) {
+      if (world.mortars[i].operatorId === localPlayer.id) {
+        mounted = world.mortars[i];
+        break;
+      }
+    }
     if (buffsEl) {
-      const parts = [];
-      if (hasShield) parts.push(`\u{1F6E1}\uFE0F${Math.round(localPlayer.shieldHp)}(${localPlayer.shieldTimer.toFixed(1)}s)`);
-      if (localPlayer.doll) parts.push(`\u{1F38E}${localPlayer.doll.timer.toFixed(1)}s`);
-      if (localPlayer.mountedTowerId) parts.push("\u{1F5FC}\u77AD\u671B200%");
-      if (world.mortars.some((m) => m.operatorId === localPlayer.id)) parts.push("\u{1F3AF}\u8FEB\u51FB\u70AE");
-      if ((localPlayer.teleportTimer ?? 0) > 0) parts.push(`\u{1F300}\u4F20\u9001${localPlayer.teleportTimer.toFixed(2)}s`);
-      else if (localPlayer.warpCooldown > 0) parts.push(`\u{1F300}\u8DC3\u8FC1CD ${localPlayer.warpCooldown.toFixed(1)}s`);
-      buffsEl.textContent = parts.join(" \xB7 ");
+      let buffStr = "";
+      if (hasShield) buffStr += `\u{1F6E1}\uFE0F${Math.round(localPlayer.shieldHp)}(${localPlayer.shieldTimer.toFixed(1)}s)`;
+      if (localPlayer.doll) buffStr += (buffStr ? " \xB7 " : "") + `\u{1F38E}${localPlayer.doll.timer.toFixed(1)}s`;
+      if (localPlayer.mountedTowerId) buffStr += (buffStr ? " \xB7 " : "") + "\u{1F5FC}\u77AD\u671B200%";
+      if (mounted) buffStr += (buffStr ? " \xB7 " : "") + "\u{1F3AF}\u8FEB\u51FB\u70AE";
+      if ((localPlayer.teleportTimer ?? 0) > 0) buffStr += (buffStr ? " \xB7 " : "") + `\u{1F300}\u4F20\u9001${localPlayer.teleportTimer.toFixed(2)}s`;
+      else if (localPlayer.warpCooldown > 0) buffStr += (buffStr ? " \xB7 " : "") + `\u{1F300}\u8DC3\u8FC1CD ${localPlayer.warpCooldown.toFixed(1)}s`;
+      setTextIfChanged(buffsEl, buffStr);
     }
     updateCaptureProgressCardUI();
     renderHudMinimap();
     const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
-    const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
-    const wNameEl = document.getElementById("currentWeaponName");
-    if (wNameEl) wNameEl.textContent = mounted ? "\u{1F3AF} \u8FEB\u51FB\u70AE" : wep.shortName;
-    const plateEl = document.getElementById("hudCurrentWeaponName");
-    if (plateEl) plateEl.textContent = wep.shortName;
+    setTextIfChanged(getEl("currentWeaponName"), mounted ? "\u{1F3AF} \u8FEB\u51FB\u70AE" : wep.shortName);
+    setTextIfChanged(getEl("hudCurrentWeaponName"), wep.shortName);
     const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag;
-    const secChipEl = document.getElementById("hudSecondaryChipText");
-    if (secChipEl) {
-      secChipEl.textContent = `${secDef.icon} ${secDef.name}`;
-    }
+    setTextIfChanged(getEl("hudSecondaryChipText"), `${secDef.icon} ${secDef.name}`);
     const curAmmo = Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0));
-    const ammoEl = document.getElementById("currentAmmoText");
-    const reserveEl = document.getElementById("reserveAmmoText");
-    if (ammoEl) ammoEl.textContent = mounted ? "\u221E" : String(curAmmo);
-    if (reserveEl) reserveEl.textContent = mounted ? "" : String(localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0);
-    const ammoPipsEl = document.getElementById("hudAmmoPips");
+    setTextIfChanged(getEl("currentAmmoText"), mounted ? "\u221E" : String(curAmmo));
+    setTextIfChanged(getEl("reserveAmmoText"), mounted ? "" : String(localPlayer.reserveAmmo[localPlayer.weaponIndex] ?? 0));
+    const ammoPipsEl = getEl("hudAmmoPips");
     if (ammoPipsEl) {
       if (wep.shellReload && wep.magSize <= 12) {
-        let html = "";
-        for (let i = 0; i < wep.magSize; i++) {
-          const filled = i < curAmmo;
-          const isLoadingThis = localPlayer.reloading && i === curAmmo;
-          html += `<span class="h-1.5 flex-1 rounded-xs transition-all duration-75 ${filled ? "bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.7)]" : isLoadingThis ? "bg-cyan-400/80 animate-pulse" : "bg-slate-800"}"></span>`;
-        }
-        if (ammoPipsEl.getAttribute("data-sig") !== `shell:${curAmmo}:${localPlayer.reloading ? 1 : 0}:${wep.magSize}`) {
-          ammoPipsEl.setAttribute("data-sig", `shell:${curAmmo}:${localPlayer.reloading ? 1 : 0}:${wep.magSize}`);
+        const sig = `shell:${curAmmo}:${localPlayer.reloading ? 1 : 0}:${wep.magSize}`;
+        if (ammoPipsEl.getAttribute("data-sig") !== sig) {
+          let html = "";
+          for (let i = 0; i < wep.magSize; i++) {
+            const filled = i < curAmmo;
+            const isLoadingThis = localPlayer.reloading && i === curAmmo;
+            html += `<span class="h-1.5 flex-1 rounded-xs ${filled ? "bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.7)]" : isLoadingThis ? "bg-cyan-400/80 animate-pulse" : "bg-slate-800"}"></span>`;
+          }
+          ammoPipsEl.setAttribute("data-sig", sig);
           ammoPipsEl.innerHTML = html;
         }
       } else {
@@ -10352,59 +10599,57 @@
         const sig = `bar:${pct}`;
         if (ammoPipsEl.getAttribute("data-sig") !== sig) {
           ammoPipsEl.setAttribute("data-sig", sig);
-          ammoPipsEl.innerHTML = `<span class="block h-1.5 w-full rounded-full bg-slate-800 overflow-hidden"><span class="block h-full bg-gradient-to-r from-amber-400 to-cyan-300 transition-all duration-75" style="width:${pct}%"></span></span>`;
+          ammoPipsEl.innerHTML = `<span class="block h-1.5 w-full rounded-full bg-slate-800 overflow-hidden"><span class="block h-full bg-gradient-to-r from-amber-400 to-cyan-300" style="width:${pct}%"></span></span>`;
         }
       }
     }
-    const gOverlay = document.getElementById("grenadeCdOverlay");
-    const gLabel = document.getElementById("hudGrenadeLabel");
-    const gTitle = document.getElementById("hudSecondaryTitle");
-    const touchGrenadeBtn = document.getElementById("touchGrenadeBtn");
-    if (gTitle) gTitle.textContent = secDef.name;
+    const gOverlay = getEl("grenadeCdOverlay");
+    const gLabel = getEl("hudGrenadeLabel");
+    const gTitle = getEl("hudSecondaryTitle");
+    const touchGrenadeBtn = getEl("touchGrenadeBtn");
+    setTextIfChanged(gTitle, secDef.name);
     let secStatusShort = `${secDef.icon} \u5C31\u7EEA`;
     if (gOverlay && gLabel) {
       if (localPlayer.secondary === "doll") {
-        gOverlay.style.height = localPlayer.dollCharges > 0 ? "0%" : "100%";
+        setHeightIfChanged(gOverlay, localPlayer.dollCharges > 0 ? "0%" : "100%");
         secStatusShort = localPlayer.dollCharges > 0 ? `\u{1F38E} \xD7${localPlayer.dollCharges}` : "\u{1F38E} 0";
-        gLabel.textContent = secStatusShort;
+        setTextIfChanged(gLabel, secStatusShort);
       } else if (localPlayer.secondary === "frag") {
         const maxFrags = getPlayerFragMaxCharges(localPlayer.deathStreak ?? 0, world.config.fragMaxCharges);
         const need = localPlayer.fragCharges >= maxFrags;
         if (need) {
-          gOverlay.style.height = "0%";
+          setHeightIfChanged(gOverlay, "0%");
           secStatusShort = `\u{1F4A3} \xD7${localPlayer.fragCharges}`;
         } else {
-          const pct = Math.min(100, localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds * 100);
-          gOverlay.style.height = 100 - pct + "%";
+          const pct = Math.round(Math.min(100, localPlayer.fragRechargeTimer / world.config.fragRechargeSeconds * 100));
+          setHeightIfChanged(gOverlay, `${100 - pct}%`);
           secStatusShort = `\u{1F4A3} ${(world.config.fragRechargeSeconds - localPlayer.fragRechargeTimer).toFixed(1)}s`;
         }
-        gLabel.textContent = secStatusShort;
+        setTextIfChanged(gLabel, secStatusShort);
       } else if (localPlayer.secondary === "teleport" && (localPlayer.teleportTimer ?? 0) > 0) {
         const castTotal = Math.max(0.05, world.config.teleportCastTime ?? 0.35);
-        const pct = clamp((1 - localPlayer.teleportTimer / castTotal) * 100, 0, 100);
-        gOverlay.style.height = 100 - pct + "%";
-        secStatusShort = `\u{1F300} ${Math.round(pct)}%`;
-        gLabel.textContent = secStatusShort;
+        const pct = Math.round(clamp((1 - localPlayer.teleportTimer / castTotal) * 100, 0, 100));
+        setHeightIfChanged(gOverlay, `${100 - pct}%`);
+        secStatusShort = `\u{1F300} ${pct}%`;
+        setTextIfChanged(gLabel, secStatusShort);
       } else {
         if (localPlayer.secondaryCooldown <= 0) {
-          gOverlay.style.height = "0%";
+          setHeightIfChanged(gOverlay, "0%");
           secStatusShort = `${secDef.icon} \u5C31\u7EEA`;
         } else {
-          const pct = clamp(localPlayer.secondaryCooldown / Math.max(0.1, secDef.cd) * 100, 0, 100);
-          gOverlay.style.height = pct + "%";
+          const pct = Math.round(clamp(localPlayer.secondaryCooldown / Math.max(0.1, secDef.cd) * 100, 0, 100));
+          setHeightIfChanged(gOverlay, `${pct}%`);
           secStatusShort = `${secDef.icon} ${localPlayer.secondaryCooldown.toFixed(1)}s`;
         }
-        gLabel.textContent = secStatusShort;
+        setTextIfChanged(gLabel, secStatusShort);
       }
     }
-    if (touchGrenadeBtn) {
-      touchGrenadeBtn.textContent = secStatusShort;
-    }
-    const reloadWrap = document.getElementById("reloadProgressWrap");
-    const reloadBar = document.getElementById("reloadProgressBar");
-    const reloadLabel = document.getElementById("reloadProgressLabel");
-    const reloadPctEl = document.getElementById("reloadProgressPct");
-    const reloadDockBottomBar = document.getElementById("reloadDockBottomBar");
+    setTextIfChanged(touchGrenadeBtn, secStatusShort);
+    const reloadWrap = getEl("reloadProgressWrap");
+    const reloadBar = getEl("reloadProgressBar");
+    const reloadLabel = getEl("reloadProgressLabel");
+    const reloadPctEl = getEl("reloadProgressPct");
+    const reloadDockBottomBar = getEl("reloadDockBottomBar");
     if (reloadWrap && reloadBar) {
       if (localPlayer.reloading) {
         reloadWrap.classList.remove("invisible", "opacity-0", "translate-y-1");
@@ -10413,50 +10658,52 @@
         if (wep2.shellReload) {
           const perShell = wep2.reloadTime / Math.max(1, wep2.magSize);
           const pct = localPlayer.fireCooldown > 0 ? 0 : clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, perShell)), 0, 100);
-          reloadBar.style.width = pct + "%";
-          if (reloadDockBottomBar) reloadDockBottomBar.style.width = clamp((curAmmo + pct / 100) / Math.max(1, wep2.magSize) * 100, 0, 100) + "%";
-          if (reloadLabel) reloadLabel.textContent = `\u88C5\u586B ${curAmmo}/${wep2.magSize}`;
-          if (reloadPctEl) reloadPctEl.textContent = localPlayer.fireCooldown > 0 ? "\u6CF5\u52A8" : `${Math.round(pct)}%`;
+          setWidthIfChanged(reloadBar, `${Math.round(pct)}%`);
+          if (reloadDockBottomBar) {
+            setWidthIfChanged(reloadDockBottomBar, `${Math.round(clamp((curAmmo + pct / 100) / Math.max(1, wep2.magSize) * 100, 0, 100))}%`);
+          }
+          setTextIfChanged(reloadLabel, `\u88C5\u586B ${curAmmo}/${wep2.magSize}`);
+          setTextIfChanged(reloadPctEl, localPlayer.fireCooldown > 0 ? "\u6CF5\u52A8" : `${Math.round(pct)}%`);
         } else {
-          const pct = clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, wep2.reloadTime)), 0, 100);
-          reloadBar.style.width = pct + "%";
-          if (reloadDockBottomBar) reloadDockBottomBar.style.width = pct + "%";
-          if (reloadLabel) reloadLabel.textContent = `\u6362\u5F39`;
-          if (reloadPctEl) reloadPctEl.textContent = `${Math.round(pct)}%`;
+          const pct = Math.round(clamp(100 * (1 - localPlayer.reloadTimer / Math.max(1e-6, wep2.reloadTime)), 0, 100));
+          setWidthIfChanged(reloadBar, `${pct}%`);
+          if (reloadDockBottomBar) setWidthIfChanged(reloadDockBottomBar, `${pct}%`);
+          setTextIfChanged(reloadLabel, "\u6362\u5F39");
+          setTextIfChanged(reloadPctEl, `${pct}%`);
         }
       } else {
         reloadWrap.classList.add("invisible", "opacity-0", "translate-y-1");
         reloadWrap.classList.remove("opacity-100", "translate-y-0");
-        if (reloadDockBottomBar) reloadDockBottomBar.style.width = "0%";
+        if (reloadDockBottomBar) setWidthIfChanged(reloadDockBottomBar, "0%");
       }
     }
     const nearby = getNearbyInteractablePrompt(world, localPlayer, pendingLoadout.spawnPointId);
-    const quickInteractBtn = document.getElementById("hudQuickMortarBtn");
-    const touchInteractBtn = document.getElementById("touchInteractBtn");
+    const quickInteractBtn = getEl("hudQuickMortarBtn");
+    const touchInteractBtn = getEl("touchInteractBtn");
     if (nearby && nearby.canInteract) {
       if (quickInteractBtn) {
         quickInteractBtn.classList.remove("hidden");
-        quickInteractBtn.textContent = nearby.shortLabel;
+        setTextIfChanged(quickInteractBtn, nearby.shortLabel);
       }
       if (touchInteractBtn) {
         touchInteractBtn.classList.remove("hidden");
-        touchInteractBtn.textContent = nearby.shortLabel;
+        setTextIfChanged(touchInteractBtn, nearby.shortLabel);
       }
     } else {
       quickInteractBtn?.classList.add("hidden");
       touchInteractBtn?.classList.add("hidden");
     }
-    const banner = document.getElementById("interactBanner");
-    const bannerText = document.getElementById("interactBannerText");
+    const banner = getEl("interactBanner");
+    const bannerText = getEl("interactBannerText");
     if (!banner || !bannerText) return;
     if (localPlayer.deployed && localPlayer.respawnTimer <= 0 && nearby) {
       banner.classList.remove("hidden");
-      bannerText.textContent = nearby.shortLabel;
+      setTextIfChanged(bannerText, nearby.shortLabel);
     } else {
       banner.classList.add("hidden");
     }
   }
-  function updateScoreboardUI() {
+  function updateScoreboardUI2() {
   }
   function updateTeamCountUI() {
     const counts = { red: 0, blue: 0, ffa: 0 };
@@ -10464,8 +10711,8 @@
       if (counts[p.team] !== void 0) counts[p.team]++;
     }
     for (const key of ["Red", "Blue", "Ffa"]) {
-      const el = document.getElementById("teamCount" + key);
-      if (el) el.textContent = String(counts[key.toLowerCase()]);
+      const el = getEl("teamCount" + key);
+      setTextIfChanged(el, String(counts[key.toLowerCase()]));
     }
   }
 
@@ -10516,24 +10763,68 @@
   }
 
   // src/web/input/device.ts
+  var TOUCH_PREF_KEY = "sb2-touch-enabled";
   function updateInputModeBadge(isTouchMode, _isAuto) {
     const badge = document.getElementById("inputDeviceDetectBadge");
-    if (!badge) return;
-    if (isTouchMode) {
-      badge.textContent = "\u{1F4F1} \u89E6\u5C4F";
-      badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50 hover:bg-sky-500/35 transition";
-    } else {
-      badge.textContent = "\u{1F4BB} \u952E\u9F20";
-      badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition";
+    if (badge) {
+      if (isTouchMode) {
+        badge.textContent = "\u{1F3AE} \u624B\u67C4\uFF1A\u5F00";
+        badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50 hover:bg-sky-500/35 transition";
+      } else {
+        badge.textContent = "\u{1F4BB} \u952E\u9F20\uFF08\u624B\u67C4\u5DF2\u5173\uFF09";
+        badge.className = "px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition";
+      }
+    }
+    const toggleBtn = document.getElementById("toggleTouchBtn");
+    if (toggleBtn) {
+      toggleBtn.textContent = isTouchMode ? "\u{1F3AE} \u624B\u67C4\uFF1A\u5F00" : "\u{1F3AE} \u624B\u67C4\uFF1A\u5173";
+    }
+    const kbmBtn = document.getElementById("lobbyCtrlKbmBtn");
+    const padBtn = document.getElementById("lobbyCtrlGamepadBtn");
+    if (kbmBtn) {
+      kbmBtn.className = !isTouchMode ? "px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 font-extrabold text-xs transition" : "px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-500 font-semibold text-xs transition";
+    }
+    if (padBtn) {
+      padBtn.className = isTouchMode ? "px-2.5 py-1.5 rounded-lg border-2 border-sky-400 bg-sky-500/20 text-sky-200 font-extrabold text-xs transition" : "px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-500 font-semibold text-xs transition";
     }
   }
   function setTouchLayerVisible(visible, isAuto = false) {
     touchState.enabled = visible;
+    if (!visible) {
+      touchState.moveActive = false;
+      touchState.moveId = -1;
+      touchState.moveX = 0;
+      touchState.moveY = 0;
+      touchState.aimActive = false;
+      touchState.aimId = -1;
+      touchState.aimX = 0;
+      touchState.aimY = 0;
+      touchState.wasGroundedBeforeAscend = false;
+      touchState.aimUsed = false;
+    }
+    if (!isAuto) {
+      try {
+        localStorage.setItem(TOUCH_PREF_KEY, visible ? "1" : "0");
+      } catch {
+      }
+    }
     const layer = document.getElementById("touchControlsLayer");
     if (layer) layer.classList.toggle("hidden", !visible);
     updateInputModeBadge(visible, isAuto);
   }
   function autoDetectDeviceInput() {
+    try {
+      const saved = localStorage.getItem(TOUCH_PREF_KEY);
+      if (saved === "0") {
+        setTouchLayerVisible(false, true);
+        return;
+      }
+      if (saved === "1") {
+        setTouchLayerVisible(true, true);
+        return;
+      }
+    } catch {
+    }
     const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
     const touchPoints = "ontouchstart" in window || navigator.maxTouchPoints > 0;
     setTouchLayerVisible(Boolean(coarse || touchPoints && window.innerWidth <= 1024), true);
@@ -10768,15 +11059,15 @@
     return false;
   }
   function pickBotTarget(bot) {
-    const candidates = [localPlayer, ...bots].filter(
-      (e) => e !== bot && e.deployed && e.alive && e.respawnTimer <= 0 && (bot.team === "ffa" || e.team !== bot.team)
-    );
-    if (candidates.length === 0) return null;
     const bx = bot.pos.x;
     const by = bot.pos.y - 12;
     let bestTarget = null;
     let bestScore = Infinity;
-    for (const e of candidates) {
+    const players = world.players;
+    for (let i = 0; i < players.length; i++) {
+      const e = players[i];
+      if (e === bot || !e.deployed || !e.alive || e.respawnTimer > 0) continue;
+      if (bot.team !== "ffa" && e.team === bot.team) continue;
       const ex = e.pos.x;
       const ey = e.pos.y - 12;
       const d = directDist(bx, by, ex, ey);
@@ -10803,7 +11094,8 @@
     const ex = enemy.pos.x;
     let best = null;
     let bestDist = 380;
-    for (const ob of world.obstacles) {
+    for (let i = 0; i < world.obstacles.length; i++) {
+      const ob = world.obstacles[i];
       if (ob.hp <= 0) continue;
       if (Math.abs(ob.y + ob.h - (by + 16)) > 95) continue;
       const cx = ob.x + ob.w / 2;
@@ -11150,7 +11442,13 @@
       mem.sniperReleaseTick = false;
     }
     if (!mem.manualRouteLocked && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
-      const cover = findNearestCoverPosition(bot, target);
+      let cover = mem.coverCache ?? null;
+      if (mem.coverCacheTick === void 0 || world.tick - mem.coverCacheTick >= 6 || mem.coverCacheTargetId !== target.id) {
+        cover = findNearestCoverPosition(bot, target);
+        mem.coverCacheTick = world.tick;
+        mem.coverCacheTargetId = target.id;
+        mem.coverCache = cover;
+      }
       const needCoverHide = bot.reloading || bot.hp < 75 || bot.fireCooldown > 0.16 || curAmmo <= 0;
       if (cover && (needCoverHide || Math.abs(cover.x - bx) < 220)) {
         const dxCover = cover.x - bx;
@@ -11273,6 +11571,7 @@
     }
     resizeCanvas();
     window.addEventListener("keydown", (e) => {
+      warmupAudioCtx();
       const active = document.activeElement;
       if (active && ["INPUT", "TEXTAREA"].includes(active.tagName)) return;
       keys[e.code] = true;
@@ -11298,8 +11597,11 @@
       const rect = canvas.getBoundingClientRect();
       mouse.x = e.clientX - rect.left;
       mouse.y = e.clientY - rect.top;
+      if (!touchState.aimActive) touchState.aimUsed = false;
     });
     canvas?.addEventListener("mousedown", (e) => {
+      warmupAudioCtx();
+      if (!touchState.aimActive) touchState.aimUsed = false;
       if (e.button === 0) mouse.down = true;
       else if (e.button === 2) inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY };
     });
@@ -11509,33 +11811,33 @@
       const W = igeCanvas.width, H = igeCanvas.height;
       c.fillStyle = "#040812";
       c.fillRect(0, 0, W, H);
-      const sx = (wx) => W / 2 + (wx - igeCam.x) * igeCam.zoom;
-      const sy = (wy) => H / 2 + (wy - igeCam.y) * igeCam.zoom;
+      const sx2 = (wx) => W / 2 + (wx - igeCam.x) * igeCam.zoom;
+      const sy2 = (wy) => H / 2 + (wy - igeCam.y) * igeCam.zoom;
       c.fillStyle = "rgba(7, 11, 20, 0.7)";
-      c.fillRect(sx(0), sy(MAIN_DECK_TOP), 13200 * igeCam.zoom, (BEDROCK_TOP - MAIN_DECK_TOP) * igeCam.zoom);
+      c.fillRect(sx2(0), sy2(MAIN_DECK_TOP), 13200 * igeCam.zoom, (BEDROCK_TOP - MAIN_DECK_TOP) * igeCam.zoom);
       c.strokeStyle = "rgba(56,189,248,0.45)";
       c.setLineDash([6, 4]);
       c.beginPath();
-      c.moveTo(sx(0), sy(MAIN_DECK_TOP));
-      c.lineTo(sx(13200), sy(MAIN_DECK_TOP));
+      c.moveTo(sx2(0), sy2(MAIN_DECK_TOP));
+      c.lineTo(sx2(13200), sy2(MAIN_DECK_TOP));
       c.stroke();
       c.setLineDash([]);
       const pat = getTerrainPattern(c, "block");
       for (let i = 0; i < igeSolids.length; i++) {
         const s = igeSolids[i];
         c.fillStyle = pat ?? "#162032";
-        c.fillRect(sx(s.x), sy(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom);
+        c.fillRect(sx2(s.x), sy2(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom);
         c.strokeStyle = i === igeSelected ? "#fbbf24" : UNIFIED_EDGE_HIGHLIGHT;
         c.lineWidth = i === igeSelected ? 2.5 : 1.5;
-        c.strokeRect(sx(s.x), sy(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom);
+        c.strokeRect(sx2(s.x), sy2(s.y), s.w * igeCam.zoom, s.h * igeCam.zoom);
       }
       for (const am of AMMO_SPOTS) {
         c.fillStyle = "#22c55e";
-        c.fillRect(sx(am.x) - 4, sy(am.y) - 4, 8, 8);
+        c.fillRect(sx2(am.x) - 4, sy2(am.y) - 4, 8, 8);
       }
       c.fillStyle = "#10b981";
       c.beginPath();
-      c.arc(sx(CENTER_RESPAWN_POINT.x), sy(CENTER_RESPAWN_POINT.y), 6, 0, Math.PI * 2);
+      c.arc(sx2(CENTER_RESPAWN_POINT.x), sy2(CENTER_RESPAWN_POINT.y), 6, 0, Math.PI * 2);
       c.fill();
       if (igeDragStart && igeDragCur) {
         const x = Math.min(igeDragStart.x, igeDragCur.x);
@@ -11544,8 +11846,8 @@
         const h = Math.max(40, Math.abs(igeDragCur.y - igeDragStart.y));
         c.fillStyle = igeTool === "carve" ? "rgba(244,63,94,0.28)" : "rgba(56,189,248,0.25)";
         c.strokeStyle = igeTool === "carve" ? "#fb7185" : UNIFIED_EDGE_HIGHLIGHT;
-        c.fillRect(sx(x), sy(y), w * igeCam.zoom, h * igeCam.zoom);
-        c.strokeRect(sx(x), sy(y), w * igeCam.zoom, h * igeCam.zoom);
+        c.fillRect(sx2(x), sy2(y), w * igeCam.zoom, h * igeCam.zoom);
+        c.strokeRect(sx2(x), sy2(y), w * igeCam.zoom, h * igeCam.zoom);
       }
       const st = document.getElementById("igeStatus");
       if (st) st.textContent = `${igeSolids.length} \u5757`;
@@ -11798,6 +12100,7 @@
       syncLobbyRoleUI();
     });
     document.getElementById("startBattleBtn")?.addEventListener("click", () => {
+      warmupAudioCtx();
       if (uiState.lobbyRole === "client" && netState.role !== "client") {
         const raw = cleanRoomIdString(document.getElementById("peerRemoteIdInput")?.value || "");
         if (raw) {
@@ -11814,6 +12117,8 @@
     });
     document.getElementById("inputDeviceDetectBadge")?.addEventListener("click", () => setTouchLayerVisible(!touchState.enabled, false));
     document.getElementById("toggleTouchBtn")?.addEventListener("click", () => setTouchLayerVisible(!touchState.enabled, false));
+    document.getElementById("lobbyCtrlKbmBtn")?.addEventListener("click", () => setTouchLayerVisible(false, false));
+    document.getElementById("lobbyCtrlGamepadBtn")?.addEventListener("click", () => setTouchLayerVisible(true, false));
     document.getElementById("resetTerrainBtn")?.addEventListener("click", () => {
       if (!isHostAuthority()) return;
       world.resetMatch();
@@ -11947,11 +12252,13 @@
         }
       };
       zoneEl.addEventListener("touchstart", (e) => {
+        if (!touchState.enabled) return;
         e.preventDefault();
-        if (!touchState.enabled) setTouchLayerVisible(true, true);
+        warmupAudioCtx();
         const t = e.changedTouches[0];
         if (isAim) {
           touchState.aimActive = true;
+          touchState.aimUsed = true;
           touchState.aimId = t.identifier;
         } else {
           touchState.moveActive = true;
@@ -12059,21 +12366,37 @@
   var WRAP_OFFSETS_X2 = [-WORLD_W, 0, WORLD_W];
   var WRAP_OFFSETS_Y2 = [-WORLD_H, 0, WORLD_H];
   var sharedPt = { x: 0, y: 0 };
+  var sharedBeamPt = { x: 0, y: 0 };
   var cachedSkyGrad = null;
   var cachedSkyGradH = 0;
   var cachedSkyDepthQuant = -1;
+  var cachedWorldGlowGrads = /* @__PURE__ */ new Map();
+  var curHalfW = 960;
+  var curHalfH = 540;
+  function sx(wx) {
+    return wrapDeltaX(camera.x, wx);
+  }
+  function sy(wy) {
+    return wrapDeltaY(camera.y, wy);
+  }
+  function inView(dx, dy, pad = 0) {
+    return dx > -curHalfW - pad && dx < curHalfW + pad && dy > -curHalfH - pad && dy < curHalfH + pad;
+  }
+  function inViewRect(dx, dy, padX, padY) {
+    return dx > -curHalfW - padX && dx < curHalfW + padX && dy > -curHalfH - padY && dy < curHalfH + padY;
+  }
+  function beamScreenProject(wx, wy) {
+    sharedBeamPt.x = wrapDeltaX(camera.x, wx);
+    sharedBeamPt.y = wrapDeltaY(camera.y, wy);
+    return sharedBeamPt;
+  }
+  function effectsScreenProject(wx, wy) {
+    sharedPt.x = wrapDeltaX(camera.x, wx);
+    sharedPt.y = wrapDeltaY(camera.y, wy);
+    return sharedPt;
+  }
   function renderScene() {
     if (!ctx || !canvas) return;
-    const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
-    const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
-    const targetFov = localPlayer.mountedTowerId ? 2 : mounted ? 1 : wep.fovMult || 1;
-    camera.fovFactor += (targetFov - camera.fovFactor) * 0.12;
-    if (localPlayer.deployed) {
-      const tx = localPlayer.pos.x;
-      const ty = localPlayer.pos.y - 12;
-      camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2);
-      camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2);
-    }
     let shakeX = 0, shakeY = 0;
     if (screenFx.shake > 0.2) {
       shakeX = (Math.random() - 0.5) * screenFx.shake * 2;
@@ -12083,6 +12406,8 @@
     const zoom = 1 / camera.fovFactor;
     const halfW = canvas.width * camera.fovFactor / 2 + 160;
     const halfH = canvas.height * camera.fovFactor / 2 + 160;
+    curHalfW = halfW;
+    curHalfH = halfH;
     ctx.save();
     const depthT = clamp((camera.y - (SURFACE_Y - 1400)) / 1800, 0, 1);
     const depthQuant = Math.round(depthT * 25);
@@ -12101,35 +12426,42 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
     ctx.scale(zoom, zoom);
-    const sx = (wx) => wrapDeltaX(camera.x, wx);
-    const sy = (wy) => wrapDeltaY(camera.y, wy);
-    const inView = (dx, dy, pad = 0) => dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad;
-    const inViewRect = (dx, dy, padX, padY) => dx > -halfW - padX && dx < halfW + padX && dy > -halfH - padY && dy < halfH + padY;
-    for (const st of worldStars) {
+    ctx.fillStyle = "#dbeafe";
+    for (let i = 0; i < worldStars.length; i++) {
+      const st = worldStars[i];
       const px = sx(st.x);
       const py = sy(st.y);
       if (!inView(px, py)) continue;
       ctx.globalAlpha = st.a * (0.6 + 0.4 * Math.sin(world.tick * 0.02 + st.x * 0.05));
-      ctx.fillStyle = "#dbeafe";
       ctx.beginPath();
       ctx.arc(px, py, st.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-    for (const gl of worldGlows) {
+    for (let i = 0; i < worldGlows.length; i++) {
+      const gl = worldGlows[i];
       const gx = sx(gl.x);
       const gy = sy(gl.y);
       if (!inView(gx, gy, gl.r)) continue;
-      const grad = ctx.createRadialGradient(gx, gy, 10, gx, gy, gl.r);
-      grad.addColorStop(0, `rgba(${gl.c}, ${gl.a})`);
-      grad.addColorStop(1, `rgba(${gl.c}, 0)`);
+      const gKey = `${gl.c}:${gl.a}:${gl.r}`;
+      let grad = cachedWorldGlowGrads.get(gKey);
+      if (!grad) {
+        grad = ctx.createRadialGradient(0, 0, 10, 0, 0, gl.r);
+        grad.addColorStop(0, `rgba(${gl.c}, ${gl.a})`);
+        grad.addColorStop(1, `rgba(${gl.c}, 0)`);
+        cachedWorldGlowGrads.set(gKey, grad);
+      }
+      ctx.save();
+      ctx.translate(gx, gy);
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(gx, gy, gl.r, 0, Math.PI * 2);
+      ctx.arc(0, 0, gl.r, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     }
     syncTerrainPatterns(camera.x, camera.y);
-    for (const r of world.terrain.rects) {
+    for (let ri = 0; ri < world.terrain.rects.length; ri++) {
+      const r = world.terrain.rects[ri];
       if (r.kind.startsWith("deco_")) continue;
       const cx0 = sx(r.x + r.w / 2);
       const cy0 = sy(r.y + r.h / 2);
@@ -12164,44 +12496,46 @@
         }
       }
     }
-    for (const sp of SPAWN_POINTS) {
+    for (let i = 0; i < SPAWN_POINTS.length; i++) {
+      const sp = SPAWN_POINTS[i];
       if (sp.team === "green" || sp.team === "ffa") continue;
       const px = sx(sp.x);
       const py = sy(sp.y);
       if (!inView(px, py, 120)) continue;
       ctx.save();
-      {
-        ctx.translate(px, py - 42);
-        const isLeft = sp.x < WORLD_W / 2;
-        const fillCol = isLeft ? "rgba(14, 165, 233, 0.32)" : "rgba(244, 63, 94, 0.32)";
-        const strokeCol = isLeft ? "#0ea5e9" : "#f43f5e";
-        ctx.fillStyle = fillCol;
-        ctx.strokeStyle = strokeCol;
-        ctx.lineWidth = 3.5;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 38, 56, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.font = "bold 11px Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillStyle = isLeft ? "#7dd3fc" : "#fda4af";
-        ctx.fillText(isLeft ? "\u{1F535} \u5DE6\u7FFC\u57FA\u5730\u51FA\u751F\u70B9" : "\u{1F534} \u53F3\u7FFC\u57FA\u5730\u51FA\u751F\u70B9", 0, -66);
-      }
+      ctx.translate(px, py - 42);
+      const isLeft = sp.x < WORLD_W / 2;
+      const fillCol = isLeft ? "rgba(14, 165, 233, 0.32)" : "rgba(244, 63, 94, 0.32)";
+      const strokeCol = isLeft ? "#0ea5e9" : "#f43f5e";
+      ctx.fillStyle = fillCol;
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 38, 56, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = "bold 11px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = isLeft ? "#7dd3fc" : "#fda4af";
+      ctx.fillText(isLeft ? "\u{1F535} \u5DE6\u7FFC\u57FA\u5730\u51FA\u751F\u70B9" : "\u{1F534} \u53F3\u7FFC\u57FA\u5730\u51FA\u751F\u70B9", 0, -66);
       ctx.restore();
     }
-    for (const pad of JUMP_PADS) {
+    for (let i = 0; i < JUMP_PADS.length; i++) {
+      const pad = JUMP_PADS[i];
       const px = sx(pad.x);
       const py = sy(pad.y);
       if (!inView(px, py, 60)) continue;
       drawJumpPad(ctx, px, py, world.tick);
     }
-    for (const ob of world.obstacles) {
+    for (let i = 0; i < world.obstacles.length; i++) {
+      const ob = world.obstacles[i];
       const ox = sx(ob.x + ob.w / 2);
       const oy = sy(ob.y + ob.h / 2);
       if (!inViewRect(ox, oy, ob.w * 0.5, ob.h * 0.5)) continue;
       drawObstacleSprite(ctx, ob, ox, oy);
     }
-    for (const cp of world.capturePoints) {
+    for (let i = 0; i < world.capturePoints.length; i++) {
+      const cp = world.capturePoints[i];
       const cx = sx(cp.x);
       const cy = sy(cp.y);
       if (!inView(cx, cy, 160)) continue;
@@ -12253,48 +12587,63 @@
       }
       drawFlagSprite(ctx, cp, cx, cy, world.tick);
     }
-    for (const wp of world.warpPortals) {
+    for (let i = 0; i < world.warpPortals.length; i++) {
+      const wp = world.warpPortals[i];
       const wx = sx(wp.x);
       const wy = sy(wp.y);
       if (!inView(wx, wy)) continue;
       drawWarpSprite(ctx, wp, wx, wy, world.tick);
     }
-    for (const tw of world.watchtowers) {
+    for (let i = 0; i < world.watchtowers.length; i++) {
+      const tw = world.watchtowers[i];
       const tx = sx(tw.x);
       const ty = sy(tw.y);
       if (!inView(tx, ty, 200)) continue;
       drawTowerSprite(ctx, tw, tx, ty, world.tick);
     }
-    for (const pack of world.ammoPacks) {
+    for (let i = 0; i < world.ammoPacks.length; i++) {
+      const pack = world.ammoPacks[i];
       const px = sx(pack.x);
       const py = sy(pack.y);
       if (!inView(px, py)) continue;
       drawAmmoSprite(ctx, pack, px, py, world.tick);
     }
-    for (const crate of world.supplyCrates) {
+    for (let i = 0; i < world.supplyCrates.length; i++) {
+      const crate = world.supplyCrates[i];
       if (!crate.active) continue;
       const cx = sx(crate.x);
       const cy = sy(crate.y);
       if (!inView(cx, cy)) continue;
       drawCrateSprite(ctx, crate, cx, cy, world.tick);
     }
-    for (const m of world.mortars) {
+    let mountedNow;
+    for (let i = 0; i < world.mortars.length; i++) {
+      const m = world.mortars[i];
+      if (m.operatorId === localPlayer.id) mountedNow = m;
       const mx = sx(m.x);
       const my = sy(m.y);
       if (!inView(mx, my)) continue;
       drawMortarSprite(ctx, m, mx, my, world.tick);
     }
-    for (const m of world.landmines) {
+    for (let i = 0; i < world.landmines.length; i++) {
+      const m = world.landmines[i];
       if (m.respawnTimer > 0) continue;
       const mx = sx(m.pos.x);
       const my = sy(m.pos.y);
       if (!inView(mx, my)) continue;
       drawMineSprite(ctx, m, mx, my, world.tick, world.config.mineTriggerRadius);
     }
-    for (const p of world.players) {
+    for (let pi = 0; pi < world.players.length; pi++) {
+      const p = world.players[pi];
       if (p.respawnTimer > 0 || !p.deployed) continue;
       const pWep = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
-      const pMounted = world.mortars.some((m) => m.operatorId === p.id);
+      let pMounted = false;
+      for (let mi = 0; mi < world.mortars.length; mi++) {
+        if (world.mortars[mi].operatorId === p.id) {
+          pMounted = true;
+          break;
+        }
+      }
       if (p.doll) {
         const dx = sx(p.doll.pos.x);
         const dy = sy(p.doll.pos.y);
@@ -12419,7 +12768,6 @@
         ctx.restore();
       }
     }
-    const mountedNow = world.mortars.find((m) => m.operatorId === localPlayer.id);
     if (mountedNow) {
       const mx = sx(mountedNow.x);
       const my = sy(mountedNow.y);
@@ -12506,7 +12854,8 @@
       }
     }
     if (!localPlayer.mountedTowerId) {
-      for (const sz of world.terrain.shadows) {
+      for (let si = 0; si < world.terrain.shadows.length; si++) {
+        const sz = world.terrain.shadows[si];
         const cx0 = sx(sz.x + sz.w / 2);
         const cy0 = sy(sz.y + sz.h / 2);
         const szHalfW = sz.w * 0.5;
@@ -12524,7 +12873,8 @@
         }
       }
     }
-    for (const r of world.terrain.rects) {
+    for (let ri = 0; ri < world.terrain.rects.length; ri++) {
+      const r = world.terrain.rects[ri];
       if (!r.kind.startsWith("deco_")) continue;
       const cx0 = sx(r.x + r.w / 2);
       const cy0 = sy(r.y + r.h / 2);
@@ -12540,34 +12890,39 @@
         }
       }
     }
-    for (const g of world.grenades) {
+    for (let i = 0; i < world.grenades.length; i++) {
+      const g = world.grenades[i];
       const gx = sx(g.pos.x);
       const gy = sy(g.pos.y);
       if (!inView(gx, gy)) continue;
       drawGrenadeSprite(ctx, g, gx, gy, world.tick);
     }
-    for (const pr of world.projectiles) {
+    for (let i = 0; i < world.projectiles.length; i++) {
+      const pr = world.projectiles[i];
       const px = sx(pr.pos.x);
       const py = sy(pr.pos.y);
       if (!inView(px, py, 200)) continue;
       drawProjectileSprite(ctx, pr, px, py, world.tick);
     }
-    for (const st of world.airstrikes) {
+    for (let i = 0; i < world.airstrikes.length; i++) {
+      const st = world.airstrikes[i];
       const ax = sx(st.pos.x);
       const ay = sy(st.pos.y);
       if (!inView(ax, ay, 60)) continue;
       drawAirstrikeSprite(ctx, st, ax, ay, world.tick);
     }
-    for (const b of beams) {
+    for (let bi = 0; bi < beams.length; bi++) {
+      const b = beams[bi];
       const alpha = Math.max(0, b.life / b.maxLife);
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.lineCap = "round";
-      const polys = expandBeamSegments(b.segments, (wx, wy) => ({ x: sx(wx), y: sy(wy) }), halfW, halfH);
+      const polys = expandBeamSegments(b.segments, beamScreenProject, halfW, halfH);
       ctx.strokeStyle = b.color;
       ctx.lineWidth = 9;
       ctx.globalAlpha = alpha * 0.35;
-      for (const pl of polys) {
+      for (let pi = 0; pi < polys.length; pi++) {
+        const pl = polys[pi];
         ctx.beginPath();
         ctx.moveTo(pl.x1, pl.y1);
         ctx.lineTo(pl.x2, pl.y2);
@@ -12576,7 +12931,8 @@
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 2.4;
-      for (const pl of polys) {
+      for (let pi = 0; pi < polys.length; pi++) {
+        const pl = polys[pi];
         ctx.beginPath();
         ctx.moveTo(pl.x1, pl.y1);
         ctx.lineTo(pl.x2, pl.y2);
@@ -12584,24 +12940,31 @@
       }
       ctx.restore();
     }
-    effects.render(ctx, (x, y) => {
-      sharedPt.x = sx(x);
-      sharedPt.y = sy(y);
-      return sharedPt;
-    }, inView, sx, sy);
+    effects.render(ctx, effectsScreenProject, inView, sx, sy);
     ctx.restore();
   }
 
   // src/web/game/loop.ts
   var playerInput = defaultWorldInput();
+  var sharedSecondaryIntent = { type: "frag", targetX: 0, targetY: 0 };
+  var frameInputs = /* @__PURE__ */ new Map();
   var prevFireCooldown = 0;
   var wasDead = false;
   var lastFrame = performance.now();
   var smoothFps = 60;
-  var acc = 0;
+  var acc = FIXED * 0.5;
   var mobileSniperPulseRelease = false;
   function buildLocalInput() {
-    const w = defaultWorldInput();
+    const w = playerInput;
+    w.jump = false;
+    w.jetpack = false;
+    w.dive = false;
+    w.fire = false;
+    w.reload = false;
+    w.interact = false;
+    w.switchWeapon = null;
+    w.secondary = null;
+    w.trackChargeAim = false;
     const k = keys;
     let move = 0;
     if (k["KeyA"] || k["ArrowLeft"]) move = move - 1;
@@ -12619,9 +12982,16 @@
     const zoom = 1 / camera.fovFactor;
     const psx = canvas.width / 2 + wrapDeltaX(camera.x, localPlayer.pos.x) * zoom;
     const psy = canvas.height / 2 + wrapDeltaY(camera.y, localPlayer.pos.y) * zoom;
-    const mounted = world.mortars.find((m) => m.operatorId === localPlayer.id);
+    let mounted;
+    for (let i = 0; i < world.mortars.length; i++) {
+      if (world.mortars[i].operatorId === localPlayer.id) {
+        mounted = world.mortars[i];
+        break;
+      }
+    }
     const aimMag = touchState.aimActive ? Math.hypot(touchState.aimX, touchState.aimY) : 0;
-    if (touchState.enabled) {
+    const useTouchAim = touchState.enabled && (touchState.aimActive || touchState.aimUsed);
+    if (useTouchAim) {
       if (aimMag > 0.12) {
         touchState.lastAimAngle = Math.atan2(touchState.aimY, touchState.aimX);
       } else if (touchState.moveActive && Math.abs(touchState.moveX) > 0.25 && !touchState.aimActive) {
@@ -12650,7 +13020,8 @@
         w.aim = Math.atan2(mouse.y - (psy - 12 * zoom), mouse.x - psx);
       }
     }
-    const touchWantsFire = touchState.aimActive && aimMag > 0.42;
+    const touchWantsFire = touchState.enabled && touchState.aimActive && aimMag > 0.42;
+    w.trackChargeAim = touchState.enabled && touchState.aimActive;
     const wepCur = WEAPONS[localPlayer.weaponIndex];
     if (touchWantsFire && (wepCur?.chargeSeconds ?? 0) > 0) {
       if (localPlayer.chargeTimer <= 0 && localPlayer.fireCooldown <= 0 && localPlayer.prevFireHeld && !mobileSniperPulseRelease) {
@@ -12661,19 +13032,36 @@
         mobileSniperPulseRelease = false;
       }
     } else {
-      w.fire = mouse.down || touchWantsFire;
+      w.fire = (touchState.enabled ? false : mouse.down) || touchState.enabled && mouse.down && !touchState.aimActive || touchWantsFire;
       mobileSniperPulseRelease = false;
     }
     w.interact = inputQueue.interact;
     w.reload = inputQueue.reload;
     if (inputQueue.secondary) {
-      w.secondary = {
-        type: inputQueue.secondary.type,
-        targetX: inputQueue.secondary.targetX,
-        targetY: inputQueue.secondary.targetY
-      };
+      sharedSecondaryIntent.type = inputQueue.secondary.type;
+      sharedSecondaryIntent.targetX = inputQueue.secondary.targetX;
+      sharedSecondaryIntent.targetY = inputQueue.secondary.targetY;
+      w.secondary = sharedSecondaryIntent;
     }
     return w;
+  }
+  function updateCameraTracking() {
+    const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0];
+    let mounted = false;
+    for (let i = 0; i < world.mortars.length; i++) {
+      if (world.mortars[i].operatorId === localPlayer.id) {
+        mounted = true;
+        break;
+      }
+    }
+    const targetFov = localPlayer.mountedTowerId ? 2 : mounted ? 1 : wep.fovMult || 1;
+    camera.fovFactor += (targetFov - camera.fovFactor) * 0.12;
+    if (localPlayer.deployed) {
+      const tx = localPlayer.pos.x;
+      const ty = localPlayer.pos.y - 12;
+      camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2);
+      camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2);
+    }
   }
   function onLocalDeath() {
     const cur = WEAPONS[localPlayer.weaponIndex];
@@ -12687,7 +13075,7 @@
     localPlayer.secondary = pendingLoadout.secondaryType;
     updateHudWeaponButtons();
     updateSpawnPointButtonsUI();
-    renderDeathStats();
+    renderDeathStats(true);
     const ds = document.getElementById("deathScreen");
     if (ds) {
       ds.classList.remove("hidden");
@@ -12718,6 +13106,7 @@
   }
   function startGameLoop() {
     lastFrame = performance.now();
+    acc = FIXED * 0.5;
     installDiag();
     function stepLoopTick(now, shouldRender) {
       const tFrameStart = now;
@@ -12725,22 +13114,29 @@
       if (rawDt > 1e-3) {
         smoothFps = smoothFps * 0.9 + 1 / rawDt * 0.1;
       }
-      const snappedDt = shouldRender && rawDt > 0.0145 && rawDt < 0.019 ? FIXED : Math.min(0.05, rawDt);
       lastFrame = now;
-      acc += snappedDt;
+      if (shouldRender && rawDt > 0.011 && rawDt < 0.023) {
+        acc += FIXED + (FIXED * 0.5 - acc) * 0.2;
+      } else {
+        acc += Math.min(0.05, Math.max(0, rawDt));
+      }
       let guard = 0;
       const tStepsBegin = performance.now();
-      while (acc >= FIXED && guard < 5) {
-        playerInput = buildLocalInput();
+      while (acc >= FIXED && guard < 4) {
+        const pIn = buildLocalInput();
         inputQueue.interact = false;
         inputQueue.reload = false;
         inputQueue.secondary = null;
         localPlayer.selectedSpawnId = pendingLoadout.spawnPointId;
-        const inputs = /* @__PURE__ */ new Map([[localPlayer.id, playerInput]]);
-        for (const b of bots) inputs.set(b.id, botInput(b));
-        const handledAsClient = stepNetworkFrame(FIXED, playerInput, inputs);
+        frameInputs.clear();
+        frameInputs.set(localPlayer.id, pIn);
+        for (let i = 0; i < bots.length; i++) {
+          const b = bots[i];
+          frameInputs.set(b.id, botInput(b));
+        }
+        const handledAsClient = stepNetworkFrame(FIXED, pIn, frameInputs);
         if (!handledAsClient) {
-          world.step(FIXED, inputs);
+          world.step(FIXED, frameInputs);
           const evs = world.drainEvents();
           handleEvents(evs);
           if (netState.role === "host") broadcastHostKcpSnapshot(evs);
@@ -12767,7 +13163,7 @@
           const respBar = document.getElementById("deathRespawnProgressBar");
           if (respBar) {
             const totalDelay = Math.max(0.1, world.config.respawnDelay ?? 4);
-            const pct = clamp((1 - localPlayer.respawnTimer / totalDelay) * 100, 0, 100);
+            const pct = Math.round(clamp((1 - localPlayer.respawnTimer / totalDelay) * 100, 0, 100));
             respBar.style.width = `${pct}%`;
           }
           const streakPill = document.getElementById("deathStreakPill");
@@ -12776,9 +13172,10 @@
           }
           const kl = document.getElementById("deathKillerLine");
           if (kl) kl.textContent = death.info ? `${death.info.killer} \xB7 ${death.info.weapon}` : "";
-          if (world.tick % 6 === 0) renderDeathStats();
+          if (world.tick % 6 === 0) renderDeathStats(false);
         }
-        for (const p of world.players) {
+        for (let i = 0; i < world.players.length; i++) {
+          const p = world.players[i];
           if (p.deployed && p.respawnTimer <= 0 && p.jetpack) {
             effects.jet(p.pos.x, p.pos.y);
           }
@@ -12797,6 +13194,7 @@
           beams[i].life -= FIXED;
           if (beams[i].life <= 0) beams.splice(i, 1);
         }
+        updateCameraTracking();
         acc -= FIXED;
         guard++;
       }
@@ -12805,8 +13203,8 @@
         const stepMs = tRender - tStepsBegin;
         renderScene();
         const tHud = performance.now();
-        updateHudUI();
-        updateScoreboardUI();
+        updateHudUI2();
+        updateScoreboardUI2();
         updateDebugHudTelemetry(smoothFps);
         const tEnd = performance.now();
         diagRecordFrame(tFrameStart, {
@@ -12814,26 +13212,14 @@
           stepMs,
           renderMs: tHud - tRender,
           hudMs: tEnd - tHud
-        }, {
-          world,
-          localPlayer,
-          camera,
-          netState,
-          canvas
-        });
+        }, { world, localPlayer, camera, netState, canvas });
       } else {
         diagRecordFrame(tFrameStart, {
           steps: guard,
           stepMs: performance.now() - tStepsBegin,
           renderMs: 0,
           hudMs: 0
-        }, {
-          world,
-          localPlayer,
-          camera,
-          netState,
-          canvas
-        });
+        }, { world, localPlayer, camera, netState, canvas });
       }
     }
     requestAnimationFrame(function gameLoop(now) {
@@ -12848,8 +13234,8 @@
     }, 32);
   }
   var lastDeathRankSig = "";
-  function renderDeathStats() {
-    renderDeathMinimap();
+  function renderDeathStats(skipMinimap = false) {
+    if (!skipMinimap) renderDeathMinimap();
     const me = localPlayer;
     const kills = me.kills ?? 0;
     const deaths = me.deaths ?? 0;
@@ -12950,8 +13336,8 @@
     applyPendingLoadoutAndSpawn,
     render: () => {
       renderScene();
-      updateHudUI();
-      updateScoreboardUI();
+      updateHudUI2();
+      updateScoreboardUI2();
       updateHudWeaponButtons();
       syncFeatureFlagsUI();
     },

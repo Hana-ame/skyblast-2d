@@ -76,7 +76,7 @@
           🏠 房间
         </button>
         <button id="toggleTouchBtn" type="button" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-700 transition">
-          📱 触屏
+          🎮 手柄：关
         </button>
         <button id="fullscreenBtn" type="button" class="px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 active:scale-95 text-[11px] font-semibold text-white transition">
           ⛶ <span id="fullscreenBtnText">全屏</span>
@@ -326,7 +326,7 @@
   <!-- ==================== 底部武器 HUD（回退上一版本简洁样式） ==================== -->
   <div id="bottomWeaponDock" class="fixed bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center justify-center pointer-events-none px-2 max-w-[98vw]">
     <div class="relative pointer-events-auto">
-      <div id="reloadProgressWrap" class="invisible opacity-0 translate-y-1 transition-all duration-150 pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/95 border border-amber-400/50 whitespace-nowrap">
+      <div id="reloadProgressWrap" class="invisible opacity-0 translate-y-1 transition-all duration-150 pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-950/90 border border-amber-400/50 backdrop-blur-none whitespace-nowrap">
         <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
         <span id="reloadProgressLabel" class="text-[10px] font-extrabold text-amber-200">换弹</span>
         <div class="w-20 h-1.5 bg-slate-800/90 rounded-full overflow-hidden">
@@ -418,7 +418,7 @@
             <span class="text-base font-black text-white">SkyBlast 2D</span>
             <span id="peerRoleBadge" class="hidden"></span>
             <button id="inputDeviceDetectBadge" type="button" class="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition">
-              💻 键鼠
+              💻 键鼠（手柄已关）
             </button>
           </div>
           <button id="lobbyOpenParamsBtn" type="button" class="px-3 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition">
@@ -617,6 +617,14 @@
                 <div class="flex items-center gap-1.5">
                   <button type="button" data-allow-ffa="1" class="ffa-allow-btn px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-extrabold text-xs">允许</button>
                   <button type="button" data-allow-ffa="0" class="ffa-allow-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-400 font-extrabold text-xs border border-slate-700">禁止</button>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                <span class="text-xs font-semibold text-slate-300">操控</span>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <button id="lobbyCtrlKbmBtn" type="button" class="px-2.5 py-1.5 rounded-lg border-2 border-emerald-400 bg-emerald-500/20 text-emerald-200 font-extrabold text-xs transition">💻 键鼠（关手柄）</button>
+                  <button id="lobbyCtrlGamepadBtn" type="button" class="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950/60 text-slate-400 hover:border-slate-500 font-semibold text-xs transition">🎮 开启手柄</button>
                 </div>
               </div>
 
@@ -829,6 +837,6 @@
   <!-- 轻提示 Toast -->
   <div id="toastBanner" class="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
-  <script src="./bundle.js?v=c52d2f18e4"></script>
+  <script src="./bundle.js?v=7acc5dbf54"></script>
 </body>
 </html>

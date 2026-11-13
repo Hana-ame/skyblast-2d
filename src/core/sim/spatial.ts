@@ -34,10 +34,10 @@ export function findObstacleAt(
   y: number,
   pad = 0,
 ): Obstacle | null {
-  const wx = wrapX(x)
+  const wx = x >= 0 && x < WORLD_W ? x : wrapX(x)
   if (obstacleBroadBuckets && pad <= OBSTACLE_BROAD_PAD) {
     const list = obstacleBroadBuckets[bucketIdx(wx)]
-    return list ? obstacleAtBucket(list, wx, y, pad) : null
+    return list && list.length > 0 ? obstacleAtBucket(list, wx, y, pad) : null
   }
   for (let i = 0; i < obstacles.length; i++) {
     const ob = obstacles[i]
@@ -68,17 +68,19 @@ export function lineBlockedByTerrain(
   const steps = Math.max(1, Math.ceil(dist / 4))
   const tGrid = terrain.grid
   const invSteps = 1 / steps
+  const hasObs = obstacles.length > 0
   for (let k = 1; k < steps; k++) {
     const f = k * invSteps
-    const px = wrapX(x1 + dx * f)
-    const py = wrapY(y1 + dy * f)
-    if (tGrid[((py / 20) | 0) * GRID_W + ((px / 20) | 0)] !== 0) return true
-    if (findObstacleAt(obstacles, obstacleBroadBuckets, px, py)) return true
+    let px = x1 + dx * f
+    if (px >= WORLD_W || px < 0) px = wrapX(px)
+    let py = y1 + dy * f
+    if (py >= WORLD_H || py < 0) py = wrapY(py)
+    if (tGrid[((py * 0.05) | 0) * GRID_W + ((px * 0.05) | 0)] !== 0) return true
+    if (hasObs && findObstacleAt(obstacles, obstacleBroadBuckets, px, py)) return true
   }
   return false
 }
 
-/** 把一段光束截断到「最后一个空点」：保证任何被绘制/判定使用的线段都不穿过实体 */
 /**
  * 把一段光束截断到「最后一个空点」。
  * 端点由「起点 + 真实未 wrap 位移」推导（而不是直接取 wrap 后的 x2/y2）：
@@ -101,20 +103,21 @@ export function truncateSegmentToFree(
   const len = Math.hypot(dx, dy)
   if (len <= 1e-6) return { x: x1, y: y1, dx: 0, dy: 0, shortened: false }
   const steps = Math.max(1, Math.ceil(len / 3))
-  let lastX = x1
-  let lastY = y1
+  const tGrid = terrain.grid
+  const invSteps = 1 / steps
   let lastDx = 0
   let lastDy = 0
   for (let k = 1; k <= steps; k++) {
-    const curDx = (dx * k) / steps
-    const curDy = (dy * k) / steps
-    const px = wrapX(x1 + curDx)
-    const py = wrapY(y1 + curDy)
-    if (terrain.isSolidAt(px, py)) {
-      return { x: lastX, y: lastY, dx: lastDx, dy: lastDy, shortened: true }
+    const f = k * invSteps
+    const curDx = dx * f
+    const curDy = dy * f
+    let px = x1 + curDx
+    if (px >= WORLD_W || px < 0) px = wrapX(px)
+    let py = y1 + curDy
+    if (py >= WORLD_H || py < 0) py = wrapY(py)
+    if (tGrid[((py * 0.05) | 0) * GRID_W + ((px * 0.05) | 0)] !== 0) {
+      return { x: wrapX(x1 + lastDx), y: wrapY(y1 + lastDy), dx: lastDx, dy: lastDy, shortened: true }
     }
-    lastX = px
-    lastY = py
     lastDx = curDx
     lastDy = curDy
   }
@@ -129,13 +132,15 @@ export function checkBodyOverlapsAt(
   y: number,
   obstacleBroadBuckets?: Obstacle[][],
 ): boolean {
-  const wx = wrapX(x)
+  const wx = x >= 0 && x < WORLD_W ? x : wrapX(x)
   const halfW = 10
   const tGrid = terrain.grid
   const gx0 = Math.floor((wx - halfW) / TILE_SIZE)
   const gx1 = Math.floor((wx + halfW) / TILE_SIZE)
-  const gy0 = Math.floor(wrapY(y - 30) / TILE_SIZE)
-  const gy1 = Math.floor(wrapY(y + 16) / TILE_SIZE)
+  const wyTop = y - 30 >= 0 && y - 30 < WORLD_H ? y - 30 : wrapY(y - 30)
+  const wyBot = y + 16 >= 0 && y + 16 < WORLD_H ? y + 16 : wrapY(y + 16)
+  const gy0 = Math.floor(wyTop / TILE_SIZE)
+  const gy1 = Math.floor(wyBot / TILE_SIZE)
   for (let gx = gx0; gx <= gx1; gx++) {
     const gxx = gx >= 0 && gx < GRID_W ? gx : ((gx % GRID_W) + GRID_W) % GRID_W
     for (let gy = gy0; gy <= gy1; gy++) {
@@ -153,7 +158,7 @@ export function checkBodyOverlapsAt(
     }
   }
   const obList = obstacleBroadBuckets ? obstacleBroadBuckets[bucketIdx(wx)] : obstacles
-  if (obList) {
+  if (obList && obList.length > 0) {
     for (let i = 0; i < obList.length; i++) {
       const ob = obList[i]
       if (ob.hp <= 0) continue

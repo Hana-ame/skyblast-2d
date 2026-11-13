@@ -10,6 +10,7 @@ import {
   keys, mouse, touchState, inputQueue, resizeCanvas, requestResizeCanvas,
 } from '../app/context.ts'
 import { showToast } from '../app/toast.ts'
+import { warmupAudioCtx } from '../app/audio.ts'
 import {
   updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI,
   tryChangePrimaryWeapon, tryChangeSecondaryWeapon,
@@ -34,7 +35,6 @@ import { wrapDeltaY, wrapDist } from '../../core/wrap.ts'
 
 /** 尝试通过按 E 选中就近已占领的旗帜复活点（严格取当前同层最近据点，不再跨图乱跳） */
 export function trySelectCapturedFlagSpawnByKey(): boolean {
-  // 若玩家正处于操控炮台/瞭望塔或靠近特武箱/传送门等优先交互点，不误触改写复活点
   if (localPlayer.mountedTowerId || world.mortars.some(m => m.operatorId === localPlayer.id)) return false
   if (world.supplyCrates.some(cr => cr.active && cr.y > 400 && wrapDist(localPlayer.pos.x, localPlayer.pos.y, cr.x, cr.y) < 95)) return false
 
@@ -92,6 +92,7 @@ export function bindAllEvents(): void {
   resizeCanvas()
 
   window.addEventListener('keydown', (e) => {
+    warmupAudioCtx()
     const active = document.activeElement
     if (active && ['INPUT', 'TEXTAREA'].includes(active.tagName)) return
     keys[e.code] = true
@@ -118,15 +119,17 @@ export function bindAllEvents(): void {
     const rect = canvas.getBoundingClientRect()
     mouse.x = e.clientX - rect.left
     mouse.y = e.clientY - rect.top
+    if (!touchState.aimActive) touchState.aimUsed = false
   })
   canvas?.addEventListener('mousedown', (e) => {
+    warmupAudioCtx()
+    if (!touchState.aimActive) touchState.aimUsed = false
     if (e.button === 0) mouse.down = true
     else if (e.button === 2) inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
   })
   canvas?.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.down = false })
   canvas?.addEventListener('contextmenu', (e) => e.preventDefault())
 
-  // Host / Client 切换
   document.getElementById('lobbyTabHostBtn')?.addEventListener('click', () => {
     syncLobbyRoleUI('host')
   })
@@ -134,7 +137,6 @@ export function bindAllEvents(): void {
     syncLobbyRoleUI('client')
   })
 
-  // Host 专属 Debug HUD 开关 & 特性开关 (Feature Flags) 抽屉
   document.getElementById('toggleDebugHudBtn')?.addEventListener('click', () => {
     toggleDebugHud()
   })
@@ -208,7 +210,6 @@ export function bindAllEvents(): void {
     })
   })
 
-  // 房主配置：双队模式下是否允许 FFA 身份加入
   document.querySelectorAll('.ffa-allow-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (!isHostAuthority()) return
@@ -233,7 +234,6 @@ export function bindAllEvents(): void {
     })
   })
 
-  // KCP 房间创建与复制（只给纯房间码 String，不拼任何 URL 参数）
   document.getElementById('peerHostBtn')?.addEventListener('click', () => {
     startHostRoom()
     syncLobbyRoleUI('host')
@@ -259,7 +259,6 @@ export function bindAllEvents(): void {
     showToast(`📋 已复制房间码：${val}`)
   })
 
-  // Client 输入纯房间码 String，向房主请求参数
   const remoteInput = document.getElementById('peerRemoteIdInput') as HTMLInputElement | null
   remoteInput?.addEventListener('input', () => {
     const cleaned = cleanRoomIdString(remoteInput.value)
@@ -322,7 +321,6 @@ export function bindAllEvents(): void {
     trySelectCapturedFlagSpawnByKey()
   })
 
-  // 内嵌地图编辑器（仅 Host 可打开）
   const igeModal = document.getElementById('inGameEditorModal')
   const igeCanvas = document.getElementById('igeCanvas') as HTMLCanvasElement | null
   let igeSolids: MapSolid[] = defaultMapData().solids.map(s => ({ ...s }))
@@ -621,6 +619,7 @@ export function bindAllEvents(): void {
   })
 
   document.getElementById('startBattleBtn')?.addEventListener('click', () => {
+    warmupAudioCtx()
     if (uiState.lobbyRole === 'client' && netState.role !== 'client') {
       const raw = cleanRoomIdString((document.getElementById('peerRemoteIdInput') as HTMLInputElement | null)?.value || '')
       if (raw) {
@@ -638,6 +637,8 @@ export function bindAllEvents(): void {
 
   document.getElementById('inputDeviceDetectBadge')?.addEventListener('click', () => setTouchLayerVisible(!touchState.enabled, false))
   document.getElementById('toggleTouchBtn')?.addEventListener('click', () => setTouchLayerVisible(!touchState.enabled, false))
+  document.getElementById('lobbyCtrlKbmBtn')?.addEventListener('click', () => setTouchLayerVisible(false, false))
+  document.getElementById('lobbyCtrlGamepadBtn')?.addEventListener('click', () => setTouchLayerVisible(true, false))
   document.getElementById('resetTerrainBtn')?.addEventListener('click', () => {
     if (!isHostAuthority()) return
     world.resetMatch()
@@ -695,7 +696,6 @@ export function bindAllEvents(): void {
   bindRangeParam('paramRespawnDelay', 'valRespawnDelay', 's', (v) => { world.config.respawnDelay = v; broadcastHostRoomParams() })
   bindRangeParam('paramDollMax', 'valDollMax', '', (v) => { world.config.dollMaxCharges = v })
 
-  // 触屏双摇杆
   function bindJoystick(zoneEl: HTMLElement | null, stickEl: HTMLElement | null, isAim: boolean): void {
     if (!zoneEl || !stickEl) return
     const maxDist = 52
@@ -735,10 +735,11 @@ export function bindAllEvents(): void {
       }
     }
     zoneEl.addEventListener('touchstart', (e) => {
+      if (!touchState.enabled) return
       e.preventDefault()
-      if (!touchState.enabled) setTouchLayerVisible(true, true)
+      warmupAudioCtx()
       const t = e.changedTouches[0]
-      if (isAim) { touchState.aimActive = true; touchState.aimId = t.identifier }
+      if (isAim) { touchState.aimActive = true; touchState.aimUsed = true; touchState.aimId = t.identifier }
       else { touchState.moveActive = true; touchState.moveId = t.identifier }
       handleMove(t.clientX, t.clientY)
     }, { passive: false })

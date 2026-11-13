@@ -78,7 +78,7 @@ for (let i = 0; i < TICKS; i++) {
   // 0-90s：对枪；Alice 在 t=2s 丢手雷，Bob 在 t=2.2s 开护盾；Alice t=4s 部署工事
   const t = i * DT
   const secA = Math.abs(t - 2.0) < DT / 2 ? { kind: 'frag', targetX: b.pos.x, targetY: b.pos.y }
-    : Math.abs(t - 4.0) < DT / 2 ? { kind: 'barricade', targetX: a.pos.x + 100, targetY: a.pos.y }
+    : Math.abs(t - 4.0) < DT / 2 ? { kind: 'obstacle', targetX: a.pos.x + 100, targetY: a.pos.y }
     : null
   const secB = Math.abs(t - 2.2) < DT / 2 ? { kind: 'shield', targetX: 0, targetY: 0 } : null
   csA.sendIntents(mapper.map(touchA(t < 8 || (t > 9 && t < 10), secA)))

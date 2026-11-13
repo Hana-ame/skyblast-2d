@@ -34,7 +34,7 @@ export interface WeaponDef {
   farDamage?: number       // 超过 farRange 时的伤害（可选）
   edgeDamage?: number      // 命中身体碰撞箱边缘（擦边）时的伤害（狙击 = 99，正常命中身体与远距身体均为 100）
   /** 分级擦边伤害：命中身体主体 = damage，越靠碰撞箱边缘越低，线性落到 grazeDamageMin。
-   *  （突击步枪 37 → 擦边最低 30，常见命中 33~34） */
+   *  （突击步枪正中最高 33 → 擦边最低 27） */
   grazeDamageMin?: number
   /** 逐发装填：true 时每次只装 1 发，单发耗时 = reloadTime / magSize；
    *  装填完一发即可击发（霰弹枪）。false/缺省 = 一次性装满整匣。 */
@@ -91,7 +91,7 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 1, name: '突击步枪', shortName: '突击步枪', isSupplyOnly: false,
-    damage: 37, headshotMult: 2.2, pellets: 1, spread: 0.045, grazeDamageMin: 30,   // 命中主体 37；擦边按几何质量线性降到 30（大多数命中 33~34）
+    damage: 33, headshotMult: 2.2, pellets: 1, spread: 0.045, grazeDamageMin: 27,   // 命中主体正中最高 33；擦边按几何质量线性降到 27
     speed: 1500, recoil: 84, magSize: 30, maxReserve: 90,    // 30/90
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
@@ -130,15 +130,15 @@ export const WEAPONS: WeaponDef[] = [
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,
-    damage: 37, headshotMult: 1.8, pellets: 1, spread: 0.11, grazeDamageMin: 30,   // 与突击步枪同步（37，擦边降到 30）
+    damage: 33, headshotMult: 1.8, pellets: 1, spread: 0.11, grazeDamageMin: 27,   // 与突击步枪同步（正中最高 33，擦边降到 27）
     speed: 1300, recoil: 66, magSize: 120, maxReserve: 240,
-    reloadTime: 3.0, fireDelay: 0.06, terrainRadius: 8,   // M249 伤害=突击(37，同步擦边分级)，高射速补给枪
+    reloadTime: 3.0, fireDelay: 0.06, terrainRadius: 8,   // M249 伤害=突击(33，同步擦边分级)，高射速补给枪
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.30, color: '#f97316',
     traitDesc: '重型机枪 · 火力压制',
   },
   {
     id: 6, name: '引力枪', shortName: '引力枪', isSupplyOnly: true,
-    damage: 37, headshotMult: 1.6, pellets: 1, spread: 0.01, grazeDamageMin: 30,   // 伤害调高=突击步枪(37)
+    damage: 33, headshotMult: 1.6, pellets: 1, spread: 0.01, grazeDamageMin: 27,   // 伤害同步=突击步枪(33)
     speed: 1100, recoil: 240, magSize: 6, maxReserve: 18,
     reloadTime: 2.2, fireDelay: 0.9, terrainRadius: 130, lifeSeconds: 2.2,
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.7,
@@ -216,7 +216,6 @@ export const SECONDARIES: Record<string, SecondaryDef> = {
   },
 }
 
-/** 判断某副手对当前玩家是否已解锁（满足连死阈值，或替身人偶持有补给箱充能） */
 /** 计算玩家的等效连死副手解锁档位（选用冲锋枪 weaponIndex===8 时自动获得连死 +1 挡的副武器选择权） */
 export function getEffectiveUnlockStreak(deathStreak: number, weaponIndex?: number): number {
   const base = Math.max(0, Math.floor(deathStreak ?? 0))

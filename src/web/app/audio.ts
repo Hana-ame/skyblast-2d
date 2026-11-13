@@ -1,8 +1,20 @@
-// web/app/audio.ts —— 零外部依赖 WebAudio 过程式战术音效合成器（带节流与节点自动释放，防止长时间运行累积）
+// web/app/audio.ts —— 零外部依赖 WebAudio 过程式战术音效合成器（无占点音效，带分类节流、并发上限与预热防卡顿）
 import { featureFlags } from './context.ts'
 
 let audioCtx: AudioContext | null = null
-let lastShootMs = 0
+let activeOscCount = 0
+const MAX_ACTIVE_OSC = 12
+const lastPlayMs: Record<string, number> = {}
+
+const SOUND_COOLDOWN_MS: Record<string, number> = {
+  shoot: 38,
+  laser: 95,
+  headshot: 45,
+  kill: 45,
+  explosion: 50,
+  shield_break: 60,
+  supply: 60,
+}
 
 function getAudioCtx(): AudioContext | null {
   if (!featureFlags.proceduralAudio) return null
@@ -22,6 +34,11 @@ function getAudioCtx(): AudioContext | null {
   return audioCtx
 }
 
+/** 在用户点击开始/按键时预热 AudioContext，消除战斗首帧同步初始化导致的 ~50ms 掉帧 */
+export function warmupAudioCtx(): void {
+  getAudioCtx()
+}
+
 function playTone(
   ctx: AudioContext,
   type: OscillatorType,
@@ -31,6 +48,7 @@ function playTone(
   vol: number,
   delay = 0,
 ): void {
+  if (activeOscCount >= MAX_ACTIVE_OSC) return
   const t0 = ctx.currentTime + delay
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
@@ -43,7 +61,9 @@ function playTone(
   gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur)
   osc.connect(gain)
   gain.connect(ctx.destination)
+  activeOscCount++
   osc.onended = () => {
+    activeOscCount = Math.max(0, activeOscCount - 1)
     try {
       osc.disconnect()
       gain.disconnect()
@@ -64,19 +84,21 @@ export type ProceduralSoundKind =
 
 export function playProceduralSound(kind: ProceduralSoundKind, pitchHint = 1): void {
   if (!featureFlags.proceduralAudio) return
+  const ms = typeof performance !== 'undefined' ? performance.now() : 0
+  const minCd = SOUND_COOLDOWN_MS[kind] ?? 40
+  if (ms - (lastPlayMs[kind] ?? -9999) < minCd) return
+  lastPlayMs[kind] = ms
+
   const ctx = getAudioCtx()
   if (!ctx) return
 
   try {
     if (kind === 'shoot') {
-      const ms = typeof performance !== 'undefined' ? performance.now() : 0
-      if (ms - lastShootMs < 35) return
-      lastShootMs = ms
       playTone(ctx, 'triangle', 260 * pitchHint, 68, 0.07, 0.055)
       return
     }
     if (kind === 'laser') {
-      playTone(ctx, 'sawtooth', 880, 220, 0.13, 0.05)
+      playTone(ctx, 'sawtooth', 880, 220, 0.09, 0.045)
       return
     }
     if (kind === 'headshot') {
@@ -97,7 +119,7 @@ export function playProceduralSound(kind: ProceduralSoundKind, pitchHint = 1): v
       return
     }
     if (kind === 'explosion') {
-      playTone(ctx, 'sawtooth', 120, 28, 0.24, 0.085)
+      playTone(ctx, 'sawtooth', 120, 28, 0.22, 0.08)
     }
   } catch {
     // 忽略浏览器音频上下文限制异常

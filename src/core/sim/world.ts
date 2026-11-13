@@ -414,7 +414,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       }
     }
 
-    const charging = p.chargeTimer > 0 && p.chargeAim !== undefined
+    const charging = p.chargeTimer > 0 && p.chargeAim !== undefined && !w.trackChargeAim
     p.aim = charging ? p.chargeAim! : w.aim
     const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
     if (p.mountedTowerId) {
@@ -515,7 +515,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         }
       }
       if (p.chargeTimer > 0) {
-        p.chargeTimer += dt
+        if (w.trackChargeAim) p.chargeAim = p.aim; p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
           this.fire(p)
           p.chargeTimer = 0

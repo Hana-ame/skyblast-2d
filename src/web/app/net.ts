@@ -3,7 +3,7 @@
 import { world, localPlayer, bots, mode, pendingLoadout, uiState, featureFlags } from './context.ts'
 import { getPhysicsParams, setPhysicsParams } from '../../core/sim/physics.ts'
 import { resetBinaryCodecState, encodeServerMsgBinary, filterSnapshotAOI } from '../../net/protocol/BinaryCodec.ts'
-import { WEAPONS } from '../../core/weapons.ts'
+import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
 import { applyIntents } from '../../net/ServerSim.ts'
 import { ClientSession } from '../../net/ClientSession.ts'
 import { StateSync } from '../../net/StateSync.ts'
@@ -394,7 +394,7 @@ function acceptIncomingKcpGuest(
     guestPlayer.weaponIndex = initWeaponIdx
     guestPlayer.lastPrimaryIndex = initWeaponIdx
   }
-  if (typeof initSecondary === 'string') {
+  if (typeof initSecondary === 'string' && SECONDARIES[initSecondary] && isSecondaryUnlocked(initSecondary, guestPlayer.deathStreak ?? 0, guestPlayer.dollCharges ?? 0, guestPlayer.weaponIndex)) {
     guestPlayer.secondary = initSecondary
   }
   guestPlayer.deployed = true
@@ -431,8 +431,8 @@ function acceptIncomingKcpGuest(
           guestPlayer.weaponIndex = wIdx
           guestPlayer.lastPrimaryIndex = wIdx
         }
-        if (typeof parsed.secondary === 'string') {
-          guestPlayer.secondary = parsed.secondary
+        if (typeof parsed.secondary === 'string' && SECONDARIES[parsed.secondary]) {
+          guestPlayer.secondary = isSecondaryUnlocked(parsed.secondary, guestPlayer.deathStreak ?? 0, guestPlayer.dollCharges ?? 0, guestPlayer.weaponIndex) ? parsed.secondary : 'frag'
         }
         if (typeof parsed.spawnPointId === 'string') {
           guestPlayer.selectedSpawnId = parsed.spawnPointId
@@ -551,8 +551,10 @@ function applyAuthoritativeSnapshotToClientWorld(snap: WorldSnapshot): void {
     Object.assign(localPlayer, meInSnap)
     localPlayer.selectedSpawnId = keepSpawnId
   }
-  updateScoreboardUI()
-  updateHudUI()
+  // 这里不再调用 updateScoreboardUI()/updateHudUI()：
+  // stepNetworkFrame 在每个 fixed step 内都会走到这里（一帧最多 4 次），
+  // 而主循环的渲染段本来就每帧各调一次 HUD。此前两处都调 = 每帧白算 2~5 次 HUD，
+  // 联机时的顿挫有一部分就来自这种重复工作。HUD 统一由渲染段更新即可。
 }
 
 /**

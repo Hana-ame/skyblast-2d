@@ -20,6 +20,32 @@ const cachedBodyGrads = new Map<string, CanvasGradient>()
 const cachedHelmGrads = new Map<number, CanvasGradient>()
 const cachedVisorGrads = new Map<number, CanvasGradient>()
 let cachedShieldGrad: CanvasGradient | null = null
+let cachedJetFlameGrad: CanvasGradient | null = null
+let cachedCrateGlowDoll: CanvasGradient | null = null
+let cachedCrateGlowWep: CanvasGradient | null = null
+let cachedCrateGradDoll: CanvasGradient | null = null
+let cachedCrateGradWep: CanvasGradient | null = null
+let cachedAmmoGrad: CanvasGradient | null = null
+let cachedMortarBarrelGrad: CanvasGradient | null = null
+let cachedMineGradInstant: CanvasGradient | null = null
+let cachedMineGradNormal: CanvasGradient | null = null
+let cachedGrenadeGrad: CanvasGradient | null = null
+let cachedAirstrikeBeamGrad: CanvasGradient | null = null
+let cachedRocketFlameGrad: CanvasGradient | null = null
+let cachedRocketBodyGrad: CanvasGradient | null = null
+let cachedGravOrbGrad: CanvasGradient | null = null
+let cachedDecoLampGrad: CanvasGradient | null = null
+const cachedDecoWindowGrads = new Map<number, CanvasGradient>()
+const cachedDecoBarrelGrads = new Map<number, CanvasGradient>()
+const cachedDecoPipeGrads = new Map<number, CanvasGradient>()
+let cachedJumpPadGlowGrad: CanvasGradient | null = null
+
+const RIVET_OFFSETS = [
+  [0, 0],
+  [1, 0],
+  [0, 1],
+  [1, 1],
+] as const
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   const rr = Math.min(r, w / 2, h / 2)
@@ -86,15 +112,17 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
   ctx.fillStyle = '#334155'
   ctx.fillRect(nozzleX - 2.5, 3.5, 5, 3)
 
-  // 喷气尾焰（外层电离蓝 + 内层炽白激波）
+  // 喷气尾焰（外层电离蓝 + 内层炽白激波，复用缓存渐变）
   if (opts.floating) {
     const flick = 0.78 + Math.sin(t * 0.95) * 0.22 + Math.cos(t * 1.7) * 0.1
     const outerLen = 20 * flick
-    const outerGrad = ctx.createLinearGradient(nozzleX, 6, nozzleX, 6 + outerLen)
-    outerGrad.addColorStop(0, 'rgba(56, 189, 248, 0.95)')
-    outerGrad.addColorStop(0.55, 'rgba(14, 165, 233, 0.65)')
-    outerGrad.addColorStop(1, 'rgba(2, 132, 199, 0)')
-    ctx.fillStyle = outerGrad
+    if (!cachedJetFlameGrad) {
+      cachedJetFlameGrad = ctx.createLinearGradient(0, 6, 0, 28)
+      cachedJetFlameGrad.addColorStop(0, 'rgba(56, 189, 248, 0.95)')
+      cachedJetFlameGrad.addColorStop(0.55, 'rgba(14, 165, 233, 0.65)')
+      cachedJetFlameGrad.addColorStop(1, 'rgba(2, 132, 199, 0)')
+    }
+    ctx.fillStyle = cachedJetFlameGrad
     ctx.beginPath()
     ctx.moveTo(nozzleX - 4, 6)
     ctx.lineTo(nozzleX + 4, 6)
@@ -234,15 +262,12 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
 
     switch (wep.id) {
       case 0: { // 霰弹枪：重型泵动式，胡桃木护木 + 散热孔 + 侧置黄铜弹夹条
-        // 枪托与机匣
         ctx.fillStyle = '#7c2d12'
         roundRect(ctx, 2, -6, 8, 5, 1.5); ctx.fill()
         ctx.fillStyle = metalMid
         roundRect(ctx, 8, -9.5, 26, 6.5, 2); ctx.fill()
-        // 枪管散热罩
         ctx.fillStyle = metalLight
         ctx.fillRect(14, -9.5, 18, 2)
-        // 泵动木质护木与防滑槽
         ctx.fillStyle = '#9a3412'
         roundRect(ctx, 18, -4, 12, 4.2, 1.5); ctx.fill()
         ctx.strokeStyle = '#431407'
@@ -250,27 +275,21 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         for (let gx = 20; gx <= 28; gx += 2.5) {
           ctx.beginPath(); ctx.moveTo(gx, -4); ctx.lineTo(gx, 0); ctx.stroke()
         }
-        // 机匣侧黄铜霰弹排
         ctx.fillStyle = accent
         for (let sx = 10; sx <= 16; sx += 2.5) ctx.fillRect(sx, -7.5, 1.6, 3)
-        // 双管枪口
         ctx.fillStyle = metalDark
         ctx.fillRect(33, -9, 3, 5.5)
         break
       }
       case 1: { // 突击步枪：战术导轨卡宾枪 + 全息瞄具 + 弧形弹匣 + 制退器
-        // 伸缩枪托
         ctx.fillStyle = metalDark
         roundRect(ctx, 1, -7.5, 7, 5, 1.2); ctx.fill()
-        // 机匣与护木
         ctx.fillStyle = metalMid
         roundRect(ctx, 7, -9.5, 25, 6.5, 2); ctx.fill()
-        // 枪管与枪口制退器
         ctx.fillStyle = metalLight
         ctx.fillRect(31, -8, 7, 3)
         ctx.fillStyle = metalDark
         ctx.fillRect(37, -8.8, 3, 4.6)
-        // 弧形弹匣
         ctx.fillStyle = '#334155'
         ctx.beginPath()
         ctx.moveTo(14, -3)
@@ -279,27 +298,21 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.lineTo(16, 5.5)
         ctx.closePath()
         ctx.fill()
-        // 顶部全息瞄准镜
         ctx.fillStyle = metalDark
         roundRect(ctx, 11, -13, 7, 3.8, 1); ctx.fill()
         ctx.fillStyle = accent
         ctx.fillRect(13, -12, 3, 1.8)
-        // 能量导轨条
         ctx.fillStyle = accent
         ctx.fillRect(9, -7.5, 18, 1.8)
         break
       }
       case 2: { // 狙击步枪：反器材修长浮置枪管 + 双室制退器 + 高倍紫晶瞄准镜 + 折叠脚架
-        // 镂空狙击枪托
         ctx.fillStyle = metalDark
         roundRect(ctx, 0, -8, 9, 6, 1.5); ctx.fill()
-        // 机匣
         ctx.fillStyle = metalMid
         roundRect(ctx, 8, -9.5, 18, 6, 2); ctx.fill()
-        // 超长重型浮置枪管
         ctx.fillStyle = '#334155'
         ctx.fillRect(25, -8.2, 22, 3.2)
-        // 箭头形双室大制退器
         ctx.fillStyle = metalDark
         ctx.beginPath()
         ctx.moveTo(46, -10.5)
@@ -308,16 +321,13 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.lineTo(46, -2.5)
         ctx.closePath()
         ctx.fill()
-        // 高倍光学瞄准镜
         ctx.fillStyle = metalDark
         roundRect(ctx, 11, -15.5, 16, 4.8, 1.5); ctx.fill()
         ctx.strokeStyle = accent
         ctx.lineWidth = 1.3
         ctx.strokeRect(11, -15.5, 16, 4.8)
-        // 镜片紫光反射
         ctx.fillStyle = accent
         ctx.fillRect(25, -14.8, 2, 3.4)
-        // 蓄力进度光效
         if (p.chargeTimer > 0) {
           const cr = Math.min(1, p.chargeTimer / (wep.chargeSeconds ?? 0.6))
           ctx.fillStyle = `rgba(192, 132, 252, ${0.35 + 0.6 * cr})`
@@ -326,7 +336,6 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         break
       }
       case 3: { // 火箭筒：重型肩扛发射筒 + 尾部喇叭喷口 + 外露高爆弹头 + 警示斜纹
-        // 尾部扩散喷口
         ctx.fillStyle = metalDark
         ctx.beginPath()
         ctx.moveTo(-4, -12.5)
@@ -335,19 +344,16 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.lineTo(-4, 0.5)
         ctx.closePath()
         ctx.fill()
-        // 主发射管
         ctx.fillStyle = '#1e293b'
         roundRect(ctx, 3, -12, 27, 11, 4); ctx.fill()
         ctx.strokeStyle = '#0f172a'
         ctx.lineWidth = 1.5
         ctx.stroke()
-        // 筒身金属加固箍与警示带
         ctx.fillStyle = '#475569'
         ctx.fillRect(10, -12, 3, 11)
         ctx.fillRect(22, -12, 3, 11)
         ctx.fillStyle = '#fbbf24'
         ctx.fillRect(15, -11, 5, 2)
-        // 外露火箭高爆弹头
         ctx.fillStyle = accent
         ctx.beginPath()
         ctx.moveTo(29, -11)
@@ -358,18 +364,14 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         break
       }
       case 4: { // 高斯枪：双轨磁道炮 + 3 级脉冲电磁线圈 + 青色等离子核心
-        // 枪身磁轨基座
         ctx.fillStyle = metalMid
         roundRect(ctx, 4, -10.5, 24, 9, 3); ctx.fill()
-        // 上下平行电磁导轨
         ctx.fillStyle = '#334155'
         ctx.fillRect(26, -10, 14, 2.5)
         ctx.fillRect(26, -4.5, 14, 2.5)
-        // 导轨间等离子辉光槽
         const coilPulse = 0.65 + 0.35 * Math.sin(t * 0.25)
         ctx.fillStyle = `rgba(34, 211, 238, ${0.45 + 0.35 * coilPulse})`
         ctx.fillRect(8, -7.2, 31, 2.4)
-        // 3 级环形加速线圈
         ctx.strokeStyle = accent
         ctx.lineWidth = 1.8
         for (let i = 0; i < 3; i++) {
@@ -377,7 +379,6 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
           ctx.arc(12 + i * 8, -6, 3.6, 0, Math.PI * 2)
           ctx.stroke()
         }
-        // 枪口电弧球
         ctx.fillStyle = '#a5f3fc'
         ctx.beginPath()
         ctx.arc(40, -6, 2.4, 0, Math.PI * 2)
@@ -385,34 +386,27 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         break
       }
       case 5: { // M249：重型班用机枪 + 多孔散热护筒 + 下挂大容量弹链箱 + 黄铜弹链
-        // 机匣
         ctx.fillStyle = metalMid
         roundRect(ctx, 4, -11.5, 22, 10, 3); ctx.fill()
-        // 下挂弹链箱
         ctx.fillStyle = '#14532d'
         ctx.strokeStyle = '#052e16'
         ctx.lineWidth = 1.2
         roundRect(ctx, 11, -2, 10, 8, 2); ctx.fill(); ctx.stroke()
-        // 外露黄铜弹链
         ctx.fillStyle = accent
         for (let bx = 13; bx <= 18; bx += 2) ctx.fillRect(bx, -4, 1.4, 3)
-        // 多管/散热护筒与枪管
         ctx.fillStyle = '#64748b'
         ctx.fillRect(25, -10.5, 13, 3)
         ctx.fillStyle = '#334155'
         ctx.fillRect(25, -6.5, 15, 2.8)
-        // 枪口火帽
         ctx.fillStyle = accent
         ctx.fillRect(39, -10.5, 2.5, 6.8)
         break
       }
       case 6: { // 引力枪：奇点发生器 + 弧形束缚爪 + 旋转黑洞视界球
-        // 发生器主体
         ctx.fillStyle = metalMid
         roundRect(ctx, 5, -10, 20, 9, 4); ctx.fill()
         ctx.fillStyle = accent
         ctx.fillRect(8, -7, 13, 3)
-        // 上下弧形引力束缚爪
         ctx.strokeStyle = '#94a3b8'
         ctx.lineWidth = 2
         ctx.beginPath()
@@ -421,7 +415,6 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.beginPath()
         ctx.arc(29, -5.5, 6.5, Math.PI * 0.15, Math.PI * 0.7)
         ctx.stroke()
-        // 悬浮黑洞核心与紫色吸积环
         const orbPulse = 0.8 + 0.2 * Math.sin(t * 0.2)
         ctx.strokeStyle = accent
         ctx.lineWidth = 1.8
@@ -435,7 +428,6 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         break
       }
       case 7: { // 手枪：紧凑型战术手枪 + 金属套筒 + 氚光准星 + 下挂激光指示器
-        // 握把
         ctx.fillStyle = metalDark
         ctx.beginPath()
         ctx.moveTo(7, -5)
@@ -444,32 +436,25 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.lineTo(5.5, 3)
         ctx.closePath()
         ctx.fill()
-        // 套筒
         ctx.fillStyle = metalLight
         roundRect(ctx, 6, -9.5, 16, 5, 1.5); ctx.fill()
         ctx.strokeStyle = metalDark
         ctx.lineWidth = 1.2
         ctx.stroke()
-        // 氚光高亮准星与战术条
         ctx.fillStyle = accent
         ctx.fillRect(8, -8.2, 10, 1.5)
         ctx.fillRect(20, -10.5, 2, 1.5)
-        // 下挂微型战术灯
         ctx.fillStyle = '#334155'
         ctx.fillRect(15, -4.5, 5, 2.2)
         break
       }
       case 8: { // 冲锋枪：高射速 PDW 冲锋枪 + 散热孔套筒 + 加长弧形弹匣 + 垂直前握把
-        // 紧凑机匣与散热套筒
         ctx.fillStyle = metalMid
         roundRect(ctx, 6, -9.5, 21, 6.5, 2); ctx.fill()
-        // 枪口短消音/制退器
         ctx.fillStyle = metalDark
         roundRect(ctx, 26, -8.5, 6, 4.2, 1.2); ctx.fill()
-        // 垂直前握把
         ctx.fillStyle = metalDark
         ctx.fillRect(21, -3, 3.2, 5.5)
-        // 30 发加长细弹匣
         ctx.fillStyle = '#334155'
         ctx.beginPath()
         ctx.moveTo(13, -3)
@@ -478,7 +463,6 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
         ctx.lineTo(15, 6.5)
         ctx.closePath()
         ctx.fill()
-        // 霓虹绿战术导轨条
         ctx.fillStyle = accent
         ctx.fillRect(8, -8, 16, 1.8)
         break
@@ -515,12 +499,10 @@ export function drawPlayerTag(ctx: CanvasRenderingContext2D, p: PlayerState, dx:
   const wep = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
   ctx.save()
   ctx.translate(dx, dy)
-  // 名字
   ctx.font = 'bold 11px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.fillStyle = isLocal ? '#f8fafc' : pal.light
   ctx.fillText((isLocal ? '▶ ' : '') + p.name, 0, -46)
-  // 血条背景与边框
   const barW = 44
   ctx.fillStyle = 'rgba(15,23,42,0.88)'
   roundRect(ctx, -barW / 2 - 1, -43, barW + 2, 6, 2)
@@ -531,14 +513,12 @@ export function drawPlayerTag(ctx: CanvasRenderingContext2D, p: PlayerState, dx:
     roundRect(ctx, -barW / 2, -42, barW * ratio, 4, 1.5)
     ctx.fill()
   }
-  // 护盾条
   if (p.shieldTimer > 0 && p.shieldHp > 0) {
     ctx.fillStyle = 'rgba(15,23,42,0.85)'
     ctx.fillRect(-barW / 2, -36, barW, 3)
     ctx.fillStyle = '#38bdf8'
     ctx.fillRect(-barW / 2, -36, barW * Math.min(1, p.shieldHp / DEFAULT_CONFIG.shieldHp), 3)
   }
-  // 弹药小字
   ctx.font = '9px Inter, system-ui, sans-serif'
   ctx.fillStyle = 'rgba(226,232,240,0.8)'
   ctx.fillText(`${wep.shortName} ${Math.ceil(p.ammo[p.weaponIndex] ?? 0)}`, 0, -56)
@@ -557,7 +537,6 @@ export function drawObstacleSprite(
   const ratio = Math.max(0, Math.min(1, ob.hp / ob.maxHp))
   ctx.save()
 
-  // 底色与顶部高光斜角
   ctx.fillStyle = ob.color
   roundRect(ctx, left, top, ob.w, ob.h, 3)
   ctx.fill()
@@ -567,7 +546,6 @@ export function drawObstacleSprite(
   ctx.fillStyle = 'rgba(0,0,0,0.25)'
   ctx.fillRect(left + 2, top + ob.h - 5, ob.w - 4, 3)
 
-  // 内部结构纹理（箱体交叉筋 / 掩体横纹）
   if (ob.kind === 'box') {
     ctx.strokeStyle = 'rgba(15,23,42,0.32)'
     ctx.lineWidth = 2
@@ -576,13 +554,12 @@ export function drawObstacleSprite(
     ctx.moveTo(left + ob.w - 5, top + 5); ctx.lineTo(left + 5, top + ob.h - 5)
     ctx.stroke()
   } else {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'
     for (let y = top + 10; y < top + ob.h - 4; y += 11) {
-      ctx.fillStyle = 'rgba(0,0,0,0.2)'
       ctx.fillRect(left + 2, y, ob.w - 4, 1.5)
     }
   }
 
-  // 外框与四角铆钉
   ctx.strokeStyle = ob.borderColor
   ctx.lineWidth = 2
   roundRect(ctx, left + 1, top + 1, ob.w - 2, ob.h - 2, 3)
@@ -590,16 +567,14 @@ export function drawObstacleSprite(
 
   ctx.fillStyle = 'rgba(226,232,240,0.45)'
   const pad = 4.5
-  for (const [rx, ry] of [
-    [left + pad, top + pad],
-    [left + ob.w - pad, top + pad],
-    [left + pad, top + ob.h - pad],
-    [left + ob.w - pad, top + ob.h - pad],
-  ]) {
+  const innerW = ob.w - pad * 2
+  const innerH = ob.h - pad * 2
+  for (let i = 0; i < 4; i++) {
+    const rx = left + pad + RIVET_OFFSETS[i][0] * innerW
+    const ry = top + pad + RIVET_OFFSETS[i][1] * innerH
     ctx.beginPath(); ctx.arc(rx, ry, 1.4, 0, Math.PI * 2); ctx.fill()
   }
 
-  // 受损裂纹（hp 越低裂纹越深密）
   if (ratio < 0.7) {
     ctx.strokeStyle = 'rgba(9,13,22,0.68)'
     ctx.lineWidth = ratio < 0.35 ? 1.6 : 1.1
@@ -618,7 +593,6 @@ export function drawObstacleSprite(
     }
   }
 
-  // 血条
   const barW = Math.max(40, ob.w)
   ctx.fillStyle = 'rgba(15,23,42,0.85)'
   ctx.fillRect(dx - barW / 2, top - 10, barW, 5)
@@ -634,45 +608,57 @@ export function drawCrateSprite(ctx: CanvasRenderingContext2D, crate: SupplyCrat
   const bob = Math.sin(tick * 0.08 + crate.x * 0.01) * 1.8
   ctx.translate(0, bob)
 
-  // 底部全息投影光晕
   if (crate.active) {
-    const glow = ctx.createRadialGradient(0, 14, 2, 0, 14, 26)
-    glow.addColorStop(0, crate.kind === 'doll' ? 'rgba(244,114,182,0.35)' : 'rgba(56,189,248,0.32)')
-    glow.addColorStop(1, 'rgba(0,0,0,0)')
-    ctx.fillStyle = glow
+    if (crate.kind === 'doll') {
+      if (!cachedCrateGlowDoll) {
+        cachedCrateGlowDoll = ctx.createRadialGradient(0, 14, 2, 0, 14, 26)
+        cachedCrateGlowDoll.addColorStop(0, 'rgba(244,114,182,0.35)')
+        cachedCrateGlowDoll.addColorStop(1, 'rgba(0,0,0,0)')
+      }
+      ctx.fillStyle = cachedCrateGlowDoll
+    } else {
+      if (!cachedCrateGlowWep) {
+        cachedCrateGlowWep = ctx.createRadialGradient(0, 14, 2, 0, 14, 26)
+        cachedCrateGlowWep.addColorStop(0, 'rgba(56,189,248,0.32)')
+        cachedCrateGlowWep.addColorStop(1, 'rgba(0,0,0,0)')
+      }
+      ctx.fillStyle = cachedCrateGlowWep
+    }
     ctx.beginPath()
     ctx.ellipse(0, 15, 24, 6, 0, 0, Math.PI * 2)
     ctx.fill()
   }
 
-  // 箱体渐变
-  const grad = ctx.createLinearGradient(0, -16, 0, 16)
   if (crate.kind === 'doll') {
-    grad.addColorStop(0, '#9d174d')
-    grad.addColorStop(1, '#4a044e')
+    if (!cachedCrateGradDoll) {
+      cachedCrateGradDoll = ctx.createLinearGradient(0, -16, 0, 16)
+      cachedCrateGradDoll.addColorStop(0, '#9d174d')
+      cachedCrateGradDoll.addColorStop(1, '#4a044e')
+    }
+    ctx.fillStyle = cachedCrateGradDoll
   } else {
-    grad.addColorStop(0, '#1e3a8a')
-    grad.addColorStop(1, '#0f172a')
+    if (!cachedCrateGradWep) {
+      cachedCrateGradWep = ctx.createLinearGradient(0, -16, 0, 16)
+      cachedCrateGradWep.addColorStop(0, '#1e3a8a')
+      cachedCrateGradWep.addColorStop(1, '#0f172a')
+    }
+    ctx.fillStyle = cachedCrateGradWep
   }
-  ctx.fillStyle = grad
   ctx.strokeStyle = crate.color
   ctx.lineWidth = 2.2
   roundRect(ctx, -18, -16, 36, 32, 5)
   ctx.fill()
   ctx.stroke()
 
-  // 装甲斜向加强筋与箱盖高光
   ctx.fillStyle = 'rgba(255,255,255,0.14)'
   roundRect(ctx, -16, -14, 32, 9, 3)
   ctx.fill()
 
-  // 中央能量锁扣
   ctx.fillStyle = '#090d16'
   roundRect(ctx, -5, -4, 10, 10, 2); ctx.fill()
   ctx.fillStyle = crate.color
   roundRect(ctx, -3, -2, 6, 6, 1.5); ctx.fill()
 
-  // 图标与悬浮武器名
   ctx.font = 'bold 12px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.fillStyle = '#ffffff'
@@ -681,7 +667,6 @@ export function drawCrateSprite(ctx: CanvasRenderingContext2D, crate: SupplyCrat
   ctx.fillStyle = crate.color
   ctx.fillText(crate.kind === 'doll' ? '替身人偶' : crate.weaponName, 0, -22)
 
-  // 刷新计时
   if (!crate.active && crate.respawnTimer > 0) {
     ctx.fillStyle = 'rgba(148,163,184,0.75)'
     ctx.font = '9px Inter, system-ui, sans-serif'
@@ -695,21 +680,21 @@ export function drawAmmoSprite(ctx: CanvasRenderingContext2D, pack: AmmoPack, dx
   ctx.save()
   ctx.translate(dx, dy - 16 + Math.sin(tick * 0.09 + pack.x * 0.01) * 1.4)
 
-  const grad = ctx.createLinearGradient(0, -12, 0, 12)
-  grad.addColorStop(0, '#166534')
-  grad.addColorStop(1, '#052e16')
-  ctx.fillStyle = grad
+  if (!cachedAmmoGrad) {
+    cachedAmmoGrad = ctx.createLinearGradient(0, -12, 0, 12)
+    cachedAmmoGrad.addColorStop(0, '#166534')
+    cachedAmmoGrad.addColorStop(1, '#052e16')
+  }
+  ctx.fillStyle = cachedAmmoGrad
   ctx.strokeStyle = '#4ade80'
   ctx.lineWidth = 2
   roundRect(ctx, -15, -12, 30, 24, 3.5)
   ctx.fill()
   ctx.stroke()
 
-  // 箱盖压边与提手
   ctx.fillStyle = 'rgba(255,255,255,0.12)'
   ctx.fillRect(-13, -10, 26, 4)
 
-  // 黄铜子弹排列图标（弹壳 + 尖弹头）
   for (let i = 0; i < 3; i++) {
     const bx = -9 + i * 7
     ctx.fillStyle = '#fbbf24'
@@ -723,7 +708,6 @@ export function drawAmmoSprite(ctx: CanvasRenderingContext2D, pack: AmmoPack, dx
     ctx.fill()
   }
 
-  // 标签
   ctx.font = 'bold 9px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.fillStyle = '#bbf7d0'
@@ -735,7 +719,6 @@ export function drawAmmoSprite(ctx: CanvasRenderingContext2D, pack: AmmoPack, dx
 export function drawMortarSprite(ctx: CanvasRenderingContext2D, m: Mortar, dx: number, dy: number, _tick: number): void {
   ctx.save()
   ctx.translate(dx, dy)
-  // 底座
   ctx.fillStyle = '#334155'
   ctx.strokeStyle = '#0f172a'
   ctx.lineWidth = 2
@@ -743,32 +726,30 @@ export function drawMortarSprite(ctx: CanvasRenderingContext2D, m: Mortar, dx: n
   ctx.ellipse(0, 2, 22, 9, 0, 0, Math.PI * 2)
   ctx.fill()
   ctx.stroke()
-  // 轮子與轴承
   ctx.fillStyle = '#1e293b'
   ctx.beginPath(); ctx.arc(-14, 2, 7, 0, Math.PI * 2); ctx.fill()
   ctx.beginPath(); ctx.arc(14, 2, 7, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = '#94a3b8'
   ctx.beginPath(); ctx.arc(-14, 2, 2.5, 0, Math.PI * 2); ctx.fill()
   ctx.beginPath(); ctx.arc(14, 2, 2.5, 0, Math.PI * 2); ctx.fill()
-  // 炮管
   ctx.save()
   ctx.translate(0, -10)
   ctx.rotate(m.angle)
-  const g = ctx.createLinearGradient(0, -7, 0, 7)
-  g.addColorStop(0, '#94a3b8')
-  g.addColorStop(0.5, '#475569')
-  g.addColorStop(1, '#1e293b')
-  ctx.fillStyle = g
+  if (!cachedMortarBarrelGrad) {
+    cachedMortarBarrelGrad = ctx.createLinearGradient(0, -7, 0, 7)
+    cachedMortarBarrelGrad.addColorStop(0, '#94a3b8')
+    cachedMortarBarrelGrad.addColorStop(0.5, '#475569')
+    cachedMortarBarrelGrad.addColorStop(1, '#1e293b')
+  }
+  ctx.fillStyle = cachedMortarBarrelGrad
   ctx.strokeStyle = m.operatorId ? '#fde047' : '#f97316'
   ctx.lineWidth = 2
   roundRect(ctx, 0, -7, 40, 14, 5)
   ctx.fill()
   ctx.stroke()
-  // 炮口加强箍
   ctx.fillStyle = '#0f172a'
   ctx.fillRect(36, -8, 6, 16)
   ctx.restore()
-  // 状态文字
   ctx.font = 'bold 11px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.fillStyle = m.operatorId ? '#fde047' : '#fb923c'
@@ -791,7 +772,6 @@ export function drawTowerSprite(ctx: CanvasRenderingContext2D, tw: Watchtower, d
   ctx.beginPath()
   ctx.moveTo(-24, 0); ctx.lineTo(-12, -h); ctx.moveTo(24, 0); ctx.lineTo(12, -h)
   ctx.stroke()
-  // 交叉桁架
   ctx.lineWidth = 1.5
   ctx.strokeStyle = 'rgba(202, 138, 4, 0.6)'
   for (let i = 0; i < 5; i++) {
@@ -804,7 +784,6 @@ export function drawTowerSprite(ctx: CanvasRenderingContext2D, tw: Watchtower, d
     ctx.moveTo(w1, y1); ctx.lineTo(-w2, y2)
     ctx.stroke()
   }
-  // 平台 + 灯塔
   ctx.fillStyle = '#422006'
   ctx.fillRect(-16, -h - 12, 32, 8)
   ctx.fillStyle = '#eab308'
@@ -812,7 +791,6 @@ export function drawTowerSprite(ctx: CanvasRenderingContext2D, tw: Watchtower, d
   const glow = 0.5 + Math.sin(tick * 0.08) * 0.3
   ctx.fillStyle = `rgba(250, 204, 21, ${glow})`
   ctx.beginPath(); ctx.arc(0, -h - 20, 10 + Math.sin(tick * 0.08) * 2, 0, Math.PI * 2); ctx.fill()
-  // 标签（有人操控时高亮）
   ctx.font = 'bold 11px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   if (tw.operatorId !== null) {
@@ -837,7 +815,6 @@ export function drawWarpSprite(ctx: CanvasRenderingContext2D, wp: WarpPortal, dx
   ctx.stroke()
   ctx.fillStyle = `rgba(6, 182, 212, ${0.12 + pulse * 0.12})`
   ctx.fill()
-  // 内部旋涡
   ctx.save()
   ctx.rotate(tick * 0.05)
   ctx.strokeStyle = 'rgba(103, 232, 249, 0.55)'
@@ -872,15 +849,12 @@ export function getFlagPalette(cp: CapturePoint): TeamPalette {
 export function drawFlagSprite(ctx: CanvasRenderingContext2D, cp: CapturePoint, dx: number, dy: number, tick: number): void {
   const pal = getFlagPalette(cp)
   ctx.save()
-  // cp.y 为站立角色中心高度 (地面高度 - 16)，+16 使旗杆底座严丝合缝贴合平台地面且与复活光环同心对齐
   ctx.translate(dx, dy + 16)
-  // 旗杆底座与金属杆
   ctx.fillStyle = '#475569'
   roundRect(ctx, -10, -4, 20, 6, 2); ctx.fill()
   ctx.strokeStyle = '#94a3b8'
   ctx.lineWidth = 4
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -100); ctx.stroke()
-  // 旗面（贝塞尔 + 波峰）
   const wave = Math.sin(tick * 0.07) * 8
   const wave2 = Math.sin(tick * 0.07 + 1.2) * 4
   ctx.fillStyle = pal.color
@@ -894,7 +868,6 @@ export function drawFlagSprite(ctx: CanvasRenderingContext2D, cp: CapturePoint, 
   ctx.strokeStyle = 'rgba(255,255,255,0.5)'
   ctx.lineWidth = 1.5
   ctx.stroke()
-  // 据点文字
   ctx.fillStyle = '#ffffff'
   ctx.font = 'bold 12px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
@@ -907,25 +880,32 @@ export function drawMineSprite(ctx: CanvasRenderingContext2D, m: Landmine, dx: n
   ctx.save()
   ctx.translate(dx, dy)
   const blink = Math.floor(tick / 8) % 2 === 0
-  // 感应圈
   ctx.strokeStyle = m.triggered ? 'rgba(244,63,94,0.8)' : m.instant ? 'rgba(56,189,248,0.35)' : 'rgba(244,63,94,0.2)'
   ctx.lineWidth = 1.5
   ctx.beginPath(); ctx.arc(0, 0, triggerRadius, 0, Math.PI * 2); ctx.stroke()
-  // 雷体
-  const g = ctx.createRadialGradient(-3, -6, 2, 0, 0, 12)
-  g.addColorStop(0, m.instant ? '#38bdf8' : '#64748b')
-  g.addColorStop(1, m.instant ? '#075985' : '#1e293b')
-  ctx.fillStyle = g
+  if (m.instant) {
+    if (!cachedMineGradInstant) {
+      cachedMineGradInstant = ctx.createRadialGradient(-3, -6, 2, 0, 0, 12)
+      cachedMineGradInstant.addColorStop(0, '#38bdf8')
+      cachedMineGradInstant.addColorStop(1, '#075985')
+    }
+    ctx.fillStyle = cachedMineGradInstant
+  } else {
+    if (!cachedMineGradNormal) {
+      cachedMineGradNormal = ctx.createRadialGradient(-3, -6, 2, 0, 0, 12)
+      cachedMineGradNormal.addColorStop(0, '#64748b')
+      cachedMineGradNormal.addColorStop(1, '#1e293b')
+    }
+    ctx.fillStyle = cachedMineGradNormal
+  }
   ctx.beginPath(); ctx.arc(0, 0, 12, Math.PI, 0); ctx.fill()
   ctx.fillRect(-12, 0, 24, 4)
-  // 支脚
   ctx.strokeStyle = '#0f172a'
   ctx.lineWidth = 2
   ctx.beginPath()
   ctx.moveTo(-10, 4); ctx.lineTo(-16, 10)
   ctx.moveTo(10, 4); ctx.lineTo(16, 10)
   ctx.stroke()
-  // LED
   ctx.fillStyle = blink ? (m.triggered ? '#ef4444' : m.instant ? '#38bdf8' : '#fbbf24') : '#1e293b'
   ctx.beginPath(); ctx.arc(0, -5, 3.2, 0, Math.PI * 2); ctx.fill()
   ctx.restore()
@@ -936,15 +916,16 @@ export function drawGrenadeSprite(ctx: CanvasRenderingContext2D, _g: Grenade, dx
   ctx.save()
   ctx.translate(dx, dy)
   ctx.rotate(tick * 0.2)
-  const grad = ctx.createRadialGradient(-2, -2, 1, 0, 0, 8)
-  grad.addColorStop(0, '#86efac')
-  grad.addColorStop(1, '#166534')
-  ctx.fillStyle = grad
+  if (!cachedGrenadeGrad) {
+    cachedGrenadeGrad = ctx.createRadialGradient(-2, -2, 1, 0, 0, 8)
+    cachedGrenadeGrad.addColorStop(0, '#86efac')
+    cachedGrenadeGrad.addColorStop(1, '#166534')
+  }
+  ctx.fillStyle = cachedGrenadeGrad
   ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.fill()
   ctx.strokeStyle = '#0f172a'
   ctx.lineWidth = 1.5
   ctx.stroke()
-  // 破片格纹与保险握片
   ctx.strokeStyle = 'rgba(5,46,22,0.55)'
   ctx.lineWidth = 1
   ctx.beginPath()
@@ -965,11 +946,12 @@ export function drawAirstrikeSprite(ctx: CanvasRenderingContext2D, st: Airstrike
   ctx.lineWidth = 2.5
   ctx.beginPath(); ctx.arc(0, 0, 40, 0, Math.PI * 2); ctx.stroke()
   ctx.beginPath(); ctx.arc(0, 0, 18 + pulse * 6, 0, Math.PI * 2); ctx.stroke()
-  // 垂直光柱
-  const beamGrad = ctx.createLinearGradient(0, -400, 0, 0)
-  beamGrad.addColorStop(0, 'rgba(239,68,68,0)')
-  beamGrad.addColorStop(1, `rgba(239,68,68,${0.35 + pulse * 0.2})`)
-  ctx.fillStyle = beamGrad
+  if (!cachedAirstrikeBeamGrad) {
+    cachedAirstrikeBeamGrad = ctx.createLinearGradient(0, -400, 0, 0)
+    cachedAirstrikeBeamGrad.addColorStop(0, 'rgba(239,68,68,0)')
+    cachedAirstrikeBeamGrad.addColorStop(1, 'rgba(239,68,68,0.45)')
+  }
+  ctx.fillStyle = cachedAirstrikeBeamGrad
   ctx.fillRect(-8, -400, 16, 400)
   ctx.fillStyle = '#fecaca'
   ctx.font = 'bold 11px Inter, system-ui, sans-serif'
@@ -985,32 +967,33 @@ export function drawProjectileSprite(ctx: CanvasRenderingContext2D, pr: Projecti
     ctx.save()
     ctx.translate(dx, dy)
     ctx.rotate(ang)
-    // 尾焰
     const flame = 12 + Math.sin(tick * 1.4) * 5
-    const fg = ctx.createLinearGradient(-14, 0, -14 - flame, 0)
-    fg.addColorStop(0, 'rgba(254, 243, 199, 0.95)')
-    fg.addColorStop(0.45, 'rgba(251, 191, 36, 0.85)')
-    fg.addColorStop(0.8, 'rgba(249, 115, 22, 0.55)')
-    fg.addColorStop(1, 'rgba(249, 115, 22, 0)')
-    ctx.fillStyle = fg
+    if (!cachedRocketFlameGrad) {
+      cachedRocketFlameGrad = ctx.createLinearGradient(-14, 0, -32, 0)
+      cachedRocketFlameGrad.addColorStop(0, 'rgba(254, 243, 199, 0.95)')
+      cachedRocketFlameGrad.addColorStop(0.45, 'rgba(251, 191, 36, 0.85)')
+      cachedRocketFlameGrad.addColorStop(0.8, 'rgba(249, 115, 22, 0.55)')
+      cachedRocketFlameGrad.addColorStop(1, 'rgba(249, 115, 22, 0)')
+    }
+    ctx.fillStyle = cachedRocketFlameGrad
     ctx.beginPath()
     ctx.moveTo(-12, -4.5)
     ctx.lineTo(-12 - flame, 0)
     ctx.lineTo(-12, 4.5)
     ctx.closePath()
     ctx.fill()
-    // 弹体
-    const bodyGrad = ctx.createLinearGradient(0, -6, 0, 6)
-    bodyGrad.addColorStop(0, '#fda4af')
-    bodyGrad.addColorStop(0.5, '#f43f5e')
-    bodyGrad.addColorStop(1, '#9f1239')
-    ctx.fillStyle = bodyGrad
+    if (!cachedRocketBodyGrad) {
+      cachedRocketBodyGrad = ctx.createLinearGradient(0, -6, 0, 6)
+      cachedRocketBodyGrad.addColorStop(0, '#fda4af')
+      cachedRocketBodyGrad.addColorStop(0.5, '#f43f5e')
+      cachedRocketBodyGrad.addColorStop(1, '#9f1239')
+    }
+    ctx.fillStyle = cachedRocketBodyGrad
     ctx.strokeStyle = '#4c0519'
     ctx.lineWidth = 1.5
     roundRect(ctx, -14, -5, 24, 10, 4)
     ctx.fill()
     ctx.stroke()
-    // 弹头
     ctx.fillStyle = '#fde68a'
     ctx.beginPath()
     ctx.moveTo(10, -5)
@@ -1018,7 +1001,6 @@ export function drawProjectileSprite(ctx: CanvasRenderingContext2D, pr: Projecti
     ctx.lineTo(10, 5)
     ctx.closePath()
     ctx.fill()
-    // 尾翼
     ctx.fillStyle = '#9f1239'
     ctx.beginPath(); ctx.moveTo(-14, -5); ctx.lineTo(-18, -9); ctx.lineTo(-10, -5); ctx.closePath(); ctx.fill()
     ctx.beginPath(); ctx.moveTo(-14, 5); ctx.lineTo(-18, 9); ctx.lineTo(-10, 5); ctx.closePath(); ctx.fill()
@@ -1047,15 +1029,15 @@ export function drawProjectileSprite(ctx: CanvasRenderingContext2D, pr: Projecti
   } else if (pr.isGravityOrb) {
     ctx.save()
     ctx.translate(dx, dy)
-    // 外层引力透镜辉光
-    const grd = ctx.createRadialGradient(0, 0, 2, 0, 0, 26)
-    grd.addColorStop(0, 'rgba(233,213,255,0.95)')
-    grd.addColorStop(0.38, 'rgba(168,85,247,0.62)')
-    grd.addColorStop(1, 'rgba(168,85,247,0)')
-    ctx.fillStyle = grd
+    if (!cachedGravOrbGrad) {
+      cachedGravOrbGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 26)
+      cachedGravOrbGrad.addColorStop(0, 'rgba(233,213,255,0.95)')
+      cachedGravOrbGrad.addColorStop(0.38, 'rgba(168,85,247,0.62)')
+      cachedGravOrbGrad.addColorStop(1, 'rgba(168,85,247,0)')
+    }
+    ctx.fillStyle = cachedGravOrbGrad
     ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill()
 
-    // 旋转吸积旋臂
     ctx.save()
     ctx.rotate(tick * 0.14)
     ctx.strokeStyle = 'rgba(216,180,254,0.8)'
@@ -1067,7 +1049,6 @@ export function drawProjectileSprite(ctx: CanvasRenderingContext2D, pr: Projecti
     }
     ctx.restore()
 
-    // 黑洞视界核
     ctx.fillStyle = '#090414'
     ctx.strokeStyle = '#e9d5ff'
     ctx.lineWidth = 1.6
@@ -1096,23 +1077,27 @@ export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: numbe
   const top = dy - r.h / 2
   switch (r.kind) {
     case 'deco_window_lit': {
-      const flick = 0.75 + Math.sin(tick * 0.05 + r.x * 0.013) * 0.12
       ctx.save()
+      ctx.translate(dx, dy)
       ctx.globalAlpha = 0.9
       ctx.fillStyle = r.color
-      ctx.fillRect(left, top, r.w, r.h)
+      ctx.fillRect(-r.w / 2, -r.h / 2, r.w, r.h)
       ctx.strokeStyle = 'rgba(15,23,42,0.75)'
       ctx.lineWidth = 2
-      ctx.strokeRect(left, top, r.w, r.h)
+      ctx.strokeRect(-r.w / 2, -r.h / 2, r.w, r.h)
       ctx.beginPath()
-      ctx.moveTo(left + r.w / 2, top); ctx.lineTo(left + r.w / 2, top + r.h)
-      ctx.moveTo(left, top + r.h / 2); ctx.lineTo(left + r.w, top + r.h / 2)
+      ctx.moveTo(0, -r.h / 2); ctx.lineTo(0, r.h / 2)
+      ctx.moveTo(-r.w / 2, 0); ctx.lineTo(r.w / 2, 0)
       ctx.stroke()
-      const g = ctx.createRadialGradient(left + r.w / 2, top + r.h / 2, 2, left + r.w / 2, top + r.h / 2, r.w * 1.8)
-      g.addColorStop(0, `rgba(251, 191, 36, ${0.20 * flick})`)
-      g.addColorStop(1, 'rgba(251, 191, 36, 0)')
+      let g = cachedDecoWindowGrads.get(r.w)
+      if (!g) {
+        g = ctx.createRadialGradient(0, 0, 2, 0, 0, r.w * 1.8)
+        g.addColorStop(0, 'rgba(251, 191, 36, 0.16)')
+        g.addColorStop(1, 'rgba(251, 191, 36, 0)')
+        cachedDecoWindowGrads.set(r.w, g)
+      }
       ctx.fillStyle = g
-      ctx.fillRect(left - r.w, top - r.h, r.w * 3, r.h * 3)
+      ctx.fillRect(-r.w * 1.5, -r.h * 1.5, r.w * 3, r.h * 3)
       ctx.restore()
       break
     }
@@ -1125,18 +1110,21 @@ export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: numbe
       break
     case 'deco_lamp': {
       ctx.save()
+      ctx.translate(dx, top)
       ctx.strokeStyle = '#475569'
       ctx.lineWidth = 3
-      ctx.beginPath(); ctx.moveTo(dx, top + r.h); ctx.lineTo(dx, top + 10); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, r.h); ctx.lineTo(0, 10); ctx.stroke()
       ctx.fillStyle = '#1e293b'
-      ctx.fillRect(dx - 7, top, 14, 10)
-      const g = ctx.createRadialGradient(dx, top + 6, 2, dx, top + 6, 70)
-      g.addColorStop(0, 'rgba(251,191,36,0.22)')
-      g.addColorStop(1, 'rgba(251,191,36,0)')
-      ctx.fillStyle = g
-      ctx.beginPath(); ctx.arc(dx, top + 6, 70, 0, Math.PI * 2); ctx.fill()
+      ctx.fillRect(-7, 0, 14, 10)
+      if (!cachedDecoLampGrad) {
+        cachedDecoLampGrad = ctx.createRadialGradient(0, 6, 2, 0, 6, 70)
+        cachedDecoLampGrad.addColorStop(0, 'rgba(251,191,36,0.22)')
+        cachedDecoLampGrad.addColorStop(1, 'rgba(251,191,36,0)')
+      }
+      ctx.fillStyle = cachedDecoLampGrad
+      ctx.beginPath(); ctx.arc(0, 6, 70, 0, Math.PI * 2); ctx.fill()
       ctx.fillStyle = '#fde68a'
-      ctx.beginPath(); ctx.arc(dx, top + 6, 3.5, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.arc(0, 6, 3.5, 0, Math.PI * 2); ctx.fill()
       ctx.restore()
       break
     }
@@ -1189,8 +1177,8 @@ export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: numbe
       ctx.beginPath()
       ctx.rect(left, top, r.w, r.h)
       ctx.clip()
+      ctx.fillStyle = 'rgba(245,158,11,0.55)'
       for (let x = left - r.h; x < left + r.w; x += 14) {
-        ctx.fillStyle = 'rgba(245,158,11,0.55)'
         ctx.beginPath()
         ctx.moveTo(x, top + r.h)
         ctx.lineTo(x + 7, top)
@@ -1204,33 +1192,43 @@ export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: numbe
     }
     case 'deco_barrel': {
       ctx.save()
-      const g = ctx.createLinearGradient(left, 0, left + r.w, 0)
-      g.addColorStop(0, '#92400e')
-      g.addColorStop(0.5, '#f59e0b')
-      g.addColorStop(1, '#78350f')
+      ctx.translate(left, top)
+      let g = cachedDecoBarrelGrads.get(r.w)
+      if (!g) {
+        g = ctx.createLinearGradient(0, 0, r.w, 0)
+        g.addColorStop(0, '#92400e')
+        g.addColorStop(0.5, '#f59e0b')
+        g.addColorStop(1, '#78350f')
+        cachedDecoBarrelGrads.set(r.w, g)
+      }
       ctx.fillStyle = g
-      roundRect(ctx, left, top, r.w, r.h, 3)
+      roundRect(ctx, 0, 0, r.w, r.h, 3)
       ctx.fill()
       ctx.strokeStyle = '#451a03'
       ctx.lineWidth = 1.5
       ctx.stroke()
       ctx.fillStyle = 'rgba(0,0,0,0.35)'
-      ctx.fillRect(left, top + 6, r.w, 2)
-      ctx.fillRect(left, top + r.h - 8, r.w, 2)
+      ctx.fillRect(0, 6, r.w, 2)
+      ctx.fillRect(0, r.h - 8, r.w, 2)
       ctx.restore()
       break
     }
     case 'deco_pipe_run': {
       ctx.save()
-      const g = ctx.createLinearGradient(0, top, 0, top + r.h)
-      g.addColorStop(0, '#0891b2')
-      g.addColorStop(0.5, '#22d3ee')
-      g.addColorStop(1, '#0e7490')
+      ctx.translate(left, top)
+      let g = cachedDecoPipeGrads.get(r.h)
+      if (!g) {
+        g = ctx.createLinearGradient(0, 0, 0, r.h)
+        g.addColorStop(0, '#0891b2')
+        g.addColorStop(0.5, '#22d3ee')
+        g.addColorStop(1, '#0e7490')
+        cachedDecoPipeGrads.set(r.h, g)
+      }
       ctx.fillStyle = g
-      roundRect(ctx, left, top, r.w, r.h, 4)
+      roundRect(ctx, 0, 0, r.w, r.h, 4)
       ctx.fill()
       ctx.fillStyle = 'rgba(0,0,0,0.4)'
-      for (let x = left + 40; x < left + r.w; x += 120) ctx.fillRect(x, top - 2, 6, r.h + 4)
+      for (let x = 40; x < r.w; x += 120) ctx.fillRect(x, -2, 6, r.h + 4)
       ctx.restore()
       break
     }
@@ -1348,31 +1346,35 @@ export function drawDeco(ctx: CanvasRenderingContext2D, r: { x: number; y: numbe
 export function drawJumpPad(ctx: CanvasRenderingContext2D, x: number, y: number, tick: number): void {
   const pulse = 0.65 + 0.35 * Math.sin(tick * 0.12 + x * 0.01)
   ctx.save()
-  const g = ctx.createRadialGradient(x, y - 8, 3, x, y - 8, 46)
-  g.addColorStop(0, `rgba(56, 189, 248, ${0.30 * pulse})`)
-  g.addColorStop(1, 'rgba(56, 189, 248, 0)')
-  ctx.fillStyle = g
-  ctx.beginPath(); ctx.arc(x, y - 8, 46, 0, Math.PI * 2); ctx.fill()
+  ctx.translate(x, y)
+  if (!cachedJumpPadGlowGrad) {
+    cachedJumpPadGlowGrad = ctx.createRadialGradient(0, -8, 3, 0, -8, 46)
+    cachedJumpPadGlowGrad.addColorStop(0, 'rgba(56, 189, 248, 0.26)')
+    cachedJumpPadGlowGrad.addColorStop(1, 'rgba(56, 189, 248, 0)')
+  }
+  ctx.fillStyle = cachedJumpPadGlowGrad
+  ctx.beginPath(); ctx.arc(0, -8, 46, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = '#0e7490'
   ctx.strokeStyle = '#22d3ee'
   ctx.lineWidth = 2
   ctx.beginPath()
-  ctx.roundRect(x - 26, y - 12, 52, 12, 4)
+  ctx.roundRect(-26, -12, 52, 12, 4)
   ctx.fill(); ctx.stroke()
   const lift = Math.sin(tick * 0.12 + x * 0.01) * 3
   ctx.strokeStyle = `rgba(165, 243, 252, ${0.6 + 0.4 * pulse})`
   ctx.lineWidth = 3.5
   ctx.lineCap = 'round'
-  for (const dy of [0, 8]) {
+  for (let i = 0; i < 2; i++) {
+    const dy = i * 8
     ctx.beginPath()
-    ctx.moveTo(x - 12, y - 20 - dy + lift)
-    ctx.lineTo(x, y - 30 - dy + lift)
-    ctx.lineTo(x + 12, y - 20 - dy + lift)
+    ctx.moveTo(-12, -20 - dy + lift)
+    ctx.lineTo(0, -30 - dy + lift)
+    ctx.lineTo(12, -20 - dy + lift)
     ctx.stroke()
   }
   ctx.font = 'bold 10px Inter, system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.fillStyle = 'rgba(165, 243, 252, 0.9)'
-  ctx.fillText('弹射', x, y + 12)
+  ctx.fillText('弹射', 0, 12)
   ctx.restore()
 }

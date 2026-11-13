@@ -157,14 +157,12 @@ export function recallDollState(events: WorldEvent[], p: PlayerState): void {
 /** 玩家按 E 交互：迫击炮 / 瞭望塔 / 量子传送门 / 特武补给箱 / 占领后的旗帜复活点选中 */
 export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState): void {
   if (p.respawnTimer > 0 || !p.alive) return
-  // 退出迫击炮
   const cur = ctx.mortars.find(m => m.operatorId === p.id)
   if (cur) {
     cur.operatorId = null
     p.vel.y = -270
     return
   }
-  // 上迫击炮
   for (const m of ctx.mortars) {
     if (m.operatorId === null && wrapDist(p.pos.x, p.pos.y, m.x, m.y) < 115) {
       m.operatorId = p.id
@@ -173,7 +171,6 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
       return
     }
   }
-  // 已在塔上 → 下塔（视野加成立即消失）
   if (p.mountedTowerId) {
     const tw = ctx.watchtowers.find(t => t.id === p.mountedTowerId)
     if (tw) tw.operatorId = null
@@ -183,7 +180,6 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
     ctx.events.push({ kind: 'warp', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: '离开瞭望塔' })
     return
   }
-  // 上塔：锁定在塔顶、不能移动、视野 200%
   for (const tw of ctx.watchtowers) {
     if (tw.operatorId === null && wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 130) {
       tw.operatorId = tw.id ? p.id : p.id
@@ -195,7 +191,6 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
       return
     }
   }
-  // 量子传送门：配对跃迁 + 2.5s 冷却
   for (const wp of ctx.warpPortals) {
     if (wrapDist(p.pos.x, p.pos.y, wp.x, wp.y) < 90 && p.warpCooldown <= 0) {
       const dest = ctx.warpPortals.find(w => w.id === wp.targetId)
@@ -207,7 +202,6 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
       return
     }
   }
-  // 靠近特武补给箱（95px 内按 E 可主动拾取）
   for (const crate of ctx.supplyCrates) {
     if (!crate.active) continue
     if (wrapDist(p.pos.x, p.pos.y, crate.x, crate.y) < 95) {
@@ -233,7 +227,6 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
       return
     }
   }
-  // 旗帜复活点：仅选中玩家当前就近且同层的已占领旗帜（按距离排序取最近，杜绝跨图错选其他据点）
   const maxSelectDist = Math.max(150, ctx.config.captureRadius + 35)
   let targetCp: CapturePoint | null = null
   let bestDist = Infinity
@@ -272,39 +265,56 @@ export function spawnSingleAmmoPack(ctx: InteractablesContext): void {
 }
 
 export function stepMapInteractables(ctx: InteractablesContext, dt: number): void {
-  // 1. 占领点（与 HUD 提示半径严格一致，过滤隔层干扰，支持半截旗帜续占与人数净优势读条）
+  // 1. 占领点（零对象/数组分配标量统计，消除每帧 10 次 Object.entries 与 sort 分配）
   const capR = Math.max(150, ctx.config.captureRadius + 35)
-  for (const cp of ctx.capturePoints) {
+  const capRSq = capR * capR
+  for (let ci = 0; ci < ctx.capturePoints.length; ci++) {
+    const cp = ctx.capturePoints[ci]
     if (cp.y <= 400) continue
-    const presence: Partial<Record<TeamId, number>> = {}
+    let cRed = 0, cBlue = 0, cGreen = 0, cFfa = 0
     for (let i = 0; i < ctx.players.length; i++) {
       const p = ctx.players[i]
       if (p.respawnTimer > 0 || !p.deployed || !p.alive) continue
       const dx = Math.abs(wrapDeltaX(p.pos.x, cp.x))
       if (dx >= capR) continue
       const dy = wrapDeltaY(cp.y, p.pos.y)
-      // 过滤掉位于当前平台地板下方隔层 (dy > 28) 或上方隔层 (dy < -115) 的角色
       if (dy > 28 || dy < -115) continue
-      if (Math.hypot(dx, dy) < capR) {
-        presence[p.team] = (presence[p.team] || 0) + 1
+      if (dx * dx + dy * dy < capRSq) {
+        if (p.team === 'red') cRed++
+        else if (p.team === 'blue') cBlue++
+        else if (p.team === 'green') cGreen++
+        else cFfa++
       }
     }
-    const entries = Object.entries(presence) as [TeamId, number][]
-    if (entries.length > 0) {
-      entries.sort((a, b) => b[1] - a[1])
-      const [t, topCount] = entries[0]
-      const secondCount = entries.length > 1 ? entries[1][1] : 0
+    let topTeam: TeamId | null = null
+    let topCount = 0
+    let secondCount = 0
+    const considerTeam = (tm: TeamId, cnt: number): void => {
+      if (cnt <= 0) return
+      if (cnt > topCount) {
+        secondCount = topCount
+        topCount = cnt
+        topTeam = tm
+      } else if (cnt > secondCount) {
+        secondCount = cnt
+      }
+    }
+    considerTeam('red', cRed)
+    considerTeam('blue', cBlue)
+    considerTeam('green', cGreen)
+    considerTeam('ffa', cFfa)
+
+    if (topTeam !== null) {
+      const t = topTeam as TeamId
       const netCount = topCount - secondCount
       if (netCount > 0) {
         const delta = ctx.config.captureRate * dt * netCount
         const curTeam = cp.progress > 0 ? (cp.ownerTeam ?? cp.capturingTeam) : null
         if (curTeam !== null && curTeam !== t) {
-          // 阶段1：据点当前存在敌方进度（含敌方100%已占领或敌方半截进度），先从当前进度递减到 0%
           cp.capturingTeam = curTeam
           if (cp.progress > delta) {
             cp.progress -= delta
           } else {
-            // 敌方进度归零（完成中立化），清除原归属并将溢出进度无缝转为己方从 0% 递增
             const overflow = delta - cp.progress
             cp.ownerTeam = null
             if (overflow > 0) {
@@ -321,7 +331,6 @@ export function stepMapInteractables(ctx: InteractablesContext, dt: number): voi
             }
           }
         } else if (cp.ownerTeam !== t || cp.progress < 100) {
-          // 阶段2：中立点 (0%) 或己方半截旗帜 (<100%)，从当前进度向 100% 递增读条
           cp.capturingTeam = t
           cp.progress += delta
           if (cp.progress >= 100) {
@@ -339,12 +348,14 @@ export function stepMapInteractables(ctx: InteractablesContext, dt: number): voi
   }
 
   // 2. 迫击炮冷却
-  for (const m of ctx.mortars) {
+  for (let i = 0; i < ctx.mortars.length; i++) {
+    const m = ctx.mortars[i]
     if (m.cooldown > 0) m.cooldown = Math.max(0, m.cooldown - dt)
   }
 
   // 3. 补给箱
-  for (const crate of ctx.supplyCrates) {
+  for (let ci = 0; ci < ctx.supplyCrates.length; ci++) {
+    const crate = ctx.supplyCrates[ci]
     if (!crate.active && crate.respawnTimer > 0) {
       crate.respawnTimer -= dt
       if (crate.respawnTimer <= 0) crate.active = true
@@ -368,7 +379,7 @@ export function stepMapInteractables(ctx: InteractablesContext, dt: number): voi
         ctx.events.push({
           kind: 'supply_pickup',
           playerId: p.id,
-          playerName: p.name,          // 事件自带名字：客机即使反查不到也能正确显示
+          playerName: p.name,
           weaponId: crate.kind === 'doll' ? -1 : crate.weaponId,
           weaponName: crate.weaponName,
           x: crate.x, y: crate.y,

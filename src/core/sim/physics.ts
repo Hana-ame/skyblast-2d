@@ -34,8 +34,8 @@ const defaults: PhysicsParams = {
 
 let P: PhysicsParams = { ...defaults }
 
-export function getPhysicsParams(): PhysicsParams {
-  return { ...P }
+export function getPhysicsParams(): Readonly<PhysicsParams> {
+  return P
 }
 
 export function setPhysicsParams(overrides: Partial<PhysicsParams>): PhysicsParams {

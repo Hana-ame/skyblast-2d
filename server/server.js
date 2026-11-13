@@ -52,17 +52,28 @@ function sendJson(res, statusCode, data) {
 function parseBody(req) {
   return new Promise((resolve) => {
     let body = '';
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      resolve(val);
+    };
     req.on('data', (chunk) => {
       body += chunk.toString();
-      if (body.length > 1e5) req.destroy();
+      if (body.length > 1e5) {
+        req.destroy();
+        finish({});
+      }
     });
     req.on('end', () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        finish(body ? JSON.parse(body) : {});
       } catch (e) {
-        resolve({});
+        finish({});
       }
     });
+    req.on('error', () => finish({}));
+    req.on('close', () => finish({}));
   });
 }
 

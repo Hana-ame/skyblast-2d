@@ -894,37 +894,38 @@ test('护栏·UI 文本单一数据源校验：index.html 死亡界面与大厅�
 })
 
 
-test('护栏·突击步枪擦边分级：命中主体 37、擦边最低 30，大多数命中落在 33~34', () => {
+test('护栏·突击步枪擦边分级：正中最高 33、擦边最低 27，大多数命中落在 30~31', () => {
   const rifle = WEAPONS[1]
-  assert.equal(rifle.damage, 37, 'rifle body hit damage is 37')
-  assert.equal(rifle.grazeDamageMin, 30, 'rifle graze floor is 30')
+  assert.equal(rifle.damage, 33, 'rifle body hit max damage is 33')
+  assert.equal(rifle.grazeDamageMin, 27, 'rifle graze floor is 27')
   // M249 与突击步枪伤害同步（既有规则）
-  assert.equal(WEAPONS[5].damage, 37, 'M249 damage mirrors the rifle')
-  assert.equal(WEAPONS[5].grazeDamageMin, 30, 'M249 graze floor mirrors the rifle')
+  assert.equal(WEAPONS[5].damage, 33, 'M249 damage mirrors the rifle')
+  assert.equal(WEAPONS[5].grazeDamageMin, 27, 'M249 graze floor mirrors the rifle')
 
   const halfX = 13 + 3.2   // 身体判定半宽 = 13 + 弹丸半径
-  const dmgOf = (q: number) => Math.round(30 + (37 - 30) * q)
+  const dmgOf = (q: number) => Math.round(27 + (33 - 27) * q)
 
-  // ① 水平平射穿过躯干：伤害必须落在 30~37，且正中最高、贴边更低
+  // ① 水平平射穿过躯干：伤害必须落在 27~33，且正中最高(33)、贴边更低
   const horiz: number[] = []
   for (let dy = -12; dy <= 18; dy++) horiz.push(dmgOf(projectileBodyHitQuality(-halfX, dy, 1500, 0, halfX)))
-  assert.ok(Math.min(...horiz) >= 30 && Math.max(...horiz) <= 37,
-    `horizontal hits stay within 30~37, got ${Math.min(...horiz)}~${Math.max(...horiz)}`)
+  assert.ok(Math.min(...horiz) >= 27 && Math.max(...horiz) <= 33,
+    `horizontal hits stay within 27~33, got ${Math.min(...horiz)}~${Math.max(...horiz)}`)
   const center = dmgOf(projectileBodyHitQuality(-halfX, 3, 1500, 0, halfX))
   const edge = dmgOf(projectileBodyHitQuality(-halfX, 18, 1500, 0, halfX))
+  assert.equal(center, 33, `dead-center hit must be 33, got ${center}`)
   assert.ok(center > edge, `center hit (${center}) must beat edge hit (${edge})`)
 
-  // ② 垂直弹（从脚下进入）：横向偏移越大伤害越低，且仍 ≥ 30
+  // ② 垂直弹（从脚下进入）：横向偏移越大伤害越低，且仍 ≥ 27、最高 ≤ 33
   const vert: number[] = []
   for (let dx = -16; dx <= 16; dx++) vert.push(dmgOf(projectileBodyHitQuality(dx, 18, 0, -1200, halfX)))
-  assert.ok(Math.min(...vert) >= 30 && Math.max(...vert) <= 37,
-    `vertical hits stay within 30~37, got ${Math.min(...vert)}~${Math.max(...vert)}`)
+  assert.ok(Math.min(...vert) >= 27 && Math.max(...vert) <= 33,
+    `vertical hits stay within 27~33, got ${Math.min(...vert)}~${Math.max(...vert)}`)
   assert.ok(vert[16] > vert[0], `vertical center (${vert[16]}) must beat sideways (${vert[0]})`)
 
-  // ③ 绝大多数命中集中在 33~34：水平扫描里 33~34 的占比要过半数
-  const common = horiz.filter(d => d === 33 || d === 34).length
+  // ③ 绝大多数命中集中在 30~31：水平扫描里 30~31 的占比充足
+  const common = horiz.filter(d => d === 30 || d === 31).length
   assert.ok(common / horiz.length >= 0.35,
-    `most hits cluster at 33~34, got ${common}/${horiz.length} = ${(common / horiz.length * 100).toFixed(0)}%`)
+    `most hits cluster at 30~31, got ${common}/${horiz.length} = ${(common / horiz.length * 100).toFixed(0)}%`)
 })
 
 
@@ -1484,6 +1485,7 @@ test('护栏·特性开关(Feature Flags)默认全开与完整战术HUD重构：
   assert.equal(audioSrc.includes('capture_tick') || audioSrc.includes('capture_done'), false, 'no capture sound in audio.ts')
   assert.equal(eventsSrc.includes('capture_done'), false, 'no capture_done sound in events.ts')
   assert.equal(hudSrc.includes('capture_tick'), false, 'no capture_tick sound in hud.ts')
+  assert.ok(eventsSrc.includes('isOwnKill') && eventsSrc.includes('if (isOwnKill) playProceduralSound'), 'kill/headshot sound only plays for local player kills')
 
   // 5) 校验右上角雷达替代顶栏 A~J 旗帜条、底部武器 HUD 回退上一版、死亡界面使用小地图选复活点
   const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
@@ -1565,4 +1567,41 @@ test('护栏·特性开关(Feature Flags)默认全开与完整战术HUD重构：
   }])
   assert.equal(pendingLoadout.secondaryType, 'frag', 'handleEvents safely resets invalidated secondary to frag on local kill')
   assert.equal(lp.secondary, 'frag')
+})
+
+
+test('护栏·狙击手柄追踪瞄准(0.5s后位置)与进入界面关闭手柄无冲突', () => {
+  // 1) 手柄模式下 (trackChargeAim=true)：拖动开火 0.5s 期间准星持续更新，最终按 0.5s 后的拖动位置发射
+  const w = new World(58000, { name: 'sniper-gamepad-track', solids: [] })
+  w.config.randomSpawn = false
+  const p = w.addPlayer('PadSniper', 'ffa')
+  p.weaponIndex = 2
+  p.ammo[2] = 5
+  p.reserveAmmo[2] = 15
+  p.pos = { x: 6600, y: 2200 }
+
+  let firedAngle: number | null = null
+  const startAim = 0
+  const endAim = -Math.PI / 3
+  for (let i = 0; i < 40; i++) {
+    const curAim = i < 15 ? startAim : endAim
+    w.step(DT, new Map([[p.id, input({ fire: true, aim: curAim, trackChargeAim: true })]]))
+    for (const e of w.drainEvents()) {
+      if (e.kind !== 'projectile_spawn') continue
+      const pr = w.projectiles.find(x => x.id === e.projectileId)
+      if (pr) firedAngle = Math.atan2(pr.vel.y, pr.vel.x)
+    }
+    if (firedAngle !== null) break
+  }
+  assert.ok(firedAngle !== null, 'gamepad sniper fires after 0.5s charge')
+  assert.ok(Math.abs(firedAngle! - endAim) < 0.05,
+    `gamepad sniper must fire at aim after 0.5s (${endAim.toFixed(2)}), got ${firedAngle!.toFixed(2)}`)
+
+  // 2) 进入界面 (docs/index.html) 必须提供键鼠/手柄独立切换按钮，且 device.ts 关闭手柄时清空触屏状态避免冲突
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+  assert.ok(html.includes('id="lobbyCtrlKbmBtn"'), 'entry screen has keyboard/mouse (close gamepad) button')
+  assert.ok(html.includes('id="lobbyCtrlGamepadBtn"'), 'entry screen has enable gamepad button')
+  const devSrc = readFileSync(new URL('../src/web/input/device.ts', import.meta.url), 'utf8')
+  assert.ok(devSrc.includes('touchState.aimActive = false') && devSrc.includes('touchState.moveActive = false'),
+    'disabling gamepad resets active touch flags to prevent kbm conflict')
 })

@@ -299,7 +299,8 @@ export function explodeInWorld(
 ): void {
   const wCx = wrapX(cx)
   ctx.events.push({ kind: 'explosion', x: wCx, y: cy, radius })
-  for (const ob of [...ctx.obstacles]) {
+  for (let i = ctx.obstacles.length - 1; i >= 0; i--) {
+    const ob = ctx.obstacles[i];
     const dx = wrapDeltaX(wCx, ob.x + ob.w / 2)
     const dOb = wrapDeltaY(ob.y, cy)
     const nearY = clamp(dOb, 0, ob.h)

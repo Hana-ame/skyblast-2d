@@ -11,23 +11,35 @@ import { playProceduralSound } from '../app/audio.ts'
 import { installDiag, diagRecordFrame, diagMark } from '../app/diag.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
-import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
+import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
 import { isCapturePointSelectable } from '../../core/sim/world.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput } from '../../core/types.ts'
 import { wrapDeltaX, wrapDeltaY, wrapX, wrapY, clamp } from '../../core/wrap.ts'
 
 // ── 主循环 ──
-let playerInput: WorldInput = defaultWorldInput()
+const playerInput: WorldInput = defaultWorldInput()
+const sharedSecondaryIntent = { type: 'frag', targetX: 0, targetY: 0 }
+const frameInputs = new Map<number, WorldInput>()
 let prevFireCooldown = 0
 let wasDead = false
 let lastFrame = performance.now()
 let smoothFps = 60
-let acc = 0
+let acc = FIXED * 0.5
 let mobileSniperPulseRelease = false
 
 function buildLocalInput(): WorldInput {
-  const w = defaultWorldInput()
+  const w = playerInput
+  w.jump = false
+  w.jetpack = false
+  w.dive = false
+  w.fire = false
+  w.reload = false
+  w.interact = false
+  w.switchWeapon = null
+  w.secondary = null
+  w.trackChargeAim = false
+
   const k = keys
   let move: -1 | 0 | 1 = 0
   if (k['KeyA'] || k['ArrowLeft']) move = (move - 1) as -1 | 0 | 1
@@ -37,8 +49,6 @@ function buildLocalInput(): WorldInput {
   }
   w.move = move
 
-  // 移动端直接左摇杆上推升空控制（无独立升空按钮）：
-  // 当左摇杆向上推超过阈值 (moveY < -0.26) 时自动点火喷气升空；若在地面起步则同时附加一次跳跃冲量使起飞更干脆
   const stickAscending = touchState.moveActive && touchState.moveY < -0.26
   const stickJumpTakeoff = stickAscending && !!localPlayer.onGround && !touchState.wasGroundedBeforeAscend
   touchState.wasGroundedBeforeAscend = stickAscending
@@ -50,14 +60,20 @@ function buildLocalInput(): WorldInput {
   const psx = canvas.width / 2 + wrapDeltaX(camera.x, localPlayer.pos.x) * zoom
   const psy = canvas.height / 2 + wrapDeltaY(camera.y, localPlayer.pos.y) * zoom
 
-  const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
+  let mounted: typeof world.mortars[0] | undefined
+  for (let i = 0; i < world.mortars.length; i++) {
+    if (world.mortars[i].operatorId === localPlayer.id) {
+      mounted = world.mortars[i]
+      break
+    }
+  }
   const aimMag = touchState.aimActive ? Math.hypot(touchState.aimX, touchState.aimY) : 0
 
-  if (touchState.enabled) {
+  const useTouchAim = touchState.enabled && (touchState.aimActive || touchState.aimUsed)
+  if (useTouchAim) {
     if (aimMag > 0.12) {
       touchState.lastAimAngle = Math.atan2(touchState.aimY, touchState.aimX)
     } else if (touchState.moveActive && Math.abs(touchState.moveX) > 0.25 && !touchState.aimActive) {
-      // 未拖动右摇杆时，准星自然顺应移动朝向
       touchState.lastAimAngle = touchState.moveX > 0 ? 0 : Math.PI
     }
     let a = touchState.lastAimAngle
@@ -65,7 +81,6 @@ function buildLocalInput(): WorldInput {
       if (a > -0.12) a = a < Math.PI * 0.5 ? -0.12 : -Math.PI + 0.12
     }
     w.aim = a
-    // 同步世界准星坐标供画面准星与副武器（手雷/传送/障碍物）落点使用
     const aimDist = 260 * Math.max(0.45, Math.min(1.2, aimMag || 0.85))
     mouse.worldX = wrapX(localPlayer.pos.x + Math.cos(w.aim) * aimDist)
     mouse.worldY = wrapY((localPlayer.pos.y - 12) + Math.sin(w.aim) * aimDist)
@@ -85,10 +100,11 @@ function buildLocalInput(): WorldInput {
     }
   }
 
-  const touchWantsFire = touchState.aimActive && aimMag > 0.42
+  const touchWantsFire = touchState.enabled && touchState.aimActive && aimMag > 0.42
+  // 手柄摇杆开火时，狙击枪在 0.5s 读条期间持续追踪当前摇杆拖动方向（0.5s 之后所在位置发射）；键鼠仍锁定按下瞬间方向
+  w.trackChargeAim = touchState.enabled && touchState.aimActive
   const wepCur = WEAPONS[localPlayer.weaponIndex]
   if (touchWantsFire && (wepCur?.chargeSeconds ?? 0) > 0) {
-    // 移动端右摇杆外圈连续蓄力狙击优化：冷却完毕且未开始蓄力时自动产生一次按下沿脉冲
     if (localPlayer.chargeTimer <= 0 && localPlayer.fireCooldown <= 0 && localPlayer.prevFireHeld && !mobileSniperPulseRelease) {
       w.fire = false
       mobileSniperPulseRelease = true
@@ -97,20 +113,38 @@ function buildLocalInput(): WorldInput {
       mobileSniperPulseRelease = false
     }
   } else {
-    w.fire = mouse.down || touchWantsFire
+    w.fire = (touchState.enabled ? false : mouse.down) || (touchState.enabled && mouse.down && !touchState.aimActive) || touchWantsFire
     mobileSniperPulseRelease = false
   }
 
   w.interact = inputQueue.interact
   w.reload = inputQueue.reload
   if (inputQueue.secondary) {
-    w.secondary = {
-      type: inputQueue.secondary.type,
-      targetX: inputQueue.secondary.targetX,
-      targetY: inputQueue.secondary.targetY,
-    }
+    sharedSecondaryIntent.type = inputQueue.secondary.type
+    sharedSecondaryIntent.targetX = inputQueue.secondary.targetX
+    sharedSecondaryIntent.targetY = inputQueue.secondary.targetY
+    w.secondary = sharedSecondaryIntent
   }
   return w
+}
+
+function updateCameraTracking(): void {
+  const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
+  let mounted = false
+  for (let i = 0; i < world.mortars.length; i++) {
+    if (world.mortars[i].operatorId === localPlayer.id) { mounted = true; break }
+  }
+  const targetFov = localPlayer.mountedTowerId
+    ? 2.0
+    : (mounted ? 1.0 : (wep.fovMult || 1.0))
+  camera.fovFactor += (targetFov - camera.fovFactor) * 0.12
+
+  if (localPlayer.deployed) {
+    const tx = localPlayer.pos.x
+    const ty = localPlayer.pos.y - 12
+    camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2)
+    camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2)
+  }
 }
 
 function onLocalDeath(): void {
@@ -121,14 +155,13 @@ function onLocalDeath(): void {
     ? localPlayer.weaponIndex
     : (last && !last.isSupplyOnly ? lastIdx : 0)
   const streak = localPlayer.deathStreak ?? 0
-  // 连死后不要自动选择最新解锁的副武器；若不满足解锁条件则统一退回手榴弹 ('frag')
   if (!isSecondaryUnlocked(pendingLoadout.secondaryType, streak, localPlayer.dollCharges ?? 0, pendingLoadout.weaponIndex)) {
     pendingLoadout.secondaryType = 'frag'
   }
   localPlayer.secondary = pendingLoadout.secondaryType
   updateHudWeaponButtons()
   updateSpawnPointButtonsUI()
-  renderDeathStats()
+  renderDeathStats(true)
   const ds = document.getElementById('deathScreen')
   if (ds) { ds.classList.remove('hidden'); ds.classList.add('flex') }
 }
@@ -162,6 +195,7 @@ function onLocalRespawn(): void {
 
 export function startGameLoop(): void {
   lastFrame = performance.now()
+  acc = FIXED * 0.5
   installDiag()
   function stepLoopTick(now: number, shouldRender: boolean): void {
     const tFrameStart = now
@@ -169,27 +203,34 @@ export function startGameLoop(): void {
     if (rawDt > 0.001) {
       smoothFps = smoothFps * 0.9 + (1 / rawDt) * 0.1
     }
-    // 消除 60Hz 显示器垂直同步微小抖动（15.2~18.2ms）导致的偶发双 Tick / 空 Tick 节拍顿挫
-    const snappedDt = (shouldRender && rawDt > 0.0145 && rawDt < 0.019) ? FIXED : Math.min(0.05, rawDt)
     lastFrame = now
-    acc += snappedDt
+    // 保持 acc 稳定在半帧余量 (FIXED * 0.5) 附近，彻底消除 VSync 微小抖动引发的 0-Tick 空帧或 2-Tick 跳帧顿挫
+    if (shouldRender && rawDt > 0.011 && rawDt < 0.023) {
+      acc += FIXED + (FIXED * 0.5 - acc) * 0.2
+    } else {
+      acc += Math.min(0.05, Math.max(0, rawDt))
+    }
     let guard = 0
     const tStepsBegin = performance.now()
 
-    while (acc >= FIXED && guard < 5) {
-      playerInput = buildLocalInput()
+    while (acc >= FIXED && guard < 4) {
+      const pIn = buildLocalInput()
       inputQueue.interact = false
       inputQueue.reload = false
       inputQueue.secondary = null
 
       localPlayer.selectedSpawnId = pendingLoadout.spawnPointId
 
-      const inputs = new Map<number, WorldInput>([[localPlayer.id, playerInput]])
-      for (const b of bots) inputs.set(b.id, botInput(b))
+      frameInputs.clear()
+      frameInputs.set(localPlayer.id, pIn)
+      for (let i = 0; i < bots.length; i++) {
+        const b = bots[i]
+        frameInputs.set(b.id, botInput(b))
+      }
 
-      const handledAsClient = stepNetworkFrame(FIXED, playerInput, inputs)
+      const handledAsClient = stepNetworkFrame(FIXED, pIn, frameInputs)
       if (!handledAsClient) {
-        world.step(FIXED, inputs)
+        world.step(FIXED, frameInputs)
         const evs = world.drainEvents()
         handleEvents(evs)
         if (netState.role === 'host') broadcastHostKcpSnapshot(evs)
@@ -218,7 +259,7 @@ export function startGameLoop(): void {
         const respBar = document.getElementById('deathRespawnProgressBar')
         if (respBar) {
           const totalDelay = Math.max(0.1, world.config.respawnDelay ?? 4.0)
-          const pct = clamp((1 - localPlayer.respawnTimer / totalDelay) * 100, 0, 100)
+          const pct = Math.round(clamp((1 - localPlayer.respawnTimer / totalDelay) * 100, 0, 100))
           respBar.style.width = `${pct}%`
         }
         const streakPill = document.getElementById('deathStreakPill')
@@ -229,16 +270,15 @@ export function startGameLoop(): void {
         if (kl) kl.textContent = death.info
           ? `${death.info.killer} · ${death.info.weapon}`
           : ''
-        if (world.tick % 6 === 0) renderDeathStats()
+        if (world.tick % 6 === 0) renderDeathStats(false)
       }
 
-      // 喷气尾焰粒子
-      for (const p of world.players) {
+      for (let i = 0; i < world.players.length; i++) {
+        const p = world.players[i]
         if (p.deployed && p.respawnTimer <= 0 && p.jetpack) {
           effects.jet(p.pos.x, p.pos.y)
         }
       }
-      // 玩家开火枪口火花
       if (localPlayer.fireCooldown > prevFireCooldown + 0.01) {
         playProceduralSound('shoot', localPlayer.weaponIndex === 2 ? 0.72 : localPlayer.weaponIndex === 8 ? 1.35 : 1.0)
         effects.muzzle(
@@ -253,6 +293,7 @@ export function startGameLoop(): void {
         beams[i].life -= FIXED
         if (beams[i].life <= 0) beams.splice(i, 1)
       }
+      updateCameraTracking()
       acc -= FIXED
       guard++
     }
@@ -267,33 +308,20 @@ export function startGameLoop(): void {
       updateDebugHudTelemetry(smoothFps)
       const tEnd = performance.now()
       diagRecordFrame(tFrameStart, {
-        steps: guard,
-        stepMs,
-        renderMs: tHud - tRender,
-        hudMs: tEnd - tHud,
-      }, {
-        world, localPlayer, camera, netState, canvas,
-      })
+        steps: guard, stepMs, renderMs: tHud - tRender, hudMs: tEnd - tHud,
+      }, { world, localPlayer, camera, netState, canvas })
     } else {
-      // 后台 keepalive 帧（无渲染）也记录间隔，能看出 rAF 是否被浏览器挂起
       diagRecordFrame(tFrameStart, {
-        steps: guard,
-        stepMs: performance.now() - tStepsBegin,
-        renderMs: 0,
-        hudMs: 0,
-      }, {
-        world, localPlayer, camera, netState, canvas,
-      })
+        steps: guard, stepMs: performance.now() - tStepsBegin, renderMs: 0, hudMs: 0,
+      }, { world, localPlayer, camera, netState, canvas })
     }
   }
   requestAnimationFrame(function gameLoop(now: number): void {
     stepLoopTick(now, true)
     requestAnimationFrame(gameLoop)
   })
-  // 后台标签页保活时钟：当作为 Host/Client 的标签页切到后台导致 rAF 被浏览器挂起时，由 16ms 定时器维持权威物理与 KCP 收发不断连
   window.setInterval(() => {
     const now = performance.now()
-    // 仅在标签页处于后台或 rAF 挂起 (>120ms) 时接管，避免前台与 rAF 抢跑冲突
     if (document.hidden || (now - lastFrame > 120 && netState.role !== 'offline')) {
       stepLoopTick(now, false)
     }
@@ -305,8 +333,8 @@ export function startGameLoop(): void {
  * 数字全部走固定宽度槽位（tabular-nums + 定宽 span），避免位数变化推动布局。
  */
 let lastDeathRankSig = ''
-function renderDeathStats(): void {
-  renderDeathMinimap()
+function renderDeathStats(skipMinimap = false): void {
+  if (!skipMinimap) renderDeathMinimap()
   const me = localPlayer
   const kills = me.kills ?? 0
   const deaths = me.deaths ?? 0

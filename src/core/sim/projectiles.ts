@@ -127,10 +127,7 @@ export function calcProjectileFalloff(ctx: ProjectileContext, pr: Projectile, hi
   return weaponFalloff(wep, d, ctx.config.falloffExponent)
 }
 
-/** 判断弹丸命中玩家身体碰撞箱（[-bodyHalfX, +bodyHalfX] × [-12, +18]）时是否属于「碰撞箱边缘擦边命中」：
- *  计算弹道直线穿过身体 AABB 的线段中点 (midX, midY) 与弦长，
- *  当弹道仅擦过水平外侧边缘（|midX| > 10，超出躯干物理半宽 BODY_HALF_W=10）、
- *  底部边缘（midY > 13.5，擦到脚底边缘 13.5..18）或边角弦长 < 8px 时判定为碰撞箱边缘命中。 */
+/** 判断弹丸命中玩家身体碰撞箱（[-bodyHalfX, +bodyHalfX] × [-12, +18]）时是否属于「碰撞箱边缘擦边命中」 */
 export function isProjectileBodyEdgeHit(
   rx: number,
   ry: number,
@@ -175,22 +172,14 @@ export function isProjectileBodyEdgeHit(
  * 分级擦边命中质量（0..1）——用于「命中主体满伤、越靠边缘越少」的武器（突击步枪）。
  *   1 = 正中身体主体（弦长饱满、中心接近躯干中心）
  *   0 = 仅擦到碰撞箱边角
- * 依据：弹道穿过身体 AABB 的弦长（越短越擦边）+ 穿点中心距躯干中心的横向偏移。
  */
 export function projectileBodyHitQuality(
-  /** 命中瞬间弹丸相对玩家中心（头中心）的横向偏移（已 wrap，可正可负） */
   dxToCenter: number,
-  /** 命中瞬间弹丸相对玩家脚底的纵向偏移 */
   dyToFeet: number,
-  /** 弹丸速度：用来求弹道穿过身体 AABB 的实际弦长 */
   vx: number,
   vy: number,
   bodyHalfX: number,
 ): number {
-  // 关键：弹丸判定发生在「首次进入碰撞箱」的那一步，所以命中点几乎总在边缘。
-  // 真正能反映「打得正不正」的是**弹道穿过身体的弦长**：
-  //   平直穿过躯干中心 → 弦长≈整个躯干高度（30px）→ 满伤
-  //   擦过肩/脚/侧面 → 弦长很短 → 最低伤
   const spd = Math.hypot(vx, vy)
   const TOP = -12, BOTTOM = 18
   const halfY = (BOTTOM - TOP) * 0.5
@@ -199,7 +188,6 @@ export function projectileBodyHitQuality(
   if (spd < 1e-6) return 1
   const ux = vx / spd
   const uy = vy / spd
-  // 沿弹道方向，与 AABB（横 [-halfX, halfX]、纵 [TOP, BOTTOM]）相交的弦长
   let sMin = -1e9
   let sMax = 1e9
   const slab = (o: number, u: number, lo: number, hi: number): void => {
@@ -213,25 +201,17 @@ export function projectileBodyHitQuality(
   slab(dyToFeet, uy, TOP, BOTTOM)
   const chord = sMax - sMin
   if (chord <= 0) return 0
-  // 弦长饱满度（0..1）：穿过长度达到「躯干高度」视为满
   const fullness = Math.min(1, chord / (halfY * 2))
-  // 穿点居中程度：同时看纵向（靠肩/脚）和横向（靠身侧）
   const midAlong = (sMin + sMax) * 0.5
   const midY = dyToFeet + midAlong * uy
   const midX = dxToCenter + midAlong * ux
   const offY = Math.min(1, Math.abs(midY - centerY) / halfY)
   const offX = Math.min(1, Math.abs(midX) / Math.max(1e-6, bodyHalfX))
 
-  // 质量由「穿点离躯干中心多远」主导（这是"打得正不正"的直接度量）：
-  //   水平平射穿过躯干中部 → 两轴都接近中心 → 接近满伤
-  //   擦肩/擦脚/从侧面掠过 → off 接近 1 → 最低伤
-  // 弦长只作为辅助修正（避免"只在边缘蹭到一点"也被当正中）。
-  const off = Math.hypot(offX, offY) / Math.SQRT2   // 0=正中心, 1=角落
+  const off = Math.hypot(offX, offY) / Math.SQRT2
   const response = Math.pow(1 - off, 0.85)
-  // 弦长很短（只擦到边角）时额外打折
   const chordFactor = 0.55 + 0.45 * fullness
   const raw = response * chordFactor
-  // 归一到 0..1（raw 最大约 1.0）
   return Math.max(0, Math.min(1, raw))
 }
 
@@ -292,7 +272,6 @@ export function updateContinuousBeam(
 
   let dx = Math.cos(p.aim)
   let dy = Math.sin(p.aim)
-  // 枪口起点：沿瞄准方向从 4px 起按 4px 步进走到 24px，取「第一个实体之前」的最远空点
   let x = 0
   let y = 0
   let originOk = false
@@ -319,28 +298,19 @@ export function updateContinuousBeam(
   const playerBroadBuckets = ctx.playerBroadBuckets
   const obstacles = ctx.obstacles
 
-  // 防止任意角度发射激光扣自己血：
-  // 1) 初始直射段（未发生任何障碍物反射或跨地图缝隙前）绝不自伤；
-  // 2) 若贴着地图缝隙朝外发射，跨缝瞬间仍处于自身碰撞箱内，需等光束真正离开自身碰撞箱 (exitedSelf) 后才允许自伤；
-  // 3) 一旦发生障碍物表面反射，或跨缝并离开自身碰撞箱后绕回，立即对发射者生效自伤。
   let hasReflectedOrWrapped = false
   let exitedSelf = !isPointInPlayerBeamHitbox(p, x, y, headR)
 
   const checkPlayersAt = (
     px: number,
     py: number,
+    pList: PlayerState[],
     segStartX: number,
     segStartY: number,
     dirX: number,
     dirY: number,
     distFromSegStart: number,
   ): void => {
-    if (!exitedSelf && !isPointInPlayerBeamHitbox(p, px, py, headR)) {
-      exitedSelf = true
-    }
-    const bIdx = bucketIdx(px)
-    const pList = playerBroadBuckets[bIdx]
-    if (!pList || pList.length === 0) return
     for (let pi = 0; pi < pList.length; pi++) {
       const t = pList[pi]
       if (t.id === p.id) {
@@ -351,10 +321,18 @@ export function updateContinuousBeam(
       if (t.respawnTimer > 0 || !t.deployed || !t.alive || hitPlayer.has(t.id)) continue
       const hitInfo = isPointInPlayerBeamHitbox(t, px, py, headR)
       if (!hitInfo) continue
+      // 仅对末端局部窗口（≤64px）及采样点到目标中心做精确遮挡复核，避免对 13000px 已验证长段从头遍历
+      const localDist = Math.min(distFromSegStart, 64)
+      const checkStartX = wrapX(px - dirX * localDist)
+      const checkStartY = wrapY(py - dirY * localDist)
       if (lineBlockedByTerrain(
         ctx.terrain, obstacles, obstacleBroadBuckets,
-        segStartX, segStartY, t.pos.x, t.pos.y - 12,
-        dirX * distFromSegStart, dirY * distFromSegStart,
+        checkStartX, checkStartY, t.pos.x, t.pos.y - 12,
+        dirX * localDist, dirY * localDist,
+      )) continue
+      if (lineBlockedByTerrain(
+        ctx.terrain, obstacles, obstacleBroadBuckets,
+        px, py, t.pos.x, t.pos.y - 12,
       )) continue
       hitPlayer.add(t.id)
       const mult = hitInfo.isHead ? wep.headshotMult : 1
@@ -384,15 +362,16 @@ export function updateContinuousBeam(
     const rawNx = x + dirX * step
     const rawNy = y + dirY * step
     const crossedSeam = rawNx < 0 || rawNx >= WORLD_W || rawNy < 0 || rawNy >= WORLD_H
-    const nx = wrapX(rawNx)
-    const ny = wrapY(rawNy)
+    const nx = crossedSeam ? wrapX(rawNx) : rawNx
+    const ny = crossedSeam ? wrapY(rawNy) : rawNy
+    const bIdx = (nx * INV_BUCKET_SIZE) | 0
 
     // 1. 穿过地图缝隙时：方向不变，反射次数 -1；反射次数归零后不再穿透地图缝隙
     if (crossedSeam) {
-      const gxAfter = (nx / 20) | 0
-      const gyAfter = (ny / 20) | 0
+      const gxAfter = (nx * 0.05) | 0
+      const gyAfter = (ny * 0.05) | 0
       const nextIsTerrain = tGrid[gyAfter * GRID_W + gxAfter] !== 0
-      const nextObsList = obstacleBroadBuckets[bucketIdx(nx)]
+      const nextObsList = obstacleBroadBuckets[bIdx]
       const nextOb = (!nextIsTerrain && nextObsList && nextObsList.length > 0)
         ? obstacleAtBucket(nextObsList, nx, ny, 0)
         : null
@@ -414,10 +393,13 @@ export function updateContinuousBeam(
         segStartX = nx
         segStartY = ny
         travelled = 0
-        checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, 0)
+        if (!exitedSelf && !isPointInPlayerBeamHitbox(p, nx, ny, headR)) exitedSelf = true
+        const pListSeam = playerBroadBuckets[bIdx]
+        if (pListSeam && pListSeam.length > 0) {
+          checkPlayersAt(nx, ny, pListSeam, segStartX, segStartY, dirX, dirY, 0)
+        }
         continue
       }
-      // 跨缝处紧贴实心地形或障碍物：若反射次数已归零，直接在缝前结段终止，不再穿透地图缝隙
       if (bouncesLeft <= 0) {
         if (travelled > 0) {
           pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled)
@@ -427,8 +409,8 @@ export function updateContinuousBeam(
     }
 
     // 2. 碰到原始实心地形障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零后不再反射
-    const gx = (nx / 20) | 0
-    const gy = (ny / 20) | 0
+    const gx = (nx * 0.05) | 0
+    const gy = (ny * 0.05) | 0
     if (tGrid[gy * GRID_W + gx] !== 0) {
       if (travelled > 0) {
         const cut = pushBeamSegment(segStartX, segStartY, x, y, dirX * travelled, dirY * travelled)
@@ -439,8 +421,8 @@ export function updateContinuousBeam(
       }
       if (bouncesLeft <= 0) break
       bouncesLeft--
-      const prevGx = (x / 20) | 0
-      const prevGy = (y / 20) | 0
+      const prevGx = (x * 0.05) | 0
+      const prevGy = (y * 0.05) | 0
       const hitX = tGrid[prevGy * GRID_W + gx] !== 0
       const hitY = tGrid[gy * GRID_W + prevGx] !== 0
       if (hitX) dx = -dx
@@ -456,12 +438,10 @@ export function updateContinuousBeam(
     }
 
     // 3. 碰到可破坏障碍物：改变方向（光线沿着表面反射），反射次数 -1；反射次数归零后不再反射
-    const bIdx = bucketIdx(nx)
     const obsList = obstacleBroadBuckets[bIdx]
     if (obsList && obsList.length > 0) {
       const ob = obstacleAtBucket(obsList, nx, ny, 0)
       if (ob) {
-        // 先基于未销毁的障碍物几何计算碰撞面法线，再结算伤害（防止当帧打爆后 obstacleAtBucket 返回 null）
         const hitX = obstacleAtBucket([ob], nx, y, 0) !== null
         const hitY = obstacleAtBucket([ob], x, ny, 0) !== null
         if (!hitObstacle.has(ob.id)) {
@@ -489,11 +469,17 @@ export function updateContinuousBeam(
       }
     }
 
-    // 4. 自由空间步进与玩家命中判定
+    // 4. 自由空间步进与玩家命中判定（仅在桶内有玩家时才进入判定函数）
     x = nx
     y = ny
     travelled += step
-    checkPlayersAt(nx, ny, segStartX, segStartY, dirX, dirY, travelled)
+    if (!exitedSelf && !isPointInPlayerBeamHitbox(p, nx, ny, headR)) {
+      exitedSelf = true
+    }
+    const pList = playerBroadBuckets[bIdx]
+    if (pList && pList.length > 0) {
+      checkPlayersAt(nx, ny, pList, segStartX, segStartY, dirX, dirY, travelled)
+    }
   }
 
   ctx.events.push({
@@ -552,7 +538,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
       ctx.projectiles[writeIdx++] = pr
       if (pr.isGravityOrb && pr.life > 0) ctx.activeGravityOrbs.push(pr)
     } else {
-      // 事件化：寿命耗尽/0 伤害清理 → 通知客户端移除
       ctx.events.push({ kind: 'projectile_destroy', projectileId: pr.id })
     }
   }
@@ -616,8 +601,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
     const allowFF = !!wep?.friendlyFire
     const allowSelf = !!wep?.selfDamage
     const headHitR = ctx.config.headRadius + pr.r
-    // 命中框半宽：贴近视觉躯干（物理半宽 10、视觉约 11），不再用 13+r 那种比角色看起来更宽的值。
-    // 弹丸半径按 60% 计入，避免小弹丸判定过宽。
     const bodyHalfX = BODY_HALF_W + pr.r * 0.6
 
     for (let step = 0; step < steps; step++) {
@@ -634,7 +617,7 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
 
       const bIdx = (nx * INV_BUCKET_SIZE) | 0
 
-      // A. 玩家命中判定（护盾开启时碰撞箱稍微扩大 SHIELD_HITBOX_PAD）
+      // A. 玩家命中判定
       let hit = false
       const pList = playerBroadBuckets[bIdx]
       if (pList && pList.length > 0) {
@@ -654,7 +637,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
           const dxBody = Math.abs(dxHead)
           if (dxBody > Math.max(tHeadHitR, tBodyHalfX)) continue
           const dyHead = wrapDeltaY(t.pos.y - 24, ny)
-          // 爆头仅在未开护盾（或命中真实头部圆）时按头部算；护盾外扩圈命中算躯干/护盾受击
           const isRealHead = (dxHead * dxHead + dyHead * dyHead) <= (headHitR * headHitR)
           if (isRealHead) {
             pr.hitTargets.push(t.id)
@@ -673,8 +655,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
           }
           const dyBody = wrapDeltaY(t.pos.y, ny)
           const hitShieldHead = shieldPad > 0 && (dxHead * dxHead + dyHead * dyHead <= tHeadHitRSq)
-          // 身体命中框：横向贴近视觉躯干（BODY_HALF_W + 弹丸半径×0.6），纵向收窄到躯干视觉范围。
-          // 旧实现 13+r 横向过宽（实测能打到视觉外 19px），且下沿 18 低于脚底 → "起飞后打脚也算命中"。
           const hitBodyBox = dxBody <= tBodyHalfX && dyBody >= (-12 - shieldPad) && dyBody <= (BODY_BOTTOM - 1 + shieldPad)
           if (hitShieldHead || hitBodyBox) {
             pr.hitTargets.push(t.id)
@@ -683,16 +663,12 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
               hit = true
             } else {
               let dmg = Math.round(pr.damage)
-              // 统一擦边分级（所有子弹类武器共用同一套规则）：
-              //   正中穿心 = damage，越靠碰撞箱边缘越低，最低 grazeDamageMin（两者之间线性插值）。
-              //   狙击：正中 137、擦边 99，中间平滑过渡。
               if (wep?.grazeDamageMin !== undefined) {
                 const q = projectileBodyHitQuality(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)
                 dmg = Math.round(wep.grazeDamageMin + (pr.damage - wep.grazeDamageMin) * q)
               } else if (wep?.edgeDamage !== undefined && isProjectileBodyEdgeHit(dxHead, dyBody, pr.vel.x, pr.vel.y, bodyHalfX)) {
                 dmg = Math.min(dmg, wep.edgeDamage)
               }
-              // 远距离额外衰减（狙击 >900px 降到 farDamage），独立于擦边分级
               if (wep?.farRange !== undefined) {
                 const owner = ctx.playerById.get(pr.owner) ?? ctx.players.find(x => x.id === pr.owner)
                 if (owner) {
@@ -700,8 +676,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
                   if (dShot > wep.farRange) dmg = Math.min(dmg, wep.farDamage ?? dmg)
                 }
               }
-              // 擦边分级只决定「基于命中质量的伤害」，随后照常施加距离衰减
-              // （距离衰减必须能继续拉开近/远差距，不能被子弹的擦边下限压平）
               dmg = Math.round(dmg * calcProjectileFalloff(ctx, pr, t.pos.x, t.pos.y - 12))
               ctx.damagePlayer(t, dmg, pr, false, false)
               t.vel.x += pr.vel.x * 0.09
@@ -731,8 +705,8 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
       }
 
       // C. 原始地形
-      const gx = (nx / 20) | 0
-      const gy = (ny / 20) | 0
+      const gx = (nx * 0.05) | 0
+      const gy = (ny * 0.05) | 0
       if (tGrid[gy * GRID_W + gx] !== 0) {
         if (pr.passWalls) continue
         if (pr.explosive) {
@@ -749,7 +723,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
           if (!hitX && !hitY) { pr.vel.x = -pr.vel.x; pr.vel.y = -pr.vel.y }
           pr.bounces--
           pr.hitTargets = [pr.owner]
-          // 事件化：反弹（客户端本地推算据此校正）
           ctx.events.push({
             kind: 'projectile_bounce', projectileId: pr.id, playerId: pr.owner,
             weaponId: pr.weaponId, x: pr.pos.x, y: pr.pos.y,
@@ -763,7 +736,6 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
     }
 
     if (dead) {
-      // 事件化：销毁（客户端移除本地推算弹丸）
       ctx.events.push({ kind: 'projectile_destroy', projectileId: pr.id })
       pr.life = 0
     }

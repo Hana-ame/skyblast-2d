@@ -7,13 +7,12 @@
 //   3. 固定路线巡逻（Fixed-Route Patrol）：
 //      - AI 移动完全遵循预设的三条固定巡逻路线（主地面路线 `main_deck`、高空拱桥路线 `sky_arch`、地下通道路线 `underground`），在路标点之间往返循环巡逻，绝不因为隔墙追踪敌人坐标而卡死在墙角或地板下；
 //      - 巡逻过程中实时检测直接视线（hasLOS）：有直接视线时瞄准敌人开火，无直接视线时枪口朝向当前巡逻行进方向继续按固定路线推进。
-import { botNames, bots, world, localPlayer, mode, featureFlags } from '../app/context.ts'
+import { botNames, bots, world, localPlayer, mode } from '../app/context.ts'
 import { updateTeamCountUI, updateSpawnPointButtonsUI } from '../app/hud.ts'
-import { WEAPONS, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
+import { WEAPONS, isSecondaryUnlocked } from '../../core/weapons.ts'
 import { MAIN_DECK_TOP } from '../../core/map.ts'
 import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { findObstacleAt } from '../../core/sim/spatial.ts'
-import { isCapturePointSelectable } from '../../core/sim/interactables.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput, PlayerState, TeamId } from '../../core/types.ts'
 
@@ -122,6 +121,9 @@ export interface BotMemory {
   sniperReleaseTick: boolean
   initialized: boolean
   manualRouteLocked?: boolean
+  coverCacheTick?: number
+  coverCacheTargetId?: number
+  coverCache?: { x: number; y: number; kind: 'obstacle' | 'terrain'; coverX: number } | null
 }
 
 const botMemoryMap = new Map<number, BotMemory>()
@@ -175,7 +177,6 @@ function alignPatrolRouteOnSpawn(bot: PlayerState, mem: BotMemory): void {
     bx <= 6600 ? 1 : -1
 
   if (!mem.manualRouteLocked) {
-    // 最短路径进攻敌方原始出生点：默认走主地面直达走廊 (main_deck)
     mem.routeId = 'main_deck'
   } else if (by < MAIN_DECK_TOP - 220) {
     mem.routeId = 'sky_arch'
@@ -340,19 +341,18 @@ function isMuzzleBlockedNear(bot: PlayerState, aim: number, nearDist = 72): bool
   return false
 }
 
-/** 目标选择：优先选择巡逻视野内有直接视线（LOS）的最近敌人 */
+/** 目标选择：优先选择巡逻视野内有直接视线（LOS）的最近敌人（直接遍历 world.players 避免每帧分配候选数组） */
 export function pickBotTarget(bot: PlayerState): PlayerState | null {
-  const candidates = [localPlayer, ...bots].filter(e =>
-    e !== bot && e.deployed && e.alive && e.respawnTimer <= 0 && (bot.team === 'ffa' || e.team !== bot.team),
-  )
-  if (candidates.length === 0) return null
-
   const bx = bot.pos.x
   const by = bot.pos.y - 12
   let bestTarget: PlayerState | null = null
   let bestScore = Infinity
+  const players = world.players
 
-  for (const e of candidates) {
+  for (let i = 0; i < players.length; i++) {
+    const e = players[i]
+    if (e === bot || !e.deployed || !e.alive || e.respawnTimer > 0) continue
+    if (bot.team !== 'ffa' && e.team === bot.team) continue
     const ex = e.pos.x
     const ey = e.pos.y - 12
     const d = directDist(bx, by, ex, ey)
@@ -390,14 +390,13 @@ export function findNearestCoverPosition(
   let best: { x: number; y: number; kind: 'obstacle' | 'terrain'; coverX: number } | null = null
   let bestDist = 380
 
-  // 1) 扫描附近可破坏掩体 (world.obstacles)
-  for (const ob of world.obstacles) {
+  for (let i = 0; i < world.obstacles.length; i++) {
+    const ob = world.obstacles[i]
     if (ob.hp <= 0) continue
     if (Math.abs((ob.y + ob.h) - (by + 16)) > 95) continue
     const cx = ob.x + ob.w / 2
     const d = Math.abs(cx - bx)
     if (d > bestDist) continue
-    // 背向敌人的一侧作为掩体后方站位
     const shelterX = ex >= cx ? ob.x - 22 : ob.x + ob.w + 22
     if (!world.bodyOverlapsAt(shelterX, by) && world.terrain.isSolidAt(shelterX, by + 20)) {
       bestDist = d
@@ -405,7 +404,6 @@ export function findNearestCoverPosition(
     }
   }
 
-  // 2) 扫描附近实心矮墙/掩体柱（预过滤缓存静态掩体块，避免每帧每个 AI 重复遍历全部 77 个地形图元）
   if (!cachedTerrainCoverRects || cachedTerrainRectsLen !== world.terrain.rects.length) {
     cachedTerrainRectsLen = world.terrain.rects.length
     cachedTerrainCoverRects = world.terrain.rects.filter(
@@ -474,7 +472,6 @@ function computePatrolNavigation(
   let jetpack = false
   let dive = false
 
-  // 检测是否刚重生/传送（大幅位移），若是则重新对齐最近巡逻路标点
   const stepDist = Math.hypot(bx - mem.lastX, by - mem.lastY)
   mem.lastX = bx
   mem.lastY = by
@@ -485,7 +482,6 @@ function computePatrolNavigation(
   const maxFuel = getBotMaxFuel(bot)
   const supported = isSupportedByFloor(bot)
 
-  // ── 0. 地面燃料回充控制 ──
   if (supported) {
     if (bot.fuel < maxFuel * 0.28) mem.rechargingFuel = true
     else if (bot.fuel >= maxFuel * 0.88) mem.rechargingFuel = false
@@ -497,7 +493,6 @@ function computePatrolNavigation(
   mem.waypointIdx = Math.max(0, Math.min(route.length - 1, mem.waypointIdx))
   let wp = route[mem.waypointIdx]
 
-  // ── 1. 到达当前巡逻路标点判定 → 立即推进至下一路标点 ──
   const tolX = wp.tolX ?? (mem.routeId === 'sky_arch' ? 80 : 54)
   const tolY = wp.tolY ?? (mem.routeId === 'sky_arch' ? 28 : 44)
   const requireGround = mem.routeId === 'sky_arch'
@@ -506,7 +501,6 @@ function computePatrolNavigation(
     wp = route[mem.waypointIdx]
   }
 
-  // ── 2. 反卡死保底：若在同一路标点长时间受阻，微调跳脱或重对齐最近路标 ──
   if (stepDist < 1.1 && !mem.rechargingFuel) {
     mem.stuckTicks++
     if (mem.stuckTicks > 70) {
@@ -528,10 +522,8 @@ function computePatrolNavigation(
     return { move, jump, jetpack, dive }
   }
 
-  // ── 3. 基地出生台出发引导（左基地 bx < 900 / 右基地 bx > 12300） ──
   if (bx < 900 && by <= MAIN_DECK_TOP + 40) {
     if (mem.routeId === 'underground') {
-      // 地下巡逻路线机器人：直接从左基地外侧竖井 (x=590) 下潜进入底层地下通道
       if (bx < 565) {
         move = 1
       } else if (bx > 625) {
@@ -555,7 +547,6 @@ function computePatrolNavigation(
 
   if (bx > 12300 && by <= MAIN_DECK_TOP + 40) {
     if (mem.routeId === 'underground') {
-      // 地下巡逻路线机器人：直接从右基地外侧竖井 (x=12610) 下潜进入底层地下通道
       if (bx > 12635) {
         move = -1
       } else if (bx < 12575) {
@@ -577,10 +568,7 @@ function computePatrolNavigation(
     return { move, jump, jetpack, dive }
   }
 
-  // ── 4. 分路线精确巡逻控制 ──
-  // (A) 地下通道固定巡逻路线 (`underground`)
   if (mem.routeId === 'underground') {
-    // 若意外在地表，前往最近的中央竖井口 (6090 / 6600 / 7110) 下潜入地
     if (by <= MAIN_DECK_TOP + 40) {
       const shafts = [6090, 6600, 7110]
       const targetShaft = shafts.reduce((a, b) => (Math.abs(b - bx) < Math.abs(a - bx) ? b : a), 6600)
@@ -594,47 +582,40 @@ function computePatrolNavigation(
       return { move, jump, jetpack, dive }
     }
 
-    // 目标路标在更高层（如从底层 y=4144 升向二层据点 A/E y=3864）
     if (wp.y < by - 80) {
       const shaftX = wp.ascendX ?? (bx < 4800 ? 3590 : bx < 6600 ? 6090 : bx < 8400 ? 7110 : 9610)
       const distToShaft = Math.abs(bx - shaftX)
-      // 若还在底层且未到达竖井口，先沿底层水平走到竖井中心
       if (by > wp.y + 40 && distToShaft > 36) {
         move = shaftX > bx ? 1 : -1
         return { move, jump: false, jetpack: false, dive: false }
       }
-      // 在竖井底部起跳前先确保燃料充足
       if (supported && by > wp.y + 40 && bot.fuel < maxFuel * 0.65) {
         mem.rechargingFuel = true
         return { move: 0, jump: false, jetpack: false, dive: false }
       }
       if (bot.onGround) jump = true
       jetpack = true
-      // 关键物理几何：只有当高度升过二层地板顶面（by <= wp.y - 6，脚底高于地板顶面）后，才横向迈上二层平台！
       if (by <= wp.y - 6) {
         const goalSpawn = !mem.manualRouteLocked ? getEnemyOriginalBaseSpawn(bot) : null
-  const targetX = goalSpawn && ((mem.patrolDir > 0 && bx >= wp.x - 48) || (mem.patrolDir < 0 && bx <= wp.x + 48)) ? goalSpawn.x : wp.x
-  move = Math.abs(targetX - bx) <= 18 ? 0 : (targetX >= bx ? 1 : -1)
+        const targetX = goalSpawn && ((mem.patrolDir > 0 && bx >= wp.x - 48) || (mem.patrolDir < 0 && bx <= wp.x + 48)) ? goalSpawn.x : wp.x
+        move = Math.abs(targetX - bx) <= 18 ? 0 : (targetX >= bx ? 1 : -1)
       } else {
         move = distToShaft > 12 ? (shaftX > bx ? 1 : -1) : 0
       }
       return { move, jump, jetpack, dive }
     }
 
-    // 若刚升到目标层高度（|by - wp.y| <= 80），但身体还在竖井开口上方，继续喷气托住并横移踏上实心地板
     if (wp.ascendX !== undefined && Math.abs(bx - wp.ascendX) < 105 && !supported) {
       move = wp.x >= bx ? 1 : -1
       if (by >= wp.y - 8) jetpack = true
       return { move, jump, jetpack, dive }
     }
 
-    // 目标路标在更低层（如从二层 y=3864 下到底层 y=4144）
     if (wp.y > by + 80) {
       move = wp.x >= bx ? 1 : -1
       return { move, jump: false, jetpack: false, dive: true }
     }
 
-    // 同层水平巡逻推进
     move = wp.x >= bx ? 1 : -1
     if (world.terrain.isSolidAt(bx + move * 28, by - 10)) {
       if (bot.onGround) jump = true
@@ -642,9 +623,7 @@ function computePatrolNavigation(
     return { move, jump, jetpack, dive }
   }
 
-  // (B) 高空拱桥固定巡逻路线 (`sky_arch`)
   if (mem.routeId === 'sky_arch') {
-    // 若意外掉入地下，先从中央竖井升回地面
     if (by > MAIN_DECK_TOP + 80) {
       const exitShaft = bx < 6350 ? 6090 : bx > 6850 ? 7110 : 6600
       move = Math.abs(bx - exitShaft) > 28 ? (exitShaft > bx ? 1 : -1) : 0
@@ -655,8 +634,6 @@ function computePatrolNavigation(
       return { move, jump, jetpack, dive }
     }
 
-    // 若从高空空岛不慎坠落（站在地面/更低方块上且当前高度比目标路标低超过 340px），
-    // 对齐至当前所在位置并朝巡逻方向指向下一块空岛
     if (supported && by - wp.y > 340) {
       const nearIdx = findNearestWaypointIndex(route, bx, by)
       mem.waypointIdx = Math.max(0, Math.min(route.length - 1, nearIdx + mem.patrolDir))
@@ -666,9 +643,6 @@ function computePatrolNavigation(
     const dx = wp.x - bx
     const dy = wp.y - by
 
-    // 站在当前空岛或地面入口上准备跳往下一座空岛时：
-    // 先在当前方块顶面原地回满燃料（上山需 >=0.92*maxFuel，下山跨 420px 间隙需 >=0.60*maxFuel），
-    // 使用 isSupportedByFloor 防止落地微距沉降帧误判为空中而提前起跳！
     if (supported) {
       const neededRatio = dy < -10 ? 0.92 : Math.abs(dx) > 150 ? 0.60 : 0.25
       if (bot.fuel < maxFuel * neededRatio) {
@@ -677,7 +651,6 @@ function computePatrolNavigation(
       }
     }
 
-    // 飞往下一座更高空岛（dy < -16）或正在空中攀爬向目标空岛：
     if (dy < -16 || (!supported && Math.abs(dx) > 65 && by > wp.y - 12)) {
       if (bot.onGround) jump = true
       if (hasOpenShaftAbove(bx, by)) jetpack = true
@@ -696,21 +669,17 @@ function computePatrolNavigation(
       return { move, jump, jetpack, dive }
     }
 
-    // 目标空岛低于或平齐当前高度（下山跳往下一座空岛）：
     move = dx >= 0 ? 1 : -1
     const steppingOffEdge = supported && !world.terrain.isSolidAt(bx + move * 36, by + 24)
     if (steppingOffEdge) {
       if (bot.onGround) jump = true
       jetpack = true
     } else if (!supported && by > wp.y - 14 && Math.abs(dx) > 55) {
-      // 空中横向飞越两座空岛间隙（间距 420px）时保持喷气滑翔，确保稳稳落在下一座空岛顶面
       jetpack = true
     }
     return { move, jump, jetpack, dive }
   }
 
-  // (C) 主地面固定巡逻路线 (`main_deck`)
-  // 若意外掉入地下，先沿竖井飞回主地面
   if (by > MAIN_DECK_TOP + 80) {
     const exitShaft = bx < 6350 ? 6090 : bx > 6850 ? 7110 : 6600
     move = Math.abs(bx - exitShaft) > 28 ? (exitShaft > bx ? 1 : -1) : 0
@@ -723,14 +692,12 @@ function computePatrolNavigation(
 
   move = wp.x >= bx ? 1 : -1
 
-  // 地表 6 处凹陷坑跃出（3290 < by <= 3360）
   if (by > MAIN_DECK_TOP + 8 && by <= MAIN_DECK_TOP + 80) {
     if (bot.onGround) jump = true
     if (!mem.rechargingFuel) jetpack = true
     return { move, jump, jetpack, dive }
   }
 
-  // 飞越中央三道竖井口（x=6000..6180, 6460..6740, 7020..7200）及脚下空隙
   const nearCenterShaftGap =
     (bx > 5930 && bx < 6220) ||
     (bx > 6400 && bx < 6790) ||
@@ -741,7 +708,6 @@ function computePatrolNavigation(
     if (!mem.rechargingFuel) jetpack = true
   }
 
-  // 前方矮挡板或可破坏掩体翻越
   const wallAhead = world.terrain.isSolidAt(bx + move * 32, by - 10)
   const obsAhead = findObstacleAt(world.obstacles, world.obstacleBroadBuckets, bx + move * 34, by - 12) !== null
   if (wallAhead || obsAhead) {
@@ -759,14 +725,12 @@ export function botInput(bot: PlayerState): WorldInput {
   const mem = getBotMemory(bot)
   updateBotSelectedSpawn(bot, mem)
 
-  // 1. 严格按固定巡逻路线计算移动指令（绝不因隔墙追踪敌人而偏离巡逻路线）
   const nav = computePatrolNavigation(bot, mem)
   w.move = nav.move
   w.jump = nav.jump
   w.jetpack = nav.jetpack
   w.dive = nav.dive
 
-  // 2. 巡逻途中扫描直接视线（LOS）内的敌人进行射击与技能释放
   const target = pickBotTarget(bot)
   const wep = WEAPONS[bot.weaponIndex] ?? WEAPONS[1]
 
@@ -785,7 +749,6 @@ export function botInput(bot: PlayerState): WorldInput {
   const dist = target ? Math.hypot(rawDx, rawDy) : 9999
   const hasLOS = !!target && dist < 1650 && hasLineOfSight(bx, by, tx, ty)
 
-  // ── 瞄准朝向：有直接视线时精准预判瞄准敌人；无视线时朝当前巡逻方向看 ──
   if (hasLOS && target) {
     const projSpeed = Math.max(600, wep.speed || 1200)
     const travelTime = Math.min(0.45, dist / projSpeed)
@@ -805,7 +768,6 @@ export function botInput(bot: PlayerState): WorldInput {
     w.reload = true
   }
 
-  // ── 严格视线开火控制 ──
   const maxEffectiveRange = wep.id === 0 ? 620 : wep.id === 6 ? 560 : wep.id === 8 ? 780 : 1350
   const minSafeRange = wep.explosive ? 130 : 0
 
@@ -827,9 +789,14 @@ export function botInput(bot: PlayerState): WorldInput {
     mem.sniperReleaseTick = false
   }
 
-  // ── 交战自动找掩体逻辑：当发现敌人且正在换弹、开火冷却、残血或附近有掩体时，自动移动至掩体背弹侧 ──
   if (!mem.manualRouteLocked && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
-    const cover = findNearestCoverPosition(bot, target)
+    let cover = mem.coverCache ?? null
+    if (mem.coverCacheTick === undefined || world.tick - mem.coverCacheTick >= 6 || mem.coverCacheTargetId !== target.id) {
+      cover = findNearestCoverPosition(bot, target)
+      mem.coverCacheTick = world.tick
+      mem.coverCacheTargetId = target.id
+      mem.coverCache = cover
+    }
     const needCoverHide = bot.reloading || bot.hp < 75 || bot.fireCooldown > 0.16 || curAmmo <= 0
     if (cover && (needCoverHide || Math.abs(cover.x - bx) < 220)) {
       const dxCover = cover.x - bx
@@ -843,7 +810,6 @@ export function botInput(bot: PlayerState): WorldInput {
     }
   }
 
-  // ── 副手技能智能释放（连死后不自动换副手；若因杀人失效则统一退回手榴弹） ──
   const streak = bot.deathStreak ?? 0
   if (!isSecondaryUnlocked(bot.secondary, streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
     bot.secondary = 'frag'

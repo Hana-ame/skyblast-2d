@@ -21,7 +21,7 @@ export interface FeatureFlags {
   lagCompensation: boolean
   /** AI 战术协同占点与智能回防（优先增援掉进度的本队旗帜、守点自动开盾/立掩体） */
   smartBotTactics: boolean
-  /** WebAudio 零依赖过程式合成音效（射击、爆头、击杀、占点读条滴答、夺旗号角、破盾、爆炸） */
+  /** WebAudio 零依赖过程式合成音效（射击、爆头、击杀、破盾、爆炸，不含占点音效） */
   proceduralAudio: boolean
 }
 
@@ -40,7 +40,7 @@ export const FEATURE_FLAG_META: { key: keyof FeatureFlags; icon: string; label: 
   { key: 'adaptiveNetAoi',  icon: '⚡', label: '动态降频与AOI省流', desc: '联机按人数动态调节快照频率并启用视野裁剪与弹丸事件化同步' },
   { key: 'lagCompensation', icon: '🎯', label: '服务端延迟补偿', desc: '服务端维护500ms历史轨迹，按客机RTT回溯命中判定消除高延迟提前量' },
   { key: 'smartBotTactics', icon: '🤖', label: 'AI协同守点智能', desc: 'AI优先回防掉进度的本队旗帜并在守点交火时自动开启护盾/掩体' },
-  { key: 'proceduralAudio', icon: '🔊', label: 'WebAudio战术音效', desc: '零外部音频依赖，过程式合成枪声、爆头、占点滴答、夺旗与爆炸音效' },
+  { key: 'proceduralAudio', icon: '🔊', label: 'WebAudio战术音效', desc: '零外部音频依赖，过程式合成射击、爆头、击杀、护盾破碎与爆炸音效' },
 ]
 
 export const featureFlags: FeatureFlags = { ...DEFAULT_FEATURE_FLAGS }
@@ -173,6 +173,7 @@ export const touchState = {
   aimActive: false, aimId: -1, aimX: 0, aimY: 0,
   lastAimAngle: 0,
   wasGroundedBeforeAscend: false,
+  aimUsed: false,
 }
 export const inputQueue: {
   interact: boolean
@@ -182,7 +183,7 @@ export const inputQueue: {
 
 // ── 客户端特效（纯表现层） ──
 export const effects = new Effects()
-export const beams: { segments: { x1: number; y1: number; x2: number; y2: number }[]; color: string; life: number; maxLife: number }[] = []
+export const beams: { playerId?: number; segments: { x1: number; y1: number; x2: number; y2: number; dx?: number; dy?: number }[]; color: string; life: number; maxLife: number }[] = []
 
 // ── 世界锚定背景 ──
 const starRng = (() => {

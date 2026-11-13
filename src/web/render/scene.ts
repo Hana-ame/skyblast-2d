@@ -17,9 +17,37 @@ import {
 const WRAP_OFFSETS_X = [-WORLD_W, 0, WORLD_W] as const
 const WRAP_OFFSETS_Y = [-WORLD_H, 0, WORLD_H] as const
 const sharedPt = { x: 0, y: 0 }
+const sharedBeamPt = { x: 0, y: 0 }
 let cachedSkyGrad: CanvasGradient | null = null
 let cachedSkyGradH = 0
 let cachedSkyDepthQuant = -1
+const cachedWorldGlowGrads = new Map<string, CanvasGradient>()
+
+let curHalfW = 960
+let curHalfH = 540
+
+function sx(wx: number): number {
+  return wrapDeltaX(camera.x, wx)
+}
+function sy(wy: number): number {
+  return wrapDeltaY(camera.y, wy)
+}
+function inView(dx: number, dy: number, pad = 0): boolean {
+  return dx > -curHalfW - pad && dx < curHalfW + pad && dy > -curHalfH - pad && dy < curHalfH + pad
+}
+function inViewRect(dx: number, dy: number, padX: number, padY: number): boolean {
+  return dx > -curHalfW - padX && dx < curHalfW + padX && dy > -curHalfH - padY && dy < curHalfH + padY
+}
+function beamScreenProject(wx: number, wy: number): { x: number; y: number } {
+  sharedBeamPt.x = wrapDeltaX(camera.x, wx)
+  sharedBeamPt.y = wrapDeltaY(camera.y, wy)
+  return sharedBeamPt
+}
+function effectsScreenProject(wx: number, wy: number): { x: number; y: number } {
+  sharedPt.x = wrapDeltaX(camera.x, wx)
+  sharedPt.y = wrapDeltaY(camera.y, wy)
+  return sharedPt
+}
 
 export function renderScene(): void {
   if (!ctx || !canvas) return
@@ -28,20 +56,6 @@ export function renderScene(): void {
   // 移动端地址栏收放、桌面动态工具栏、页面缩放都会让 innerHeight 抖动 1-2px，
   // 每抖动一次就重建 canvas 后备缓冲 + GPU 纹理（成本随画布面积线性增长，真机十几~几十 ms），
   // 在游戏里表现为"隔一段时间明显卡一下"。这段每帧检查正是该周期性卡顿的来源。
-  const wep = WEAPONS[localPlayer.weaponIndex] ?? WEAPONS[0]
-  const mounted = world.mortars.find(m => m.operatorId === localPlayer.id)
-  const targetFov = localPlayer.mountedTowerId
-    ? 2.0   // 瞭望塔：视野 200%，下塔即失效
-    : (mounted ? 1.0 : (wep.fovMult || 1.0))
-  camera.fovFactor += (targetFov - camera.fovFactor) * 0.12
-
-  // 相机跟随（双轴环形最短位移）：**始终以玩家为屏幕中心**，不随瞄准方向偏移
-  if (localPlayer.deployed) {
-    const tx = localPlayer.pos.x
-    const ty = localPlayer.pos.y - 12
-    camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * 0.2)
-    camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * 0.2)
-  }
 
   let shakeX = 0, shakeY = 0
   if (screenFx.shake > 0.2) {
@@ -53,6 +67,8 @@ export function renderScene(): void {
   const zoom = 1 / camera.fovFactor
   const halfW = (canvas.width * camera.fovFactor) / 2 + 160
   const halfH = (canvas.height * camera.fovFactor) / 2 + 160
+  curHalfW = halfW
+  curHalfH = halfH
 
   // ── 背景：与地形同坐标系的世界锚定层（不产生相对滑动） ──
   ctx.save()
@@ -75,37 +91,41 @@ export function renderScene(): void {
   ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY)
   ctx.scale(zoom, zoom)
 
-  const sx = (wx: number): number => wrapDeltaX(camera.x, wx)
-  const sy = (wy: number): number => wrapDeltaY(camera.y, wy)
-  const inView = (dx: number, dy: number, pad = 0): boolean =>
-    dx > -halfW - pad && dx < halfW + pad && dy > -halfH - pad && dy < halfH + pad
-  const inViewRect = (dx: number, dy: number, padX: number, padY: number): boolean =>
-    dx > -halfW - padX && dx < halfW + padX && dy > -halfH - padY && dy < halfH + padY
-
   // 世界锚定星空（随地形移动，无相对滑动）
-  for (const st of worldStars) {
+  ctx.fillStyle = '#dbeafe'
+  for (let i = 0; i < worldStars.length; i++) {
+    const st = worldStars[i]
     const px = sx(st.x)
     const py = sy(st.y)
     if (!inView(px, py)) continue
     ctx.globalAlpha = st.a * (0.6 + 0.4 * Math.sin(world.tick * 0.02 + st.x * 0.05))
-    ctx.fillStyle = '#dbeafe'
     ctx.beginPath(); ctx.arc(px, py, st.r, 0, Math.PI * 2); ctx.fill()
   }
   ctx.globalAlpha = 1
-  for (const gl of worldGlows) {
+  for (let i = 0; i < worldGlows.length; i++) {
+    const gl = worldGlows[i]
     const gx = sx(gl.x)
     const gy = sy(gl.y)
     if (!inView(gx, gy, gl.r)) continue
-    const grad = ctx.createRadialGradient(gx, gy, 10, gx, gy, gl.r)
-    grad.addColorStop(0, `rgba(${gl.c}, ${gl.a})`)
-    grad.addColorStop(1, `rgba(${gl.c}, 0)`)
+    const gKey = `${gl.c}:${gl.a}:${gl.r}`
+    let grad = cachedWorldGlowGrads.get(gKey)
+    if (!grad) {
+      grad = ctx.createRadialGradient(0, 0, 10, 0, 0, gl.r)
+      grad.addColorStop(0, `rgba(${gl.c}, ${gl.a})`)
+      grad.addColorStop(1, `rgba(${gl.c}, 0)`)
+      cachedWorldGlowGrads.set(gKey, grad)
+    }
+    ctx.save()
+    ctx.translate(gx, gy)
     ctx.fillStyle = grad
-    ctx.beginPath(); ctx.arc(gx, gy, gl.r, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(0, 0, gl.r, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
   }
 
   // 1. 地形图元（程序化贴图）
   syncTerrainPatterns(camera.x, camera.y)
-  for (const r of world.terrain.rects) {
+  for (let ri = 0; ri < world.terrain.rects.length; ri++) {
+    const r = world.terrain.rects[ri]
     if (r.kind.startsWith('deco_')) continue
     const cx0 = sx(r.x + r.w / 2)
     const cy0 = sy(r.y + r.h / 2)
@@ -128,7 +148,6 @@ export function renderScene(): void {
           ctx.fillStyle = 'rgba(2, 6, 23, 0.45)'
           ctx.fillRect(left, top + r.h - 3, r.w, 3)
         }
-        // 全图所有方块边缘高亮色严格保持一致 (#38bdf8)
         ctx.strokeStyle = '#38bdf8'
         ctx.lineWidth = 2
         ctx.strokeRect(left + 1, top + 1, r.w - 2, r.h - 2)
@@ -142,36 +161,35 @@ export function renderScene(): void {
     }
   }
 
-  // 1.2 左右基地出生点光环（FFA 出生点已拆到独立数组 FFA_SPAWN_POINTS，此处只画红蓝基地）
-  for (const sp of SPAWN_POINTS) {
-    if (sp.team === 'green' || sp.team === 'ffa') continue // 只画红蓝基地，隐藏绿/FFA 出生点标记
+  // 1.2 左右基地出生点光环
+  for (let i = 0; i < SPAWN_POINTS.length; i++) {
+    const sp = SPAWN_POINTS[i]
+    if (sp.team === 'green' || sp.team === 'ffa') continue
     const px = sx(sp.x)
     const py = sy(sp.y)
     if (!inView(px, py, 120)) continue
     ctx.save()
-    {
-      ctx.translate(px, py - 42)
-      // 对应设计图左蓝椭圆、右红椭圆基地传送门
-      const isLeft = sp.x < WORLD_W / 2
-      const fillCol = isLeft ? 'rgba(14, 165, 233, 0.32)' : 'rgba(244, 63, 94, 0.32)'
-      const strokeCol = isLeft ? '#0ea5e9' : '#f43f5e'
-      ctx.fillStyle = fillCol
-      ctx.strokeStyle = strokeCol
-      ctx.lineWidth = 3.5
-      ctx.beginPath()
-      ctx.ellipse(0, 0, 38, 56, 0, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.stroke()
-      ctx.font = 'bold 11px Inter, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillStyle = isLeft ? '#7dd3fc' : '#fda4af'
-      ctx.fillText(isLeft ? '🔵 左翼基地出生点' : '🔴 右翼基地出生点', 0, -66)
-    }
+    ctx.translate(px, py - 42)
+    const isLeft = sp.x < WORLD_W / 2
+    const fillCol = isLeft ? 'rgba(14, 165, 233, 0.32)' : 'rgba(244, 63, 94, 0.32)'
+    const strokeCol = isLeft ? '#0ea5e9' : '#f43f5e'
+    ctx.fillStyle = fillCol
+    ctx.strokeStyle = strokeCol
+    ctx.lineWidth = 3.5
+    ctx.beginPath()
+    ctx.ellipse(0, 0, 38, 56, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.font = 'bold 11px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = isLeft ? '#7dd3fc' : '#fda4af'
+    ctx.fillText(isLeft ? '🔵 左翼基地出生点' : '🔴 右翼基地出生点', 0, -66)
     ctx.restore()
   }
 
   // 1.5 弹射跳台
-  for (const pad of JUMP_PADS) {
+  for (let i = 0; i < JUMP_PADS.length; i++) {
+    const pad = JUMP_PADS[i]
     const px = sx(pad.x)
     const py = sy(pad.y)
     if (!inView(px, py, 60)) continue
@@ -179,15 +197,17 @@ export function renderScene(): void {
   }
 
   // 2. 可破坏障碍物
-  for (const ob of world.obstacles) {
+  for (let i = 0; i < world.obstacles.length; i++) {
+    const ob = world.obstacles[i]
     const ox = sx(ob.x + ob.w / 2)
     const oy = sy(ob.y + ob.h / 2)
     if (!inViewRect(ox, oy, ob.w * 0.5, ob.h * 0.5)) continue
     drawObstacleSprite(ctx, ob, ox, oy)
   }
 
-  // 3. 占领点（同时绘制与旗帜颜色严格一致的地面光圈与复活点信标）
-  for (const cp of world.capturePoints) {
+  // 3. 占领点
+  for (let i = 0; i < world.capturePoints.length; i++) {
+    const cp = world.capturePoints[i]
     const cx = sx(cp.x)
     const cy = sy(cp.y)
     if (!inView(cx, cy, 160)) continue
@@ -198,7 +218,6 @@ export function renderScene(): void {
       ctx.save()
       ctx.translate(cx, cy + 16)
       const pulse = 0.65 + 0.35 * Math.sin(world.tick * 0.1)
-      // 地面光圈填充与描边严格采用旗帜同一套调色板 (pal.glow / pal.color)
       ctx.fillStyle = pal.glow
       ctx.strokeStyle = pal.color
       ctx.lineWidth = isSelected ? 3.5 : 2.5
@@ -208,7 +227,6 @@ export function renderScene(): void {
       ctx.fill()
       ctx.stroke()
       if (isSelected) {
-        // 选中态叠加同色系内环高亮，不改变旗帜对应光圈色相
         ctx.strokeStyle = pal.light
         ctx.lineWidth = 1.6
         ctx.beginPath()
@@ -216,7 +234,6 @@ export function renderScene(): void {
         ctx.stroke()
       }
       if (featureFlags.captureHudRing && cp.progress > 0 && cp.progress < 100) {
-        // 地面占点进度外弧（随 cp.progress 0..100% 动态环绕地面光圈）
         const pctRad = (Math.min(100, Math.max(0, cp.progress)) / 100) * Math.PI * 2
         ctx.strokeStyle = pal.light
         ctx.lineWidth = 3.2
@@ -248,7 +265,8 @@ export function renderScene(): void {
   }
 
   // 4. 传送门
-  for (const wp of world.warpPortals) {
+  for (let i = 0; i < world.warpPortals.length; i++) {
+    const wp = world.warpPortals[i]
     const wx = sx(wp.x)
     const wy = sy(wp.y)
     if (!inView(wx, wy)) continue
@@ -256,7 +274,8 @@ export function renderScene(): void {
   }
 
   // 5. 瞭望塔
-  for (const tw of world.watchtowers) {
+  for (let i = 0; i < world.watchtowers.length; i++) {
+    const tw = world.watchtowers[i]
     const tx = sx(tw.x)
     const ty = sy(tw.y)
     if (!inView(tx, ty, 200)) continue
@@ -264,7 +283,8 @@ export function renderScene(): void {
   }
 
   // 6. 弹药点
-  for (const pack of world.ammoPacks) {
+  for (let i = 0; i < world.ammoPacks.length; i++) {
+    const pack = world.ammoPacks[i]
     const px = sx(pack.x)
     const py = sy(pack.y)
     if (!inView(px, py)) continue
@@ -272,7 +292,8 @@ export function renderScene(): void {
   }
 
   // 7. 补给箱
-  for (const crate of world.supplyCrates) {
+  for (let i = 0; i < world.supplyCrates.length; i++) {
+    const crate = world.supplyCrates[i]
     if (!crate.active) continue
     const cx = sx(crate.x)
     const cy = sy(crate.y)
@@ -281,7 +302,10 @@ export function renderScene(): void {
   }
 
   // 8. 迫击炮
-  for (const m of world.mortars) {
+  let mountedNow: typeof world.mortars[0] | undefined
+  for (let i = 0; i < world.mortars.length; i++) {
+    const m = world.mortars[i]
+    if (m.operatorId === localPlayer.id) mountedNow = m
     const mx = sx(m.x)
     const my = sy(m.y)
     if (!inView(mx, my)) continue
@@ -289,7 +313,8 @@ export function renderScene(): void {
   }
 
   // 9. 地雷
-  for (const m of world.landmines) {
+  for (let i = 0; i < world.landmines.length; i++) {
+    const m = world.landmines[i]
     if (m.respawnTimer > 0) continue
     const mx = sx(m.pos.x)
     const my = sy(m.pos.y)
@@ -297,13 +322,16 @@ export function renderScene(): void {
     drawMineSprite(ctx, m, mx, my, world.tick, world.config.mineTriggerRadius)
   }
 
-  // 10. 玩家 sprite + 头顶标签（含替身人偶幻影与换弹微缩环）
-  for (const p of world.players) {
+  // 10. 玩家 sprite + 头顶标签
+  for (let pi = 0; pi < world.players.length; pi++) {
+    const p = world.players[pi]
     if (p.respawnTimer > 0 || !p.deployed) continue
     const pWep = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
-    const pMounted = world.mortars.some(m => m.operatorId === p.id)
+    let pMounted = false
+    for (let mi = 0; mi < world.mortars.length; mi++) {
+      if (world.mortars[mi].operatorId === p.id) { pMounted = true; break }
+    }
 
-    // 替身人偶幻影
     if (p.doll) {
       const dx = sx(p.doll.pos.x)
       const dy = sy(p.doll.pos.y)
@@ -338,7 +366,6 @@ export function renderScene(): void {
     })
     drawPlayerTag(ctx, p, px, py, p.id === localPlayer.id)
 
-    // 玩家头顶精致换弹进度条
     if (p.reloading) {
       ctx.save()
       const barW = 42
@@ -369,7 +396,6 @@ export function renderScene(): void {
       ctx.restore()
     }
 
-    // Teleport 读条进度条 + 右键目标落点信标
     if ((p.teleportTimer ?? 0) > 0 && p.teleportTarget) {
       const castTotal = Math.max(0.1, world.config.teleportCastTime ?? 0.75)
       const pct = clamp(1 - (p.teleportTimer! / castTotal), 0, 1)
@@ -415,8 +441,7 @@ export function renderScene(): void {
     }
   }
 
-  // 10.5 迫击炮瞄准线 + 鼠标准星（含战术换弹环与蓄力环）
-  const mountedNow = world.mortars.find(m => m.operatorId === localPlayer.id)
+  // 10.5 迫击炮瞄准线 + 鼠标准星
   if (mountedNow) {
     const mx = sx(mountedNow.x)
     const my = sy(mountedNow.y)
@@ -494,7 +519,8 @@ export function renderScene(): void {
 
   // 11. 动态阴影
   if (!localPlayer.mountedTowerId) {
-    for (const sz of world.terrain.shadows) {
+    for (let si = 0; si < world.terrain.shadows.length; si++) {
+      const sz = world.terrain.shadows[si]
       const cx0 = sx(sz.x + sz.w / 2)
       const cy0 = sy(sz.y + sz.h / 2)
       const szHalfW = sz.w * 0.5
@@ -516,7 +542,8 @@ export function renderScene(): void {
   }
 
   // 11.5 装饰层
-  for (const r of world.terrain.rects) {
+  for (let ri = 0; ri < world.terrain.rects.length; ri++) {
+    const r = world.terrain.rects[ri]
     if (!r.kind.startsWith('deco_')) continue
     const cx0 = sx(r.x + r.w / 2)
     const cy0 = sy(r.y + r.h / 2)
@@ -534,19 +561,22 @@ export function renderScene(): void {
   }
 
   // 12. 手雷 / 弹丸 / 空袭信标
-  for (const g of world.grenades) {
+  for (let i = 0; i < world.grenades.length; i++) {
+    const g = world.grenades[i]
     const gx = sx(g.pos.x)
     const gy = sy(g.pos.y)
     if (!inView(gx, gy)) continue
     drawGrenadeSprite(ctx, g, gx, gy, world.tick)
   }
-  for (const pr of world.projectiles) {
+  for (let i = 0; i < world.projectiles.length; i++) {
+    const pr = world.projectiles[i]
     const px = sx(pr.pos.x)
     const py = sy(pr.pos.y)
     if (!inView(px, py, 200)) continue
     drawProjectileSprite(ctx, pr, px, py, world.tick)
   }
-  for (const st of world.airstrikes) {
+  for (let i = 0; i < world.airstrikes.length; i++) {
+    const st = world.airstrikes[i]
     const ax = sx(st.pos.x)
     const ay = sy(st.pos.y)
     if (!inView(ax, ay, 60)) continue
@@ -554,16 +584,18 @@ export function renderScene(): void {
   }
 
   // 12.5 高斯枪光束
-  for (const b of beams) {
+  for (let bi = 0; bi < beams.length; bi++) {
+    const b = beams[bi]
     const alpha = Math.max(0, b.life / b.maxLife)
     ctx.save()
     ctx.globalAlpha = alpha
     ctx.lineCap = 'round'
-    const polys = expandBeamSegments(b.segments, (wx, wy) => ({ x: sx(wx), y: sy(wy) }), halfW, halfH)
+    const polys = expandBeamSegments(b.segments, beamScreenProject, halfW, halfH)
     ctx.strokeStyle = b.color
     ctx.lineWidth = 9
     ctx.globalAlpha = alpha * 0.35
-    for (const pl of polys) {
+    for (let pi = 0; pi < polys.length; pi++) {
+      const pl = polys[pi]
       ctx.beginPath()
       ctx.moveTo(pl.x1, pl.y1)
       ctx.lineTo(pl.x2, pl.y2)
@@ -572,7 +604,8 @@ export function renderScene(): void {
     ctx.globalAlpha = alpha
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 2.4
-    for (const pl of polys) {
+    for (let pi = 0; pi < polys.length; pi++) {
+      const pl = polys[pi]
       ctx.beginPath()
       ctx.moveTo(pl.x1, pl.y1)
       ctx.lineTo(pl.x2, pl.y2)
@@ -582,7 +615,7 @@ export function renderScene(): void {
   }
 
   // 13. 客户端粒子
-  effects.render(ctx, (x, y) => { sharedPt.x = sx(x); sharedPt.y = sy(y); return sharedPt }, inView, sx, sy)
+  effects.render(ctx, effectsScreenProject, inView, sx, sy)
 
   ctx.restore()
 }

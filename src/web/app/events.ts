@@ -24,7 +24,8 @@ export function handleEvents(evs: WorldEvent[]): void {
       const vName = e.victimName ?? victimP?.name ?? '?'
       const vTeam = e.victimTeam ?? victimP?.team ?? 'ffa'
       addKillFeed(kName, kTeam, vName, vTeam, e.weaponLabel ?? '', e.isHeadshot ?? e.headshot, e.isPierced)
-      playProceduralSound((e.isHeadshot ?? e.headshot) ? 'headshot' : 'kill')
+      const isOwnKill = killer === localPlayer.id && e.victimId !== localPlayer.id
+      if (isOwnKill) playProceduralSound((e.isHeadshot ?? e.headshot) ? 'headshot' : 'kill')
       if ((e.killerId === localPlayer.id || e.attackerId === localPlayer.id) && !isSecondaryUnlocked(pendingLoadout.secondaryType, localPlayer.deathStreak ?? 0, localPlayer.dollCharges ?? 0, localPlayer.weaponIndex)) {
         pendingLoadout.secondaryType = 'frag'
         localPlayer.secondary = 'frag'
@@ -40,8 +41,7 @@ export function handleEvents(evs: WorldEvent[]): void {
       if (e.x !== undefined && e.y !== undefined) effects.debris(e.x, e.y, 50, 60, '#9a3412', '#f97316')
     } else if (e.kind === 'capture') {
       showToast(`🚩 据点 ${e.pointCode} 被 ${e.team} 占领！`)
-    }
-    else if (e.kind === 'supply_pickup') {
+    } else if (e.kind === 'supply_pickup') {
       // 显示是谁拾取的（联机时按 playerId 从本地快照反查，缺失则退化为"某玩家"）
       // 名字来源优先级：事件自带 playerName（服务端权威，联机最可靠）> 本地快照反查
       const picker = e.playerId !== undefined ? world.players.find(p => p.id === e.playerId) : undefined
@@ -64,8 +64,7 @@ export function handleEvents(evs: WorldEvent[]): void {
         showToast('💥 护盾破碎！')
         playProceduralSound('shield_break')
       }
-    }
-    else if (e.kind === 'mortar_fire') {
+    } else if (e.kind === 'mortar_fire') {
       screenFx.shake = Math.max(screenFx.shake, 9)
       if (e.x !== undefined && e.y !== undefined) effects.muzzle(e.x, e.y - 20, '#fde047')
     } else if (e.kind === 'airstrike_drop') {
@@ -75,9 +74,19 @@ export function handleEvents(evs: WorldEvent[]): void {
       }
     } else if (e.kind === 'laser') {
       if (e.segments && e.segments.length > 0) {
-        const dur = e.duration ?? 0.14
-        beams.push({ segments: e.segments, color: e.color ?? '#22d3ee', life: dur, maxLife: dur })
-        if (beams.length > 24) beams.shift()
+        const dur = e.duration ?? 0.06
+        const color = e.color ?? '#22d3ee'
+        // 同一射手持续按住高斯枪时原地刷新光束段，避免每帧重复叠加 4~6 条全图长光束造成 Canvas 过度绘制
+        const existing = e.playerId !== undefined ? beams.find(b => b.playerId === e.playerId) : undefined
+        if (existing) {
+          existing.segments = e.segments
+          existing.color = color
+          existing.life = dur
+          existing.maxLife = dur
+        } else {
+          beams.push({ playerId: e.playerId, segments: e.segments, color, life: dur, maxLife: dur })
+          if (beams.length > 12) beams.shift()
+        }
       }
       screenFx.shake = Math.max(screenFx.shake, 1.5)
       playProceduralSound('laser')
@@ -86,4 +95,3 @@ export function handleEvents(evs: WorldEvent[]): void {
     }
   }
 }
-

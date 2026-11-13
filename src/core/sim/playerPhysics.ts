@@ -21,15 +21,30 @@ export function playerHitsPoint(
   x: number,
   y: number,
   selfId: number,
+  curSelfX?: number,
+  curSelfY?: number,
+  nextSelfX?: number,
+  nextSelfY?: number,
 ): boolean {
   const list = playerBroadBuckets[bucketIdx(x)]
-  if (!list) return false
+  if (!list || list.length === 0) return false
   for (let i = 0; i < list.length; i++) {
     const other = list[i]
     if (other.id === selfId) continue
     if (!other.deployed || !other.alive || other.respawnTimer > 0) continue
     if (y <= other.pos.y - 30 || y >= other.pos.y + 16) continue
-    if (Math.abs(wrapDeltaX(x, other.pos.x)) <= 10) return true
+    if (Math.abs(wrapDeltaX(x, other.pos.x)) <= 10) {
+      // 若自身当前已经与 other 重叠（如基地同点出生），允许朝远离 other 的方向脱离或向上起跳脱离，避免死锁焊死
+      if (curSelfX !== undefined && curSelfY !== undefined && bodiesOverlap(curSelfX, curSelfY, other.pos.x, other.pos.y)) {
+        if (nextSelfX !== undefined && Math.abs(wrapDeltaX(nextSelfX, other.pos.x)) > Math.abs(wrapDeltaX(curSelfX, other.pos.x)) + 1e-4) {
+          continue
+        }
+        if (nextSelfY !== undefined && nextSelfY < curSelfY && curSelfY <= other.pos.y) {
+          continue
+        }
+      }
+      return true
+    }
   }
   return false
 }
@@ -73,13 +88,20 @@ export function tryNudgePlayer(
       const t = list[i]
       if (t.id === other.id) continue
       if (!t.deployed || !t.alive || t.respawnTimer > 0) continue
-      if (bodiesOverlap(nx, other.pos.y, t.pos.x, t.pos.y)) return
+      if (bodiesOverlap(nx, other.pos.y, t.pos.x, t.pos.y)) {
+        // 若原本未与 t 重叠，或推开后距离未增大，则禁止推入；若原本已重叠且正在拉大间距解耦，则允许推开
+        const wasOverlapping = bodiesOverlap(other.pos.x, other.pos.y, t.pos.x, t.pos.y)
+        if (!wasOverlapping) return
+        const prevDist = Math.abs(wrapDeltaX(other.pos.x, t.pos.x))
+        const nextDist = Math.abs(wrapDeltaX(nx, t.pos.x))
+        if (nextDist <= prevDist) return
+      }
     }
   }
   other.pos.x = nx
 }
 
-/** 躯干/头是否嵌在实体里（站立在地面上不算——只查躯干以上） */
+/** 躯干/头是否嵌在实体里（站立在地面上不算——只查躯干以上，零数组分配） */
 export function torsoBlockedAt(
   terrain: Terrain,
   obstacles: Obstacle[],
@@ -88,15 +110,16 @@ export function torsoBlockedAt(
   y: number,
 ): boolean {
   const wx = wrapX(x)
-  const pts: [number, number][] = [
-    [wx - 10, y - 4], [wx + 10, y - 4], [wx, y - 6],
-    [wx - 10, y - 26], [wx + 10, y - 26], [wx, y - 30],
-  ]
-  for (const [px, py] of pts) {
-    if (terrain.isSolidAt(px, py)) return true
-    if (findObstacleAt(obstacles, obstacleBroadBuckets, px, py)) return true
-  }
-  return false
+  const checkPt = (px: number, py: number): boolean =>
+    terrain.isSolidAt(px, py) || findObstacleAt(obstacles, obstacleBroadBuckets, px, py) !== null
+  return (
+    checkPt(wx - 10, y - 4) ||
+    checkPt(wx + 10, y - 4) ||
+    checkPt(wx, y - 6) ||
+    checkPt(wx - 10, y - 26) ||
+    checkPt(wx + 10, y - 26) ||
+    checkPt(wx, y - 30)
+  )
 }
 
 /** 把玩家挪到最近的安全位置（出生/被结构挤压/死角兜底） */
@@ -137,20 +160,20 @@ export function resolvePenetration(
   for (let iter = 0; iter < 6; iter++) {
     if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, p.pos.y, obstacleBroadBuckets)) break
     const wx = wrapX(p.pos.x)
-    const pick: { v: { dx: number; dy: number } | null } = { v: null }
+    let bestDx = 0
+    let bestDy = 0
     let bestLen = Infinity
+    let found = false
     const consider = (tileL: number, tileR: number, tileT: number, tileB: number): void => {
       if (!(tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16)) return
-      const cand = [
-        { dx: tileL - halfW, dy: 0 },
-        { dx: tileR + halfW, dy: 0 },
-        { dx: 0, dy: tileB + 30 },
-        { dx: 0, dy: tileT - 16 },
-      ]
-      for (const c of cand) {
-        const len = Math.abs(c.dx) + Math.abs(c.dy)
-        if (len < bestLen) { bestLen = len; pick.v = c }
-      }
+      const d1 = tileL - halfW
+      if (Math.abs(d1) < bestLen) { bestLen = Math.abs(d1); bestDx = d1; bestDy = 0; found = true }
+      const d2 = tileR + halfW
+      if (Math.abs(d2) < bestLen) { bestLen = Math.abs(d2); bestDx = d2; bestDy = 0; found = true }
+      const d3 = tileB + 30
+      if (Math.abs(d3) < bestLen) { bestLen = Math.abs(d3); bestDx = 0; bestDy = d3; found = true }
+      const d4 = tileT - 16
+      if (Math.abs(d4) < bestLen) { bestLen = Math.abs(d4); bestDx = 0; bestDy = d4; found = true }
     }
     const gx0 = Math.floor((wx - halfW) / TILE_SIZE)
     const gx1 = Math.floor((wx + halfW) / TILE_SIZE)
@@ -166,15 +189,16 @@ export function resolvePenetration(
         consider(lx - TILE_SIZE / 2, lx + TILE_SIZE / 2, ly - TILE_SIZE / 2, ly + TILE_SIZE / 2)
       }
     }
-    for (const ob of obstacles) {
+    for (let i = 0; i < obstacles.length; i++) {
+      const ob = obstacles[i]
       if (ob.hp <= 0) continue
       const lx = wrapDeltaX(wx, ob.x + ob.w / 2)
       const ly = wrapDeltaY(p.pos.y, ob.y + ob.h / 2)
       consider(lx - ob.w / 2, lx + ob.w / 2, ly - ob.h / 2, ly + ob.h / 2)
     }
-    if (pick.v) {
-      p.pos.x = wrapX(p.pos.x + pick.v.dx)
-      p.pos.y = wrapY(p.pos.y + pick.v.dy)
+    if (found) {
+      p.pos.x = wrapX(p.pos.x + bestDx)
+      p.pos.y = wrapY(p.pos.y + bestDy)
       moved = true
     } else {
       ensureFreePosition(terrain, obstacles, obstacleBroadBuckets, p)
@@ -193,12 +217,16 @@ function hitSingleBodyPoint(
   selfId: number,
   x: number,
   y: number,
+  curSelfX?: number,
+  curSelfY?: number,
+  nextSelfX?: number,
+  nextSelfY?: number,
 ): boolean {
-  const wx = wrapX(x)
-  const wy = wrapY(y)
-  if (tGrid[((wy / 20) | 0) * GRID_W + ((wx / 20) | 0)] !== 0) return true
+  const wx = x >= 0 && x < 13200 ? x : wrapX(x)
+  const wy = y >= 0 && y < 4400 ? y : wrapY(y)
+  if (tGrid[((wy * 0.05) | 0) * GRID_W + ((wx * 0.05) | 0)] !== 0) return true
   if (findObstacleAt(obstacles, obstacleBroadBuckets, wx, y) !== null) return true
-  if (playerBroadBuckets) return playerHitsPoint(playerBroadBuckets, wx, y, selfId)
+  if (playerBroadBuckets) return playerHitsPoint(playerBroadBuckets, wx, y, selfId, curSelfX, curSelfY, nextSelfX, nextSelfY)
   return false
 }
 
@@ -210,21 +238,23 @@ function hitAnyBodyPoints(
   selfId: number,
   cx: number,
   cy: number,
+  curSelfX?: number,
+  curSelfY?: number,
 ): boolean {
   return (
-    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy + BODY_BOTTOM) ||
-    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy + BODY_BOTTOM) ||
-    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy + BODY_BOTTOM) ||
-    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy) ||
-    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy) ||
-    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy - BODY_TOP)
+    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) ||
+    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) ||
+    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) ||
+    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy, curSelfX, curSelfY, cx, cy) ||
+    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy, curSelfX, curSelfY, cx, cy) ||
+    hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy - BODY_TOP, curSelfX, curSelfY, cx, cy)
   )
 }
 
 /** 权威端单玩家物理步进（含地形/掩体/其他玩家碰撞与弹射跳台） */
 export function stepPlayerKinematic(
   p: PlayerState,
-  w: WorldInput,
+  _w: WorldInput,
   dt: number,
   terrain: Terrain,
   obstacles: Obstacle[],
@@ -273,18 +303,20 @@ export function stepPlayerKinematic(
   // 位移 = 常规速度 + 独立后坐力速度（后者不受移动覆写/重力/速度上限影响 → 各向同性）
   if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
   const rv = p.recoilVel
+  const curX = p.pos.x
+  const curY = p.pos.y
   // 后坐力位移按解析积分系数结算（帧首速度直接乘 dt 会系统性少 ~4%）
-  const nx = wrapX(p.pos.x + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR)
-  if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y)) {
+  const nx = wrapX(curX + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR)
+  if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, curY, curX, curY)) {
     p.pos.x = nx
-  } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, p.pos.y - 10)) {
+  } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, curY - 10, curX, curY)) {
     p.pos.x = nx
     p.pos.y -= 10
   } else {
     if (playerBroadBuckets) {
-      const blocker = playerBlockingAt(playerBroadBuckets, nx, p.pos.y, p.id)
+      const blocker = playerBlockingAt(playerBroadBuckets, nx, curY, p.id)
       if (blocker) {
-        tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, blocker, Math.sign(nx - p.pos.x), 1.4)
+        tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, blocker, Math.sign(wrapDeltaX(curX, nx)), 1.4)
       }
     }
     p.vel.x = 0
@@ -294,7 +326,7 @@ export function stepPlayerKinematic(
   const vyTotal = p.vel.y + rv.y
   const nyRaw = p.pos.y + p.vel.y * dt + rv.y * RECOIL_DISPLACEMENT_FACTOR
   const ny = wrapY(nyRaw)
-  if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny)) {
+  if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny, p.pos.x, p.pos.y)) {
     p.pos.y = ny
     p.onGround = false
   } else {
@@ -337,9 +369,10 @@ export function separateOverlappingPlayers(
         const upY = wrapY(upper.pos.y - oy)
         if (!terrain.isSolidAt(upper.pos.x, upY - 26)) upper.pos.y = upY
       } else {
-        const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || 1
-        tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, b, dir, 0.6)
-        tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, a, -dir, 0.6)
+        const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || (a.id < b.id ? 1 : -1)
+        const pushAmt = Math.min(2.4, Math.max(0.8, ox * 0.45))
+        tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, b, dir, pushAmt)
+        tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, a, -dir, pushAmt)
       }
       if (++nudged >= 3) break
     }

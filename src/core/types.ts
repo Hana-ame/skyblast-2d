@@ -237,6 +237,8 @@ export interface WorldInput {
   switchWeapon: number | null
   interact: boolean
   secondary: SecondaryIntent | null
+  /** 手柄/摇杆蓄力追踪模式：为 true 时狙击读条期间持续跟随当前准星方向（0.5s 后按最终拖动位置发射），键鼠默认 false（按按下瞬间锁定） */
+  trackChargeAim?: boolean
 }
 
 // 触发事件（瞬态、不进快照；由 World 产出、net/ui 层订阅 → killfeed/音效/粒子）
