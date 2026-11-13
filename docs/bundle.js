@@ -12371,6 +12371,34 @@
   var cachedSkyGradH = 0;
   var cachedSkyDepthQuant = -1;
   var cachedWorldGlowGrads = /* @__PURE__ */ new Map();
+  var STAR_ALPHA_LEVELS = 4;
+  function drawStars(ctx2, sxFn, syFn, inViewFn) {
+    const tick = world.tick;
+    ctx2.fillStyle = "#dbeafe";
+    for (let level = 0; level < STAR_ALPHA_LEVELS; level++) {
+      let began = false;
+      for (let i = 0; i < worldStars.length; i++) {
+        const st = worldStars[i];
+        const px = sxFn(st.x);
+        const py = syFn(st.y);
+        if (!inViewFn(px, py)) continue;
+        const tw = 0.6 + 0.4 * Math.sin(tick * 0.02 + st.x * 0.05);
+        const lv = Math.min(STAR_ALPHA_LEVELS - 1, Math.floor(st.a * tw * STAR_ALPHA_LEVELS));
+        if (lv !== level) continue;
+        const d = st.r * 2;
+        if (!began) {
+          ctx2.beginPath();
+          began = true;
+        }
+        ctx2.rect(px - st.r, py - st.r, d, d);
+      }
+      if (began) {
+        ctx2.globalAlpha = (level + 0.5) / STAR_ALPHA_LEVELS;
+        ctx2.fill();
+      }
+    }
+    ctx2.globalAlpha = 1;
+  }
   var curHalfW = 960;
   var curHalfH = 540;
   function sx(wx) {
@@ -12426,17 +12454,7 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
     ctx.scale(zoom, zoom);
-    ctx.fillStyle = "#dbeafe";
-    for (let i = 0; i < worldStars.length; i++) {
-      const st = worldStars[i];
-      const px = sx(st.x);
-      const py = sy(st.y);
-      if (!inView(px, py)) continue;
-      ctx.globalAlpha = st.a * (0.6 + 0.4 * Math.sin(world.tick * 0.02 + st.x * 0.05));
-      ctx.beginPath();
-      ctx.arc(px, py, st.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    drawStars(ctx, sx, sy, inView);
     ctx.globalAlpha = 1;
     for (let i = 0; i < worldGlows.length; i++) {
       const gl = worldGlows[i];

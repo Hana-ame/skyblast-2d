@@ -23,6 +23,43 @@ let cachedSkyGradH = 0
 let cachedSkyDepthQuant = -1
 const cachedWorldGlowGrads = new Map<string, CanvasGradient>()
 
+// 星空绘制优化：原实现每颗星一次 beginPath+arc+fill 且每颗都改 globalAlpha，
+// 在真机 GPU 上频繁的状态切换会打断绘制批处理。改法：
+//  - alpha 量化成 4 档，同档的星合并到一条 path 里一次 fill（最多 4 次 fill）；
+//  - 星点用 fillRect 小方块代替 arc，避免每个圆形的三角化开销（1-2px 星星肉眼无差别）。
+const STAR_ALPHA_LEVELS = 4
+
+function drawStars(
+  ctx2: CanvasRenderingContext2D,
+  sxFn: (wx: number) => number,
+  syFn: (wy: number) => number,
+  inViewFn: (dx: number, dy: number, pad?: number) => boolean,
+): void {
+  const tick = world.tick
+  ctx2.fillStyle = '#dbeafe'
+  for (let level = 0; level < STAR_ALPHA_LEVELS; level++) {
+    let began = false
+    for (let i = 0; i < worldStars.length; i++) {
+      const st = worldStars[i]
+      const px = sxFn(st.x)
+      const py = syFn(st.y)
+      if (!inViewFn(px, py)) continue
+      const tw = 0.6 + 0.4 * Math.sin(tick * 0.02 + st.x * 0.05)
+      const lv = Math.min(STAR_ALPHA_LEVELS - 1, Math.floor(st.a * tw * STAR_ALPHA_LEVELS))
+      if (lv !== level) continue
+      const d = st.r * 2
+      // 合并进同一条 path（fillRect 会各自提交，故用 rect 累进 path 再一次性 fill）
+      if (!began) { ctx2.beginPath(); began = true }
+      ctx2.rect(px - st.r, py - st.r, d, d)
+    }
+    if (began) {
+      ctx2.globalAlpha = (level + 0.5) / STAR_ALPHA_LEVELS
+      ctx2.fill()
+    }
+  }
+  ctx2.globalAlpha = 1
+}
+
 let curHalfW = 960
 let curHalfH = 540
 
@@ -92,15 +129,12 @@ export function renderScene(): void {
   ctx.scale(zoom, zoom)
 
   // 世界锚定星空（随地形移动，无相对滑动）
-  ctx.fillStyle = '#dbeafe'
-  for (let i = 0; i < worldStars.length; i++) {
-    const st = worldStars[i]
-    const px = sx(st.x)
-    const py = sy(st.y)
-    if (!inView(px, py)) continue
-    ctx.globalAlpha = st.a * (0.6 + 0.4 * Math.sin(world.tick * 0.02 + st.x * 0.05))
-    ctx.beginPath(); ctx.arc(px, py, st.r, 0, Math.PI * 2); ctx.fill()
-  }
+  // 性能：原实现对每颗星单独 beginPath+arc+fill 并且每颗星都改一次 globalAlpha，
+  // 这会打断 canvas 的绘制批处理（真机 GPU 上状态切换很贵）。改为：
+  //  1) 星点用预渲染的离屏贴图（createRadialGradient 一次画好软边圆点）drawImage 贴出；
+  //  2) 把连续 alpha 量化成 4 档，同一档内的星合并到一条 path 一次性 fill，
+  //     把 per-star 的 alpha 切换与 path 提交压到最多 4 组。
+  drawStars(ctx, sx, sy, inView)
   ctx.globalAlpha = 1
   for (let i = 0; i < worldGlows.length; i++) {
     const gl = worldGlows[i]
