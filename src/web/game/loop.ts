@@ -9,7 +9,7 @@ import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { playProceduralSound } from '../app/audio.ts'
 import { installDiag, diagRecordFrame, diagMark } from '../app/diag.ts'
-import { capturePrevPositions, prunePrevPositions, beginOverlayFrame, buildPositionOverlay } from './interp.ts'
+import { capturePrevPositions, prunePrevPositions, beginOverlayFrame, buildPositionOverlay, getRenderPos } from './interp.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
@@ -344,9 +344,12 @@ export function startGameLoop(): void {
       updateScoreboardUI()
       updateDebugHudTelemetry(smoothFps)
       const tEnd = performance.now()
+      // 把玩家「渲染实际使用的位置」交给诊断器：与物理位置对比即可验证
+      // 渲染插值是否真正生效（渲染位置应逐帧连续变化）。
+      const renPos = getRenderPos('p', localPlayer.id, localPlayer.pos.x, localPlayer.pos.y)
       diagRecordFrame(tFrameStart, {
         steps: guard, stepMs, renderMs: tHud - tRender, hudMs: tEnd - tHud,
-      }, { world, localPlayer, camera, netState, canvas })
+      }, { world, localPlayer, camera, netState, canvas, renderPos: renPos })
     } else {
       diagRecordFrame(tFrameStart, {
         steps: guard, stepMs: performance.now() - tStepsBegin, renderMs: 0, hudMs: 0,

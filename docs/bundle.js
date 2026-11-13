@@ -4182,6 +4182,10 @@
         wep: 0,
         camX: 0,
         camY: 0,
+        renX: 0,
+        renY: 0,
+        phyX: 0,
+        phyY: 0,
         canvasW: 0,
         canvasH: 0,
         dpr: 0,
@@ -4226,6 +4230,10 @@
     r.wep = ctx2.localPlayer.weaponIndex;
     r.camX = Math.round(ctx2.camera.x);
     r.camY = Math.round(ctx2.camera.y);
+    r.renX = ctx2.renderPos ? Math.round(ctx2.renderPos.x * 100) / 100 : -1;
+    r.renY = ctx2.renderPos ? Math.round(ctx2.renderPos.y * 100) / 100 : -1;
+    r.phyX = Math.round(ctx2.localPlayer.pos.x * 100) / 100;
+    r.phyY = Math.round(ctx2.localPlayer.pos.y * 100) / 100;
     r.canvasW = ctx2.canvas?.width ?? 0;
     r.canvasH = ctx2.canvas?.height ?? 0;
     r.dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
@@ -4276,6 +4284,8 @@
             alive: r.alive,
             deployed: r.deployed,
             cam: `${r.camX},${r.camY}`,
+            renderPos: `${r.renX},${r.renY}`,
+            physPos: `${r.phyX},${r.phyY}`,
             canvas: `${r.canvasW}x${r.canvasH}@${r.dpr}`,
             overlays: `death=${r.ovDeath} lobby=${r.ovLobby} params=${r.ovParams} editor=${r.ovEditor}`,
             hidden: r.hidden,
@@ -13424,12 +13434,13 @@
         updateScoreboardUI2();
         updateDebugHudTelemetry(smoothFps);
         const tEnd = performance.now();
+        const renPos = getRenderPos("p", localPlayer.id, localPlayer.pos.x, localPlayer.pos.y);
         diagRecordFrame(tFrameStart, {
           steps: guard,
           stepMs,
           renderMs: tHud - tRender,
           hudMs: tEnd - tHud
-        }, { world, localPlayer, camera, netState, canvas });
+        }, { world, localPlayer, camera, netState, canvas, renderPos: renPos });
       } else {
         diagRecordFrame(tFrameStart, {
           steps: guard,

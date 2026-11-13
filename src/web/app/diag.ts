@@ -36,6 +36,13 @@ export interface FrameRec {
   /** 相机（用于判断是否发生传送/视野突变） */
   camX: number
   camY: number
+  /** 玩家「渲染用」位置（插值后）。与物理位置对比即可判断插值是否真正生效：
+   *  插值正常时应逐帧连续变化，而不是只在 tick 时跳变。 */
+  renX: number
+  renY: number
+  /** 玩家物理位置（tick 后真实值） */
+  phyX: number
+  phyY: number
   /** 布局/合成相关：这些一变化就可能触发全屏重绘 */
   canvasW: number
   canvasH: number
@@ -154,7 +161,7 @@ function slot(index: number): FrameRec {
     r = {
       i: 0, t: 0, dt: 0, steps: 0, stepMs: 0, renderMs: 0, hudMs: 0, busyMs: 0,
       tick: 0, players: 0, projectiles: 0, role: 'offline', peers: 0,
-      hp: 0, alive: 0, deployed: 0, wep: 0, camX: 0, camY: 0,
+      hp: 0, alive: 0, deployed: 0, wep: 0, camX: 0, camY: 0, renX: 0, renY: 0, phyX: 0, phyY: 0,
       canvasW: 0, canvasH: 0, dpr: 0,
       ovDeath: 0, ovLobby: 0, ovParams: 0, ovEditor: 0,
       hidden: 0, heapMB: -1, missedFrames: 0,
@@ -174,6 +181,8 @@ export interface FrameCtx {
   camera: { x: number; y: number }
   netState: { role: string; peerCount: number }
   canvas: { width: number; height: number } | null
+  /** 玩家渲染位置（可选）：用于验证渲染插值是否真的生效 */
+  renderPos?: { x: number; y: number }
 }
 
 /** 记录一帧。返回帧号，配合 diagMark 定位。 */
@@ -213,6 +222,10 @@ export function diagRecordFrame(
   r.wep = ctx.localPlayer.weaponIndex
   r.camX = Math.round(ctx.camera.x)
   r.camY = Math.round(ctx.camera.y)
+  r.renX = ctx.renderPos ? Math.round(ctx.renderPos.x * 100) / 100 : -1
+  r.renY = ctx.renderPos ? Math.round(ctx.renderPos.y * 100) / 100 : -1
+  r.phyX = Math.round(ctx.localPlayer.pos.x * 100) / 100
+  r.phyY = Math.round(ctx.localPlayer.pos.y * 100) / 100
   r.canvasW = ctx.canvas?.width ?? 0
   r.canvasH = ctx.canvas?.height ?? 0
   r.dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1
@@ -270,6 +283,8 @@ export function diagRecordFrame(
           alive: r.alive,
           deployed: r.deployed,
           cam: `${r.camX},${r.camY}`,
+          renderPos: `${r.renX},${r.renY}`,
+          physPos: `${r.phyX},${r.phyY}`,
           canvas: `${r.canvasW}x${r.canvasH}@${r.dpr}`,
           overlays: `death=${r.ovDeath} lobby=${r.ovLobby} params=${r.ovParams} editor=${r.ovEditor}`,
           hidden: r.hidden,
