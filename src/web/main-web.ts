@@ -15,7 +15,7 @@ import {
   updateHudUI, updateScoreboardUI, syncFeatureFlagsUI,
 } from './app/hud.ts'
 import { syncParamsToUI } from './app/params.ts'
-import { mode } from './app/context.ts'
+import { mode, effects } from './app/context.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
 import {
   installDiag, diagExport, reportToText, buildReport, diagFrames, diagTable,
@@ -59,6 +59,8 @@ startGameLoop()
   })),
   patrolRoutes: PATROL_ROUTES,
   get beams() { return beams },
+  /** 特效/粒子系统（诊断用：可查看粒子数量，或手动触发爆炸测试渲染开销） */
+  get effects() { return effects },
   get mode() { return mode.current },
   weapons: () => WEAPONS.map(w => ({ id: w.id, name: w.name, damage: w.damage, fireDelay: w.fireDelay, moveSpeedMult: w.moveSpeedMult })),
 }

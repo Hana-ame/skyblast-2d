@@ -13493,6 +13493,10 @@
     get beams() {
       return beams;
     },
+    /** 特效/粒子系统（诊断用：可查看粒子数量，或手动触发爆炸测试渲染开销） */
+    get effects() {
+      return effects;
+    },
     get mode() {
       return mode.current;
     },
