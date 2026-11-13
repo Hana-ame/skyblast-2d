@@ -27,6 +27,9 @@ export function syncParamsToUI(): void {
   setVal('paramWepSpeed', 'valWepSpeed', w.speed)
   setVal('paramWepMag', 'valWepMag', w.magSize)
   setVal('paramWepReload', 'valWepReload', w.reloadTime, 's')
+  // moveSpeedMult / fuelMult 每把武器都有值；缺省时按 1 显示，避免滑块停在 0
+  setVal('paramWepMove', 'valWepMove', +(w.moveSpeedMult ?? 1).toFixed(2), 'x')
+  setVal('paramWepFuel', 'valWepFuel', +(w.fuelMult ?? 1).toFixed(2), 'x')
 
   setVal('paramGrenadeDmg', 'valGrenadeDmg', world.config.grenadeDamage)
   setVal('paramGrenadeRadius', 'valGrenadeRadius', world.config.grenadeRadius)

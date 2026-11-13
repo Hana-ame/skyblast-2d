@@ -10,6 +10,7 @@
 // 这里用「真实默认值对象」反向核对白名单，任何一边新增字段忘了登记都会立刻失败。
 
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 
 import {
@@ -127,4 +128,43 @@ test('调参往返·config 新增项（地雷/空袭/占点/补给）能保存�
   for (const [k, v] of Object.entries(patch)) {
     assert.equal(target[k], v, `${k} 应生效为 ${v}，实际 ${target[k]}`)
   }
+})
+
+test('游戏内调参面板·逐武器「移动倍率 / 飞行容量倍率」两个入口存在且已接线', () => {
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+  const bindings = readFileSync(new URL('../src/web/input/bindings.ts', import.meta.url), 'utf8')
+  const params = readFileSync(new URL('../src/web/app/params.ts', import.meta.url), 'utf8')
+
+  // ① 两个滑块都要在弹窗里（用户报的正是"没有入口"）
+  for (const id of ['paramWepMove', 'paramWepFuel']) {
+    assert.ok(html.includes(`id="${id}"`), `参数面板缺少滑块 ${id}`)
+  }
+  // ② 都要有数值回显元素
+  for (const vid of ['valWepMove', 'valWepFuel']) {
+    assert.ok(html.includes(`id="${vid}"`), `参数面板缺少回显 ${vid}`)
+  }
+  // ③ 都要绑定到对应的 WeaponDef 字段（按当前选中的武器）
+  assert.ok(
+    /bindRangeParam\('paramWepMove',\s*'valWepMove'[\s\S]{0,200}?\.moveSpeedMult\s*=/.test(bindings),
+    'paramWepMove 必须写入 WEAPONS[paramState.weaponIdx].moveSpeedMult',
+  )
+  assert.ok(
+    /bindRangeParam\('paramWepFuel',\s*'valWepFuel'[\s\S]{0,200}?\.fuelMult\s*=/.test(bindings),
+    'paramWepFuel 必须写入 WEAPONS[paramState.weaponIdx].fuelMult',
+  )
+  // ④ 切换武器时要回显当前武器的值（缺省按 1x，不能停在 0）
+  assert.ok(/setVal\('paramWepMove'[\s\S]{0,120}?moveSpeedMult \?\? 1/.test(params),
+    'syncParamsToUI 必须回显 moveSpeedMult（缺省 1）')
+  assert.ok(/setVal\('paramWepFuel'[\s\S]{0,120}?fuelMult \?\? 1/.test(params),
+    'syncParamsToUI 必须回显 fuelMult（缺省 1）')
+})
+
+test('逐武器「移动倍率 / 飞行容量倍率」确实进入物理计算（不是死字段）', () => {
+  const world = readFileSync(new URL('../src/core/sim/world.ts', import.meta.url), 'utf8')
+  // 移速：move * moveSpeed * moveSpeedMult
+  assert.ok(/w\.move\s*\*\s*getPhysicsParams\(\)\.moveSpeed\s*\*\s*\(wepCur\.moveSpeedMult \?\? 1\)/.test(world),
+    'world.ts 必须用 moveSpeedMult 缩放水平移速')
+  // 燃料上限：jetpackFuel * fuelMult
+  assert.ok(/fuelMax = getPhysicsParams\(\)\.jetpackFuel \* \(wepCur\.fuelMult \?\? 1\)/.test(world),
+    'world.ts 必须用 fuelMult 缩放飞行容量上限')
 })

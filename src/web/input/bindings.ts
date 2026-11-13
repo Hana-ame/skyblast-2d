@@ -730,6 +730,10 @@ export function bindAllEvents(): void {
   bindRangeParam('paramWepSpeed', 'valWepSpeed', '', (v) => { WEAPONS[paramState.weaponIdx].speed = v })
   bindRangeParam('paramWepMag', 'valWepMag', '', (v) => { WEAPONS[paramState.weaponIdx].magSize = v })
   bindRangeParam('paramWepReload', 'valWepReload', 's', (v) => { WEAPONS[paramState.weaponIdx].reloadTime = v })
+  // 逐武器可调：移动倍率（moveSpeedMult）与飞行容量倍率（fuelMult）。
+  // 二者都是 WeaponDef 字段，每把武器各自持有，用于区分「重武器走得慢 / 耗气快」。
+  bindRangeParam('paramWepMove', 'valWepMove', 'x', (v) => { WEAPONS[paramState.weaponIdx].moveSpeedMult = v })
+  bindRangeParam('paramWepFuel', 'valWepFuel', 'x', (v) => { WEAPONS[paramState.weaponIdx].fuelMult = v })
   bindRangeParam('paramGrenadeDmg', 'valGrenadeDmg', '', (v) => { world.config.grenadeDamage = v })
   bindRangeParam('paramGrenadeRadius', 'valGrenadeRadius', '', (v) => { world.config.grenadeRadius = v })
   bindRangeParam('paramMineDmg', 'valMineDmg', '', (v) => { world.config.mineDamage = v })
