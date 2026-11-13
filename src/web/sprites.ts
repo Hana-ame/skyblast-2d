@@ -252,9 +252,15 @@ export function drawPlayerSprite(ctx: CanvasRenderingContext2D, p: PlayerState, 
   // 6. 全系列 9 把武器精绘贴图（id 0..8 完整覆盖）
   if (!opts.mounted) {
     ctx.save()
-    ctx.rotate(p.aim - (facing < 0 ? Math.PI : 0))
+    // 武器朝向修正：朝左时必须用 rotate(aim + PI) + scale(-1, 1)。
+    // 原实现是 rotate(aim - PI) + scale(1, -1)：canvas 变换为后乘
+    // (CTM = R(aim-PI)·S(1,-1))，把武器局部 +x 方向映射成 aim+PI，
+    // 即枪口与瞄准方向**正好相反**（dot = -1），表现为"瞄准左半边时枪口朝右"。
+    // 改为 R(aim+PI)·S(-1,1) 后：局部 +x -> (-r cos(aim+PI), -r sin(aim+PI))
+    // = (r cos aim, r sin aim)，与瞄准方向精确一致（dot = +1）。
+    ctx.rotate(p.aim + (facing < 0 ? Math.PI : 0))
     const flip = facing < 0 ? -1 : 1
-    ctx.scale(1, flip)
+    ctx.scale(flip, 1)
     const metalDark = '#0f172a'
     const metalMid = '#1e293b'
     const metalLight = '#475569'

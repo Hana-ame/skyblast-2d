@@ -4988,9 +4988,9 @@
     ctx2.fillRect(visorX + (facing > 0 ? 1.5 : 4), -26, 2.2, 1.2);
     if (!opts.mounted) {
       ctx2.save();
-      ctx2.rotate(p.aim - (facing < 0 ? Math.PI : 0));
+      ctx2.rotate(p.aim + (facing < 0 ? Math.PI : 0));
       const flip = facing < 0 ? -1 : 1;
-      ctx2.scale(1, flip);
+      ctx2.scale(flip, 1);
       const metalDark = "#0f172a";
       const metalMid = "#1e293b";
       const metalLight = "#475569";
