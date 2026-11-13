@@ -73,7 +73,7 @@ export function weaponViolations(): Violation[] {
   // 用户明确要求的跨武器规则
   if (rifle && m249 && m249.damage !== rifle.damage) add('rule.m249dmg', 'M249 伤害必须等于突击步枪')
   if (rifle && (rifle.magSize !== 30 || rifle.maxReserve !== 90)) add('rule.riflemag', '突击步枪弹药必须为 30/90')
-  if (rifle && gravity && gravity.damage !== rifle.damage) add('rule.gravitydmg', '引力枪伤害必须等于突击步枪')
+  if (rocket && gravity && gravity.damage !== rocket.damage) add('rule.gravitydmg', '引力枪伤害必须等于火箭筒')
   if (pistol && smg && smg.damage !== pistol.damage) add('rule.smgdmg', '冲锋枪伤害必须等于手枪')
   if (smg && (smg.magSize !== 30 || smg.maxReserve !== 150)) add('rule.smgmag', '冲锋枪弹药必须为 30/150')
   if (pistol && pistol.magSize !== 12) add('rule.pistolmag', '手枪弹匣必须 12')

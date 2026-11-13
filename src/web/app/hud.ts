@@ -1,3 +1,4 @@
+import { getElementLandscapeMetrics } from '../fullscreen.ts'
 // web/app/hud.ts —— 战术 HUD / 右上角雷达小地图(替代顶栏A~J旗帜条，屏蔽敌军位置) / 死亡界面小地图选复活点 / 底部经典武器槽
 import {
   world, localPlayer, pendingLoadout, mode, uiState, camera, canvas,
@@ -303,6 +304,12 @@ export function syncLobbyRoleUI(nextRole?: 'host' | 'client'): void {
     btn.classList.toggle('opacity-40', isClient)
     btn.classList.toggle('cursor-not-allowed', isClient)
   })
+  const botCountInp = getEl<HTMLInputElement>('botCountInput')
+  if (botCountInp) {
+    botCountInp.disabled = isClient
+    botCountInp.classList.toggle('opacity-40', isClient)
+    botCountInp.classList.toggle('cursor-not-allowed', isClient)
+  }
   const openParamsLobbyBtn = getEl<HTMLButtonElement>('lobbyOpenParamsBtn')
   if (openParamsLobbyBtn) {
     openParamsLobbyBtn.disabled = isClient
@@ -383,8 +390,8 @@ export function updateHudWeaponButtons(): void {
     setClassIfChanged(
       btn,
       slot === wepIdx
-        ? 'death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition'
-        : 'death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500',
+        ? 'death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-center transition'
+        : 'death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500',
     )
   })
   document.querySelectorAll('.death-sec-btn').forEach((btn) => {
@@ -410,21 +417,21 @@ export function updateHudWeaponButtons(): void {
     setClassIfChanged(
       btn,
       slot === wepIdx
-        ? 'lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition'
-        : 'lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500',
+        ? 'lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-center transition'
+        : 'lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500',
     )
   })
   document.querySelectorAll('.lobby-sec-btn').forEach((btn) => {
     const sec = btn.getAttribute('data-sec') || 'frag'
     const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx)
     if (!unlocked) {
-      setClassIfChanged(btn, 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60')
+      setClassIfChanged(btn, 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60')
     } else {
       setClassIfChanged(
         btn,
         sec === pendingLoadout.secondaryType
-          ? 'lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition'
-          : 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500',
+          ? 'lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-center transition'
+          : 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500',
       )
     }
     ;(btn as HTMLButtonElement).disabled = !unlocked
@@ -509,10 +516,10 @@ export function cycleSelectedSpawnPoint(): void {
 export function handleMinimapClick(clientX: number, clientY: number, canvasId = 'hudMinimapCanvas'): void {
   const mm = getEl<HTMLCanvasElement>(canvasId)
   if (!mm) return
-  const rect = mm.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) return
-  const wx = clamp(((clientX - rect.left) / rect.width) * WORLD_W, 0, WORLD_W)
-  const wy = clamp(((clientY - rect.top) / rect.height) * WORLD_H, 0, WORLD_H)
+  const m = getElementLandscapeMetrics(mm, clientX, clientY)
+  if (m.width <= 0 || m.height <= 0) return
+  const wx = clamp((m.relX / m.width) * WORLD_W, 0, WORLD_W)
+  const wy = clamp((m.relY / m.height) * WORLD_H, 0, WORLD_H)
 
   if (localPlayer.team !== 'ffa') {
     const baseX = localPlayer.team === 'blue' ? 12940 : 260
@@ -823,7 +830,7 @@ function drawTacticalMinimapOnCanvas(mm: HTMLCanvasElement, isDeathMap: boolean)
     if (typeof c.fillText === 'function') {
       c.font = isDeathMap ? 'bold 10px monospace' : 'bold 7.5px monospace'
       c.fillStyle = isSel ? '#6ee7b7' : selectable ? '#ffffff' : 'rgba(226,232,240,0.88)'
-      c.fillText(cp.code, cx - (isDeathMap ? 3.2 : 2.2), cy - dotR - (isDeathMap ? 3 : 1.8))
+      c.save(); c.textAlign = 'center'; c.fillText(cp.code, cx, cy - dotR - (isDeathMap ? 3 : 1.8)); c.restore()
     }
   }
 

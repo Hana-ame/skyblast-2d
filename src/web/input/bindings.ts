@@ -1,4 +1,4 @@
-import { toggleFullscreen, isFullscreen } from '../fullscreen.ts'
+import { toggleFullscreen, isFullscreen, enterFullscreenAndLandscape, setupMobilePwaAndAutoLandscape, getElementLandscapeMetrics, getDeferredInstallPrompt, clearDeferredInstallPrompt, isMobileOrTouchDevice } from '../fullscreen.ts'
 import { defaultMapData, carveTunnelInSolids, MAIN_DECK_TOP, BEDROCK_TOP, UNIFIED_EDGE_HIGHLIGHT } from '../../core/map.ts'
 import type { MapSolid } from '../../core/map.ts'
 import { AMMO_SPOTS, CENTER_RESPAWN_POINT } from '../../core/sim/world.ts'
@@ -89,6 +89,10 @@ export function bindAllEvents(): void {
   if (typeof window !== 'undefined' && window.visualViewport) {
     window.visualViewport.addEventListener('resize', onViewportChange)
   }
+  setupMobilePwaAndAutoLandscape(() => {
+    requestResizeCanvas()
+    renderIge()
+  })
   resizeCanvas()
 
   window.addEventListener('keydown', (e) => {
@@ -116,9 +120,9 @@ export function bindAllEvents(): void {
   window.addEventListener('keyup', (e) => { keys[e.code] = false })
 
   canvas?.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect()
-    mouse.x = e.clientX - rect.left
-    mouse.y = e.clientY - rect.top
+    const m = getElementLandscapeMetrics(canvas, e.clientX, e.clientY)
+    mouse.x = m.relX
+    mouse.y = m.relY
     if (!touchState.aimActive) touchState.aimUsed = false
   })
   canvas?.addEventListener('mousedown', (e) => {
@@ -222,17 +226,27 @@ export function bindAllEvents(): void {
   document.querySelectorAll('.bot-count-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (!isHostAuthority()) return
-      const cnt = Number(btn.getAttribute('data-bots') || 0)
+      const cnt = Math.max(0, Math.min(32, Number(btn.getAttribute('data-bots') || 0)))
       syncBotsCount(cnt)
       broadcastHostRoomParams()
       updateNetStatusUI()
-      document.querySelectorAll('.bot-count-btn').forEach((b) => {
-        b.className = Number(b.getAttribute('data-bots')) === cnt
-          ? 'bot-count-btn px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs'
-          : 'bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700'
-      })
     })
   })
+
+  const botCountInput = document.getElementById('botCountInput') as HTMLInputElement | null
+  if (botCountInput) {
+    const applyCustomBotCount = () => {
+      if (!isHostAuthority()) return
+      const raw = Number(botCountInput.value)
+      const cnt = Number.isFinite(raw) ? Math.max(0, Math.min(32, Math.floor(raw))) : 0
+      botCountInput.value = String(cnt)
+      syncBotsCount(cnt)
+      broadcastHostRoomParams()
+      updateNetStatusUI()
+    }
+    botCountInput.addEventListener('change', applyCustomBotCount)
+    botCountInput.addEventListener('input', applyCustomBotCount)
+  }
 
   document.getElementById('peerHostBtn')?.addEventListener('click', () => {
     startHostRoom()
@@ -312,6 +326,29 @@ export function bindAllEvents(): void {
     updateFsLabel()
   })
   document.addEventListener('fullscreenchange', updateFsLabel)
+
+  const handleInstallOrFullscreenApp = async (): Promise<void> => {
+    enterFullscreenAndLandscape()
+    resizeCanvas()
+    updateFsLabel()
+    const promptEv = getDeferredInstallPrompt()
+    if (promptEv) {
+      try {
+        await promptEv.prompt()
+        await promptEv.userChoice
+      } catch { /* ignore */ }
+      clearDeferredInstallPrompt()
+      showToast('📲 已触发应用安装并进入全屏横屏模式')
+    } else {
+      showToast('📲 已开启全屏横屏！手机端可通过浏览器菜单「添加到主屏幕 / 安装应用」安装到桌面')
+    }
+  }
+  document.getElementById('pwaInstallBtn')?.addEventListener('click', () => {
+    void handleInstallOrFullscreenApp()
+  })
+  document.getElementById('lobbyInstallAppBtn')?.addEventListener('click', () => {
+    void handleInstallOrFullscreenApp()
+  })
   document.getElementById('hudReloadBtn')?.addEventListener('click', () => { inputQueue.reload = true })
   document.getElementById('hudGrenadeBtn')?.addEventListener('click', () => {
     inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
@@ -565,7 +602,7 @@ export function bindAllEvents(): void {
     mode.current = nextMode
     document.querySelectorAll('.mode-btn').forEach((b) => {
       const sel = b.getAttribute('data-mode') === nextMode
-      b.className = 'mode-btn px-3 py-2 rounded-xl text-left transition border ' +
+      b.className = 'mode-btn px-3 py-2 rounded-xl text-center transition border ' +
         (sel ? 'border-2 border-emerald-400 bg-emerald-500/20' : 'border border-slate-700 bg-slate-950/60 hover:border-slate-500')
     })
     if (nextMode === 'ffa') {
@@ -620,6 +657,11 @@ export function bindAllEvents(): void {
 
   document.getElementById('startBattleBtn')?.addEventListener('click', () => {
     warmupAudioCtx()
+    if (isMobileOrTouchDevice() || touchState.enabled) {
+      enterFullscreenAndLandscape()
+      resizeCanvas()
+      updateFsLabel()
+    }
     if (uiState.lobbyRole === 'client' && netState.role !== 'client') {
       const raw = cleanRoomIdString((document.getElementById('peerRemoteIdInput') as HTMLInputElement | null)?.value || '')
       if (raw) {
@@ -703,9 +745,9 @@ export function bindAllEvents(): void {
     const aimFireHintEl = document.getElementById('touchAimFireBadge')
 
     const handleMove = (clientX: number, clientY: number): void => {
-      const rect = zoneEl.getBoundingClientRect()
-      let dx = clientX - (rect.left + rect.width / 2)
-      let dy = clientY - (rect.top + rect.height / 2)
+      const m = getElementLandscapeMetrics(zoneEl, clientX, clientY)
+      let dx = m.dxFromCenter
+      let dy = m.dyFromCenter
       const dist = Math.hypot(dx, dy)
       if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist }
       stickEl.style.transform = `translate(${dx}px, ${dy}px)`
@@ -778,7 +820,7 @@ export function bindAllEvents(): void {
   syncTeamButtonsUI()
   document.querySelectorAll('.mode-btn').forEach((b) => {
     const sel = b.getAttribute('data-mode') === mode.current
-    b.className = 'mode-btn px-3 py-2 rounded-xl text-left transition border ' +
+    b.className = 'mode-btn px-3 py-2 rounded-xl text-center transition border ' +
       (sel ? 'border-2 border-emerald-400 bg-emerald-500/20' : 'border border-slate-700 bg-slate-950/60 hover:border-slate-500')
   })
 

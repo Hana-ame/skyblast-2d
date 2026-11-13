@@ -124,7 +124,7 @@ export function truncateSegmentToFree(
   return { x: wrapX(x1 + dx), y: wrapY(y1 + dy), dx, dy, shortened: false }
 }
 
-/** 扫描覆盖身体 AABB 的地形格与障碍物，判断玩家躯干是否发生穿模 */
+/** 扫描覆盖身体 AABB 的地形格与障碍物，判断玩家躯干是否发生穿模（带微小容差避免贴墙/贴地边界浮点误判） */
 export function checkBodyOverlapsAt(
   terrain: Terrain,
   obstacles: Obstacle[],
@@ -134,11 +134,12 @@ export function checkBodyOverlapsAt(
 ): boolean {
   const wx = x >= 0 && x < WORLD_W ? x : wrapX(x)
   const halfW = 10
+  const EPS = 1e-3
   const tGrid = terrain.grid
-  const gx0 = Math.floor((wx - halfW) / TILE_SIZE)
-  const gx1 = Math.floor((wx + halfW) / TILE_SIZE)
-  const wyTop = y - 30 >= 0 && y - 30 < WORLD_H ? y - 30 : wrapY(y - 30)
-  const wyBot = y + 16 >= 0 && y + 16 < WORLD_H ? y + 16 : wrapY(y + 16)
+  const gx0 = Math.floor((wx - halfW + EPS) / TILE_SIZE)
+  const gx1 = Math.floor((wx + halfW - EPS) / TILE_SIZE)
+  const wyTop = y - 30 + EPS >= 0 && y - 30 + EPS < WORLD_H ? y - 30 + EPS : wrapY(y - 30 + EPS)
+  const wyBot = y + 16 - EPS >= 0 && y + 16 - EPS < WORLD_H ? y + 16 - EPS : wrapY(y + 16 - EPS)
   const gy0 = Math.floor(wyTop / TILE_SIZE)
   const gy1 = Math.floor(wyBot / TILE_SIZE)
   for (let gx = gx0; gx <= gx1; gx++) {
@@ -154,7 +155,7 @@ export function checkBodyOverlapsAt(
       const tileR = lx + TILE_SIZE / 2
       const tileT = ly - TILE_SIZE / 2
       const tileB = ly + TILE_SIZE / 2
-      if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true
+      if (tileR > -halfW + EPS && tileL < halfW - EPS && tileB > -30 + EPS && tileT < 16 - EPS) return true
     }
   }
   const obList = obstacleBroadBuckets ? obstacleBroadBuckets[bucketIdx(wx)] : obstacles
@@ -168,7 +169,7 @@ export function checkBodyOverlapsAt(
       const tileR = dx + ob.w / 2
       const tileT = dy - ob.h / 2
       const tileB = dy + ob.h / 2
-      if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true
+      if (tileR > -halfW + EPS && tileL < halfW - EPS && tileB > -30 + EPS && tileT < 16 - EPS) return true
     }
   }
   return false

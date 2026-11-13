@@ -7,7 +7,7 @@
 //   3. 固定路线巡逻（Fixed-Route Patrol）：
 //      - AI 移动完全遵循预设的三条固定巡逻路线（主地面路线 `main_deck`、高空拱桥路线 `sky_arch`、地下通道路线 `underground`），在路标点之间往返循环巡逻，绝不因为隔墙追踪敌人坐标而卡死在墙角或地板下；
 //      - 巡逻过程中实时检测直接视线（hasLOS）：有直接视线时瞄准敌人开火，无直接视线时枪口朝向当前巡逻行进方向继续按固定路线推进。
-import { botNames, bots, world, localPlayer, mode } from '../app/context.ts'
+import { botNames, bots, world, localPlayer, mode, MAX_BOT_COUNT } from '../app/context.ts'
 import { updateTeamCountUI, updateSpawnPointButtonsUI } from '../app/hud.ts'
 import { WEAPONS, isSecondaryUnlocked } from '../../core/weapons.ts'
 import { MAIN_DECK_TOP } from '../../core/map.ts'
@@ -112,6 +112,8 @@ export interface BotMemory {
   routeId: PatrolRouteId
   waypointIdx: number
   patrolDir: 1 | -1
+  lastMoveDir: 1 | -1
+  moveSwitchCooldown: number
   lastX: number
   lastY: number
   stuckTicks: number
@@ -124,9 +126,28 @@ export interface BotMemory {
   coverCacheTick?: number
   coverCacheTargetId?: number
   coverCache?: { x: number; y: number; kind: 'obstacle' | 'terrain'; coverX: number } | null
+  coverHoldTimer: number
+  coverCooldownTimer: number
+  rngState: number
+  tacticTimer: number
+  tacticMove: -1 | 0 | 1
+  tacticJetTicks: number
+  aimOffset: number
+  targetJitter: number
+  burstCycle: number
+  burstDuty: number
+  aggression: number
 }
 
 const botMemoryMap = new Map<number, BotMemory>()
+
+/** 机器人独立轻量级伪随机数生成器（0..1），确保每个 AI 具有差异化战术随机性 */
+function nextBotRand(mem: BotMemory): number {
+  let t = (mem.rngState += 0x6d2b79f5) | 0
+  t = Math.imul(t ^ (t >>> 15), t | 1)
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+}
 
 /** 根据槽位分配默认固定巡逻路线 */
 function defaultRouteForSlot(slotIdx: number): PatrolRouteId {
@@ -167,17 +188,96 @@ function getBotMaxFuel(bot: PlayerState): number {
   return getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1)
 }
 
+/** 带死区与方向保持的水平方向选择，彻底消除在目标点临界处左右高频打转 */
+function chooseHorizontalDir(dx: number, mem: BotMemory, deadband = 14): -1 | 0 | 1 {
+  if (Math.abs(dx) <= deadband) return 0
+  return dx > 0 ? 1 : -1
+}
+
+/** 刷新机器人阶段性战术随机状态（走位偏好、瞄准微偏、点射节奏、跳跃/喷气微操） */
+function refreshBotTactics(bot: PlayerState, mem: BotMemory, hasLOS: boolean, dist: number, rawDx: number): void {
+  const r1 = nextBotRand(mem)
+  const r2 = nextBotRand(mem)
+  const r3 = nextBotRand(mem)
+  mem.tacticTimer = 22 + Math.floor(r1 * 34) // 约 0.36s ~ 0.93s 更新一次战术动作
+  mem.aimOffset = (r2 - 0.5) * 0.055
+  mem.targetJitter = (r3 - 0.5) * 180
+
+  if (hasLOS && dist < 980) {
+    const towardDir: 1 | -1 = rawDx >= 0 ? 1 : -1
+    const wepId = bot.weaponIndex
+    const isCloseWep = wepId === 0 || wepId === 8 || wepId === 6
+    const isFarWep = wepId === 2 || wepId === 3 || wepId === 4
+    const roll = nextBotRand(mem)
+
+    if (isCloseWep) {
+      if (dist > 240) {
+        mem.tacticMove = roll < 0.68 ? towardDir : roll < 0.86 ? (-towardDir as -1 | 1) : 0
+      } else {
+        mem.tacticMove = roll < 0.45 ? towardDir : roll < 0.85 ? (-towardDir as -1 | 1) : 0
+      }
+    } else if (isFarWep) {
+      if (dist < 340) {
+        mem.tacticMove = roll < 0.68 ? (-towardDir as -1 | 1) : roll < 0.85 ? 0 : towardDir
+      } else if (dist < 760) {
+        mem.tacticMove = roll < 0.36 ? -1 : roll < 0.72 ? 1 : 0
+      } else {
+        mem.tacticMove = roll < 0.62 ? towardDir : roll < 0.82 ? (-towardDir as -1 | 1) : 0
+      }
+    } else {
+      // 均衡武器（突击步枪/手枪/M249）：中近距离随机横移走位或压进
+      if (dist < 260) {
+        mem.tacticMove = roll < 0.55 ? (-towardDir as -1 | 1) : roll < 0.85 ? towardDir : 0
+      } else if (dist < 620) {
+        mem.tacticMove = roll < 0.42 ? towardDir : roll < 0.78 ? (-towardDir as -1 | 1) : 0
+      } else {
+        mem.tacticMove = roll < 0.75 ? towardDir : roll < 0.90 ? (-towardDir as -1 | 1) : 0
+      }
+    }
+
+    if (nextBotRand(mem) < 0.18) {
+      mem.tacticJetTicks = 6 + Math.floor(nextBotRand(mem) * 10)
+    }
+  } else {
+    mem.tacticMove = mem.patrolDir
+    if (!mem.manualRouteLocked && nextBotRand(mem) < 0.06) {
+      mem.tacticJetTicks = 5 + Math.floor(nextBotRand(mem) * 8)
+    }
+  }
+}
+
 /** 在出生或重部署后，根据实际出生位置与槽位绑定固定巡逻路线及起始路标点 */
 function alignPatrolRouteOnSpawn(bot: PlayerState, mem: BotMemory): void {
   const bx = bot.pos.x
   const by = bot.pos.y
+  const goal = getEnemyOriginalBaseSpawn(bot)
   const defaultDir: 1 | -1 =
     bot.team === 'red' ? 1 :
     bot.team === 'blue' ? -1 :
     bx <= 6600 ? 1 : -1
 
   if (!mem.manualRouteLocked) {
-    mem.routeId = 'main_deck'
+    if (by < MAIN_DECK_TOP - 220) {
+      mem.routeId = 'sky_arch'
+    } else if (by > MAIN_DECK_TOP + 120) {
+      mem.routeId = 'underground'
+    } else {
+      const r = nextBotRand(mem)
+      const slotRoute = defaultRouteForSlot(mem.slotIdx)
+      if (r < 0.55) {
+        mem.routeId = 'main_deck'
+      } else if (r < 0.82) {
+        mem.routeId = slotRoute
+      } else {
+        mem.routeId = r < 0.91 ? 'sky_arch' : 'underground'
+      }
+    }
+    // 重生时有一定概率轮换主武器，增加战场多样性
+    if (mem.initialized && nextBotRand(mem) < 0.35) {
+      const nextWep = BOT_PRIMARY_POOL[Math.floor(nextBotRand(mem) * BOT_PRIMARY_POOL.length)]
+      bot.weaponIndex = nextWep
+      bot.lastPrimaryIndex = nextWep
+    }
   } else if (by < MAIN_DECK_TOP - 220) {
     mem.routeId = 'sky_arch'
   } else if (by > MAIN_DECK_TOP + 120) {
@@ -188,11 +288,15 @@ function alignPatrolRouteOnSpawn(bot: PlayerState, mem: BotMemory): void {
 
   const route = PATROL_ROUTES[mem.routeId]
   mem.waypointIdx = findNearestWaypointIndex(route, bx, by)
-  mem.patrolDir = defaultDir
+  mem.patrolDir = goal.x >= bx ? 1 : defaultDir
   if (mem.waypointIdx === 0) mem.patrolDir = 1
   else if (mem.waypointIdx === route.length - 1) mem.patrolDir = -1
+  mem.lastMoveDir = mem.patrolDir
+  mem.moveSwitchCooldown = 0
   mem.stuckTicks = 0
   mem.unstuckTimer = 0
+  mem.coverHoldTimer = 0
+  mem.coverCooldownTimer = 0
   mem.initialized = true
 }
 
@@ -201,11 +305,14 @@ function getBotMemory(bot: PlayerState, slotIdx = 0): BotMemory {
   if (!mem) {
     const routeId = defaultRouteForSlot(slotIdx)
     const defaultDir: 1 | -1 = bot.team === 'blue' ? -1 : 1
+    const seed = ((world.seed ^ Math.imul(bot.id + 1, 0x9e3779b9) ^ Math.imul(slotIdx + 7, 0x85ebca6b)) >>> 0) || 1
     mem = {
       slotIdx,
       routeId,
       waypointIdx: 0,
       patrolDir: defaultDir,
+      lastMoveDir: defaultDir,
+      moveSwitchCooldown: 0,
       lastX: bot.pos.x,
       lastY: bot.pos.y,
       stuckTicks: 0,
@@ -214,6 +321,17 @@ function getBotMemory(bot: PlayerState, slotIdx = 0): BotMemory {
       rechargingFuel: false,
       sniperReleaseTick: false,
       initialized: false,
+      coverHoldTimer: 0,
+      coverCooldownTimer: 0,
+      rngState: seed,
+      tacticTimer: 10 + (slotIdx % 20),
+      tacticMove: defaultDir,
+      tacticJetTicks: 0,
+      aimOffset: 0,
+      targetJitter: 0,
+      burstCycle: 9 + (slotIdx % 5),
+      burstDuty: 6 + (slotIdx % 3),
+      aggression: 0.82 + ((slotIdx * 17) % 10) * 0.04,
     }
     alignPatrolRouteOnSpawn(bot, mem)
     botMemoryMap.set(bot.id, mem)
@@ -255,10 +373,14 @@ export function setBotPatrolRoute(bot: PlayerState, routeId: PatrolRouteId, star
   } else if (mem.waypointIdx === route.length - 1) {
     mem.patrolDir = -1
   }
+  mem.lastMoveDir = mem.patrolDir
+  mem.moveSwitchCooldown = 0
   mem.lastX = bot.pos.x
   mem.lastY = bot.pos.y
   mem.stuckTicks = 0
   mem.unstuckTimer = 0
+  mem.coverHoldTimer = 0
+  mem.coverCooldownTimer = 0
   mem.initialized = true
 }
 
@@ -270,7 +392,8 @@ export function computeBotTeam(idx: number): TeamId {
   return idx % 2 === 0 ? enemyTeam : playerTeam
 }
 
-export function syncBotsCount(target: number): void {
+export function syncBotsCount(rawTarget: number): void {
+  const target = Math.max(0, Math.min(MAX_BOT_COUNT, Math.floor(Number.isFinite(rawTarget) ? rawTarget : 0)))
   world.config.randomSpawn = mode.current === 'ffa'
 
   while (bots.length > target) {
@@ -300,6 +423,18 @@ export function syncBotsCount(target: number): void {
       alignPatrolRouteOnSpawn(b, mem)
     }
   })
+  if (typeof document !== 'undefined') {
+    const inp = document.getElementById('botCountInput') as HTMLInputElement | null
+    if (inp && inp.value !== String(target)) inp.value = String(target)
+    const btns = document.querySelectorAll('.bot-count-btn')
+    if (btns && typeof btns.forEach === 'function') {
+      btns.forEach((b) => {
+        b.className = Number(b.getAttribute('data-bots')) === target
+          ? 'bot-count-btn px-2 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs text-center'
+          : 'bot-count-btn px-2 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700 text-center'
+      })
+    }
+  }
   updateTeamCountUI()
   updateSpawnPointButtonsUI()
 }
@@ -341,10 +476,12 @@ function isMuzzleBlockedNear(bot: PlayerState, aim: number, nearDist = 72): bool
   return false
 }
 
-/** 目标选择：优先选择巡逻视野内有直接视线（LOS）的最近敌人（直接遍历 world.players 避免每帧分配候选数组） */
+/** 目标选择：优先选择巡逻视野内有直接视线（LOS）的最近敌人，并带轻微个体随机偏置防止多 AI 机械集火同一目标 */
 export function pickBotTarget(bot: PlayerState): PlayerState | null {
   const bx = bot.pos.x
   const by = bot.pos.y - 12
+  const mem = botMemoryMap.get(bot.id)
+  const jitter = mem && !mem.manualRouteLocked ? mem.targetJitter : 0
   let bestTarget: PlayerState | null = null
   let bestScore = Infinity
   const players = world.players
@@ -358,7 +495,8 @@ export function pickBotTarget(bot: PlayerState): PlayerState | null {
     const d = directDist(bx, by, ex, ey)
     const los = d < 1800 && hasLineOfSight(bx, by, ex, ey)
     const sameLayer = Math.abs(e.pos.y - bot.pos.y) < 280
-    const score = d - (los ? 3200 : 0) - (sameLayer ? 400 : 0)
+    const idBias = ((bot.id * 31 + e.id * 17) % 11) * (jitter * 0.08)
+    const score = d - (los ? 3200 : 0) - (sameLayer ? 400 : 0) + idBias
     if (score < bestScore) {
       bestScore = score
       bestTarget = e
@@ -426,13 +564,8 @@ export function findNearestCoverPosition(
 }
 
 /** AI 始终固定使用原始基地出生点 ('base')，绝不选择旗帜据点作为重生点 */
-function updateBotSelectedSpawn(bot: PlayerState, mem: BotMemory): void {
+function updateBotSelectedSpawn(bot: PlayerState, _mem: BotMemory): void {
   bot.selectedSpawnId = 'base'
-  if (!mem.manualRouteLocked) {
-    mem.routeId = 'main_deck'
-    const goal = getEnemyOriginalBaseSpawn(bot)
-    mem.patrolDir = goal.x >= bot.pos.x ? 1 : -1
-  }
 }
 
 function hasOpenShaftAbove(bx: number, by: number): boolean {
@@ -444,12 +577,43 @@ function hasOpenShaftAbove(bx: number, by: number): boolean {
   return true
 }
 
-/** 推进固定巡逻路标索引（在路线两端自动折返） */
-function advancePatrolWaypoint(mem: BotMemory, route: PatrolWaypoint[]): void {
-  let nextIdx = mem.waypointIdx + mem.patrolDir
+/** 推进固定巡逻路标索引（在路线两端自动折返，非锁定模式下在交汇节点有一定概率切换巡逻路线） */
+function advancePatrolWaypoint(bot: PlayerState, mem: BotMemory, route: PatrolWaypoint[]): void {
   if (!mem.manualRouteLocked) {
-    nextIdx = Math.max(0, Math.min(route.length - 1, nextIdx))
-  } else if (nextIdx >= route.length) {
+    const bx = bot.pos.x
+    const by = bot.pos.y
+    const r = nextBotRand(mem)
+    // 在东西两端入口或中央竖井口附近，有一定概率切换巡逻层（主地面 / 空岛拱桥 / 地下通道）
+    if (mem.routeId === 'main_deck' && Math.abs(by - (MAIN_DECK_TOP - 16)) < 45) {
+      if ((bx < 1650 || bx > 11550) && r < 0.22) {
+        mem.routeId = 'sky_arch'
+        const nextRoute = PATROL_ROUTES.sky_arch
+        mem.waypointIdx = findNearestWaypointIndex(nextRoute, bx, by)
+        mem.patrolDir = bx < 6600 ? 1 : -1
+        mem.stuckTicks = 0
+        return
+      }
+      if (bx > 5800 && bx < 7400 && r >= 0.22 && r < 0.34) {
+        mem.routeId = 'underground'
+        const nextRoute = PATROL_ROUTES.underground
+        mem.waypointIdx = findNearestWaypointIndex(nextRoute, bx, by)
+        mem. stuckTicks = 0
+        return
+      }
+    } else if ((mem.routeId === 'sky_arch' || mem.routeId === 'underground') &&
+               (mem.waypointIdx === 0 || mem.waypointIdx === route.length - 1) && r < 0.35) {
+      mem.routeId = 'main_deck'
+      const nextRoute = PATROL_ROUTES.main_deck
+      mem.waypointIdx = findNearestWaypointIndex(nextRoute, bx, by)
+      const goal = getEnemyOriginalBaseSpawn(bot)
+      mem.patrolDir = goal.x >= bx ? 1 : -1
+      mem.stuckTicks = 0
+      return
+    }
+  }
+
+  let nextIdx = mem.waypointIdx + mem.patrolDir
+  if (nextIdx >= route.length) {
     mem.patrolDir = -1
     nextIdx = Math.max(0, route.length - 2)
   } else if (nextIdx < 0) {
@@ -460,7 +624,7 @@ function advancePatrolWaypoint(mem: BotMemory, route: PatrolWaypoint[]): void {
   mem.stuckTicks = 0
 }
 
-/** 固定路线巡逻导航器：严格沿 mem.routeId 的路标序列巡逻 */
+/** 固定路线巡逻导航器：沿 mem.routeId 巡逻，消除临界点高频翻转与原地打转 */
 function computePatrolNavigation(
   bot: PlayerState,
   mem: BotMemory,
@@ -489,25 +653,38 @@ function computePatrolNavigation(
     mem.rechargingFuel = true
   }
 
-  const route = PATROL_ROUTES[mem.routeId]
+  let route = PATROL_ROUTES[mem.routeId]
   mem.waypointIdx = Math.max(0, Math.min(route.length - 1, mem.waypointIdx))
   let wp = route[mem.waypointIdx]
 
-  const tolX = wp.tolX ?? (mem.routeId === 'sky_arch' ? 80 : 54)
-  const tolY = wp.tolY ?? (mem.routeId === 'sky_arch' ? 28 : 44)
+  const tolX = wp.tolX ?? (mem.routeId === 'sky_arch' ? 80 : 58)
+  const tolY = wp.tolY ?? (mem.routeId === 'sky_arch' ? 28 : 48)
   const requireGround = mem.routeId === 'sky_arch'
   if ((!requireGround || supported) && Math.abs(bx - wp.x) <= tolX && Math.abs(by - wp.y) <= tolY) {
-    advancePatrolWaypoint(mem, route)
+    advancePatrolWaypoint(bot, mem, route)
+    route = PATROL_ROUTES[mem.routeId]
     wp = route[mem.waypointIdx]
   }
 
-  if (stepDist < 1.1 && !mem.rechargingFuel) {
+  // 防卡死检测：排除正在地面蓄能或主动掩体蹲守状态
+  if (stepDist < 1.15 && !mem.rechargingFuel && mem.coverHoldTimer === 0) {
     mem.stuckTicks++
-    if (mem.stuckTicks > 70) {
-      mem.unstuckTimer = 20
-      mem.unstuckDir = bx < 1000 ? 1 : bx > 12200 ? -1 : (-mem.patrolDir as -1 | 1)
+    const stuckThreshold = mem.manualRouteLocked ? 70 : 48
+    if (mem.stuckTicks > stuckThreshold) {
+      mem.unstuckTimer = mem.manualRouteLocked ? 20 : (22 + Math.floor(nextBotRand(mem) * 16))
+      if (bx < 1000) {
+        mem.unstuckDir = 1
+      } else if (bx > 12200) {
+        mem.unstuckDir = -1
+      } else if (!mem.manualRouteLocked && nextBotRand(mem) < 0.45) {
+        mem.patrolDir = (-mem.patrolDir as -1 | 1)
+        mem.unstuckDir = mem.patrolDir
+      } else {
+        mem.unstuckDir = (-mem.lastMoveDir as -1 | 1)
+      }
       mem.waypointIdx = findNearestWaypointIndex(route, bx, by)
-      advancePatrolWaypoint(mem, route)
+      advancePatrolWaypoint(bot, mem, route)
+      route = PATROL_ROUTES[mem.routeId]
       wp = route[mem.waypointIdx]
     }
   } else if (stepDist > 2.2) {
@@ -598,25 +775,25 @@ function computePatrolNavigation(
       if (by <= wp.y - 6) {
         const goalSpawn = !mem.manualRouteLocked ? getEnemyOriginalBaseSpawn(bot) : null
         const targetX = goalSpawn && ((mem.patrolDir > 0 && bx >= wp.x - 48) || (mem.patrolDir < 0 && bx <= wp.x + 48)) ? goalSpawn.x : wp.x
-        move = Math.abs(targetX - bx) <= 18 ? 0 : (targetX >= bx ? 1 : -1)
+        move = chooseHorizontalDir(targetX - bx, mem, 18)
       } else {
-        move = distToShaft > 12 ? (shaftX > bx ? 1 : -1) : 0
+        move = distToShaft > 14 ? (shaftX > bx ? 1 : -1) : 0
       }
       return { move, jump, jetpack, dive }
     }
 
     if (wp.ascendX !== undefined && Math.abs(bx - wp.ascendX) < 105 && !supported) {
-      move = wp.x >= bx ? 1 : -1
+      move = chooseHorizontalDir(wp.x - bx, mem, 12) || mem.patrolDir
       if (by >= wp.y - 8) jetpack = true
       return { move, jump, jetpack, dive }
     }
 
     if (wp.y > by + 80) {
-      move = wp.x >= bx ? 1 : -1
+      move = chooseHorizontalDir(wp.x - bx, mem, 16) || mem.patrolDir
       return { move, jump: false, jetpack: false, dive: true }
     }
 
-    move = wp.x >= bx ? 1 : -1
+    move = chooseHorizontalDir(wp.x - bx, mem, 14) || mem.patrolDir
     if (world.terrain.isSolidAt(bx + move * 28, by - 10)) {
       if (bot.onGround) jump = true
     }
@@ -664,12 +841,12 @@ function computePatrolNavigation(
           move = dx >= 0 ? 1 : -1
         }
       } else {
-        move = dx >= 0 ? 1 : -1
+        move = chooseHorizontalDir(dx, mem, 12) || mem.patrolDir
       }
       return { move, jump, jetpack, dive }
     }
 
-    move = dx >= 0 ? 1 : -1
+    move = chooseHorizontalDir(dx, mem, 12) || mem.patrolDir
     const steppingOffEdge = supported && !world.terrain.isSolidAt(bx + move * 36, by + 24)
     if (steppingOffEdge) {
       if (bot.onGround) jump = true
@@ -690,7 +867,7 @@ function computePatrolNavigation(
     return { move, jump, jetpack, dive }
   }
 
-  move = wp.x >= bx ? 1 : -1
+  move = chooseHorizontalDir(wp.x - bx, mem, 14) || mem.patrolDir
 
   if (by > MAIN_DECK_TOP + 8 && by <= MAIN_DECK_TOP + 80) {
     if (bot.onGround) jump = true
@@ -725,6 +902,10 @@ export function botInput(bot: PlayerState): WorldInput {
   const mem = getBotMemory(bot)
   updateBotSelectedSpawn(bot, mem)
 
+  if (mem.moveSwitchCooldown > 0) mem.moveSwitchCooldown--
+  if (mem.coverCooldownTimer > 0) mem.coverCooldownTimer--
+  if (mem.tacticJetTicks > 0) mem.tacticJetTicks--
+
   const nav = computePatrolNavigation(bot, mem)
   w.move = nav.move
   w.jump = nav.jump
@@ -742,23 +923,94 @@ export function botInput(bot: PlayerState): WorldInput {
 
   const bx = bot.pos.x
   const by = bot.pos.y - 12
-  const tx = target ? target.pos.x : bx + mem.patrolDir * 400
+  const tx = target ? target.pos.x : bx + mem.lastMoveDir * 400
   const ty = target ? target.pos.y - 12 : by
   const rawDx = tx - bx
   const rawDy = ty - by
   const dist = target ? Math.hypot(rawDx, rawDy) : 9999
   const hasLOS = !!target && dist < 1650 && hasLineOfSight(bx, by, tx, ty)
 
+  // 阶段性刷新战术随机决策（走位、微偏、跳跃/短喷气）
+  if (!mem.manualRouteLocked) {
+    mem.tacticTimer--
+    if (mem.tacticTimer <= 0) {
+      refreshBotTactics(bot, mem, hasLOS, dist, rawDx)
+    }
+  }
+
+  const maxFuel = getBotMaxFuel(bot)
+
+  // 交战时的适度随机机动（仅在非手动锁定巡逻路线、未处于解卡/过坑跳跃时生效）
+  if (!mem.manualRouteLocked && mem.unstuckTimer <= 0 && hasLOS && target && dist < 920 && Math.abs(rawDy) < 260) {
+    const stepEdgeDanger = !world.terrain.isSolidAt(bx + mem.tacticMove * 44, bot.pos.y + 24)
+    if (!stepEdgeDanger) {
+      w.move = mem.tacticMove
+    }
+    if (mem.tacticJetTicks > 0 && !mem.rechargingFuel && bot.fuel > maxFuel * 0.48 && hasOpenShaftAbove(bx, bot.pos.y)) {
+      if (bot.onGround) w.jump = true
+      w.jetpack = true
+    }
+  } else if (!mem.manualRouteLocked && mem.unstuckTimer <= 0 && mem.tacticJetTicks > 0 && !mem.rechargingFuel && bot.fuel > maxFuel * 0.65 && hasOpenShaftAbove(bx, bot.pos.y)) {
+    if (bot.onGround) w.jump = true
+  }
+
+  // 掩体躲避逻辑：仅在真正需要掩护（换弹/残血/空仓）且未处于出掩体冷却时前往掩体，彻底消除在掩体旁满血往返打转
+  if (!mem.manualRouteLocked && mem.unstuckTimer <= 0 && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
+    let cover = mem.coverCache ?? null
+    if (mem.coverCacheTick === undefined || world.tick - mem.coverCacheTick >= 8 || mem.coverCacheTargetId !== target.id) {
+      cover = findNearestCoverPosition(bot, target)
+      mem.coverCacheTick = world.tick
+      mem.coverCacheTargetId = target.id
+      mem.coverCache = cover
+    }
+    const needCoverHide = bot.reloading || bot.hp < 75 || curAmmo <= 0 || (bot.fireCooldown > 0.35 && dist < 680)
+    if (cover && needCoverHide && mem.coverCooldownTimer <= 0) {
+      mem.coverHoldTimer++
+      if (mem.coverHoldTimer > 95) {
+        // 掩体最多停留约 1.6s，防止死蹲掩体不推进
+        mem.coverHoldTimer = 0
+        mem.coverCooldownTimer = 110
+      } else {
+        const dxCover = cover.x - bx
+        if (Math.abs(dxCover) > 22) {
+          w.move = dxCover > 0 ? 1 : -1
+        } else {
+          w.move = 0
+          w.jump = false
+          w.jetpack = false
+        }
+      }
+    } else if (mem.coverHoldTimer > 0) {
+      // 换弹/状态恢复完毕后立即设置冷却，顺畅离开掩体继续推进
+      mem.coverHoldTimer = 0
+      mem.coverCooldownTimer = 75
+    }
+  } else {
+    mem.coverHoldTimer = 0
+  }
+
+  // 方向迟滞：防止非紧急情况下相邻帧左右反复横跳导致原地转圈
+  if (w.move !== 0) {
+    if (w.move !== mem.lastMoveDir) {
+      if (mem.moveSwitchCooldown <= 0 || mem.unstuckTimer > 0) {
+        mem.lastMoveDir = w.move
+        mem.moveSwitchCooldown = mem.manualRouteLocked ? 2 : 10
+      } else {
+        w.move = mem.lastMoveDir
+      }
+    }
+  }
+
   if (hasLOS && target) {
     const projSpeed = Math.max(600, wep.speed || 1200)
     const travelTime = Math.min(0.45, dist / projSpeed)
     const leadX = wep.beam ? tx : tx + target.vel.x * travelTime * 0.65
     const leadY = wep.beam ? ty : ty + target.vel.y * travelTime * 0.45 - (wep.gravityScale ? 0.5 * 1250 * wep.gravityScale * travelTime * travelTime * 18 : 0)
-    const jitter = Math.sin(world.tick * 0.19 + bot.id * 2.3) * 0.018
-    w.aim = Math.atan2(leadY - by, leadX - bx) + jitter
+    const sway = Math.sin(world.tick * 0.17 + bot.id * 2.3) * 0.016 + (mem.manualRouteLocked ? 0 : mem.aimOffset)
+    w.aim = Math.atan2(leadY - by, leadX - bx) + sway
   } else {
-    const lookDir = nav.move !== 0 ? nav.move : mem.patrolDir
-    const pitch = nav.jetpack ? -0.42 : nav.dive ? 0.55 : -0.06
+    const lookDir = mem.lastMoveDir
+    const pitch = w.jetpack ? -0.42 : w.dive ? 0.55 : -0.06
     w.aim = lookDir > 0 ? pitch : Math.PI - pitch
   }
 
@@ -782,45 +1034,28 @@ export function botInput(bot: PlayerState): WorldInput {
     } else if (wep.beam) {
       w.fire = true
     } else {
-      w.fire = (world.tick + bot.id * 3) % 10 < 7
+      const cycle = Math.max(6, mem.burstCycle)
+      const duty = Math.min(cycle - 1, Math.max(4, mem.burstDuty))
+      w.fire = (world.tick + bot.id * 3) % cycle < duty
     }
   } else {
     w.fire = false
     mem.sniperReleaseTick = false
   }
 
-  if (!mem.manualRouteLocked && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
-    let cover = mem.coverCache ?? null
-    if (mem.coverCacheTick === undefined || world.tick - mem.coverCacheTick >= 6 || mem.coverCacheTargetId !== target.id) {
-      cover = findNearestCoverPosition(bot, target)
-      mem.coverCacheTick = world.tick
-      mem.coverCacheTargetId = target.id
-      mem.coverCache = cover
-    }
-    const needCoverHide = bot.reloading || bot.hp < 75 || bot.fireCooldown > 0.16 || curAmmo <= 0
-    if (cover && (needCoverHide || Math.abs(cover.x - bx) < 220)) {
-      const dxCover = cover.x - bx
-      if (Math.abs(dxCover) > 14) {
-        w.move = dxCover > 0 ? 1 : -1
-      } else if (needCoverHide) {
-        w.move = 0
-        w.jump = false
-        w.jetpack = false
-      }
-    }
-  }
-
   const streak = bot.deathStreak ?? 0
   if (!isSecondaryUnlocked(bot.secondary, streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
     bot.secondary = 'frag'
   }
-  if (bot.secondaryCooldown <= 0 && (world.tick + bot.id * 7) % 15 === 0) {
+  const secCheckInterval = 12 + (bot.id % 7)
+  if (bot.secondaryCooldown <= 0 && (world.tick + bot.id * 7) % secCheckInterval === 0) {
     const secId = bot.secondary
     if (isSecondaryUnlocked(secId, streak, bot.dollCharges, bot.weaponIndex)) {
       if (secId === 'shield' && hasLOS && dist < 680 && (bot.hp < 95 || dist < 420)) {
         w.secondary = { type: 'shield', targetX: bx, targetY: by }
       } else if (secId === 'frag' && bot.fragCharges > 0 && hasLOS && dist > 180 && dist < 620 && !muzzleBlocked) {
-        w.secondary = { type: 'frag', targetX: tx, targetY: ty }
+        const throwSpread = mem.manualRouteLocked ? 0 : (nextBotRand(mem) - 0.5) * 36
+        w.secondary = { type: 'frag', targetX: tx + throwSpread, targetY: ty - 10 }
       } else if (secId === 'obstacle' && bot.onGround && hasLOS && dist > 200 && dist < 650 && Math.abs(rawDy) < 140) {
         w.secondary = { type: 'obstacle', targetX: bx + (rawDx >= 0 ? 80 : -80), targetY: bot.pos.y }
       } else if (secId === 'doll' && bot.doll === null && hasLOS && dist < 560) {

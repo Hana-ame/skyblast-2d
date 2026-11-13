@@ -4,12 +4,71 @@ import type { Rng } from '../rng.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getPlayerFragMaxCharges } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
+import { BODY_HALF_W, BODY_BOTTOM } from './landmarks.ts'
 import { bucketIdx, findObstacleAt, checkBodyOverlapsAt } from './spatial.ts'
 import { ensureFreePosition, resolvePenetration } from './playerPhysics.ts'
-import { createProjectile } from './projectiles.ts'
+import { createProjectile, SHIELD_HITBOX_PAD } from './projectiles.ts'
 import type {
   PlayerState, Projectile, Grenade, Landmine, Airstrike, Obstacle, Mortar, Watchtower, WorldEvent, TeamId,
 } from '../types.ts'
+
+/** 手榴弹实体碰撞半径（px） */
+export const GRENADE_HITBOX_RADIUS = 6
+
+/** 判断点 (x, y) 是否落在玩家 t 的人体碰撞箱（含头部圆 + 躯干 AABB + 护盾外扩）内 */
+export function isPointInPlayerGrenadeHitbox(
+  t: PlayerState,
+  x: number,
+  y: number,
+  headRadius: number,
+  pad = GRENADE_HITBOX_RADIUS,
+): boolean {
+  if (!t.deployed || !t.alive || t.respawnTimer > 0) return false
+  const shieldPad = (t.shieldTimer > 0 && t.shieldHp > 0) ? SHIELD_HITBOX_PAD : 0
+  const dx = wrapDeltaX(t.pos.x, x)
+  const absDx = Math.abs(dx)
+  const headR = headRadius + pad + shieldPad
+  const bodyHalfW = BODY_HALF_W + pad + shieldPad
+  if (absDx > Math.max(headR, bodyHalfW)) return false
+
+  // 1. 头部圆形碰撞箱 (t.pos.x, t.pos.y - 24)
+  const dyHead = wrapDeltaY(t.pos.y - 24, y)
+  if (dx * dx + dyHead * dyHead <= headR * headR) return true
+
+  // 2. 身体躯干与腿部矩形碰撞箱 [-30..+16]
+  const dyBody = wrapDeltaY(t.pos.y, y)
+  if (absDx <= bodyHalfW && dyBody >= -30 - pad - shieldPad && dyBody <= BODY_BOTTOM + pad + shieldPad) {
+    return true
+  }
+  return false
+}
+
+/** 查找在 (nx, ny) 处阻挡手榴弹 g 的玩家人体碰撞箱 */
+export function findPlayerBlockingGrenadeAt(
+  ctx: ThrowablesContext,
+  g: Grenade,
+  nx: number,
+  ny: number,
+  curX: number,
+  curY: number,
+): PlayerState | null {
+  const headR = ctx.config.headRadius
+  const list = ctx.playerBroadBuckets[bucketIdx(wrapX(nx))] ?? ctx.players
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i]
+    if (!t.deployed || !t.alive || t.respawnTimer > 0) continue
+    if (!isPointInPlayerGrenadeHitbox(t, nx, ny, headR)) continue
+    // 若手榴弹当前起点仍在玩家碰撞箱内（例如投掷瞬间刚离手尚未穿出自身碰撞箱），允许向外飞出而不自锁；一旦脱离碰撞箱或反弹回来则正常阻挡
+    if (isPointInPlayerGrenadeHitbox(t, curX, curY, headR)) {
+      if (t.id === g.owner && (g.bounces ?? 0) === 0) continue
+      const prevDist = wrapDist(curX, curY, t.pos.x, t.pos.y - 12)
+      const nextDist = wrapDist(nx, ny, t.pos.x, t.pos.y - 12)
+      if (nextDist >= prevDist - 1e-4) continue
+    }
+    return t
+  }
+  return null
+}
 
 export interface ThrowablesContext {
   terrain: Terrain
@@ -352,23 +411,50 @@ export function explodeInWorld(
 
 export function stepExplosionsAndThrowables(ctx: ThrowablesContext, dt: number): void {
   const g0 = 1250
-  // 1. 手榴弹
+  // 1. 手榴弹（含地形、掩体及人体碰撞箱阻挡与反弹）
   for (const g of ctx.grenades) {
     g.vel.y += g0 * 0.88 * dt
     g.vel.x *= 0.995
-    const nx = wrapX(g.pos.x + g.vel.x * dt)
-    if (ctx.terrain.isSolidAt(nx, g.pos.y) || findObstacleAt(ctx.obstacles, ctx.obstacleBroadBuckets, nx, g.pos.y)) g.vel.x *= -0.55
-    else g.pos.x = nx
-    const ny = g.pos.y + g.vel.y * dt
-    if (ctx.terrain.isSolidAt(g.pos.x, ny) || findObstacleAt(ctx.obstacles, ctx.obstacleBroadBuckets, g.pos.x, ny)) {
-      g.vel.y *= -0.45
-      g.vel.x *= 0.78
-      if (Math.abs(g.vel.y) < 72) {
-        g.vel.y = 0
-        g.vel.x *= 0.88
-        if (Math.abs(g.vel.x) < 8) g.vel.x = 0
+    const stepDist = Math.hypot(g.vel.x * dt, g.vel.y * dt)
+    const subSteps = Math.max(1, Math.ceil(stepDist / 5))
+    const subDt = dt / subSteps
+
+    for (let s = 0; s < subSteps; s++) {
+      const curX = g.pos.x
+      const curY = g.pos.y
+      const nx = wrapX(curX + g.vel.x * subDt)
+      const hitPlayerX = findPlayerBlockingGrenadeAt(ctx, g, nx, curY, curX, curY)
+      if (
+        ctx.terrain.isSolidAt(nx, curY) ||
+        findObstacleAt(ctx.obstacles, ctx.obstacleBroadBuckets, nx, curY) ||
+        hitPlayerX !== null
+      ) {
+        g.vel.x *= -0.55
+        g.bounces = (g.bounces ?? 0) + 1
+      } else {
+        g.pos.x = nx
       }
-    } else g.pos.y = wrapY(ny)
+
+      const ny = curY + g.vel.y * subDt
+      const hitPlayerY = findPlayerBlockingGrenadeAt(ctx, g, g.pos.x, ny, g.pos.x, curY)
+      if (
+        ctx.terrain.isSolidAt(g.pos.x, ny) ||
+        findObstacleAt(ctx.obstacles, ctx.obstacleBroadBuckets, g.pos.x, ny) ||
+        hitPlayerY !== null
+      ) {
+        g.vel.y *= -0.45
+        g.vel.x *= 0.78
+        g.bounces = (g.bounces ?? 0) + 1
+        if (Math.abs(g.vel.y) < 72) {
+          g.vel.y = 0
+          g.vel.x *= 0.88
+          if (Math.abs(g.vel.x) < 8) g.vel.x = 0
+        }
+      } else {
+        g.pos.y = wrapY(ny)
+      }
+    }
+
     g.fuse -= dt
     if (g.fuse <= 0) {
       explodeInWorld(ctx, g.pos.x, g.pos.y, ctx.config.grenadeRadius, ctx.config.grenadeDamage, 16 * 60, undefined, g.owner, undefined, '手榴弹')

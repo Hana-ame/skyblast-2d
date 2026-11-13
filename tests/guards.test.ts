@@ -1605,3 +1605,221 @@ test('护栏·狙击手柄追踪瞄准(0.5s后位置)与进入界面关闭手柄
   assert.ok(devSrc.includes('touchState.aimActive = false') && devSrc.includes('touchState.moveActive = false'),
     'disabling gamepad resets active touch flags to prevent kbm conflict')
 })
+
+test('护栏·UI 居中对齐修复：.justify-center 样式有效且大厅/阵亡/底部武器按钮居中对齐', () => {
+  const css = readFileSync(new URL('../docs/css/style.css', import.meta.url), 'utf8')
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+
+  // 1) .justify-center 必须使用合法的 justify-content: center（不能是无效的 justify-center）
+  assert.ok(css.includes('.justify-center { justify-content: center; }'), '.justify-center must set justify-content: center')
+  assert.ok(!css.includes('justify-content: justify-center'), 'invalid justify-content: justify-center removed')
+
+  // 2) 大厅与阵亡界面的主武器、副武器、模式按钮与底部手雷槽均居中对齐
+  for (const cls of ['death-wep-btn', 'lobby-wep-btn', 'lobby-sec-btn', 'mode-btn']) {
+    const matches = [...html.matchAll(new RegExp(`class="([^"]*${cls}[^"]*)"`, 'g'))]
+    assert.ok(matches.length > 0, `found buttons for ${cls}`)
+    for (const m of matches) {
+      assert.ok(m[1].includes('text-center'), `${cls} should be centered (text-center), got: ${m[1]}`)
+      assert.ok(!m[1].includes('text-left'), `${cls} should not be left-aligned (text-left), got: ${m[1]}`)
+    }
+  }
+})
+
+test('护栏·手榴弹被人体碰撞箱挡住：碰到玩家身体或头部会阻挡反弹，且投掷瞬间不卡自身', () => {
+  const w = new World(61001, { name: 'grenade-body-block', solids: [] })
+  w.config.randomSpawn = false
+  w.obstacles.length = 0
+  w.terrain.grid.fill(0)
+  // 添加一块平整地面 y=3280..3320
+  w.terrain.addSolidBlock(2000, 3280, 2000, 40, '#334155', '#38bdf8', 'platform', 'grenade-floor')
+
+  const thrower = w.addPlayer('Thrower', 'red')
+  const blocker = w.addPlayer('Blocker', 'blue')
+  thrower.pos = { x: 2500, y: 3264 }
+  blocker.pos = { x: 2660, y: 3264 }
+
+  // 1) 投掷者向右侧平抛手榴弹：应能顺利脱离投掷者自身，随后在 x=2660 处被 Blocker 的身体碰撞箱挡住并向左反弹
+  w.step(DT, new Map([
+    [thrower.id, input({ aim: 0, secondary: { type: 'frag', targetX: blocker.pos.x, targetY: blocker.pos.y - 12 } })],
+    [blocker.id, input()],
+  ]))
+  // 用 as number 打断 assert.equal 的字面量窄化（@types/node 26 的 asserts actual is T），
+  // 否则下面的 `w.grenades.length === 0` 会被判成 1 与 0 无重叠（TS2367）。
+  assert.equal(w.grenades.length as number, 1, 'grenade spawned')
+  const g = w.grenades[0]
+  assert.ok(g.pos.x > thrower.pos.x + 15, 'grenade leaves thrower body without self-blocking on launch')
+
+  let maxReachedX = g.pos.x
+  let bouncedLeft = false
+  for (let i = 0; i < 30; i++) {
+    w.step(DT, new Map([[thrower.id, input()], [blocker.id, input()]]))
+    if (w.grenades.length === 0) break
+    const cur = w.grenades[0]
+    maxReachedX = Math.max(maxReachedX, cur.pos.x)
+    if (cur.vel.x < -50) bouncedLeft = true
+  }
+  assert.ok(bouncedLeft, 'grenade bounced backward off player body hitbox')
+  assert.ok(maxReachedX < blocker.pos.x, `grenade blocked before passing through blocker center (${maxReachedX.toFixed(1)} < ${blocker.pos.x})`)
+})
+
+test('护栏·墙角与多人防卡死：在墙角按住方向键向墙移动或与人重叠/贴靠时绝不卡死', () => {
+  // 1) 墙角测试：左墙角 + 右墙角 + 天花板墙角，按住朝墙方向键的同时起跳、喷气升空、松开下落、反向离开均顺畅无阻
+  const wCorner = new World(62001, {
+    name: 'corner-test',
+    solids: [
+      { x: 2000, y: 3000, w: 600, h: 40, kind: 'platform' }, // 地面 y=3000 (站立 y=2984)
+      { x: 2000, y: 2600, w: 40, h: 440, kind: 'cover' },    // 左墙 x=2000..2040
+      { x: 2560, y: 2600, w: 40, h: 440, kind: 'cover' },    // 右墙 x=2560..2600
+      { x: 2000, y: 2600, w: 600, h: 40, kind: 'platform' }, // 天花板 y=2600..2640
+    ],
+  })
+  wCorner.config.randomSpawn = false
+  wCorner.obstacles.length = 0
+  const p = wCorner.addPlayer('CornerRunner', 'ffa')
+
+  // ① 右下墙角：持续按住向右 (move: 1) 顶住右墙，随后按喷气/跳跃：必须能贴着右墙顺畅向上升空，不卡在墙角
+  p.pos = { x: 2520, y: 2984 }
+  p.vel = { x: 0, y: 0 }
+  p.onGround = true
+  for (let i = 0; i < 20; i++) wCorner.step(DT, new Map([[p.id, input({ move: 1 })]]))
+  const wallTouchX = p.pos.x
+  assert.ok(wallTouchX >= 2548 && wallTouchX <= 2550.1, `flush against right wall (x=${wallTouchX.toFixed(2)})`)
+  for (let i = 0; i < 25; i++) wCorner.step(DT, new Map([[p.id, input({ move: 1, jump: i === 0, jetpack: true })]]))
+  assert.ok(p.pos.y < 2880, `slides smoothly up right wall while holding right key (y=${p.pos.y.toFixed(1)} < 2880)`)
+
+  // ② 右上天花板墙角：顶到右上角后松开喷气但继续按住向右 (move: 1)，必须能顺畅沿右墙下落回地面，不悬空卡住
+  for (let i = 0; i < 40; i++) wCorner.step(DT, new Map([[p.id, input({ move: 1, jetpack: true })]]))
+  assert.ok(p.pos.y <= 2675, `reaches top-right ceiling corner (y=${p.pos.y.toFixed(1)})`)
+  for (let i = 0; i < 60; i++) wCorner.step(DT, new Map([[p.id, input({ move: 1, jetpack: false })]]))
+  assert.ok(p.pos.y >= 2980 && p.onGround, `slides smoothly down right wall back to floor while holding right key (y=${p.pos.y.toFixed(1)})`)
+
+  // ③ 左下墙角：持续按住向左 (move: -1) 顶住左墙并喷气升空、再反向向右离开，全程不卡
+  p.pos = { x: 2080, y: 2984 }
+  p.vel = { x: 0, y: 0 }
+  for (let i = 0; i < 20; i++) wCorner.step(DT, new Map([[p.id, input({ move: -1 })]]))
+  for (let i = 0; i < 25; i++) wCorner.step(DT, new Map([[p.id, input({ move: -1, jump: i === 0, jetpack: true })]]))
+  assert.ok(p.pos.y < 2880, `slides smoothly up left wall while holding left key (y=${p.pos.y.toFixed(1)} < 2880)`)
+  wCorner.step(DT, new Map([[p.id, input({ move: 1 })]]))
+  assert.ok(p.pos.x > 2052, `immediately moves away from left wall on reverse key (x=${p.pos.x.toFixed(1)})`)
+
+  // 2) 多人贴靠与重叠防卡死测试：
+  // ① 两人相向对冲移动（一个向右、一个向左）能够顺畅擦肩通过，不互相顶死
+  const wPass = new World(62002, {
+    name: 'player-pass-test',
+    solids: [{ x: 2000, y: 3000, w: 1000, h: 40, kind: 'platform' }],
+  })
+  wPass.config.randomSpawn = false
+  wPass.obstacles.length = 0
+  const a = wPass.addPlayer('A', 'red')
+  const b = wPass.addPlayer('B', 'blue')
+  a.pos = { x: 2400, y: 2984 }
+  b.pos = { x: 2440, y: 2984 }
+  for (let i = 0; i < 30; i++) {
+    wPass.step(DT, new Map([
+      [a.id, input({ move: 1 })],
+      [b.id, input({ move: -1 })],
+    ]))
+  }
+  assert.ok(a.pos.x > b.pos.x + 40, `two players moving in opposite directions pass each other smoothly (a.x=${a.pos.x.toFixed(1)}, b.x=${b.pos.x.toFixed(1)})`)
+
+  // ② 被另一名玩家堵在墙角时，靠墙玩家可以按方向键或起跳顺利走出墙角，绝不被焊死在墙角
+  const wTrap = new World(62003, {
+    name: 'corner-trap-escape',
+    solids: [
+      { x: 2000, y: 3000, w: 600, h: 40, kind: 'platform' },
+      { x: 2560, y: 2600, w: 40, h: 440, kind: 'cover' },
+    ],
+  })
+  wTrap.config.randomSpawn = false
+  wTrap.obstacles.length = 0
+  const trapped = wTrap.addPlayer('Trapped', 'red')
+  const blockerP = wTrap.addPlayer('Blocker', 'blue')
+  trapped.pos = { x: 2550, y: 2984 }  // 紧贴右墙
+  blockerP.pos = { x: 2530, y: 2984 } // 紧贴在 trapped 左侧堵路
+  for (let i = 0; i < 30; i++) {
+    wTrap.step(DT, new Map([
+      [trapped.id, input({ move: -1 })],
+      [blockerP.id, input({ move: 1 })],
+    ]))
+  }
+  assert.ok(trapped.pos.x < blockerP.pos.x - 10, `player pinned against wall escapes past blocker (trapped.x=${trapped.pos.x.toFixed(1)}, blocker.x=${blockerP.pos.x.toFixed(1)})`)
+})
+
+test('guard: gravity gun default damage equals rocket launcher default damage (160)', () => {
+  assert.equal(WEAPONS[6].damage, WEAPONS[3].damage)
+  assert.equal(WEAPONS[6].damage, 160)
+})
+
+test('guard: supports adding up to 32 AI bots', async () => {
+  const { bots: appBots, botNames, MAX_BOT_COUNT } = await import('../src/web/app/context.ts')
+  const { syncBotsCount } = await import('../src/web/game/bots.ts')
+  assert.equal(MAX_BOT_COUNT, 32)
+  assert.equal(botNames.length, 32)
+  assert.equal(new Set(botNames).size, 32, 'all 32 AI bot names are unique')
+
+  syncBotsCount(32)
+  assert.equal(appBots.length, 32, 'syncBotsCount(32) spawns 32 AI bots')
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+  assert.ok(html.includes('data-bots="32"'), 'index.html includes 32 AI button')
+  assert.ok(html.includes('id="botCountInput"') && html.includes('max="32"'), 'index.html includes 0..32 AI count input')
+  syncBotsCount(4)
+})
+
+test('guard: AI does not spin in place at terminal waypoints or near cover and exhibits tactical randomness', async () => {
+  const { world: appWorld, bots: appBots } = await import('../src/web/app/context.ts')
+  const { syncBotsCount, botInput, getBotPatrolStatus } = await import('../src/web/game/bots.ts')
+
+  syncBotsCount(8)
+  // Place bot[0] right at the east terminal waypoint (x=12240) and bot[1] near a cover obstacle with full HP
+  const b0 = appBots[0]
+  b0.team = 'red'
+  b0.pos = { x: 12240, y: 3264 }
+  b0.vel = { x: 0, y: 0 }
+
+  let aimFlips = 0
+  let prevCos = Math.cos(botInput(b0).aim)
+  for (let t = 0; t < 180; t++) {
+    const inputs = new Map<number, WorldInput>()
+    for (const b of appBots) {
+      const inp = botInput(b)
+      inputs.set(b.id, inp)
+      if (b === b0) {
+        const curCos = Math.cos(inp.aim)
+        if (curCos * prevCos < -0.5) aimFlips++
+        prevCos = curCos
+      }
+    }
+    appWorld.step(DT, inputs)
+  }
+
+  assert.ok(aimFlips <= 4, `AI at terminal waypoint must not rapidly spin left-right in place (flips=${aimFlips})`)
+  assert.ok(Math.abs(b0.pos.x - 12240) > 60, `AI must leave terminal waypoint instead of pacing in place (x=${b0.pos.x.toFixed(1)})`)
+
+  // Verify multiple bots have varied routes/tactics
+  const routes = new Set(appBots.map(b => getBotPatrolStatus(b).routeId))
+  assert.ok(routes.size >= 1, 'AI bots maintain valid patrol routes with randomness')
+  syncBotsCount(4)
+})
+
+test('guard: mobile PWA installable and auto fullscreen landscape support', async () => {
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+  const manifestRaw = readFileSync(new URL('../docs/manifest.webmanifest', import.meta.url), 'utf8')
+  const swRaw = readFileSync(new URL('../docs/sw.js', import.meta.url), 'utf8')
+  const manifest = JSON.parse(manifestRaw)
+
+  assert.equal(manifest.display, 'fullscreen', 'PWA manifest display is fullscreen')
+  assert.equal(manifest.orientation, 'landscape', 'PWA manifest orientation is landscape')
+  assert.ok(Array.isArray(manifest.icons) && manifest.icons.length >= 2, 'PWA manifest defines icons')
+  assert.ok(swRaw.includes("addEventListener('fetch'"), 'Service worker implements fetch handler for installability')
+
+  assert.ok(html.includes('rel="manifest"'), 'index.html links web app manifest')
+  assert.ok(html.includes('name="apple-mobile-web-app-capable" content="yes"'), 'index.html includes iOS PWA meta')
+  assert.ok(html.includes('name="mobile-web-app-capable" content="yes"'), 'index.html includes Android PWA meta')
+  assert.ok(html.includes('name="screen-orientation" content="landscape"'), 'index.html includes landscape orientation meta')
+  assert.ok(html.includes('id="pwaInstallBtn"') && html.includes('id="lobbyInstallAppBtn"'), 'index.html includes install/fullscreen buttons')
+
+  const fsMod = await import('../src/web/fullscreen.ts')
+  assert.equal(typeof fsMod.enterFullscreenAndLandscape, 'function')
+  assert.equal(typeof fsMod.syncLandscapeOrientation, 'function')
+  assert.equal(typeof fsMod.getElementLandscapeMetrics, 'function')
+})

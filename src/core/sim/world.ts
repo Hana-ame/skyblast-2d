@@ -339,8 +339,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       }
       if (p.deployed && p.alive) {
         if (this.bodyOverlapsAt(p.pos.x, p.pos.y)) {
-          const fixed = resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
-          if (fixed) { p.vel.x = 0; p.vel.y = 0 }
+          resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p)
           const n = (this.stuckTicks.get(p.id) ?? 0) + 1
           this.stuckTicks.set(p.id, n)
           if (n >= 20) {

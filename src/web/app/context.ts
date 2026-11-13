@@ -92,11 +92,12 @@ function computeCanvasSize(): { w: number; h: number } {
     : { width: 0, height: 0 }
   const iw = window.innerWidth || document.documentElement?.clientWidth || rect.width || 1024
   const ih = window.innerHeight || document.documentElement?.clientHeight || rect.height || 640
-  // visualViewport 在移动端能规避地址栏收放的 innerHeight 抖动；但它有时只反映布局视口，
-  // 因此取 Math.min 兜底：既不会被放大，也能跟随真实缩小。
   const rawW = vv?.width ? Math.min(iw, vv.width) : iw
   const rawH = vv?.height ? Math.min(ih, vv.height) : ih
-  return { w: Math.max(320, Math.round(rawW)), h: Math.max(240, Math.round(rawH)) }
+  const isRotated = typeof document !== 'undefined' && Boolean(document.body?.classList?.contains('auto-landscape-rotated'))
+  const w = isRotated ? Math.max(rawW, rawH) : rawW
+  const h = isRotated ? Math.min(rawW, rawH) : rawH
+  return { w: Math.max(320, Math.round(w)), h: Math.max(240, Math.round(h)) }
 }
 
 export function resizeCanvas(): void {
@@ -150,10 +151,16 @@ export const localPlayer = world.addPlayer('SkyHunter', 'red')
 localPlayer.deployed = false
 world.config.randomSpawn = false
 
-// AI 机器人（经权威输入驱动；无绿队）
-export const botNames = ['AlphaBot-7', 'Valkyrie-AI', 'Titan-09', 'NovaStriker', 'ZeroGrav-X', 'OmegaHound', 'Phantom-AI', 'IronClad-8']
-export const botTeams: TeamId[] = ['blue', 'red', 'blue', 'red', 'blue', 'red', 'blue', 'red']
-export const botSecs = ['frag', 'doll', 'frag', 'frag', 'doll', 'frag', 'frag', 'frag']
+// AI 机器人（经权威输入驱动；无绿队，最多支持 32 个 AI）
+export const MAX_BOT_COUNT = 32
+export const botNames = [
+  'AlphaBot-7', 'Valkyrie-AI', 'Titan-09', 'NovaStriker', 'ZeroGrav-X', 'OmegaHound', 'Phantom-AI', 'IronClad-8',
+  'CyberHawk-9', 'NebulaRex-10', 'VortexUnit-11', 'ApexSentinel-12', 'ShadowPulse-13', 'StarForge-14', 'AegisCore-15', 'BlazeVector-16',
+  'QuantumEdge-17', 'StormBreaker-18', 'Hyperion-19', 'NightStalker-20', 'SolarFlare-21', 'FrostByte-22', 'ThunderBolt-23', 'CrimsonWing-24',
+  'CobaltViper-25', 'SpectreZero-26', 'AstraGuard-27', 'MechaPrime-28', 'IonRanger-29', 'PulseDrifter-30', 'ZenithBlade-31', 'OmegaPrime-32',
+]
+export const botTeams: TeamId[] = Array.from({ length: MAX_BOT_COUNT }, (_, i) => (i % 2 === 0 ? 'blue' : 'red'))
+export const botSecs = Array.from({ length: MAX_BOT_COUNT }, (_, i) => (i % 4 === 1 ? 'doll' : 'frag'))
 export const bots: PlayerState[] = []
 
 // ── 待部署配装 / 对战模式 / 房主规则与 UI 状态 ──
