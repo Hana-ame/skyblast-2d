@@ -158,48 +158,63 @@ export function resolvePenetration(
   for (let iter = 0; iter < 6; iter++) {
     if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, p.pos.y, obstacleBroadBuckets)) break
     const wx = wrapX(p.pos.x)
+    const wy = p.pos.y
     let bestDx = 0
     let bestDy = 0
-    let bestLen = Infinity
-    let found = false
-    const consider = (tileL: number, tileR: number, tileT: number, tileB: number): void => {
-      if (!(tileR > -halfW + 1e-3 && tileL < halfW - 1e-3 && tileB > -30 + 1e-3 && tileT < 16 - 1e-3)) return
-      const d1 = tileL - halfW
-      if (Math.abs(d1) < bestLen) { bestLen = Math.abs(d1); bestDx = d1; bestDy = 0; found = true }
-      const d2 = tileR + halfW
-      if (Math.abs(d2) < bestLen) { bestLen = Math.abs(d2); bestDx = d2; bestDy = 0; found = true }
-      const d3 = tileB + 30
-      if (Math.abs(d3) < bestLen) { bestLen = Math.abs(d3); bestDx = 0; bestDy = d3; found = true }
-      const d4 = tileT - 16
-      if (Math.abs(d4) < bestLen) { bestLen = Math.abs(d4); bestDx = 0; bestDy = d4; found = true }
-    }
-    const gx0 = Math.floor((wx - halfW) / TILE_SIZE)
-    const gx1 = Math.floor((wx + halfW) / TILE_SIZE)
-    const gy0 = Math.floor(wrapY(p.pos.y - 30) / TILE_SIZE)
-    const gy1 = Math.floor(wrapY(p.pos.y + 16) / TILE_SIZE)
-    for (let gx = gx0; gx <= gx1; gx++) {
-      for (let gy = gy0; gy <= gy1; gy++) {
-        const cellX = wrapX(gx * TILE_SIZE) + TILE_SIZE / 2
-        const cellY = wrapY(gy * TILE_SIZE) + TILE_SIZE / 2
-        if (!terrain.isSolidAt(cellX, cellY)) continue
-        const lx = wrapDeltaX(wx, cellX)
-        const ly = wrapDeltaY(p.pos.y, cellY)
-        consider(lx - TILE_SIZE / 2, lx + TILE_SIZE / 2, ly - TILE_SIZE / 2, ly + TILE_SIZE / 2)
+    let bestDist = Infinity
+
+    // 精确扫描小步长候选（优先垂直落地/顶开，再水平推开）
+    const steps = [1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24]
+    for (let si = 0; si < steps.length; si++) {
+      const d = steps[si]
+      if (d >= bestDist) break
+      if (!checkBodyOverlapsAt(terrain, obstacles, wx, wrapY(wy - d), obstacleBroadBuckets)) {
+        bestDx = 0; bestDy = -d; bestDist = d; break
+      }
+      if (!checkBodyOverlapsAt(terrain, obstacles, wx, wrapY(wy + d), obstacleBroadBuckets)) {
+        bestDx = 0; bestDy = d; bestDist = d; break
+      }
+      if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(wx - d), wy, obstacleBroadBuckets)) {
+        bestDx = -d; bestDy = 0; bestDist = d; break
+      }
+      if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(wx + d), wy, obstacleBroadBuckets)) {
+        bestDx = d; bestDy = 0; bestDist = d; break
       }
     }
-    for (let i = 0; i < obstacles.length; i++) {
-      const ob = obstacles[i]
-      if (ob.hp <= 0) continue
-      const lx = wrapDeltaX(wx, ob.x + ob.w / 2)
-      const ly = wrapDeltaY(p.pos.y, ob.y + ob.h / 2)
-      consider(lx - ob.w / 2, lx + ob.w / 2, ly - ob.h / 2, ly + ob.h / 2)
-    }
-    if (found) {
-      p.pos.x = wrapX(p.pos.x + bestDx)
-      p.pos.y = wrapY(p.pos.y + bestDy)
+
+    if (bestDist < Infinity) {
+      p.pos.x = wrapX(wx + bestDx)
+      p.pos.y = wrapY(wy + bestDy)
+      if (bestDx !== 0) p.vel.x = 0
+      if (bestDy < 0 && p.vel.y > 0) { p.vel.y = 0; p.onGround = true }
+      if (bestDy > 0 && p.vel.y < 0) p.vel.y = 0
       moved = true
-    } else {
-      ensureFreePosition(terrain, obstacles, obstacleBroadBuckets, p)
+      break
+    }
+
+    // 兜底：若四方向小步均被夹住，按瓦片对齐向上/左右推出
+    const footRow = Math.floor((wy + 15.5) / TILE_SIZE)
+    const snapUpY = footRow * TILE_SIZE - 16
+    if (!checkBodyOverlapsAt(terrain, obstacles, wx, snapUpY, obstacleBroadBuckets)) {
+      p.pos.y = snapUpY
+      p.vel.y = 0
+      p.onGround = true
+      moved = true
+      break
+    }
+    const leftCol = Math.floor((wx - halfW) / TILE_SIZE)
+    const rightCol = Math.floor((wx + halfW) / TILE_SIZE)
+    const pushRightX = (leftCol + 1) * TILE_SIZE + halfW + 0.5
+    const pushLeftX = rightCol * TILE_SIZE - halfW - 0.5
+    if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(pushRightX), wy, obstacleBroadBuckets)) {
+      p.pos.x = wrapX(pushRightX)
+      p.vel.x = 0
+      moved = true
+      break
+    }
+    if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(pushLeftX), wy, obstacleBroadBuckets)) {
+      p.pos.x = wrapX(pushLeftX)
+      p.vel.x = 0
       moved = true
       break
     }
@@ -207,7 +222,7 @@ export function resolvePenetration(
   return moved
 }
 
-/** 查找水平移动时阻挡玩家 p 的其他玩家（若已重叠、正在远离、相向擦肩而过或背靠墙体脱困则绝不阻挡） */
+/** 查找水平移动 nx 时阻挡玩家 p 的其他玩家（严格只看水平接近与垂直躯干重叠，绝不产生卡死） */
 function findHorizontalPlayerBlocker(
   playerBroadBuckets: PlayerState[][],
   p: PlayerState,
@@ -221,12 +236,10 @@ function findHorizontalPlayerBlocker(
     const other = list[i]
     if (other.id === p.id) continue
     if (!other.deployed || !other.alive || other.respawnTimer > 0) continue
-    // 垂直方向不相交（含站在对方头顶 curY <= other.pos.y - 44）时不产生水平阻挡
-    if ((curY + 16) <= (other.pos.y - 28) || (curY - 28) >= (other.pos.y + 16)) continue
+    // 1. 垂直方向：若脚底在对方头顶附近或上方（踩头/从头顶跳过），不算水平阻挡，交给垂直支撑处理
+    if ((curY + 14) <= (other.pos.y - 26) || (curY - 28) >= (other.pos.y + 14)) continue
     const curAbsDx = Math.abs(wrapDeltaX(curX, other.pos.x))
     const nextAbsDx = Math.abs(wrapDeltaX(nx, other.pos.x))
-    // 1. 正在远离对方：绝不阻挡
-    if (nextAbsDx >= curAbsDx - 1e-4) continue
     // 2. 新位置未进入 20px 身体宽度内：不阻挡
     if (nextAbsDx >= 20 - 1e-3) continue
     // 3. 若当前已经与对方发生身体重叠（curAbsDx < 19.5，例如同点出生或落入体内）：允许自由走开脱困，绝不锁死
@@ -267,7 +280,7 @@ function findVerticalHeadSupportPlayer(
   return null
 }
 
-/** 权威端单玩家物理步进（含地形/掩体 AABB 滑动碰撞、其他玩家防卡死交互与弹射跳台） */
+/** 权威端与客户端预测共用的单玩家物理步进（含地形/掩体 AABB 滑动碰撞、其他玩家防卡死交互与弹射跳台） */
 export function stepPlayerKinematic(
   p: PlayerState,
   _w: WorldInput,
@@ -300,6 +313,7 @@ export function stepPlayerKinematic(
     }
   }
 
+  // 重力倍率固定为 1（平衡补丁已取消 S 键急坠加速，契约见 tests/sim.test.ts `dive acceleration cancelled`）
   applyGravity(p.vel, dt, 1)
 
   if (p.onGround && p.vel.y >= -20) {
@@ -463,7 +477,7 @@ export function separateOverlappingPlayers(
 }
 
 /** 客户端本地预测与服务器回滚重放（Reconciliation）专用纯函数：
- *  推进单个玩家一帧的输入响应（移动速度、跳跃、喷气推力、燃料消耗与地形/障碍碰撞）。 */
+ *  推进单个玩家一帧的输入响应（移动速度、跳跃、喷气推力、燃料消耗与地形/障碍碰撞），与 World.applyPlayerInput + stepPlayerKinematic 严格同构。 */
 export function predictLocalPlayerStep(
   p: PlayerState,
   w: WorldInput,
@@ -474,7 +488,8 @@ export function predictLocalPlayerStep(
   watchtowers: Watchtower[] = [],
 ): void {
   if (!p.deployed || !p.alive || p.respawnTimer > 0) return
-  p.aim = w.aim
+  const charging = p.chargeTimer > 0 && p.chargeAim !== undefined && !w.trackChargeAim
+  p.aim = charging ? p.chargeAim! : w.aim
   const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
   if (p.mountedTowerId) {
     p.vel.x = 0

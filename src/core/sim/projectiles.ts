@@ -737,7 +737,7 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
 
     if (dead) {
       ctx.events.push({ kind: 'projectile_destroy', projectileId: pr.id })
-      pr.life = 0
+      pr.life = -999
     }
   }
 }

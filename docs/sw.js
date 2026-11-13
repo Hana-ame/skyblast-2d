@@ -1,10 +1,14 @@
 // SkyBlast 2D Service Worker — 支持手机端 PWA 安装与离线启动
-const CACHE_NAME = 'skyblast-2d-pwa-v1';
+const CACHE_NAME = 'skyblast-2d-pwa-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
+  './editor.html',
+  './admin.html',
   './css/style.css',
   './bundle.js',
+  './editor-bundle.js',
+  './admin-bundle.js',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png'
@@ -36,6 +40,14 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match('./index.html')))
+      .catch(() =>
+        caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          if (event.request.mode === 'navigate') {
+            return caches.match('./index.html');
+          }
+          return new Response('', { status: 504, statusText: 'Offline' });
+        })
+      )
   );
 });

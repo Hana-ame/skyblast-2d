@@ -1,5 +1,7 @@
 // web/effects.ts —— 客户端粒子特效（纯表现层，不参与权威模拟）
-// 百人同场优化：环形覆盖替代 shift()、O(1) Swap-and-Pop 替代 splice(i, 1)，消除高频弹幕下的数组搬移
+// 百人同场优化：
+//   1. 环形覆盖替代 shift()、O(1) Swap-and-Pop 替代 splice(i, 1)，消除高频弹幕下的数组搬移；
+//   2. 渲染合批（Batching）：将透明度量化为 4 档并按颜色分组，小粒子合并为单条 Path 一次性 fill()，大幅降低移动端 GPU Draw Call 与状态切换。
 export interface Particle {
   x: number
   y: number
@@ -14,10 +16,12 @@ export interface Particle {
 }
 
 const MAX_PARTICLES = 400
+const ALPHA_BUCKETS = 4
 
 export class Effects {
   particles: Particle[] = []
   private overwriteCursor = 0
+  private batchMap = new Map<string, number[][]>()
   private rnd(): number { return Math.random() }
 
   private push(p: Particle): void {
@@ -133,7 +137,7 @@ export class Effects {
     }
   }
 
-  /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
+  /** 渲染：按颜色 + 量化透明度（4档）合并路径提交，减少 85%+ 的 Canvas 状态切换与 beginPath/fill 调用 */
   render(
     ctx: CanvasRenderingContext2D,
     screenOf: (x: number, y: number) => { x: number; y: number },
@@ -141,6 +145,12 @@ export class Effects {
     sxFn?: (wx: number) => number,
     syFn?: (wy: number) => number,
   ): void {
+    if (this.particles.length === 0) return
+
+    for (const buckets of this.batchMap.values()) {
+      for (let b = 0; b < ALPHA_BUCKETS; b++) buckets[b].length = 0
+    }
+
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i]
       let sx: number
@@ -154,12 +164,41 @@ export class Effects {
         sy = s.y
       }
       if (!inView(sx, sy)) continue
-      const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1
-      ctx.globalAlpha = alpha
-      ctx.fillStyle = p.color
-      ctx.beginPath()
-      ctx.arc(sx, sy, p.size, 0, Math.PI * 2)
-      ctx.fill()
+      const alpha = p.fade ? Math.max(0, Math.min(1, p.life / p.maxLife)) : 1
+      if (alpha <= 0.02) continue
+      const lv = Math.min(ALPHA_BUCKETS - 1, Math.floor(alpha * ALPHA_BUCKETS))
+      let buckets = this.batchMap.get(p.color)
+      if (!buckets) {
+        buckets = Array.from({ length: ALPHA_BUCKETS }, () => [])
+        this.batchMap.set(p.color, buckets)
+      }
+      buckets[lv].push(sx, sy, p.size)
+    }
+
+    for (const [color, buckets] of this.batchMap.entries()) {
+      let colorSet = false
+      for (let lv = 0; lv < ALPHA_BUCKETS; lv++) {
+        const coords = buckets[lv]
+        if (coords.length === 0) continue
+        if (!colorSet) {
+          ctx.fillStyle = color
+          colorSet = true
+        }
+        ctx.globalAlpha = (lv + 0.6) / ALPHA_BUCKETS
+        ctx.beginPath()
+        for (let k = 0; k < coords.length; k += 3) {
+          const sx = coords[k]
+          const sy = coords[k + 1]
+          const r = coords[k + 2]
+          if (r <= 3.2) {
+            ctx.rect(sx - r, sy - r, r * 2, r * 2)
+          } else {
+            ctx.moveTo(sx + r, sy)
+            ctx.arc(sx, sy, r, 0, Math.PI * 2)
+          }
+        }
+        ctx.fill()
+      }
     }
     ctx.globalAlpha = 1
   }

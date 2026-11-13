@@ -309,7 +309,7 @@ function render(): void {
       const px = sx(sp.x)
       const py = sy(sp.y)
       ctx.save()
-      if (false && sp.team === 'ffa') {
+      if (sp.team === 'ffa') {
         ctx.fillStyle = '#facc15'
         ctx.strokeStyle = '#0f172a'
         ctx.lineWidth = 1.5
@@ -711,7 +711,7 @@ function exportPanoramaPng(): void {
 
   // 绘制基地、均匀分布 FFA 出生点、正中旗帜复活点、近中心弹药刷新点
   for (const sp of SPAWN_POINTS) {
-    if (false && sp.team === 'ffa') {
+    if (sp.team === 'ffa') {
       c.fillStyle = '#facc15'
       c.beginPath()
       c.arc(sp.x, sp.y - 12, 26, 0, Math.PI * 2)

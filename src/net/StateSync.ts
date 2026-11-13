@@ -34,6 +34,8 @@ export class StateSync {
   reconcileOffset = { x: 0, y: 0 }
   /** 客户端通过事件化同步+本地推算维护的飞行弹丸表（支撑直线/抛物线弹丸事件化同步） */
   private deadReckonedProjectiles = new Map<number, Projectile>()
+  private cachedDeadReckonedList: Projectile[] = []
+  private deadReckonedListDirty = false
   private enableProjectileDeadReckoning = false
 
   constructor(terrain?: Terrain, localPlayerId = 0) {
@@ -103,6 +105,7 @@ export class StateSync {
           hitTargets: [...pr.hitTargets],
         })
       }
+      this.deadReckonedListDirty = true
     }
 
     // 本地玩家服务器回滚与未确认输入重放
@@ -184,6 +187,7 @@ export class StateSync {
           rocket: !!wep?.rocket,
           dragPerSecond: wep?.dragPerSecond ?? 1,
         })
+        this.deadReckonedListDirty = true
       } else if (e.kind === 'projectile_bounce' && e.projectileId !== undefined) {
         const pr = this.deadReckonedProjectiles.get(e.projectileId)
         if (pr) {
@@ -194,9 +198,22 @@ export class StateSync {
           if (e.bounces !== undefined) pr.bounces = e.bounces
         }
       } else if (e.kind === 'projectile_destroy' && e.projectileId !== undefined) {
-        this.deadReckonedProjectiles.delete(e.projectileId)
+        if (this.deadReckonedProjectiles.delete(e.projectileId)) {
+          this.deadReckonedListDirty = true
+        }
       }
     }
+  }
+
+  private syncDeadReckonedList(): Projectile[] {
+    if (this.deadReckonedListDirty) {
+      this.cachedDeadReckonedList.length = 0
+      for (const pr of this.deadReckonedProjectiles.values()) {
+        this.cachedDeadReckonedList.push(pr)
+      }
+      this.deadReckonedListDirty = false
+    }
+    return this.cachedDeadReckonedList
   }
 
   advance(dt: number, interval = 0.1): void {
@@ -208,12 +225,15 @@ export class StateSync {
     if (Math.abs(this.reconcileOffset.x) < 0.1) this.reconcileOffset.x = 0
     if (Math.abs(this.reconcileOffset.y) < 0.1) this.reconcileOffset.y = 0
 
-    // 客户端本地推算飞行弹丸轨迹
+    // 客户端本地推算飞行弹丸轨迹（复用 cachedDeadReckonedList，消除每帧 Array.from 分配）
     if (this.deadReckonedProjectiles.size > 0) {
-      const list = Array.from(this.deadReckonedProjectiles.values())
+      const list = this.syncDeadReckonedList()
       stepClientProjectilesDeadReckoning(list, dt, this.terrain)
       for (let i = 0; i < list.length; i++) {
-        if (list[i].life <= 0) this.deadReckonedProjectiles.delete(list[i].id)
+        if (list[i].life <= 0) {
+          this.deadReckonedProjectiles.delete(list[i].id)
+          this.deadReckonedListDirty = true
+        }
       }
     }
   }
@@ -230,7 +250,7 @@ export class StateSync {
   }
 
   getDeadReckonedProjectiles(): Projectile[] {
-    return Array.from(this.deadReckonedProjectiles.values())
+    return this.syncDeadReckonedList()
   }
 
   interpolated(): WorldSnapshot | null {

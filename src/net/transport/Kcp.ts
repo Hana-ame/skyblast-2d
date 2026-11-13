@@ -6,6 +6,7 @@
 //      - 极速模式默认开启：nodelay=1（RTO 1.5x 线性增长而非 2x 翻倍）、interval=10ms、resend=2（跨越 2 次 ACK 立即快速重传）、nc=1（关闭拥塞慢启动）
 //      - UNA（此编号前所有包已收）+ 选择性 ACK 双重确认机制，大幅减少重传开销
 //      - 支持可靠有序流（PUSH/ACK，用于欢迎包、关键事件、输入意图与增量帧）与无阻塞直通帧（UNRELIABLE，用于可丢弃高频状态）
+//      - 预分配 flushBuf 与 flushView，消除每 10ms 一次的 TypedArray 堆分配
 
 export const IKCP_RTO_NDL = 30        // nodelay 最小 RTO (ms)
 export const IKCP_RTO_MIN = 100       // 常规最小 RTO (ms)
@@ -81,7 +82,7 @@ export class KcpBlock {
   sndUna = 0
   sndNxt = 0
   rcvNxt = 0
-   rxSrtt = 0
+  rxSrtt = 0
   rxRttval = 0
   rxRto = IKCP_RTO_DEF
   rxMinrto = IKCP_RTO_NDL
@@ -97,12 +98,16 @@ export class KcpBlock {
   current = 0
 
   private sndQueue: KcpSegment[] = []
+  private sndQueueHead = 0
   private rcvQueue: KcpSegment[] = []
   private sndBuf: KcpSegment[] = []
   private rcvBuf: KcpSegment[] = []
   private ackList: { sn: number; ts: number }[] = []
   private unreliableQueue: Uint8Array[] = []
+  private unreliableHead = 0
   private output: (buf: Uint8Array) => void
+  private flushBuf: Uint8Array
+  private flushView: DataView
 
   // 统计遥测
   txPackets = 0
@@ -120,6 +125,8 @@ export class KcpBlock {
     this.sndWnd = Math.max(16, opts.sndWnd ?? 128)
     this.rcvWnd = Math.max(16, opts.rcvWnd ?? 128)
     this.rmtWnd = this.rcvWnd
+    this.flushBuf = new Uint8Array(this.mtu * 2)
+    this.flushView = new DataView(this.flushBuf.buffer)
     this.setNoDelay(
       opts.nodelay ?? 1,
       opts.interval ?? 10,
@@ -201,8 +208,16 @@ export class KcpBlock {
 
   /** 从接收队列提取一条完整应用层报文（自动处理分片重组与直通帧） */
   recv(): Uint8Array | null {
-    if (this.unreliableQueue.length > 0) {
-      return this.unreliableQueue.shift()!
+    if (this.unreliableHead < this.unreliableQueue.length) {
+      const item = this.unreliableQueue[this.unreliableHead++]
+      if (this.unreliableHead >= this.unreliableQueue.length) {
+        this.unreliableQueue.length = 0
+        this.unreliableHead = 0
+      } else if (this.unreliableHead >= 64) {
+        this.unreliableQueue.splice(0, this.unreliableHead)
+        this.unreliableHead = 0
+      }
+      return item
     }
     if (this.rcvQueue.length === 0) return null
     const first = this.rcvQueue[0]
@@ -222,10 +237,11 @@ export class KcpBlock {
     const out = new Uint8Array(totalLen)
     let offset = 0
     for (let i = 0; i < segCount; i++) {
-      const seg = this.rcvQueue.shift()!
+      const seg = this.rcvQueue[i]
       out.set(seg.data, offset)
       offset += seg.data.byteLength
     }
+    this.rcvQueue.splice(0, segCount)
     this.moveRcvBufToQueue()
     return out
   }
@@ -304,7 +320,6 @@ export class KcpBlock {
       offset += len
     }
 
-
     return 0
   }
 
@@ -326,12 +341,16 @@ export class KcpBlock {
     }
   }
 
-  /** 立即冲刷发送队列、ACK 列表与超时/快速重传段（低延迟模式下每次 send 后可立即调用） */
+  /** 立即冲刷发送队列、ACK 列表与超时/快速重传段（复用预分配 flushBuf，消除每帧 TypedArray 垃圾） */
   flush(nowMs = this.current): void {
     this.current = nowMs >>> 0
     const wnd = this.wndUnused()
-    const buffer = new Uint8Array(this.mtu * 2)
-    const view = new DataView(buffer.buffer)
+    if (this.flushBuf.byteLength < this.mtu * 2) {
+      this.flushBuf = new Uint8Array(this.mtu * 2)
+      this.flushView = new DataView(this.flushBuf.buffer)
+    }
+    const buffer = this.flushBuf
+    const view = this.flushView
     let offset = 0
 
     const flushBuffer = (): void => {
@@ -362,10 +381,10 @@ export class KcpBlock {
     }
     this.ackList.length = 0
 
-    // 2. 将发送队列移动到发送滑动窗口 sndBuf
+    // 2. 将发送队列移动到发送滑动窗口 sndBuf（采用游标推进替代逐元素 shift）
     const cwndLimit = this.nocwnd ? Math.min(this.sndWnd, this.rmtWnd) : Math.min(this.sndWnd, this.rmtWnd, this.cwnd)
-    while (this.sndNxt < this.sndUna + cwndLimit && this.sndQueue.length > 0) {
-      const seg = this.sndQueue.shift()!
+    while (this.sndNxt < this.sndUna + cwndLimit && this.sndQueueHead < this.sndQueue.length) {
+      const seg = this.sndQueue[this.sndQueueHead++]
       seg.conv = this.conv
       seg.cmd = IKCP_CMD_PUSH
       seg.wnd = wnd
@@ -377,6 +396,13 @@ export class KcpBlock {
       seg.fastack = 0
       seg.xmit = 0
       this.sndBuf.push(seg)
+    }
+    if (this.sndQueueHead >= this.sndQueue.length) {
+      this.sndQueue.length = 0
+      this.sndQueueHead = 0
+    } else if (this.sndQueueHead >= 64) {
+      this.sndQueue.splice(0, this.sndQueueHead)
+      this.sndQueueHead = 0
     }
 
     // 3. 遍历 sndBuf：处理首次发送、RTO 超时重传与 FastResend 快速重传
@@ -530,15 +556,19 @@ export class KcpBlock {
   }
 
   private moveRcvBufToQueue(): void {
-    while (this.rcvBuf.length > 0) {
-      const seg = this.rcvBuf[0]
+    let moveCount = 0
+    while (moveCount < this.rcvBuf.length) {
+      const seg = this.rcvBuf[moveCount]
       if (seg.sn === this.rcvNxt && this.rcvQueue.length < this.rcvWnd) {
-        this.rcvBuf.shift()
         this.rcvQueue.push(seg)
         this.rcvNxt++
+        moveCount++
       } else {
         break
       }
+    }
+    if (moveCount > 0) {
+      this.rcvBuf.splice(0, moveCount)
     }
   }
 }

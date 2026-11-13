@@ -1,9 +1,11 @@
 // web/main-web.ts —— 浏览器入口/组合根：装配各层模块、启动循环、暴露调试与调参句柄
 import {
-  canvas, world, localPlayer, bots, pendingLoadout, camera, touchState, beams,
+  world, localPlayer, bots, pendingLoadout, camera, touchState, beams,
   featureFlags, setFeatureFlag, toggleFeatureFlag, resetAllFeatureFlags,
+  mode, effects,
 } from './app/context.ts'
 import { WEAPONS } from '../core/weapons.ts'
+import { BALANCE_KEY } from '../core/balanceOverrides.ts'
 import { bindAllEvents } from './input/bindings.ts'
 import { autoDetectDeviceInput } from './input/device.ts'
 import { syncBotsCount, pickBotTarget, getBotPatrolStatus, PATROL_ROUTES } from './game/bots.ts'
@@ -15,12 +17,11 @@ import {
   updateHudUI, updateScoreboardUI, syncFeatureFlagsUI,
 } from './app/hud.ts'
 import { syncParamsToUI } from './app/params.ts'
-import { mode, effects } from './app/context.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
 import {
   installDiag, diagExport, reportToText, buildReport, diagFrames, diagTable,
   diagReset, diagSetEnabled, diagIsEnabled, diagStats, diagMark,
-  probeEnvironment, getEnvProbe, measureRefresh,
+  getEnvProbe, measureRefresh,
 } from './app/diag.ts'
 
 // ── 启动 ──
@@ -99,8 +100,8 @@ installDiag()
 }
 ;(function loadSavedParams(): void {
   try {
-    // 数值后台有覆盖时以后台为准，跳过旧调参页存档
-    if (localStorage.getItem('pvp-balance-overrides-v1')) return
+    // 数值后台有覆盖时以后台为准（兼容 BALANCE_KEY 与历史旧 key），跳过旧调参页存档
+    if (localStorage.getItem(BALANCE_KEY) || localStorage.getItem('pvp-balance-overrides-v1')) return
     // v2：飞行槽加倍后的默认值；旧 key 的存档（jetpackFuel 0.5）不再覆盖
     const raw = localStorage.getItem('pvp-physics-params-v2')
     if (raw) setPhysicsParams(JSON.parse(raw) as Record<string, number>)

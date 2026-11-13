@@ -21,21 +21,10 @@ import {
   BUCKET_SIZE, INV_BUCKET_SIZE, NUM_BUCKETS, PLAYER_BROAD_PAD, OBSTACLE_BROAD_PAD,
   bucketIdx, checkBodyOverlapsAt, recordPlayerLagHistory, withRewoundPlayersForShooter, type LagHistoryEntry,
 } from './spatial.ts'
-import {
-  ensureFreePosition, resolvePenetration, stepPlayerKinematic, separateOverlappingPlayers,
-} from './playerPhysics.ts'
-import {
-  createProjectile, updateContinuousBeam, applyGravityOrbPull, stepProjectilesSubsystem,
-} from './projectiles.ts'
-import type { ProjectileContext } from './projectiles.ts'
-import {
-  stepPlayerTeleport, useSecondaryInWorld, damageObstacleInWorld, damagePlayerInWorld, explodeInWorld, stepExplosionsAndThrowables,
-} from './throwables.ts'
-import type { ThrowablesContext } from './throwables.ts'
-import {
-  recallDollState, handlePlayerInteract, spawnSingleAmmoPack, stepMapInteractables, isCapturePointSelectable, getNearbyInteractablePrompt,
-} from './interactables.ts'
-import type { InteractablesContext } from './interactables.ts'
+import { ensureFreePosition, resolvePenetration, stepPlayerKinematic, separateOverlappingPlayers } from './playerPhysics.ts'
+import { createProjectile, updateContinuousBeam, applyGravityOrbPull, stepProjectilesSubsystem, type ProjectileContext } from './projectiles.ts'
+import { stepPlayerTeleport, useSecondaryInWorld, damageObstacleInWorld, damagePlayerInWorld, explodeInWorld, stepExplosionsAndThrowables, type ThrowablesContext } from './throwables.ts'
+import { recallDollState, handlePlayerInteract, spawnSingleAmmoPack, stepMapInteractables, isCapturePointSelectable, getNearbyInteractablePrompt, type InteractablesContext } from './interactables.ts'
 
 export { SPAWN_POINTS, FFA_SPAWN_POINTS, CENTER_RESPAWN_POINT, AMMO_SPOTS, SUPPLY_SPOTS, M249_SKY_X, M249_SKY_Y, GAUSS_CENTER_X, GAUSS_CENTER_Y, GRAVITY_BOTTOM_X, GRAVITY_BOTTOM_Y, JUMP_PADS, isCapturePointSelectable, getNearbyInteractablePrompt }
 
@@ -62,15 +51,11 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   hits = 0
 
   private mapName?: string
-  private pid = 1
-  private prj = 1
-  private gren = 1
-  private obsSeq = 1
-  private mineSeq = 1
-  private ammo = 1
-  private crate = 1
+  private pid = 1; private prj = 1; private gren = 1; private obsSeq = 1; private mineSeq = 1; private ammo = 1; private crate = 1
   private ammoSpawnTimer = 0
   private stuckTicks = new Map<number, number>()
+  private obstaclesDirty = true
+  private lastObstaclesLen = -1
 
   playerBroadBuckets: PlayerState[][] = Array.from({ length: NUM_BUCKETS }, () => [])
   obstacleBroadBuckets: Obstacle[][] = Array.from({ length: NUM_BUCKETS }, () => [])
@@ -96,40 +81,26 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   nextAmmoId(): number { return this.ammo++ }
   getAmmoTimer(): number { return this.ammoSpawnTimer }
   setAmmoTimer(t: number): void { this.ammoSpawnTimer = t }
-  rebuildSpatial(): void { this.rebuildSpatialBuckets() }
+  rebuildSpatial(): void { this.obstaclesDirty = true; this.rebuildSpatialBuckets() }
   onHitCount(): void { this.hits++ }
   ownerTeamOf(id: number): TeamId {
     return (this.playerById.get(id) ?? this.players.find(p => p.id === id))?.team ?? 'ffa'
   }
-  recallDoll(p: PlayerState): void {
-    recallDollState(this.events, p)
-  }
+  recallDoll(p: PlayerState): void { recallDollState(this.events, p) }
   damagePlayer(
-    t: PlayerState,
-    amount: number,
-    pr: Projectile | undefined,
-    isHead: boolean,
-    isPierced: boolean,
-    attackerId?: number,
-    attackerTeam?: TeamId,
-    weaponLabel?: string,
+    t: PlayerState, amount: number, pr: Projectile | undefined, isHead: boolean, isPierced: boolean,
+    attackerId?: number, attackerTeam?: TeamId, weaponLabel?: string,
   ): void {
     damagePlayerInWorld(this, t, amount, pr, isHead, isPierced, attackerId, attackerTeam, weaponLabel)
   }
   damageObstacle(ob: Obstacle, dmg: number): void {
+    const prevLen = this.obstacles.length
     damageObstacleInWorld(this, ob, dmg)
+    if (this.obstacles.length !== prevLen || ob.hp <= 0) this.rebuildObstacleBucketsOnly()
   }
   explode(
-    cx: number,
-    cy: number,
-    radius: number,
-    maxDamage: number,
-    knockback: number,
-    pr?: Projectile,
-    ownerId?: number,
-    ownerTeam?: TeamId,
-    weaponLabel?: string,
-    implosion = false,
+    cx: number, cy: number, radius: number, maxDamage: number, knockback: number,
+    pr?: Projectile, ownerId?: number, ownerTeam?: TeamId, weaponLabel?: string, implosion = false,
   ): void {
     explodeInWorld(this, cx, cy, radius, maxDamage, knockback, pr, ownerId, ownerTeam, weaponLabel, implosion)
   }
@@ -141,22 +112,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime
   }
 
-  private rebuildSpatialBuckets(): void {
-    for (let i = 0; i < NUM_BUCKETS; i++) {
-      this.playerBroadBuckets[i].length = 0
-      this.obstacleBroadBuckets[i].length = 0
-    }
-    this.playerById.clear()
-    for (let i = 0; i < this.players.length; i++) {
-      const p = this.players[i]
-      this.playerById.set(p.id, p)
-      if (!p.deployed || !p.alive || p.respawnTimer > 0) continue
-      const wx = wrapX(p.pos.x)
-      const b0 = bucketIdx(wrapX(wx - PLAYER_BROAD_PAD))
-      const b1 = bucketIdx(wrapX(wx + PLAYER_BROAD_PAD))
-      this.playerBroadBuckets[b0].push(p)
-      if (b1 !== b0) this.playerBroadBuckets[b1].push(p)
-    }
+  private rebuildObstacleBucketsOnly(): void {
+    for (let i = 0; i < NUM_BUCKETS; i++) this.obstacleBroadBuckets[i].length = 0
     for (let i = 0; i < this.obstacles.length; i++) {
       const ob = this.obstacles[i]
       if (ob.hp <= 0) continue
@@ -168,10 +125,20 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         const px = Math.min(endX, startX + s * BUCKET_SIZE)
         const b = bucketIdx(wrapX(px))
         if (b !== prevB) {
-          if (!this.obstacleBroadBuckets[b].includes(ob)) this.obstacleBroadBuckets[b].push(ob)
+          const bucket = this.obstacleBroadBuckets[b]
+          if (bucket[bucket.length - 1] !== ob && !bucket.includes(ob)) bucket.push(ob)
           prevB = b
         }
       }
+    }
+    this.obstaclesDirty = false
+    this.lastObstaclesLen = this.obstacles.length
+  }
+
+  private rebuildSpatialBuckets(): void {
+    this.rebuildPlayerBucketsOnly()
+    if (this.obstaclesDirty || this.lastObstaclesLen !== this.obstacles.length) {
+      this.rebuildObstacleBucketsOnly()
     }
   }
 
@@ -193,6 +160,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
   resetMatch(): void {
     this.obsSeq = 1; this.mineSeq = 1; if (this.lagHistory) this.lagHistory.length = 0
     this.obstacles = OBSTACLE_PRESETS.map(o => ({ ...o, maxHp: o.hp }))
+    this.obstaclesDirty = true
     this.capturePoints = CP_INITS.map(c => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }))
     this.mortars = MORTARS_INIT.map(m => ({ ...m, cooldown: 0, operatorId: null }))
     this.watchtowers = WATCHTOWERS.map(t => ({ ...t, operatorId: null }))
@@ -201,16 +169,17 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       armed: true, armTimer: 0, triggered: false, fuse: 0,
       instant: false, directHit: false, preset: true, respawnTimer: 0,
     }))
-    const isIsolatedWeaponTestArena = Boolean(
-      this.mapName && (this.mapName.startsWith('sniper-') || this.mapName.startsWith('shell-') || this.mapName.startsWith('cs-pump')),
+    const hideCenterCrate = Boolean(
+      this.config.disableCenterSupplyCrate ||
+      (this.mapName && (this.mapName.startsWith('sniper-') || this.mapName.startsWith('shell-') || this.mapName.startsWith('cs-pump'))),
     )
     this.supplyCrates = [
       ...SUPPLY_SPOTS.map((spot, idx) => {
         const w = WEAPONS[spot.weaponId ?? (4 + (idx % 3))]
-        const hideForUnitTest = isIsolatedWeaponTestArena && spot.x === GAUSS_CENTER_X && spot.y === GAUSS_CENTER_Y
+        const hideForTest = hideCenterCrate && spot.x === GAUSS_CENTER_X && spot.y === GAUSS_CENTER_Y
         return {
           id: this.crate++, x: spot.x, y: spot.y, area: spot.area, kind: 'weapon' as const,
-          weaponId: w.id, weaponName: w.name, color: w.color, active: !hideForUnitTest, respawnTimer: hideForUnitTest ? 9999 : 0,
+          weaponId: w.id, weaponName: w.name, color: w.color, active: !hideForTest, respawnTimer: hideForTest ? 9999 : 0,
         }
       }),
       ...DOLL_SUPPLY_SPOTS.map((spot) => ({
@@ -220,9 +189,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     ]
     this.ammoPacks = []
     for (let i = 0; i < Math.min(7, this.config.ammoPackMaxActive); i++) spawnSingleAmmoPack(this)
-    this.projectiles = []
-    this.grenades = []
-    this.airstrikes = []
+    this.projectiles = []; this.grenades = []; this.airstrikes = []
     this.ammoSpawnTimer = 0
     this.scores = { red: 0, blue: 0, green: 0, ffa: 0 }
     for (const p of this.players) p.selectedSpawnId = 'base'
@@ -237,8 +204,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       hp: this.config.maxHp, maxHp: this.config.maxHp,
       alive: true, deployed: true, onGround: true,
       selectedSpawnId: 'base',
-      weaponIndex: 1,
-      lastPrimaryIndex: 1,
+      weaponIndex: 1, lastPrimaryIndex: 1,
       ammo: WEAPONS.map(w => w.magSize),
       reserveAmmo: WEAPONS.map(w => w.maxReserve),
       reloading: false, reloadTimer: 0, fireCooldown: 0, chargeTimer: 0,
@@ -256,9 +222,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     return p
   }
 
-  deploy(p: PlayerState): void {
-    this.respawnAt(p, p.team)
-  }
+  deploy(p: PlayerState): void { this.respawnAt(p, p.team) }
 
   private respawnAt(p: PlayerState, team: TeamId): void {
     const cur = WEAPONS[p.weaponIndex]
@@ -275,21 +239,18 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       ? this.capturePoints.find(c => c.id === p.selectedSpawnId && isCapturePointSelectable(c, team))
       : null
     if (wantedCp) {
-      sx = wantedCp.x
-      sy = wantedCp.y
+      sx = wantedCp.x; sy = wantedCp.y
     } else if (this.config.randomSpawn) {
       const spot = RANDOM_SPAWN_CANDIDATES[this.rng.int(RANDOM_SPAWN_CANDIDATES.length)]
-      sx = spot.x + this.rng.range(-45, 45)
-      sy = spot.y
+      sx = spot.x + this.rng.range(-45, 45); sy = spot.y
     } else if (team === "ffa") {
       const spot = FFA_SPAWN_POINTS[this.rng.int(FFA_SPAWN_POINTS.length)]
-      sx = spot.x
-      sy = spot.y
+      sx = spot.x; sy = spot.y
     } else {
+      // 保持与 FFA 分支一致的 RNG 消费步数，确保确定性种子序列稳定
       if (team === "red" || team === "blue" || team === "green") this.rng.int(1);
       const base = SPAWN_POINTS.find(s => s.team === team) ?? SPAWN_POINTS[0]
-      sx = base.x
-      sy = base.y
+      sx = base.x; sy = base.y
     }
     p.pos = { x: wrapX(sx + this.rng.range(-45, 45)), y: sy }
     p.vel = { x: 0, y: 0 }
@@ -367,7 +328,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       const pr = this.projectiles[i]
       if (pr.life > 0 && pr.damage > 0) {
         this.projectiles[pw++] = pr
-      } else if (!this.events.some(e => e.kind === 'projectile_destroy' && e.projectileId === pr.id)) {
+      } else if (pr.life > -900) {
+        // stepProjectilesSubsystem 已推送过 projectile_destroy 的弹丸会将 pr.life 设为 -999，O(1) 跳过重复事件
         this.events.push({ kind: 'projectile_destroy', projectileId: pr.id })
       }
     }
@@ -407,8 +369,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
         p.lastPrimaryIndex = wep.id
         if (!isSecondaryUnlocked(p.secondary, p.deathStreak ?? 0, p.dollCharges, p.weaponIndex)) p.secondary = 'frag'
         p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
-        p.reloading = false
-        p.reloadTimer = 0
+        p.reloading = false; p.reloadTimer = 0
         p.fireCooldown = Math.max(p.fireCooldown, 0.3)
       }
     }
@@ -449,14 +410,11 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     stepPlayerTeleport(this, p, dt)
 
     if (w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
-      p.reloading = false
-      p.reloadTimer = 0
+      p.reloading = false; p.reloadTimer = 0
     }
 
     if (p.reloading) {
-      if (!wepCur.shellReload || p.fireCooldown <= 0) {
-        p.reloadTimer -= dt
-      }
+      if (!wepCur.shellReload || p.fireCooldown <= 0) p.reloadTimer -= dt
       if (p.reloadTimer <= 0) {
         const wep = WEAPONS[p.weaponIndex]
         const avail = p.reserveAmmo[p.weaponIndex] || 0
@@ -469,12 +427,10 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
           if (stillNeeds) {
             p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize)
           } else {
-            p.reloading = false
-            p.reloadTimer = 0
+            p.reloading = false; p.reloadTimer = 0
           }
         } else {
-          p.reloading = false
-          p.reloadTimer = 0
+          p.reloading = false; p.reloadTimer = 0
           const needed = wep.magSize - p.ammo[p.weaponIndex]
           const transfer = Math.min(needed, avail)
           p.ammo[p.weaponIndex] += transfer
@@ -507,8 +463,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       const firePressed = w.fire && !p.prevFireHeld
       if (firePressed && p.chargeTimer <= 0 && p.fireCooldown <= 0) {
         if (p.ammo[p.weaponIndex] > 0) {
-          p.chargeAim = p.aim
-          p.chargeTimer = 1e-4
+          p.chargeAim = p.aim; p.chargeTimer = 1e-4
         } else if ((p.reserveAmmo[p.weaponIndex] || 0) > 0) {
           this.startReload(p)
         }
@@ -516,9 +471,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (p.chargeTimer > 0) {
         if (w.trackChargeAim) p.chargeAim = p.aim; p.chargeTimer += dt
         if (p.chargeTimer >= (wepNow?.chargeSeconds ?? 0)) {
-          this.fire(p)
-          p.chargeTimer = 0
-          p.chargeAim = undefined
+          this.fire(p); p.chargeTimer = 0; p.chargeAim = undefined
         }
       }
     } else if (w.fire) {
@@ -554,8 +507,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       return
     }
     if (wep.shellReload && p.reloading) {
-      p.reloading = false
-      p.reloadTimer = 0
+      p.reloading = false; p.reloadTimer = 0
     }
     p.ammo[p.weaponIndex]--
     p.fireCooldown = wep.fireDelay
@@ -564,8 +516,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     if (wep.recoil > 0) {
       const rk = recoilDelta(wep.recoil, p.aim)
       if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
-      p.recoilVel.x = rk.x
-      p.recoilVel.y = rk.y
+      p.recoilVel.x = rk.x; p.recoilVel.y = rk.y
     }
 
     const mx = wrapX(p.pos.x + Math.cos(p.aim) * 24)

@@ -174,3 +174,58 @@ test('插值：弹丸 id 复用时不会沿用旧位置（类别前缀 + 覆盖�
   const got = getRenderPos('pr', 5, 0, 0).x
   assert.ok(got > 4000, `id 复用的新弹丸不应继承旧位置，实际 ${got}`)
 })
+
+import { createBinaryCodecSession, encodeServerMsgBinary, decodeServerMsgBinary } from '../src/net/protocol/BinaryCodec.ts'
+import { World } from '../src/core/sim/world.ts'
+
+test('插值：环形世界跨接缝（13190 -> 10 / 4390 -> 10）平滑插值不丢帧', () => {
+  clearInterp()
+  const ents = [mk(1, 13190, 4390)]
+  capturePrevPositions('p', ents)
+  prunePrevPositions()
+  ents[0].pos.x = 10
+  ents[0].pos.y = 10
+  beginOverlayFrame()
+  buildPositionOverlay('p', ents, 0.5)
+  assert.equal(hasRenderPos('p', 1), true, '跨接缝 20px 移动必须正常插值而非误判为瞬移')
+  const pos = getRenderPos('p', 1, ents[0].pos.x, ents[0].pos.y)
+  assert.ok(pos.x === 0 || pos.x === 13200, `X 跨缝中点应为 0，实际 ${pos.x}`)
+  assert.ok(pos.y === 0 || pos.y === 4400, `Y 跨缝中点应为 0，实际 ${pos.y}`)
+})
+
+test('BinaryCodecSession：多客户端 AOI 独立编码会话互不污染设施与姓名增量状态', () => {
+  const w = new World(42)
+  const p = w.addPlayer('AcePilot', 'red')
+  w.step(1 / 60, new Map()) // tick = 1 (非 60 整倍帧，检验增量姓名与设施编码)
+  const snap = w.snapshot()
+  const sessionA = createBinaryCodecSession()
+  const sessionB = createBinaryCodecSession()
+
+  // 先对客户端 A 编码一次（消耗客户端 A 的首次全量设施与姓名下发）
+  const bytesA1 = encodeServerMsgBinary({ snap, events: [] }, { deltaFacilities: true, session: sessionA })
+  assert.ok(bytesA1.byteLength > 0)
+
+  // 再对从未收到过快照的客户端 B 编码同一帧，客户端 B 必须仍能完整解码出玩家姓名与设施列表
+  const bytesB1 = encodeServerMsgBinary({ snap, events: [] }, { deltaFacilities: true, session: sessionB })
+  const decSessionB = createBinaryCodecSession()
+  const decodedB = decodeServerMsgBinary(bytesB1, decSessionB)
+  assert.ok(decodedB && decodedB.snap, '客户端 B 应成功解码快照')
+  const dp = decodedB!.snap.players.find(x => x.id === p.id)
+  assert.ok(dp, '客户端 B 应解码出玩家')
+  assert.equal(dp!.name, 'AcePilot', '客户端 B 首次收到快照必须包含完整玩家名而非被客户端 A 增量抑制')
+  assert.equal(decodedB!.snap.capturePoints.length, snap.capturePoints.length, '客户端 B 首次收到快照必须包含全部占领点')
+  assert.equal(decodedB!.snap.obstacles.length, snap.obstacles.length, '客户端 B 首次收到快照必须包含全部障碍物')
+})
+
+test('World：obstacleBroadBuckets 脏标记在掩体增删与受损销毁时即时同步更新', () => {
+  const w = new World(99)
+  const ob = {
+    id: '7777', x: 2000, y: 1200, w: 80, h: 80, hp: 240, maxHp: 240,
+    color: '#334155', borderColor: '#38bdf8', label: 'test-obstacle',
+  }
+  w.obstacles.push(ob)
+  w.step(1 / 60, new Map())
+  assert.equal(w.bodyOverlapsAt(2040, 1240), true, '新增掩体后空间桶应自动感知并阻挡身体')
+  w.damageObstacle(ob, 999)
+  assert.equal(w.bodyOverlapsAt(2040, 1240), false, '摧毁后空间桶应立即移除该掩体')
+})

@@ -15,10 +15,10 @@ export const death = { info: null as { killer: string; weapon: string } | null }
 export function handleEvents(evs: WorldEvent[]): void {
   for (const e of evs) {
     if (e.kind === 'kill') {
-      // 联机二进制协议为省流可能只带 id → 名字/队伍按 id 反查本地快照兜底
+      // 联机二进制协议为省流可能只带 id → 名字/队伍优先用 O(1) playerById 反查，回退至 players.find
       const killer = e.killerId ?? e.attackerId
-      const killerP = killer !== undefined ? world.players.find(p => p.id === killer) : undefined
-      const victimP = e.victimId !== undefined ? world.players.find(p => p.id === e.victimId) : undefined
+      const killerP = killer !== undefined ? (world.playerById.get(killer) ?? world.players.find(p => p.id === killer)) : undefined
+      const victimP = e.victimId !== undefined ? (world.playerById.get(e.victimId) ?? world.players.find(p => p.id === e.victimId)) : undefined
       const kName = e.killerName ?? killerP?.name ?? '战场环境'
       const kTeam = e.killerTeam ?? killerP?.team ?? 'ffa'
       const vName = e.victimName ?? victimP?.name ?? '?'
@@ -43,8 +43,8 @@ export function handleEvents(evs: WorldEvent[]): void {
       showToast(`🚩 据点 ${e.pointCode} 被 ${e.team} 占领！`)
     } else if (e.kind === 'supply_pickup') {
       // 显示是谁拾取的（联机时按 playerId 从本地快照反查，缺失则退化为"某玩家"）
-      // 名字来源优先级：事件自带 playerName（服务端权威，联机最可靠）> 本地快照反查
-      const picker = e.playerId !== undefined ? world.players.find(p => p.id === e.playerId) : undefined
+      // 名字来源优先级：事件自带 playerName（服务端权威，联机最可靠）> 本地快照 O(1) 反查
+      const picker = e.playerId !== undefined ? (world.playerById.get(e.playerId) ?? world.players.find(p => p.id === e.playerId)) : undefined
       const who = e.playerName ?? picker?.name
       const isSelf = e.playerId !== undefined && e.playerId === localPlayer.id
       showToast(who

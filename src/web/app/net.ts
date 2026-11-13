@@ -11,7 +11,7 @@ import { InputMapper } from '../../input/InputMapper.ts'
 import { createPeerClient, createPeerServer, encodeServerWireFrame } from '../../net/transport/Peer.ts'
 import type { PeerConnLike, FastClientTransport, FastServerTransport } from '../../net/transport/Peer.ts'
 import { handleEvents } from './events.ts'
-import { updateTeamCountUI, updateScoreboardUI, updateHudUI, updateDebugHudVisibility, syncTeamButtonsUI } from './hud.ts'
+import { updateTeamCountUI, updateDebugHudVisibility, syncTeamButtonsUI } from './hud.ts'
 import { showToast } from './toast.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput, TeamId, WorldEvent } from '../../core/types.ts'
@@ -447,7 +447,7 @@ function acceptIncomingKcpGuest(
 
   netState.hostGuests.set(guestPlayer.id, slot)
   netState.peerCount = netState.hostGuests.size
-  resetBinaryCodecState()
+  resetBinaryCodecState(srvTransport.codecSession)
 
   srvTransport.send({
     snap: world.snapshot(),
@@ -459,6 +459,7 @@ function acceptIncomingKcpGuest(
   conn.on('close', () => {
     netState.hostGuests.delete(guestPlayer.id)
     world.players = world.players.filter(p => p.id !== guestPlayer.id)
+    world.playerById.delete(guestPlayer.id)
     netState.peerCount = netState.hostGuests.size
     updateTeamCountUI()
     updateNetStatusUI()
@@ -534,6 +535,11 @@ function applyAuthoritativeSnapshotToClientWorld(snap: WorldSnapshot): void {
   world.tick = interp.tick
   world.scores = { ...interp.scores }
   world.players = interp.players
+  world.playerById.clear()
+  for (let i = 0; i < interp.players.length; i++) {
+    const p = interp.players[i]
+    world.playerById.set(p.id, p)
+  }
   world.projectiles = interp.projectiles
   world.grenades = interp.grenades
   world.landmines = interp.landmines
@@ -545,16 +551,12 @@ function applyAuthoritativeSnapshotToClientWorld(snap: WorldSnapshot): void {
   world.mortars = interp.mortars
 
   const myId = netState.clientSession?.playerId ?? localPlayer.id
-  const meInSnap = interp.players.find(p => p.id === myId)
+  const meInSnap = world.playerById.get(myId)
   if (meInSnap) {
     const keepSpawnId = pendingLoadout.spawnPointId || meInSnap.selectedSpawnId || 'base'
     Object.assign(localPlayer, meInSnap)
     localPlayer.selectedSpawnId = keepSpawnId
   }
-  // 这里不再调用 updateScoreboardUI()/updateHudUI()：
-  // stepNetworkFrame 在每个 fixed step 内都会走到这里（一帧最多 4 次），
-  // 而主循环的渲染段本来就每帧各调一次 HUD。此前两处都调 = 每帧白算 2~5 次 HUD，
-  // 联机时的顿挫有一部分就来自这种重复工作。HUD 统一由渲染段更新即可。
 }
 
 /**
@@ -670,7 +672,6 @@ function setupBroadcastChannelWebRtcHost(roomId: string): void {
       if (!guestHybrids.has(msg.clientId)) {
         const hybrid = createHybridBroadcastWebRtcConn(bc, msg.clientId, "host")
         guestHybrids.set(msg.clientId, hybrid)
-        // 拦截 conn.on("data") 以同时接收 BroadcastChannel 数据报
         const origOn = hybrid.conn.on.bind(hybrid.conn) as (event: "data" | "close", cb: (d?: unknown) => void) => void
         const cbs: ((d: unknown) => void)[] = []
         hybrid.conn.on = ((event: "data" | "close", cb: any) => {
@@ -948,6 +949,7 @@ export async function joinHostRoom(rawRoomString: string): Promise<void> {
 export function leaveMultiplayerRoom(): void {
   for (const slot of netState.hostGuests.values()) {
     world.players = world.players.filter(p => p.id !== slot.playerId)
+    world.playerById.delete(slot.playerId)
   }
   for (const fn of netState.cleanupFns) {
     try { fn() } catch { /* ignore */ }
@@ -971,7 +973,6 @@ export async function runDualWebRtcKcpSelfTest(): Promise<void> {
     startHostRoom()
   }
 
-  // 构造双栈内存+WebRTC 数据报回路，保证在任何网卡/沙盒环境下 0ms 启动完整 KCP 24B 协议栈双端自测
   const hostCbs: ((d: unknown) => void)[] = []
   const guestCbs: ((d: unknown) => void)[] = []
   let hostDcActive: RTCDataChannel | null = null
@@ -1178,7 +1179,11 @@ export function broadcastHostKcpSnapshot(events: WorldEvent[]): void {
       if (!hasCriticalEvents && slot.transport.sendRawFrame) {
         const wire = encodeServerMsgBinary(
           { snap: aoiSnap, events: outEvents },
-          { deltaFacilities: !isKeyframe, deltaProjectiles: !isKeyframe },
+          {
+            deltaFacilities: !isKeyframe,
+            deltaProjectiles: !isKeyframe,
+            session: slot.transport.codecSession,
+          },
         )
         slot.transport.sendRawFrame(wire)
       } else {

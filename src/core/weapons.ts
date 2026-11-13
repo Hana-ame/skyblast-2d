@@ -290,6 +290,8 @@ export interface GameConfig {
   fragRechargeSeconds: number  // 每充能回复秒数
   dollMaxCharges: number    // 替身人偶最多可囤几个（只从补给箱获得）
   falloffExponent?: number
+  /** 测试或自定义模式禁用中央高斯补给箱刷新 */
+  disableCenterSupplyCrate?: boolean
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

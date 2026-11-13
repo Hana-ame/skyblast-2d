@@ -2,13 +2,14 @@
 // 升级：
 //   1. 底层基于 WebRTC DataChannel 无序不可靠模式（ordered: false, maxRetransmits: 0，模拟 UDP 数据报）挂载自定义 KCP 协议栈（KcpBlock）；
 //   2. 默认启用极速模式（nodelay=1, interval=10ms, resend=2, nc=1），结合 SkyBlast 2D 私有二进制协议（SB2B/SB2C）；
-//   3. 关键控制包/意图流/欢迎包走 KCP 可靠 ARQ（PUSH/ACK + FastResend=2 快速重传），高频快照广播支持 KCP 24B 帧封装与零拷贝广播；
+//   3. 每条连接持有独立的 BinaryCodecSession，消除多客户端下增量缓存串味；
 //   4. 自动嗅探解包：同时兼容 KCP 报文、Uint8Array / ArrayBuffer / "\x00SB2:" 紧凑帧 / 旧版 JSON 字符串。
 import type { ClientMsg, ClientTransport, ServerMsg, ServerTransport } from './types.ts'
 import {
   encodeServerMsgBinary, decodeServerMsgBinary,
   encodeClientMsgBinary, decodeClientMsgBinary,
   frameStringToBytes, BINARY_STR_PREFIX,
+  createBinaryCodecSession, type BinaryCodecSession,
 } from '../protocol/BinaryCodec.ts'
 import { KcpBlock, isKcpPacket, DEFAULT_KCP_CONV } from './Kcp.ts'
 import type { KcpOptions, KcpStats } from './Kcp.ts'
@@ -31,6 +32,7 @@ export interface PeerConnLike {
 export interface FastServerTransport extends ServerTransport {
   sendRawFrame?(frame: Uint8Array | string): void
   kcp?: KcpBlock
+  codecSession?: BinaryCodecSession
   getKcpStats?(): KcpStats
   tickKcp?(nowMs?: number): void
 }
@@ -38,13 +40,14 @@ export interface FastServerTransport extends ServerTransport {
 /** 扩展的 ClientTransport：支持读取 KCP 状态与驱动 KCP 时钟 */
 export interface FastClientTransport extends ClientTransport {
   kcp?: KcpBlock
+  codecSession?: BinaryCodecSession
   getKcpStats?(): KcpStats
   tickKcp?(nowMs?: number): void
 }
 
-export function encodeServerWireFrame(m: ServerMsg, forceFull = false): Uint8Array {
+export function encodeServerWireFrame(m: ServerMsg, forceFull = false, session?: BinaryCodecSession): Uint8Array {
   const isKeyframe = forceFull || Boolean(m.welcome) || Boolean(m.events && m.events.length > 0) || (m.snap.tick % 30 === 0)
-  return encodeServerMsgBinary(m, { deltaFacilities: !isKeyframe })
+  return encodeServerMsgBinary(m, { deltaFacilities: !isKeyframe, session })
 }
 
 export function encodeClientWireFrame(m: ClientMsg): Uint8Array {
@@ -65,12 +68,12 @@ function toUint8Array(raw: unknown): Uint8Array | null {
   return null
 }
 
-function parseServerMsg(raw: unknown): ServerMsg | null {
-  if (raw instanceof Uint8Array) return decodeServerMsgBinary(raw)
-  if (raw instanceof ArrayBuffer) return decodeServerMsgBinary(new Uint8Array(raw))
+function parseServerMsg(raw: unknown, session?: BinaryCodecSession): ServerMsg | null {
+  if (raw instanceof Uint8Array) return decodeServerMsgBinary(raw, session)
+  if (raw instanceof ArrayBuffer) return decodeServerMsgBinary(new Uint8Array(raw), session)
   if (typeof raw === 'string') {
     if (raw.startsWith(BINARY_STR_PREFIX)) {
-      return decodeServerMsgBinary(frameStringToBytes(raw))
+      return decodeServerMsgBinary(frameStringToBytes(raw), session)
     }
     try { return JSON.parse(raw) as ServerMsg } catch { return null }
   }
@@ -117,7 +120,6 @@ export function configureWebRtcUnreliableChannel(
   const pc = conn.peerConnection
   if (!alreadyUnreliableKcpChannel && pc && typeof pc.createDataChannel === 'function') {
     try {
-      // 监听对端创建的 skyblast-kcp 低延迟无序不可靠通道
       const prevOnDc = pc.ondatachannel
       pc.ondatachannel = (ev: RTCDataChannelEvent) => {
         if (ev.channel && ev.channel.label === 'skyblast-kcp') {
@@ -127,7 +129,6 @@ export function configureWebRtcUnreliableChannel(
           prevOnDc.call(pc, ev)
         }
       }
-      // 主动创建 ordered: false, maxRetransmits: 0 的 UDP 语义 DataChannel
       const created = pc.createDataChannel('skyblast-kcp', {
         ordered: false,
         maxRetransmits: 0,
@@ -146,7 +147,6 @@ export function configureWebRtcUnreliableChannel(
     sendDatagram(pkt: Uint8Array) {
       if (customDc && customDc.readyState === 'open') {
         try {
-          // RTCDataChannel.send 的类型不接受 SharedArrayBuffer 视图 → 复制成标准 ArrayBuffer
           customDc.send(pkt.slice().buffer as ArrayBuffer)
           return
         } catch {
@@ -165,6 +165,7 @@ export function configureWebRtcUnreliableChannel(
 export function createPeerClient(conn: PeerConnLike, kcpOpts: KcpOptions = {}): FastClientTransport {
   let onServer: ((m: ServerMsg) => void) | null = null
   const conv = kcpOpts.conv ?? DEFAULT_KCP_CONV
+  const codecSession = createBinaryCodecSession()
 
   const handleIncomingBytes = (bytes: Uint8Array): void => {
     if (isKcpPacket(bytes, conv)) {
@@ -172,13 +173,13 @@ export function createPeerClient(conn: PeerConnLike, kcpOpts: KcpOptions = {}): 
       kcp.input(bytes, t)
       let payload: Uint8Array | null
       while ((payload = kcp.recv()) !== null) {
-        const m = parseServerMsg(payload)
+        const m = parseServerMsg(payload, codecSession)
         if (m && 'snap' in m) onServer?.(m)
       }
       kcp.flush(t)
       return
     }
-    const m = parseServerMsg(bytes)
+    const m = parseServerMsg(bytes, codecSession)
     if (m && 'snap' in m) onServer?.(m)
   }
 
@@ -197,12 +198,13 @@ export function createPeerClient(conn: PeerConnLike, kcpOpts: KcpOptions = {}): 
       handleIncomingBytes(bytes)
       return
     }
-    const m = parseServerMsg(raw)
+    const m = parseServerMsg(raw, codecSession)
     if (m && 'snap' in m) onServer?.(m)
   })
 
   return {
     kcp,
+    codecSession,
     send(m: ClientMsg) {
       const t = nowMs()
       const wire = encodeClientWireFrame(m)
@@ -219,6 +221,7 @@ export function createPeerClient(conn: PeerConnLike, kcpOpts: KcpOptions = {}): 
 export function createPeerServer(conn: PeerConnLike, kcpOpts: KcpOptions = {}): FastServerTransport {
   let onClient: ((m: ClientMsg) => void) | null = null
   const conv = kcpOpts.conv ?? DEFAULT_KCP_CONV
+  const codecSession = createBinaryCodecSession()
 
   const handleIncomingBytes = (bytes: Uint8Array): void => {
     if (isKcpPacket(bytes, conv)) {
@@ -257,9 +260,10 @@ export function createPeerServer(conn: PeerConnLike, kcpOpts: KcpOptions = {}): 
 
   return {
     kcp,
+    codecSession,
     send(m: ServerMsg) {
       const t = nowMs()
-      const wire = encodeServerWireFrame(m)
+      const wire = encodeServerWireFrame(m, false, codecSession)
       // 含 welcome 的握手包或小体积包走 KCP 可靠 ARQ（支持分片与快速重传）
       if (m.welcome || wire.byteLength <= kcp.mss * 32) {
         kcp.send(wire)

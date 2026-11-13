@@ -7,22 +7,24 @@
  *    - 房间注册与等待列表同步 (传递 Host 的 PeerJS 配对 ID)
  *    - 自动快速匹配搜索 (将等待中的玩家配对至可用房间 Host PeerJS ID)
  *    - 待机大厅与房间内的实时文字聊天广播
- * 
+ *
  * 启动方式：
  *   node server.js
- * 默认监听端口：3000 (可通过 PORT 环境变量修改)
+ * 默认监听端口：3000 (可通过 PORT 环境变量修改，CORS_ORIGIN 可配置允许的源)
  */
 
 const http = require('http');
-const url = require('url');
 
 const PORT = process.env.PORT || 3000;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 
-// 内存状态存储
+// 内存状态存储与容量上限（防止恶意随机 peerId 填满内存）
 const rooms = new Map(); // roomId -> { roomId, roomName, hostPeerId, hostName, teamCounts, playerCount, maxPlayers, status, updatedAt }
 const waitingQueue = new Map(); // peerId -> { peerId, name, team, preferredRoomHostId, updatedAt }
 const chatMessages = []; // [{ id, sender, team, text, roomId, timestamp }]
 const MAX_CHAT_HISTORY = 100;
+const MAX_ROOMS = 1000;
+const MAX_WAITING = 2000;
 const ROOM_TTL_MS = 35000; // 35秒无心跳自动清理
 
 function cleanupStaleEntries() {
@@ -39,10 +41,18 @@ function cleanupStaleEntries() {
   }
 }
 
+function enforceMapCapacity(map, maxEntries) {
+  while (map.size >= maxEntries) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) break;
+    map.delete(oldestKey);
+  }
+}
+
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': CORS_ORIGIN,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type'
   });
@@ -83,13 +93,18 @@ const server = http.createServer(async (req, res) => {
   }
 
   cleanupStaleEntries();
-  const parsedUrl = url.parse(req.url, true);
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  } catch (e) {
+    parsedUrl = new URL('http://localhost/');
+  }
   const pathname = parsedUrl.pathname;
 
   // 1. 获取大厅状态 (房间列表 + 等待人数 + 最新聊天消息)
   if (req.method === 'GET' && pathname === '/api/lobby') {
-    const roomIdFilter = parsedUrl.query.roomId || 'global';
-    const since = Number(parsedUrl.query.since || 0);
+    const roomIdFilter = parsedUrl.searchParams.get('roomId') || 'global';
+    const since = Number(parsedUrl.searchParams.get('since') || 0);
     const filteredChat = chatMessages.filter(
       (m) => (m.roomId === 'global' || m.roomId === roomIdFilter) && m.timestamp >= since
     );
@@ -115,11 +130,12 @@ const server = http.createServer(async (req, res) => {
     if (!hostPeerId) {
       return sendJson(res, 400, { ok: false, error: 'Missing hostPeerId' });
     }
-    const id = roomId || hostPeerId;
+    const id = String(roomId || hostPeerId).slice(0, 64);
+    if (!rooms.has(id)) enforceMapCapacity(rooms, MAX_ROOMS);
     rooms.set(id, {
       roomId: id,
       roomName: (roomName || `${hostName || 'Player'} 的对战房间`).slice(0, 40),
-      hostPeerId: String(hostPeerId),
+      hostPeerId: String(hostPeerId).slice(0, 64),
       hostName: String(hostName || 'Host').slice(0, 24),
       playerCount: Number(playerCount || 1),
       maxPlayers: Number(maxPlayers || 100),
@@ -136,15 +152,16 @@ const server = http.createServer(async (req, res) => {
     if (!peerId) {
       return sendJson(res, 400, { ok: false, error: 'Missing peerId' });
     }
+    const cleanPeerId = String(peerId).slice(0, 64);
 
     // 优先查找未满的已创建房间
     const availableRooms = Array.from(rooms.values()).filter(
-      (r) => r.hostPeerId !== peerId && r.playerCount < r.maxPlayers
+      (r) => r.hostPeerId !== cleanPeerId && r.playerCount < r.maxPlayers
     );
 
     if (availableRooms.length > 0) {
       const targetRoom = availableRooms[0];
-      waitingQueue.delete(peerId);
+      waitingQueue.delete(cleanPeerId);
       return sendJson(res, 200, {
         ok: true,
         matched: true,
@@ -157,9 +174,10 @@ const server = http.createServer(async (req, res) => {
 
     // 其次检查等待队列中是否有其他正在等待配对的玩家
     for (const [otherPeerId, otherPlayer] of waitingQueue.entries()) {
-      if (otherPeerId !== peerId) {
+      if (otherPeerId !== cleanPeerId) {
         // 将先进队列的玩家作为 Host，自动创建房间并返回其 PeerJS ID
         const autoRoomId = otherPeerId;
+        if (!rooms.has(autoRoomId)) enforceMapCapacity(rooms, MAX_ROOMS);
         rooms.set(autoRoomId, {
           roomId: autoRoomId,
           roomName: `${otherPlayer.name} 的自动配对房`,
@@ -171,7 +189,7 @@ const server = http.createServer(async (req, res) => {
           updatedAt: Date.now()
         });
         waitingQueue.delete(otherPeerId);
-        waitingQueue.delete(peerId);
+        waitingQueue.delete(cleanPeerId);
         return sendJson(res, 200, {
           ok: true,
           matched: true,
@@ -184,10 +202,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 如果暂时无人可配对，加入等待队列并同时注册为可被搜索的待机宿主
-    waitingQueue.set(peerId, {
-      peerId: String(peerId),
+    if (!waitingQueue.has(cleanPeerId)) enforceMapCapacity(waitingQueue, MAX_WAITING);
+    waitingQueue.set(cleanPeerId, {
+      peerId: cleanPeerId,
       name: String(name || 'Player').slice(0, 24),
-      team: String(team || 'red'),
+      team: String(team || 'red').slice(0, 12),
       updatedAt: Date.now()
     });
 
@@ -195,24 +214,34 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       matched: false,
       role: 'waiting_host',
-      hostPeerId: peerId,
+      hostPeerId: cleanPeerId,
       waitingCount: waitingQueue.size
     });
   }
 
-  // 4. 发送聊天消息 API
+  // 4. 离开等待队列或关闭房间
+  if (req.method === 'POST' && pathname === '/api/leave') {
+    const body = await parseBody(req);
+    const { peerId, roomId } = body;
+    if (peerId) waitingQueue.delete(String(peerId));
+    if (roomId) rooms.delete(String(roomId));
+    if (peerId) rooms.delete(String(peerId));
+    return sendJson(res, 200, { ok: true });
+  }
+
+  // 5. 发送大厅/房间聊天消息
   if (req.method === 'POST' && pathname === '/api/chat') {
     const body = await parseBody(req);
     const { sender, team, text, roomId } = body;
-    if (!text || !String(text).trim()) {
+    if (!text || ! String(text).trim()) {
       return sendJson(res, 400, { ok: false, error: 'Empty message' });
     }
     const msg = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      sender: String(sender || '匿名特工').slice(0, 24),
-      team: String(team || 'red'),
+      sender: String(sender || 'Player').slice(0, 24),
+      team: String(team || 'red').slice(0, 12),
       text: String(text).trim().slice(0, 240),
-      roomId: String(roomId || 'global'),
+      roomId: String(roomId || 'global').slice(0, 64),
       timestamp: Date.now()
     };
     chatMessages.push(msg);
@@ -222,28 +251,14 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true, message: msg });
   }
 
-  // 5. 离开房间/取消等待 API
-  if (req.method === 'POST' && pathname === '/api/leave') {
-    const body = await parseBody(req);
-    const { peerId, roomId } = body;
-    if (peerId) {
-      waitingQueue.delete(peerId);
-      rooms.delete(peerId);
-    }
-    if (roomId) {
-      rooms.delete(roomId);
-    }
-    return sendJson(res, 200, { ok: true });
-  }
+  sendJson(res, 404, { ok: false, error: 'Not Found' });
+});
 
-  sendJson(res, 404, {
-    ok: false,
-    error: 'API endpoint not found. Available endpoints: GET /api/lobby, POST /api/rooms, POST /api/search, POST /api/chat, POST /api/leave'
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`[SkyBlast 2D Match & Chat Server] Running on http://localhost:${PORT}`);
+    console.log(`WebRTC PeerJS Signaling Relay: 0.peerjs.com:443`);
   });
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`[PeerJS Arena API Server] Running at http://localhost:${PORT}`);
-  console.log(`[PeerJS Relay] Fixed to 0.peerjs.com`);
-  console.log(`[Endpoints] GET /api/lobby | POST /api/rooms | POST /api/search | POST /api/chat | POST /api/leave`);
-});
+module.exports = { server, rooms, waitingQueue, chatMessages };

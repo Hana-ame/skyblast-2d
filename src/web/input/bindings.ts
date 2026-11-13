@@ -117,7 +117,8 @@ export function bindAllEvents(): void {
     else if (e.code === 'Digit5') tryChangePrimaryWeapon(7)
     else if (e.code === 'Digit6') tryChangePrimaryWeapon(3)
   })
-  window.addEventListener('keyup', (e) => { keys[e.code] = false })
+  window.addEventListener('keydown', (e) => { if (e.code === 'Space') igeSpace = true })
+  window.addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'Space') igeSpace = false })
 
   canvas?.addEventListener('mousemove', (e) => {
     const m = getElementLandscapeMetrics(canvas, e.clientX, e.clientY)
@@ -369,7 +370,7 @@ export function bindAllEvents(): void {
   let igeDragCur: { x: number; y: number } | null = null
   let igePanning = false
   let igePanLast = { x: 0, y: 0 }
-  const igeSpace = false
+  let igeSpace = false
 
   function renderIge(): void {
     if (!igeCanvas || !igeModal || igeModal.classList.contains('hidden')) return

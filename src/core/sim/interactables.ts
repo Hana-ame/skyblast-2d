@@ -182,7 +182,7 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
   }
   for (const tw of ctx.watchtowers) {
     if (tw.operatorId === null && wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 130) {
-      tw.operatorId = tw.id ? p.id : p.id
+      tw.operatorId = p.id
       p.mountedTowerId = tw.id
       p.pos = { x: tw.x, y: tw.y - 150 + 12 }
       p.vel = { x: 0, y: 0 }

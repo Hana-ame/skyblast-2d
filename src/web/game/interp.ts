@@ -1,4 +1,4 @@
-// web/game/interp.ts —— 渲染插值（固定步长逻辑 + 高刷新率显示器的必要补偿）
+// web/game/interp.ts —— 渲染插值（固定步长逻辑 + 高刷新率显示器的必要补偿 + 环形世界跨缝连续插值）
 //
 // 问题背景：逻辑固定 60Hz 步进，但显示器常是 120/144/165/240Hz。
 // 144Hz 下约 58% 的帧不会推进 tick，若直接用 world 里的实体坐标渲染，
@@ -6,8 +6,9 @@
 // 画面表现为"隔一两帧顿一下"，而帧率与 CPU 统计完全正常。
 //
 // 解法：保留上一 tick 的实体位置，渲染时用 acc/FIXED 作为 0..1 的插值系数，
-// 在「上一 tick 位置」与「当前 tick 位置」之间取中间值，使高刷屏每帧都有
-// 平滑连续的位置变化。这不改变逻辑与手感，只是让显示更顺。
+// 在「上一 tick 位置」与「当前 tick 位置」之间按环形最短位移（wrapDeltaX/wrapDeltaY）取中间值，
+// 使高刷屏每帧都有平滑连续的位置变化，且跨过 x=0/13200 或 y=0/4400 接缝时不中断、不跳帧。
+import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../../core/wrap.ts'
 
 export interface InterpPos { x: number; y: number }
 
@@ -62,14 +63,14 @@ const liveIds = new Set<string>()
 /** 每帧所有类别都捕获完后调用：移除本帧未出现的 id */
 export function prunePrevPositions(): void {
   if (prevPos.size <= liveIds.size) { liveIds.clear(); return }
-  for (const id of Array.from(prevPos.keys())) {
+  for (const id of prevPos.keys()) {
     if (!liveIds.has(id)) prevPos.delete(id)
   }
   liveIds.clear()
 }
 
 /**
- * 在渲染之前调用：按 alpha (0..1) 在上一 tick 与当前 tick 位置之间插值，
+ * 在渲染之前调用：按 alpha (0..1) 在上一 tick 与当前 tick 位置之间按环形最短位移插值，
  * 结果写入 posOverlay，渲染层通过 getRenderPos 读取。
  */
 export function buildPositionOverlay(kind: InterpKind, entities: ArrayLike<InterpEntity>, alpha: number): void {
@@ -82,14 +83,19 @@ export function buildPositionOverlay(kind: InterpKind, entities: ArrayLike<Inter
     const key = keyOf(kind, e.id)
     const prev = prevPos.get(key)
     if (!prev) continue
-    // 传送/重生等大幅位移不做插值（否则会出现穿墙滑行）
-    const dx = e.pos.x - prev.x
-    const dy = e.pos.y - prev.y
+    // 环形最短位移（兼容跨 x=0/13200 或 y=0/4400 接缝以及坐标未归一化测试场景）
+    const rawDx = e.pos.x - prev.x
+    const rawDy = e.pos.y - prev.y
+    const dx = Math.abs(rawDx) <= 400 ? rawDx : wrapDeltaX(prev.x, e.pos.x)
+    const dy = Math.abs(rawDy) <= 400 ? rawDy : wrapDeltaY(prev.y, e.pos.y)
+    // 传送/重生等大幅真实位移（>400px）不做插值（否则会出现穿墙滑行）
     if (Math.abs(dx) > 400 || Math.abs(dy) > 400) continue
     let slot = posOverlay.get(key)
     if (!slot) { slot = { x: 0, y: 0 }; posOverlay.set(key, slot) }
-    slot.x = prev.x + dx * a
-    slot.y = prev.y + dy * a
+    const nx = prev.x + dx * a
+    const ny = prev.y + dy * a
+    slot.x = Math.abs(rawDx) <= 400 ? nx : wrapX(nx)
+    slot.y = Math.abs(rawDy) <= 400 ? ny : wrapY(ny)
   }
 }
 

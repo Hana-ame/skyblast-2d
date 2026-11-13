@@ -3,7 +3,8 @@
 //   1. 定点数/半精度量化（位置 0.25px 精度 Uint16、速度 0.16px/s Int16、角度 1e-4 rad Int16、计时器 1ms Uint16）
 //   2. 静态字典 + 增量设施同步（Delta Facilities）：据点、障碍物、补给箱、弹药包、迫击炮未变化时仅占 1 bit（0 字节负载），变化时才下发
 //   3. 弹丸事件化增量同步（Event-Driven Projectiles）：直线/抛物线匀速弹丸只需在出生/反弹/销毁时同步起点与速度向量，飞行途中由客户端本地推算轨迹
-//   4. 支持 ackSeqs 序列号同步，支撑客户端预测与服务器回滚重放（Reconciliation）
+//   4. 支持按连接隔离的 BinaryCodecSession（消除多客机 AOI 下全局增量签名互相污染），同时向下兼容默认会话
+//   5. 支持 ackSeqs 序列号同步，支撑客户端预测与服务器回滚重放（Reconciliation）
 import type { ClientMsg, ServerMsg } from '../transport/types.ts'
 import type { WorldSnapshot, ScoreBoard } from '../../core/snap.ts'
 import type {
@@ -48,6 +49,86 @@ function uTimerMs(q: number): number { return q * 0.001 }
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
+// ── 静态字典构建辅助 ──
+function buildDefaultCapturePointsDict(): CapturePoint[] {
+  return CP_INITS.map(c => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }))
+}
+function buildDefaultSupplyCratesDict(): SupplyCrate[] {
+  const crates: SupplyCrate[] = []
+  let id = 1
+  for (const s of SUPPLY_SPOTS) {
+    const wid = s.weaponId ?? 4
+    const w = WEAPONS[wid]
+    crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: 'weapon', weaponId: wid, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 })
+  }
+  for (const s of DOLL_SUPPLY_SPOTS) {
+    crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: 'doll', weaponId: -1, weaponName: '🎎 替身人偶', color: '#f472b6', active: true, respawnTimer: 0 })
+  }
+  return crates
+}
+function buildDefaultMortarsDict(): Mortar[] {
+  return MORTARS_INIT.map(m => ({ ...m, cooldown: 0, operatorId: null }))
+}
+
+/**
+ * 按连接隔离的二进制编解码增量会话状态：
+ * 在多客机 AOI 独立编码场景下，每个客户端连接持有独立的 BinaryCodecSession，
+ * 避免第 1 个客机编码后更新全局签名导致第 2~N 个客机漏发设施变更、名字变更或弹丸全量包。
+ */
+export class BinaryCodecSession {
+  staticDictCapturePoints: CapturePoint[] | null = buildDefaultCapturePointsDict()
+  staticDictSupplyCrates: SupplyCrate[] | null = buildDefaultSupplyCratesDict()
+  staticDictMortars: Mortar[] | null = buildDefaultMortarsDict()
+  staticDictAmmoSpots = new Map<number, string>(AMMO_SPOTS.map(a => [a.x, a.area]))
+  encodedPlayerNames = new Map<number, string>()
+  decodedPlayerNames = new Map<number, string>()
+
+  lastEncObsSig = ''
+  lastEncCpSig = ''
+  lastEncAmmoSig = ''
+  lastEncCrateSig = ''
+  lastEncMortarSig = ''
+
+  lastDecObstacles: Obstacle[] = []
+  lastDecCapturePoints: CapturePoint[] = []
+  lastDecAmmoPacks: AmmoPack[] = []
+  lastDecSupplyCrates: SupplyCrate[] = []
+  lastDecMortars: Mortar[] = []
+
+  encodedBallisticProjs = new Map<number, number>()
+  decodedBallisticProjs = new Map<number, Projectile>()
+  lastDecodedTick = 0
+
+  reset(): void {
+    this.staticDictCapturePoints = buildDefaultCapturePointsDict()
+    this.staticDictSupplyCrates = buildDefaultSupplyCratesDict()
+    this.staticDictMortars = buildDefaultMortarsDict()
+    this.staticDictAmmoSpots.clear()
+    for (const a of AMMO_SPOTS) this.staticDictAmmoSpots.set(a.x, a.area)
+    this.encodedPlayerNames.clear()
+    this.decodedPlayerNames.clear()
+    this.lastEncObsSig = ''
+    this.lastEncCpSig = ''
+    this.lastEncAmmoSig = ''
+    this.lastEncCrateSig = ''
+    this.lastEncMortarSig = ''
+    this.lastDecObstacles = []
+    this.lastDecCapturePoints = []
+    this.lastDecAmmoPacks = []
+    this.lastDecSupplyCrates = []
+    this.lastDecMortars = []
+    this.encodedBallisticProjs.clear()
+    this.decodedBallisticProjs.clear()
+    this.lastDecodedTick = 0
+  }
+}
+
+export function createBinaryCodecSession(): BinaryCodecSession {
+  return new BinaryCodecSession()
+}
+
+const defaultCodecSession = new BinaryCodecSession()
+
 export interface BinaryEncodeOptions {
   /** 开启低频地图设施（障碍物/据点/弹药包/补给箱/迫击炮）未变更帧零字节省流模式 */
   deltaFacilities?: boolean
@@ -55,6 +136,8 @@ export interface BinaryEncodeOptions {
   deltaProjectiles?: boolean
   /** 客户端推算弹丸轨迹的帧间隔（默认 1/60） */
   dt?: number
+  /** 按连接隔离的增量会话状态（省略时使用默认共享会话） */
+  session?: BinaryCodecSession
 }
 
 class ByteWriter {
@@ -229,71 +312,13 @@ class ByteReader {
 const sharedServerWriter = new ByteWriter(32768)
 const sharedClientWriter = new ByteWriter(512)
 
-// ── 静态字典与增量缓存状态（模块加载即由权威静态地标预热，确保跨进程/跨标签页解码端无需等待全量帧即可安全解码快速帧） ──
-function buildDefaultCapturePointsDict(): CapturePoint[] {
-  return CP_INITS.map(c => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }))
-}
-function buildDefaultSupplyCratesDict(): SupplyCrate[] {
-  const crates: SupplyCrate[] = []
-  let id = 1
-  for (const s of SUPPLY_SPOTS) {
-    const wid = s.weaponId ?? 4
-    const w = WEAPONS[wid]
-    crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: 'weapon', weaponId: wid, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 })
-  }
-  for (const s of DOLL_SUPPLY_SPOTS) {
-    crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: 'doll', weaponId: -1, weaponName: '🎎 替身人偶', color: '#f472b6', active: true, respawnTimer: 0 })
-  }
-  return crates
-}
-function buildDefaultMortarsDict(): Mortar[] {
-  return MORTARS_INIT.map(m => ({ ...m, cooldown: 0, operatorId: null }))
-}
-let staticDictCapturePoints: CapturePoint[] | null = buildDefaultCapturePointsDict()
-let staticDictSupplyCrates: SupplyCrate[] | null = buildDefaultSupplyCratesDict()
-let staticDictMortars: Mortar[] | null = buildDefaultMortarsDict()
-const staticDictAmmoSpots = new Map<number, string>(AMMO_SPOTS.map(a => [a.x, a.area]))
-const encodedPlayerNames = new Map<number, string>()
-const decodedPlayerNames = new Map<number, string>()
-
-// 设施增量签名缓存（编码端与解码端）
-let lastEncObsSig = ''
-let lastEncCpSig = ''
-let lastEncAmmoSig = ''
-let lastEncCrateSig = ''
-let lastEncMortarSig = ''
-
-let lastDecObstacles: Obstacle[] = []
-let lastDecCapturePoints: CapturePoint[] = []
-let lastDecAmmoPacks: AmmoPack[] = []
-let lastDecSupplyCrates: SupplyCrate[] = []
-let lastDecMortars: Mortar[] = []
-
-// 弹丸事件化增量状态缓存（记录已下发给客机的确定性飞行弹丸 id -> bounces）
-const encodedBallisticProjs = new Map<number, number>()
-const decodedBallisticProjs = new Map<number, Projectile>()
-let lastDecodedTick = 0
-
-export function resetBinaryCodecState(): void {
-  staticDictCapturePoints = buildDefaultCapturePointsDict()
-  staticDictSupplyCrates = buildDefaultSupplyCratesDict()
-  staticDictMortars = buildDefaultMortarsDict()
-  staticDictAmmoSpots.clear()
-  for (const a of AMMO_SPOTS) staticDictAmmoSpots.set(a.x, a.area)
-  encodedPlayerNames.clear()
-  decodedPlayerNames.clear()
-  lastEncObsSig = ''
-  lastEncCpSig = ''
-  lastEncAmmoSig = ''
-  lastEncCrateSig = ''
-  lastEncMortarSig = ''
-  encodedBallisticProjs.clear()
-  decodedBallisticProjs.clear()
-  lastDecodedTick = 0
+export function resetBinaryCodecState(session: BinaryCodecSession = defaultCodecSession): void {
+  session.reset()
 }
 
 // ── ServerMsg 二进制编码 ──────────────────────────────────────────────
 export function encodeServerMsgBinary(msg: ServerMsg, opts: BinaryEncodeOptions = {}): Uint8Array {
+  const sess = opts.session ?? defaultCodecSession
   const w = sharedServerWriter
   w.reset()
   w.ensure(64)
@@ -301,7 +326,7 @@ export function encodeServerMsgBinary(msg: ServerMsg, opts: BinaryEncodeOptions 
 
   const hasEvents = !!(msg.events && msg.events.length > 0)
   const hasWelcome = !!msg.welcome
-  if (hasWelcome || (msg.snap.tick % 60 === 0)) encodedPlayerNames.clear()
+  if (hasWelcome || (msg.snap.tick % 60 === 0)) sess.encodedPlayerNames.clear()
   const hasAckSeqs = !!(msg.snap.ackSeqs && Object.keys(msg.snap.ackSeqs).length > 0)
   const hdrFlags =
     1 |
@@ -312,7 +337,7 @@ export function encodeServerMsgBinary(msg: ServerMsg, opts: BinaryEncodeOptions 
     (opts.deltaProjectiles ? 32 : 0)
   w.u8(hdrFlags)
 
-  encodeSnapshot(w, msg.snap, opts)
+  encodeSnapshot(w, msg.snap, opts, sess)
 
   if (hasEvents && msg.events) {
     w.ensure(4)
@@ -342,14 +367,14 @@ export function encodeServerMsgBinary(msg: ServerMsg, opts: BinaryEncodeOptions 
   return w.finish()
 }
 
-export function decodeServerMsgBinary(bytes: Uint8Array): ServerMsg | null {
+export function decodeServerMsgBinary(bytes: Uint8Array, session: BinaryCodecSession = defaultCodecSession): ServerMsg | null {
   if (bytes.byteLength < 5) return null
   const r = new ByteReader(bytes)
   const magic = r.u32()
   if (magic !== MAGIC_SERVER) return null
   const hdrFlags = r.u8()
 
-  const snap = decodeSnapshot(r, !!(hdrFlags & 16), !!(hdrFlags & 32))
+  const snap = decodeSnapshot(r, !!(hdrFlags & 16), !!(hdrFlags & 32), session)
   const out: ServerMsg = { snap }
 
   if (hdrFlags & 2) {
@@ -382,7 +407,7 @@ export function decodeServerMsgBinary(bytes: Uint8Array): ServerMsg | null {
   return out
 }
 
-function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptions): void {
+function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptions, sess: BinaryCodecSession): void {
   w.ensure(32)
   w.u32(s.tick)
   w.i32(s.seed)
@@ -396,7 +421,7 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
   // Players (~25B/人)
   w.u16(s.players.length)
   for (let i = 0; i < s.players.length; i++) {
-    encodePlayer(w, s.players[i])
+    encodePlayer(w, s.players[i], sess)
   }
 
   // Projectiles（支持全量模式与事件化增量模式）
@@ -418,16 +443,16 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
     for (let i = 0; i < s.projectiles.length; i++) {
       const pr = s.projectiles[i]
       currentAliveIds.add(pr.id)
-      const prevBounces = encodedBallisticProjs.get(pr.id)
+      const prevBounces = sess.encodedBallisticProjs.get(pr.id)
       if (!hasGravityOrb && !pr.isGravityOrb && prevBounces === pr.bounces) {
         deadReckonedIds.push(pr.id)
       } else {
         fullSend.push(pr)
-        encodedBallisticProjs.set(pr.id, pr.bounces)
+        sess.encodedBallisticProjs.set(pr.id, pr.bounces)
       }
     }
-    for (const oldId of encodedBallisticProjs.keys()) {
-      if (!currentAliveIds.has(oldId)) encodedBallisticProjs.delete(oldId)
+    for (const oldId of sess.encodedBallisticProjs.keys()) {
+      if (!currentAliveIds.has(oldId)) sess.encodedBallisticProjs.delete(oldId)
     }
 
     w.ensure(6 + deadReckonedIds.length * 2)
@@ -498,17 +523,17 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
     const mortarSig = s.mortars.map(m => `${m.operatorId}:${qAim(m.angle)}:${m.cooldown > 0 ? 1 : 0}`).join('|')
 
     facilityMask =
-      (obsSig !== lastEncObsSig ? 1 : 0) |
-      (cpSig !== lastEncCpSig ? 2 : 0) |
-      (ammoSig !== lastEncAmmoSig ? 4 : 0) |
-      (crateSig !== lastEncCrateSig ? 8 : 0) |
-      (mortarSig !== lastEncMortarSig ? 16 : 0)
+      (obsSig !== sess.lastEncObsSig ? 1 : 0) |
+      (cpSig !== sess.lastEncCpSig ? 2 : 0) |
+      (ammoSig !== sess.lastEncAmmoSig ? 4 : 0) |
+      (crateSig !== sess.lastEncCrateSig ? 8 : 0) |
+      (mortarSig !== sess.lastEncMortarSig ? 16 : 0)
 
-    lastEncObsSig = obsSig
-    lastEncCpSig = cpSig
-    lastEncAmmoSig = ammoSig
-    lastEncCrateSig = crateSig
-    lastEncMortarSig = mortarSig
+    sess.lastEncObsSig = obsSig
+    sess.lastEncCpSig = cpSig
+    sess.lastEncAmmoSig = ammoSig
+    sess.lastEncCrateSig = crateSig
+    sess.lastEncMortarSig = mortarSig
     w.ensure(2)
     w.u8(facilityMask)
   }
@@ -539,13 +564,13 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
 
   // 2. CapturePoints
   if (facilityMask & 2) {
-    if (!staticDictCapturePoints && s.capturePoints.length > 0) {
-      staticDictCapturePoints = s.capturePoints.map(c => ({ ...c }))
+    if (!sess.staticDictCapturePoints && s.capturePoints.length > 0) {
+      sess.staticDictCapturePoints = s.capturePoints.map(c => ({ ...c }))
     }
     const canFastCp =
-      staticDictCapturePoints !== null &&
-      staticDictCapturePoints.length === s.capturePoints.length &&
-      s.capturePoints.every((c, idx) => c.id === staticDictCapturePoints![idx].id && c.x === staticDictCapturePoints![idx].x)
+      sess.staticDictCapturePoints !== null &&
+      sess.staticDictCapturePoints.length === s.capturePoints.length &&
+      s.capturePoints.every((c, idx) => c.id === sess.staticDictCapturePoints![idx].id && c.x === sess.staticDictCapturePoints![idx].x)
 
     w.ensure(2 + s.capturePoints.length * 16)
     w.u8(s.capturePoints.length)
@@ -570,7 +595,7 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
     w.u8(s.ammoPacks.length)
     for (let i = 0; i < s.ammoPacks.length; i++) {
       const a = s.ammoPacks[i]
-      const knownArea = staticDictAmmoSpots.get(a.x) === a.area
+      const knownArea = sess.staticDictAmmoSpots.get(a.x) === a.area
       w.ensure(12)
       w.u16(a.id)
       w.u16(qPosX(a.x))
@@ -578,7 +603,7 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
       if (knownArea) {
         w.u8(1)
       } else {
-        staticDictAmmoSpots.set(a.x, a.area)
+        sess.staticDictAmmoSpots.set(a.x, a.area)
         w.u8(0)
         w.str(a.area)
       }
@@ -587,13 +612,13 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
 
   // 4. SupplyCrates
   if (facilityMask & 8) {
-    if (!staticDictSupplyCrates && s.supplyCrates.length > 0) {
-      staticDictSupplyCrates = s.supplyCrates.map(c => ({ ...c }))
+    if (!sess.staticDictSupplyCrates && s.supplyCrates.length > 0) {
+      sess.staticDictSupplyCrates = s.supplyCrates.map(c => ({ ...c }))
     }
     const canFastCrate =
-      staticDictSupplyCrates !== null &&
-      staticDictSupplyCrates.length === s.supplyCrates.length &&
-      s.supplyCrates.every((c, idx) => c.x === staticDictSupplyCrates![idx].x && c.kind === staticDictSupplyCrates![idx].kind)
+      sess.staticDictSupplyCrates !== null &&
+      sess.staticDictSupplyCrates.length === s.supplyCrates.length &&
+      s.supplyCrates.every((c, idx) => c.x === sess.staticDictSupplyCrates![idx].x && c.kind === sess.staticDictSupplyCrates![idx].kind)
 
     w.ensure(4 + s.supplyCrates.length * 8)
     w.u8(s.supplyCrates.length)
@@ -625,13 +650,13 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
 
   // 5. Mortars
   if (facilityMask & 16) {
-    if (!staticDictMortars && s.mortars.length > 0) {
-      staticDictMortars = s.mortars.map(m => ({ ...m }))
+    if (!sess.staticDictMortars && s.mortars.length > 0) {
+      sess.staticDictMortars = s.mortars.map(m => ({ ...m }))
     }
     const canFastMortar =
-      staticDictMortars !== null &&
-      staticDictMortars.length === s.mortars.length &&
-      s.mortars.every((m, idx) => m.id === staticDictMortars![idx].id && m.x === staticDictMortars![idx].x)
+      sess.staticDictMortars !== null &&
+      sess.staticDictMortars.length === s.mortars.length &&
+      s.mortars.every((m, idx) => m.id === sess.staticDictMortars![idx].id && m.x === sess.staticDictMortars![idx].x)
 
     w.ensure(4 + s.mortars.length * 8)
     w.u8(s.mortars.length)
@@ -651,7 +676,7 @@ function encodeSnapshot(w: ByteWriter, s: WorldSnapshot, opts: BinaryEncodeOptio
   }
 }
 
-function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjectiles: boolean): WorldSnapshot {
+function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjectiles: boolean, sess: BinaryCodecSession): WorldSnapshot {
   const tick = r.u32()
   const seed = r.i32()
   const scores: ScoreBoard = {
@@ -663,7 +688,7 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
 
   const pCount = r.u16()
   const players: PlayerState[] = new Array(pCount)
-  for (let i = 0; i < pCount; i++) players[i] = decodePlayer(r)
+  for (let i = 0; i < pCount; i++) players[i] = decodePlayer(r, sess)
 
   let projectiles: Projectile[]
   if (!isDeltaProjectiles) {
@@ -672,22 +697,22 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
     for (let i = 0; i < prjCount; i++) {
       const pr = decodeProjectile(r)
       projectiles[i] = pr
-      decodedBallisticProjs.set(pr.id & 0xffff, pr)
+      sess.decodedBallisticProjs.set(pr.id & 0xffff, pr)
     }
   } else {
-    const dtTicks = lastDecodedTick > 0 && tick > lastDecodedTick ? (tick - lastDecodedTick) : 1
+    const dtTicks = sess.lastDecodedTick > 0 && tick > sess.lastDecodedTick ? (tick - sess.lastDecodedTick) : 1
     const fullCount = r.u16()
     const freshProjs: Projectile[] = new Array(fullCount)
     for (let i = 0; i < fullCount; i++) {
       const pr = decodeProjectile(r)
       freshProjs[i] = pr
-      decodedBallisticProjs.set(pr.id & 0xffff, pr)
+      sess.decodedBallisticProjs.set(pr.id & 0xffff, pr)
     }
     const keptCount = r.u16()
     const keptProjs: Projectile[] = []
     for (let i = 0; i < keptCount; i++) {
       const shortId = r.u16()
-      const cached = decodedBallisticProjs.get(shortId)
+      const cached = sess.decodedBallisticProjs.get(shortId)
       if (cached) {
         stepClientProjectilesDeadReckoning([cached], (1 / 60) * dtTicks)
         keptProjs.push({
@@ -700,7 +725,7 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
     }
     projectiles = [...freshProjs, ...keptProjs]
   }
-  lastDecodedTick = tick
+  sess.lastDecodedTick = tick
 
   const gCount = r.u16()
   const grenades: Grenade[] = new Array(gCount)
@@ -776,9 +801,9 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
         }
       }
     }
-    lastDecObstacles = obstacles.map(o => ({ ...o }))
+    sess.lastDecObstacles = obstacles.map(o => ({ ...o }))
   } else {
-    obstacles = lastDecObstacles.map(o => ({ ...o }))
+    obstacles = sess.lastDecObstacles.map(o => ({ ...o }))
   }
 
   // 2. CapturePoints
@@ -789,8 +814,8 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
     capturePoints = new Array(cpCount)
     for (let i = 0; i < cpCount; i++) {
       let id: string, code: string, name: string, x: number, y: number
-      if (isFastCp && staticDictCapturePoints && staticDictCapturePoints[i]) {
-        const tpl = staticDictCapturePoints[i]
+      if (isFastCp && sess.staticDictCapturePoints && sess.staticDictCapturePoints[i]) {
+        const tpl = sess.staticDictCapturePoints[i]
         id = tpl.id; code = tpl.code; name = tpl.name; x = tpl.x; y = tpl.y
       } else {
         id = r.str(); code = r.str(); name = r.str()
@@ -806,12 +831,12 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
         capturingTeam: capIdx >= 0 ? TEAMS[capIdx] : null,
       }
     }
-    if (!staticDictCapturePoints && capturePoints.length > 0) {
-      staticDictCapturePoints = capturePoints.map(c => ({ ...c }))
+    if (!sess.staticDictCapturePoints && capturePoints.length > 0) {
+      sess.staticDictCapturePoints = capturePoints.map(c => ({ ...c }))
     }
-    lastDecCapturePoints = capturePoints.map(c => ({ ...c }))
+    sess.lastDecCapturePoints = capturePoints.map(c => ({ ...c }))
   } else {
-    capturePoints = lastDecCapturePoints.map(c => ({ ...c }))
+    capturePoints = sess.lastDecCapturePoints.map(c => ({ ...c }))
   }
 
   // 3. AmmoPacks
@@ -826,16 +851,16 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
       const isKnown = r.u8() === 1
       let area = ''
       if (isKnown) {
-        area = staticDictAmmoSpots.get(x) ?? ''
+        area = sess.staticDictAmmoSpots.get(x) ?? ''
       } else {
         area = r.str()
-        staticDictAmmoSpots.set(x, area)
+        sess.staticDictAmmoSpots.set(x, area)
       }
       ammoPacks[i] = { id, x, y, area }
     }
-    lastDecAmmoPacks = ammoPacks.map(a => ({ ...a }))
+    sess.lastDecAmmoPacks = ammoPacks.map(a => ({ ...a }))
   } else {
-    ammoPacks = lastDecAmmoPacks.map(a => ({ ...a }))
+    ammoPacks = sess.lastDecAmmoPacks.map(a => ({ ...a }))
   }
 
   // 4. SupplyCrates
@@ -845,8 +870,8 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
     const isFastCrate = r.u8() === 1
     supplyCrates = new Array(scCount)
     for (let i = 0; i < scCount; i++) {
-      if (isFastCrate && staticDictSupplyCrates && staticDictSupplyCrates[i]) {
-        const tpl = staticDictSupplyCrates[i]
+      if (isFastCrate && sess.staticDictSupplyCrates && sess.staticDictSupplyCrates[i]) {
+        const tpl = sess.staticDictSupplyCrates[i]
         const id = r.u16()
         const weaponId = r.i8()
         const active = r.u8() !== 0
@@ -875,12 +900,12 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
         }
       }
     }
-    if (!staticDictSupplyCrates && supplyCrates.length > 0) {
-      staticDictSupplyCrates = supplyCrates.map(c => ({ ...c }))
+    if (!sess.staticDictSupplyCrates && supplyCrates.length > 0) {
+      sess.staticDictSupplyCrates = supplyCrates.map(c => ({ ...c }))
     }
-    lastDecSupplyCrates = supplyCrates.map(c => ({ ...c }))
+    sess.lastDecSupplyCrates = supplyCrates.map(c => ({ ...c }))
   } else {
-    supplyCrates = lastDecSupplyCrates.map(c => ({ ...c }))
+    supplyCrates = sess.lastDecSupplyCrates.map(c => ({ ...c }))
   }
 
   // 5. Mortars
@@ -891,8 +916,8 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
     mortars = new Array(mtCount)
     for (let i = 0; i < mtCount; i++) {
       let id: string, name: string, x: number, y: number, power: number
-      if (isFastMortar && staticDictMortars && staticDictMortars[i]) {
-        const tpl = staticDictMortars[i]
+      if (isFastMortar && sess.staticDictMortars && sess.staticDictMortars[i]) {
+        const tpl = sess.staticDictMortars[i]
         id = tpl.id; name = tpl.name; x = tpl.x; y = tpl.y; power = tpl.power
       } else {
         id = r.str(); name = r.str()
@@ -903,12 +928,12 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
       const op = r.i16()
       mortars[i] = { id, name, x, y, angle, power, cooldown, operatorId: op >= 0 ? op : null }
     }
-    if (!staticDictMortars && mortars.length > 0) {
-      staticDictMortars = mortars.map(m => ({ ...m }))
+    if (!sess.staticDictMortars && mortars.length > 0) {
+      sess.staticDictMortars = mortars.map(m => ({ ...m }))
     }
-    lastDecMortars = mortars.map(m => ({ ...m }))
+    sess.lastDecMortars = mortars.map(m => ({ ...m }))
   } else {
-    mortars = lastDecMortars.map(m => ({ ...m }))
+    mortars = sess.lastDecMortars.map(m => ({ ...m }))
   }
 
   return {
@@ -917,7 +942,7 @@ function decodeSnapshot(r: ByteReader, isDeltaFacilities: boolean, isDeltaProjec
   }
 }
 
-function encodePlayer(w: ByteWriter, p: PlayerState): void {
+function encodePlayer(w: ByteWriter, p: PlayerState, sess: BinaryCodecSession): void {
   w.ensure(48)
   w.u16(p.id)
   w.u16(qPosX(p.pos.x))
@@ -951,10 +976,10 @@ function encodePlayer(w: ByteWriter, p: PlayerState): void {
   const dollAndSec = (clamp(p.dollCharges, 0, 7) & 0x07) | ((secIdx & 0x07) << 3)
   w.u8(dollAndSec)
   w.u8(clamp(p.deathStreak ?? 0, 0, 255))
-  if (encodedPlayerNames.get(p.id) === p.name) {
+  if (sess.encodedPlayerNames.get(p.id) === p.name) {
     w.u8(1)
   } else {
-    encodedPlayerNames.set(p.id, p.name)
+    sess.encodedPlayerNames.set(p.id, p.name)
     w.u8(0)
     w.str(p.name)
   }
@@ -1032,7 +1057,7 @@ function encodePlayer(w: ByteWriter, p: PlayerState): void {
   }
 }
 
-function decodePlayer(r: ByteReader): PlayerState {
+function decodePlayer(r: ByteReader, sess: BinaryCodecSession): PlayerState {
   const id = r.u16()
   const px = uPosX(r.u16())
   const py = uPosY(r.u16())
@@ -1068,10 +1093,10 @@ function decodePlayer(r: ByteReader): PlayerState {
   const nameCached = r.u8() === 1
   let name = ''
   if (nameCached) {
-    name = decodedPlayerNames.get(id) ?? ('Player_' + id)
+    name = sess.decodedPlayerNames.get(id) ?? ('Player_' + id)
   } else {
     name = r.str()
-    decodedPlayerNames.set(id, name)
+    sess.decodedPlayerNames.set(id, name)
   }
 
   const curAmmo = r.u16() * 0.01
