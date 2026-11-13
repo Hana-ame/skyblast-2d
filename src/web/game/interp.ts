@@ -25,9 +25,13 @@ export interface InterpEntity {
 
 /**
  * 在 tick 推进之前调用：把当前实体位置记为「上一 tick 位置」。
+ *
+ * 注意：这里**不能** clear 整张表 —— 玩家与弹丸是分两次调用的
+ * （capturePrevPositions(players) / capturePrevPositions(projectiles)），
+ * 若每次 clear 会把先写入的那一类抹掉，导致该类实体永远没有插值基准。
+ * 改为按 id 覆盖 + 定期清理已不存在的 id（见 prunePrevPositions）。
  */
 export function capturePrevPositions(entities: ArrayLike<InterpEntity>): void {
-  prevPos.clear()
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i]
     if (!e) continue
@@ -36,7 +40,20 @@ export function capturePrevPositions(entities: ArrayLike<InterpEntity>): void {
     if (!slot) { slot = { x: 0, y: 0 }; prevPos.set(e.id, slot) }
     slot.x = e.pos.x
     slot.y = e.pos.y
+    liveIds.add(e.id)
   }
+}
+
+/** 本轮捕获涉及到的 id（用于清理消失的实体，避免 prevPos 无限增长） */
+const liveIds = new Set<number>()
+
+/** 每帧所有类别都捕获完后调用：移除本帧未出现的 id */
+export function prunePrevPositions(): void {
+  if (prevPos.size <= liveIds.size) { liveIds.clear(); return }
+  for (const id of Array.from(prevPos.keys())) {
+    if (!liveIds.has(id)) prevPos.delete(id)
+  }
+  liveIds.clear()
 }
 
 /**
@@ -44,7 +61,8 @@ export function capturePrevPositions(entities: ArrayLike<InterpEntity>): void {
  * 结果写入 posOverlay，渲染层通过 getRenderPos 读取。
  */
 export function buildPositionOverlay(entities: ArrayLike<InterpEntity>, alpha: number): void {
-  posOverlay.clear()
+  // 注意：这里**不能** clear —— 玩家与弹丸分两次调用，clear 会抹掉先计算的那一类。
+  // 每帧开始时由 beginOverlayFrame() 统一清空。
   const a = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i]
@@ -60,6 +78,11 @@ export function buildPositionOverlay(entities: ArrayLike<InterpEntity>, alpha: n
     slot.x = prev.x + dx * a
     slot.y = prev.y + dy * a
   }
+}
+
+/** 每帧渲染前（调用 buildPositionOverlay 之前）清空一次 overlay */
+export function beginOverlayFrame(): void {
+  posOverlay.clear()
 }
 
 /** 渲染时读取插值后的位置；没有覆盖则回退到实体真实位置 */

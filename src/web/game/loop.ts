@@ -9,7 +9,7 @@ import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { playProceduralSound } from '../app/audio.ts'
 import { installDiag, diagRecordFrame, diagMark } from '../app/diag.ts'
-import { capturePrevPositions, buildPositionOverlay } from './interp.ts'
+import { capturePrevPositions, prunePrevPositions, beginOverlayFrame, buildPositionOverlay } from './interp.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
@@ -220,10 +220,16 @@ export function startGameLoop(): void {
     let guard = 0
     const tStepsBegin = performance.now()
 
-    while (acc >= FIXED && guard < 4) {
-      // 推进前记录当前实体位置，供渲染插值使用（消除高刷屏上的实体跳变）
+    // 只在「本帧会推进至少一个 tick」时，于第一个 tick 之前捕获上一 tick 位置。
+    // 关键：必须放在 while 外面且只捕获一次。若放在循环内，一帧跑 2 个 tick 时
+    // 第二次捕获会覆盖基准，导致插值落后一帧（画面比实际慢一步）。
+    const willStep = acc >= FIXED
+    if (willStep) {
       capturePrevPositions(world.players)
       capturePrevPositions(world.projectiles)
+      prunePrevPositions()
+    }
+    while (acc >= FIXED && guard < 4) {
       const pIn = buildLocalInput()
       inputQueue.interact = false
       inputQueue.reload = false
@@ -311,6 +317,7 @@ export function startGameLoop(): void {
       // 用 acc 剩余量作为插值系数：本帧若已推进 tick，acc 是「超出的部分」，
       // 1 - acc/FIXED 正好表示当前显示时刻处在上一 tick 与当前 tick 之间的比例。
       const interpAlpha = 1 - Math.max(0, Math.min(1, acc / FIXED))
+      beginOverlayFrame()
       buildPositionOverlay(world.players, interpAlpha)
       buildPositionOverlay(world.projectiles, interpAlpha)
       // 相机跟随按「真实帧时间」平滑，而不是绑在固定 tick 上。
