@@ -137,6 +137,8 @@ export interface BotMemory {
   burstCycle: number
   burstDuty: number
   aggression: number
+  /** 无视线时的朝向平滑值（弧度），避免瞄准在左右两侧瞬间跳变 180° */
+  smoothIdleAim?: number
 }
 
 const botMemoryMap = new Map<number, BotMemory>()
@@ -1035,10 +1037,22 @@ export function botInput(bot: PlayerState): WorldInput {
     const leadY = wep.beam ? ty : ty + target.vel.y * travelTime * 0.45 - (wep.gravityScale ? 0.5 * 1250 * wep.gravityScale * travelTime * travelTime * 18 : 0)
     const sway = Math.sin(world.tick * 0.17 + bot.id * 2.3) * 0.016 + (mem.manualRouteLocked ? 0 : mem.aimOffset)
     w.aim = Math.atan2(leadY - by, leadX - bx) + sway
+    mem.smoothIdleAim = w.aim
   } else {
+    // 无视线/无目标时的待机朝向：目标角度由移动方向决定，
+    // 但不能直接赋值——lastMoveDir 翻转会让瞄准瞬间跳变 180°，
+    // 表现为"原地左右甩枪"（散布变大导致 AI 更久处于无视线状态时会暴露）。
+    // 这里按最短角差匀速靠拢，把跳变变成可见的转身。
     const lookDir = mem.lastMoveDir
     const pitch = w.jetpack ? -0.42 : w.dive ? 0.55 : -0.06
-    w.aim = lookDir > 0 ? pitch : Math.PI - pitch
+    const wantAim = lookDir > 0 ? pitch : Math.PI - pitch
+    const prevAim = mem.smoothIdleAim ?? wantAim
+    let delta = wantAim - prevAim
+    while (delta > Math.PI) delta -= Math.PI * 2
+    while (delta < -Math.PI) delta += Math.PI * 2
+    const MAX_TURN = 0.18   // 每 tick 最多转约 10.3°，约 0.1s 转完 180°
+    mem.smoothIdleAim = prevAim + Math.max(-MAX_TURN, Math.min(MAX_TURN, delta))
+    w.aim = mem.smoothIdleAim
   }
 
   const muzzleBlocked = isMuzzleBlockedNear(bot, w.aim, wep.explosive ? 110 : 64)
