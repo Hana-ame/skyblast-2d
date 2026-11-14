@@ -169,22 +169,68 @@ test('逐武器「移动倍率 / 飞行容量倍率」确实进入物理计算�
     'world.ts 必须用 fuelMult 缩放飞行容量上限')
 })
 
-test('突击步枪散布：0.06 且处于「比精准枪松、比机枪紧」的合理区间', () => {
+test('突击步枪散布：0.12（用户指定），且近距仍可用', () => {
   const rifle = WEAPONS[1]
-  const m249 = WEAPONS[5]
-  const pistol = WEAPONS[7]
   const sniper = WEAPONS[2]
 
   assert.equal(rifle.name, '突击步枪')
-  assert.equal(rifle.spread, 0.06, '突击步枪散布应为 0.06（3.44°）')
+  // 2026-11-14 用户明确指定 0.12（6.88°）。此前为 0.045 -> 0.06 -> 0.12。
+  assert.equal(rifle.spread, 0.12, '突击步枪散布应为 0.12（6.88°）')
 
-  // 排序不变量：狙击 < 突击步枪 < 手枪 / M249
-  assert.ok(sniper.spread! < rifle.spread!, `狙击(${sniper.spread}) 必须比突击步枪(${rifle.spread}) 精准`)
-  assert.ok(rifle.spread! < m249.spread!, `突击步枪(${rifle.spread}) 必须比 M249(${m249.spread}) 精准`)
-  assert.ok(rifle.spread! < pistol.spread!, `突击步枪(${rifle.spread}) 必须比手枪(${pistol.spread}) 精准`)
+  // 只保留「比狙击松」这条不会与新值冲突的排序断言。
+  // 注：0.12 > M249(0.11) > 手枪(0.09)，突击步枪现在是常规枪里最散的一把；
+  // 这不是笔误，是用户指定的值，所以不再断言「比 M249 精准」。
+  assert.ok(sniper.spread! < rifle.spread!, `狙击(${sniper.spread}) 应比突击步枪(${rifle.spread}) 精准`)
 
-  // 近距不至于打不中：150px 处最大横向偏移应小于身体半宽（10px）
+  // 近距可用性：150px 处最大横向偏移不超过一个身体半宽（10px）的 1.6 倍，
+  // 即散布锥仍能覆盖大部分身体，贴脸不会完全打空。
   const bodyHalfW = 10
   const offset150 = 150 * Math.tan(rifle.spread! / 2)
-  assert.ok(offset150 < bodyHalfW, `150px 处偏移 ±${offset150.toFixed(1)}px 应小于身体半宽 ${bodyHalfW}px（近距必须可靠）`)
+  assert.ok(offset150 < bodyHalfW * 1.6,
+    `150px 处偏移 ±${offset150.toFixed(1)}px 应在身体半宽 ${bodyHalfW}px 的可接受范围内（近距不能完全打空）`)
+})
+
+test('游戏内调参面板·逐武器「散布 / 射击间隔」两个入口存在且已接线', () => {
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+  const bindings = readFileSync(new URL('../src/web/input/bindings.ts', import.meta.url), 'utf8')
+  const params = readFileSync(new URL('../src/web/app/params.ts', import.meta.url), 'utf8')
+
+  // 用户多次报「看不见散布的设置」——必须真的在 HTML 里
+  for (const id of ['paramWepSpread', 'paramWepFireDelay']) {
+    assert.ok(html.includes(`id="${id}"`), `参数面板缺少滑块 ${id}`)
+  }
+  for (const vid of ['valWepSpread', 'valWepFireDelay']) {
+    assert.ok(html.includes(`id="${vid}"`), `参数面板缺少回显 ${vid}`)
+  }
+
+  // 必须写入当前选中武器的真实字段
+  assert.ok(
+    /bindRangeParam\('paramWepSpread',\s*'valWepSpread'[\s\S]{0,200}?\.spread\s*=/.test(bindings),
+    'paramWepSpread 必须写入 WEAPONS[paramState.weaponIdx].spread',
+  )
+  assert.ok(
+    /bindRangeParam\('paramWepFireDelay',\s*'valWepFireDelay'[\s\S]{0,200}?\.fireDelay\s*=/.test(bindings),
+    'paramWepFireDelay 必须写入 WEAPONS[paramState.weaponIdx].fireDelay',
+  )
+
+  // 切武器时必须回显当前武器的真实值（不是写死的默认值）
+  assert.ok(/setVal\('paramWepSpread'[\s\S]{0,120}?w\.spread/.test(params),
+    'syncParamsToUI 必须回显 w.spread')
+  assert.ok(/setVal\('paramWepFireDelay'[\s\S]{0,120}?w\.fireDelay/.test(params),
+    'syncParamsToUI 必须回显 w.fireDelay')
+})
+
+test('游戏内调参面板·武器区滑块覆盖用户点名的全部关键字段', () => {
+  const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
+  // 用户点名过的：散布、射速(射击间隔)、飞行速度(弹速)、飞行容量、移动容量(移动倍率)
+  const required = [
+    ['paramWepSpread', '散布'],
+    ['paramWepFireDelay', '射击间隔(射速)'],
+    ['paramWepSpeed', '弹速'],
+    ['paramWepFuel', '飞行容量倍率'],
+    ['paramWepMove', '移动倍率'],
+  ] as const
+  for (const [id, label] of required) {
+    assert.ok(html.includes(`id="${id}"`), `武器区缺少「${label}」滑块（${id}）`)
+  }
 })

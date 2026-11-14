@@ -728,6 +728,9 @@ export function bindAllEvents(): void {
   bindRangeParam('paramWepDamage', 'valWepDamage', '', (v) => { WEAPONS[paramState.weaponIdx].damage = v })
   bindRangeParam('paramWepHeadshot', 'valWepHeadshot', 'x', (v) => { WEAPONS[paramState.weaponIdx].headshotMult = v })
   bindRangeParam('paramWepSpeed', 'valWepSpeed', '', (v) => { WEAPONS[paramState.weaponIdx].speed = v })
+  // 散布与射击间隔：用户明确要求能在面板里直接调
+  bindRangeParam('paramWepSpread', 'valWepSpread', '', (v) => { WEAPONS[paramState.weaponIdx].spread = v })
+  bindRangeParam('paramWepFireDelay', 'valWepFireDelay', 's', (v) => { WEAPONS[paramState.weaponIdx].fireDelay = v })
   bindRangeParam('paramWepMag', 'valWepMag', '', (v) => { WEAPONS[paramState.weaponIdx].magSize = v })
   bindRangeParam('paramWepReload', 'valWepReload', 's', (v) => { WEAPONS[paramState.weaponIdx].reloadTime = v })
   // 逐武器可调：移动倍率（moveSpeedMult）与飞行容量倍率（fuelMult）。
