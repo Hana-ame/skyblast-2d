@@ -158,7 +158,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1000, recoil: 60, magSize: 12, maxReserve: 60,
     reloadTime: 0.9, fireDelay: 0.15, terrainRadius: 6,          // 射速 0.17->0.15（DPS 141->160）
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
-    falloffStart: 150, falloffEnd: 620, falloffMin: 0.30,   // 手枪弹组：同霰弹/冲锋枪
+    falloffStart: 320, falloffEnd: 1100, falloffMin: 0.55,   // 手枪独立组：半自动点射+高机动游走定位，衰减比霰弹/冲锋枪缓得多（原并入近距组时 450px 外仅 13 伤害、需 8 枪，几乎无威胁）
     moveSpeedMult: 1.50, fuelMult: 2.00, ascendMult: 1.25, fovMult: 1.0, color: '#fde047',   // 移速1.5/飞行容量2.0/升空速度1.25
     traitDesc: '移速最快 · 双倍飞行',
   },

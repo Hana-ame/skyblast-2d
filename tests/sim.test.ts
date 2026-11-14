@@ -937,15 +937,32 @@ test('升空速度：手枪 1.25×（喷气上升极速更快），步枪正常'
 
 
 test('距离衰减：三组参数（手枪弹 / 步枪 / 狙击）全部生效，仅火箭筒不衰减', () => {
-  // ① 手枪弹组：霰弹 #0 / 手枪 #7 / 冲锋枪 #8 —— 150px 起、620px 到底、最低 30%
-  for (const id of [0, 7, 8]) {
+  // ① 近距组：霰弹 #0 / 冲锋枪 #8 —— 150px 起、620px 到底、最低 30%
+  for (const id of [0, 8]) {
     const w = WEAPONS[id]
-    assert.equal(w.falloffStart, 150, `${w.name} 手枪弹组 start`)
-    assert.equal(w.falloffEnd, 620, `${w.name} 手枪弹组 end`)
-    assert.equal(w.falloffMin, 0.30, `${w.name} 手枪弹组 min`)
+    assert.equal(w.falloffStart, 150, `${w.name} 近距组 start`)
+    assert.equal(w.falloffEnd, 620, `${w.name} 近距组 end`)
+    assert.equal(w.falloffMin, 0.30, `${w.name} 近距组 min`)
     assert.ok(Math.abs(weaponFalloff(w, 100) - 1) < 1e-9, `${w.name} 近距离满伤`)
     assert.ok(Math.abs(weaponFalloff(w, 620) - 0.30) < 1e-9, `${w.name} 620px 到最低倍率`)
     assert.ok(Math.abs(weaponFalloff(w, 900) - 0.30) < 1e-9, `${w.name} 超出后恒定 30%`)
+  }
+
+  // ①b 手枪独立组：半自动点射 + 高机动游走，衰减必须比近距组缓得多
+  {
+    const pistol = WEAPONS[7]
+    assert.equal(pistol.falloffStart, 320, '手枪 start')
+    assert.equal(pistol.falloffEnd, 1100, '手枪 end')
+    assert.equal(pistol.falloffMin, 0.55, '手枪 min')
+    // 关键：中距离不能被打成废枪。450px 处至少保留 90% 伤害（原并入近距组时只有 55%）
+    assert.ok(weaponFalloff(pistol, 450) >= 0.9,
+      `手枪 450px 倍率应 >= 90%，实际 ${(weaponFalloff(pistol, 450) * 100).toFixed(0)}%`)
+    // 且必须仍明显弱于它在近距离的表现，衰减确实是存在的
+    assert.ok(weaponFalloff(pistol, 1100) < weaponFalloff(pistol, 200),
+      '手枪距离衰减必须真实存在')
+    // 同距离下必须比霰弹更耐用
+    assert.ok(weaponFalloff(pistol, 450) > weaponFalloff(WEAPONS[0], 450),
+      '手枪 450px 衰减应比霰弹轻')
   }
 
   // ② 步枪组：突击步枪 #1 / M249 #5 —— 350px 起、1000px 到底、最低 55%
