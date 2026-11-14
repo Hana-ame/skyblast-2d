@@ -84,7 +84,7 @@ export const WEAPONS: WeaponDef[] = [
     // 弹匣内有弹时「打-打」= 0.42s，打空后「打-装填-打」= 0.42 + 0.1875 ≈ 0.61s，
     // 自然满足「打-装填-打 比 打-打 长」，无需任何额外倍率。
     reloadTime: 1.5, fireDelay: 0.38, terrainRadius: 12,
-    explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.08, fuelMult: 1.05, fovMult: 1.0, color: '#fbbf24',
+    explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.25, fuelMult: 1.25, fovMult: 1.0, color: '#fbbf24',   // 移速/飞行容量统一 1.25x
     falloffStart: 200, falloffEnd: 700, falloffMin: 0.45,   // 霰弹随距离衰减（中距仍可用）
     traitDesc: '近距高伤 · 全中致死',
   },
@@ -161,7 +161,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,     // 30/150
     reloadTime: 1.5, fireDelay: 0.05, terrainRadius: 8,        // 射速极高；换弹 1.2->1.5s 拉长空窗惩罚
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
-    moveSpeedMult: 1.25, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',
+    moveSpeedMult: 1.25, fuelMult: 1.25, fovMult: 1.0, color: '#4ade80',   // 飞行容量 1.0 -> 1.25（与移速统一）
     traitDesc: '极高射速 · 机动压制',
   },
 ]

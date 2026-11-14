@@ -410,7 +410,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[7].speed, 1000, 'pistol bullet speed 1000')
   assert.equal(WEAPONS[8].speed, 1000, 'SMG bullet speed 1000')
   assert.equal(WEAPONS[8].moveSpeedMult, 1.25, 'SMG 1.25x move speed')
-  assert.equal(WEAPONS[8].fuelMult, 1.0, 'SMG normal flight')
+  assert.equal(WEAPONS[8].fuelMult, 1.25, 'SMG flight capacity 1.25x (matches its move speed)')
   assert.ok(WEAPONS[8].fireDelay <= 0.05, 'SMG extremely high fire rate')
   assert.equal(WEAPONS[8].damage, WEAPONS[7].damage, 'SMG damage equals pistol')
   // 步枪正常速度/正常飞行；狙/火箭筒移速与飞行受限（0.5~0.6）
