@@ -7,6 +7,7 @@ import { World } from '../src/core/sim/world.ts'
 import { SPAWN_POINTS } from '../src/core/sim/world.ts'
 import { allViolations, layoutViolations, weaponViolations } from '../src/core/invariants.ts'
 import { defaultMapData } from '../src/core/map.ts'
+import { weaponFalloff } from '../src/core/weapons.ts'
 import {
   WEAPONS, DEFAULT_CONFIG, SECONDARIES, SECONDARY_UNLOCK_ORDER,
   formatWeaponAmmoText, formatWeaponCardSubtitle, formatSecondaryButtonTitle, formatSecondaryCardSubtitle,
@@ -998,10 +999,16 @@ test('护栏·擦边分级已应用到所有子弹类武器（狙击保留 edgeD
     return null
   }
   for (const wid of BULLET_IDS) {
-    const body = hitAt(wid, Math.atan2(3 - 12, 300))     // 瞄躯干中心
+    const body = hitAt(wid, Math.atan2(3 - 12, 300))     // 瞄躯干中心（300px 距离）
     assert.ok(body !== null, `${WEAPONS[wid].name} lands a body hit`)
-    assert.ok(body! >= WEAPONS[wid].grazeDamageMin!,
-      `${WEAPONS[wid].name} body hit (${body}) must be at least the graze floor (${WEAPONS[wid].grazeDamageMin})`)
+    // 注意：擦边下限（grazeDamageMin）是**命中位置**的下限，距离衰减在其之后再乘一次
+    // （projectiles.ts: 先按命中质量算擦边衰减，最后 `dmg * calcProjectileFalloff`）。
+    // 因此 300px 处 body 命中可以低于 grazeDamageMin —— 这是「远处擦边更低」的正确行为，
+    // 不是矛盾。这里只要求身体命中 ≥ 擦边下限 × 该距离的距离倍率。
+    const distMul = Math.max(0.2, weaponFalloff(WEAPONS[wid], 300))
+    const floorAtDist = Math.floor(WEAPONS[wid].grazeDamageMin! * distMul)
+    assert.ok(body! >= floorAtDist,
+      `${WEAPONS[wid].name} body hit (${body}) must be at least graze floor x falloff at 300px (${floorAtDist})`)
     assert.ok(body! <= Math.round(WEAPONS[wid].damage * WEAPONS[wid].headshotMult),
       `${WEAPONS[wid].name} body hit (${body}) must not exceed headshot damage`)
   }

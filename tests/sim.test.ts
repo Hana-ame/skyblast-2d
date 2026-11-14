@@ -936,16 +936,52 @@ test('升空速度：手枪 1.25×（喷气上升极速更快），步枪正常'
 })
 
 
-test('距离衰减：霰弹随距离掉伤；引力枪大幅衰减', () => {
-  // 纯函数：起点内满伤、终点为最小倍率
-  assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 100) - 1) < 1e-9, 'shotgun full damage close')
-  assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 700) - 0.45) < 1e-9, 'shotgun min multiplier at 700')
-  assert.ok(weaponFalloff(WEAPONS[0], 400) < 0.95 && weaponFalloff(WEAPONS[0], 400) > 0.5, 'shotgun mid falloff')
-  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 700) - 0.35) < 1e-9, 'gravity min multiplier at 700 (0.12 -> 0.35, so it stops falling under ~80 damage)')
-  assert.ok(weaponFalloff(WEAPONS[6], 400) < 0.8 && weaponFalloff(WEAPONS[6], 400) > 0.4, 'gravity heavy mid falloff')
-  assert.equal(weaponFalloff(WEAPONS[1], 900), 1, 'assault rifle no falloff')
+test('距离衰减：三组参数（手枪弹 / 步枪 / 狙击）全部生效，仅火箭筒不衰减', () => {
+  // ① 手枪弹组：霰弹 #0 / 手枪 #7 / 冲锋枪 #8 —— 150px 起、620px 到底、最低 30%
+  for (const id of [0, 7, 8]) {
+    const w = WEAPONS[id]
+    assert.equal(w.falloffStart, 150, `${w.name} 手枪弹组 start`)
+    assert.equal(w.falloffEnd, 620, `${w.name} 手枪弹组 end`)
+    assert.equal(w.falloffMin, 0.30, `${w.name} 手枪弹组 min`)
+    assert.ok(Math.abs(weaponFalloff(w, 100) - 1) < 1e-9, `${w.name} 近距离满伤`)
+    assert.ok(Math.abs(weaponFalloff(w, 620) - 0.30) < 1e-9, `${w.name} 620px 到最低倍率`)
+    assert.ok(Math.abs(weaponFalloff(w, 900) - 0.30) < 1e-9, `${w.name} 超出后恒定 30%`)
+  }
 
-  // 行为：单丸霰弹 100px vs 600px 的实际伤害差
+  // ② 步枪组：突击步枪 #1 / M249 #5 —— 350px 起、1000px 到底、最低 55%
+  for (const id of [1, 5]) {
+    const w = WEAPONS[id]
+    assert.equal(w.falloffStart, 350, `${w.name} 步枪组 start`)
+    assert.equal(w.falloffEnd, 1000, `${w.name} 步枪组 end`)
+    assert.equal(w.falloffMin, 0.55, `${w.name} 步枪组 min`)
+    assert.ok(Math.abs(weaponFalloff(w, 300) - 1) < 1e-9, `${w.name} 300px 仍满伤`)
+    assert.ok(Math.abs(weaponFalloff(w, 1000) - 0.55) < 1e-9, `${w.name} 1000px 到 55%`)
+  }
+
+  // ③ 狙击组：狙击步枪 #2 —— 1200px 起、2400px 到底、最低 75%
+  {
+    const w = WEAPONS[2]
+    assert.equal(w.falloffStart, 1200, '狙击 1200px 起才衰减')
+    assert.equal(w.falloffEnd, 2400, '狙击 2400px 到底')
+    assert.equal(w.falloffMin, 0.75, '狙击最低保留 75%')
+    assert.ok(Math.abs(weaponFalloff(w, 1000) - 1) < 1e-9, '狙击 1000px 内满伤')
+    assert.ok(Math.abs(weaponFalloff(w, 2400) - 0.75) < 1e-9, '狙击 2400px 到 75%')
+  }
+
+  // ④ 全覆盖：除火箭筒(#3)外，所有能打伤害的子弹/爆炸武器都必须有距离衰减
+  const NO_FALLOFF = new Set([3])   // 火箭筒：用户明确要求不做距离衰减
+  for (const w of WEAPONS) {
+    if (NO_FALLOFF.has(w.id)) continue
+    // 光束武器（高斯 #4）与引力场武器（#6）走各自路径，但 #6 已有衰减；#4 为持续照射光束
+    if (w.id === 4) continue
+    assert.ok(w.falloffStart !== undefined,
+      `${w.name} 必须有距离衰减（falloffStart），不能全距离满伤`)
+  }
+
+  // ⑤ 引力枪仍为原参数
+  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 700) - 0.35) < 1e-9, 'gravity min multiplier at 700')
+
+  // ⑥ 行为验证：霰弹单丸 100px vs 600px 实际伤害递减
   const w = new World(181)
   const shooter = w.addPlayer('S', 'red')
   const victim = w.addPlayer('V', 'blue')
@@ -967,7 +1003,6 @@ test('距离衰减：霰弹随距离掉伤；引力枪大幅衰减', () => {
       return 100 - victim.hp
     }
     w.terrain.addSolidBlock(400, 1000, 2000, 20, '#334155', '#334155', 'platform', 'falloff')
-    // 两人落到平台上（y=984 站立）后取样
     const closeDmg = hitAt(100)
     const farDmg = hitAt(600)
     assert.ok(closeDmg >= 10, `shotgun close damage ~13, got ${closeDmg}`)

@@ -85,7 +85,7 @@ export const WEAPONS: WeaponDef[] = [
     // 自然满足「打-装填-打 比 打-打 长」，无需任何额外倍率。
     reloadTime: 1.5, fireDelay: 0.38, terrainRadius: 12,
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.25, fuelMult: 1.25, fovMult: 1.0, color: '#fbbf24',   // 移速/飞行容量统一 1.25x
-    falloffStart: 200, falloffEnd: 700, falloffMin: 0.45,   // 霰弹随距离衰减（中距仍可用）
+    falloffStart: 150, falloffEnd: 620, falloffMin: 0.30,   // 手枪弹组：近距离武器，衰减最早（150px 起）最狠（最低 30%）
     traitDesc: '近距高伤 · 全中致死',
   },
   {
@@ -93,6 +93,7 @@ export const WEAPONS: WeaponDef[] = [
     damage: 33, headshotMult: 2.2, pellets: 1, spread: 0.12, grazeDamageMin: 27,   // 命中主体正中最高 33；擦边按几何质量线性降到 27；散布 0.12（6.88°），与 M249(0.11) 接近
     speed: 1500, recoil: 84, magSize: 30, maxReserve: 90,    // 30/90
     reloadTime: 1.7, fireDelay: 0.12, terrainRadius: 8,
+    falloffStart: 350, falloffEnd: 1000, falloffMin: 0.55,   // 步枪组：中远射程，350px 起缓慢衰减至 55%
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 1.0, fuelMult: 1.0, fovMult: 1.0, color: '#38bdf8',
     traitDesc: '稳定连发 · 均衡主力',
   },
@@ -105,7 +106,11 @@ export const WEAPONS: WeaponDef[] = [
     // 狙击擦边分级：正中（穿心）= 137，越靠碰撞箱边缘越低，最低 99。
     // edgeDamage 保留=99，作为「边缘命中上限」（连续分级的最低档即 99）。
     edgeDamage: 99, grazeDamageMin: 99,
-    farRange: 900, farDamage: 99,   // 超过 900px 额外衰减到 99（远距离不再必杀）
+    // 狙击组：1200px 内满伤，超远距离缓慢衰减，最低保留 75%（137 -> 约 103，仍然致命但不再是全距离同伤）
+    // 注：farRange/farDamage 只有 invariants 检查、没有任何模拟代码消费，是死字段；
+    // 真正的距离衰减走 weaponFalloff（与所有武器同一条路径）。
+    falloffStart: 1200, falloffEnd: 2400, falloffMin: 0.75,
+    farRange: 900, farDamage: 99,   // 保留给 invariants 的历史约定（未参与实际伤害计算）
     traitDesc: '无限射程 · 命中即死',
   },
   {
@@ -132,6 +137,7 @@ export const WEAPONS: WeaponDef[] = [
     damage: 33, headshotMult: 1.8, pellets: 1, spread: 0.15, grazeDamageMin: 27,   // spread 0.11->0.15 回归中近距压制机枪（fovMult 保持 1.30 未动）
     speed: 1300, recoil: 66, magSize: 120, maxReserve: 240,
     reloadTime: 3.0, fireDelay: 0.06, terrainRadius: 8,   // M249 伤害=突击(33，同步擦边分级)，高射速补给枪
+    falloffStart: 350, falloffEnd: 1000, falloffMin: 0.55,   // 步枪组：同突击步枪
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.30, color: '#f97316',
     traitDesc: '重型机枪 · 火力压制',
   },
@@ -152,6 +158,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1000, recoil: 60, magSize: 12, maxReserve: 60,
     reloadTime: 0.9, fireDelay: 0.15, terrainRadius: 6,          // 射速 0.17->0.15（DPS 141->160）
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
+    falloffStart: 150, falloffEnd: 620, falloffMin: 0.30,   // 手枪弹组：同霰弹/冲锋枪
     moveSpeedMult: 1.50, fuelMult: 2.00, ascendMult: 1.25, fovMult: 1.0, color: '#fde047',   // 移速1.5/飞行容量2.0/升空速度1.25
     traitDesc: '移速最快 · 双倍飞行',
   },
@@ -161,6 +168,7 @@ export const WEAPONS: WeaponDef[] = [
     speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,     // 30/150
     reloadTime: 1.5, fireDelay: 0.05, terrainRadius: 8,        // 射速极高；换弹 1.2->1.5s 拉长空窗惩罚
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
+    falloffStart: 150, falloffEnd: 620, falloffMin: 0.30,   // 手枪弹组：同霰弹/手枪
     moveSpeedMult: 1.25, fuelMult: 1.25, fovMult: 1.0, color: '#4ade80',   // 飞行容量 1.0 -> 1.25（与移速统一）
     traitDesc: '极高射速 · 机动压制',
   },
