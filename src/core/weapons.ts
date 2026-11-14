@@ -149,7 +149,7 @@ export const WEAPONS: WeaponDef[] = [
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.7,
     friendlyFire: true, selfDamage: true,   // 引力枪：爆炸友伤/自伤
     pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.0, color: '#a855f7',   // 引力场弯曲其他子弹
-    falloffStart: 200, falloffEnd: 700, falloffMin: 0.35,   // falloffMin 0.12->0.35：射程与霰弹类似(200→700)，但远端不再跌破 80 伤害
+    // 距离衰减：无（用户要求）。引力枪靠爆炸范围 + 引力场 + 穿墙定位，不做距离掉伤。
     traitDesc: '穿墙引力场 · 弯折弹道',
   },
   {

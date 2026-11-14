@@ -986,17 +986,22 @@ test('距离衰减：三组参数（手枪弹 / 步枪 / 狙击）全部生效�
   }
 
   // ④ 全覆盖：除火箭筒(#3)外，所有能打伤害的子弹/爆炸武器都必须有距离衰减
-  const NO_FALLOFF = new Set([3])   // 火箭筒：用户明确要求不做距离衰减
+  const NO_FALLOFF = new Set([3, 6])   // 火箭筒 + 引力枪：用户明确要求不做距离衰减
   for (const w of WEAPONS) {
     if (NO_FALLOFF.has(w.id)) continue
-    // 光束武器（高斯 #4）与引力场武器（#6）走各自路径，但 #6 已有衰减；#4 为持续照射光束
-    if (w.id === 4) continue
+    // #4 高斯枪：持续照射光束，伤害按每秒计算
+    // #6 引力枪：用户明确要求不做距离衰减
+    if (w.id === 4 || w.id === 6) continue
     assert.ok(w.falloffStart !== undefined,
       `${w.name} 必须有距离衰减（falloffStart），不能全距离满伤`)
   }
 
   // ⑤ 引力枪仍为原参数
-  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 700) - 0.35) < 1e-9, 'gravity min multiplier at 700')
+  // 引力枪不衰减（用户 2026-11-14 要求）：靠爆炸范围+引力场+穿墙定位，不做距离掉伤
+  assert.equal(WEAPONS[6].falloffStart, undefined, '引力枪不得有 falloffStart')
+  assert.equal(WEAPONS[6].falloffEnd, undefined, '引力枪不得有 falloffEnd')
+  assert.equal(WEAPONS[6].falloffMin, undefined, '引力枪不得有 falloffMin')
+  assert.equal(weaponFalloff(WEAPONS[6], 3000), 1, '引力枪任何距离都满伤')
 
   // ⑥ 行为验证：霰弹单丸 100px vs 600px 实际伤害递减
   const w = new World(181)
