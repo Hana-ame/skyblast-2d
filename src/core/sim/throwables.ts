@@ -167,7 +167,17 @@ export function useSecondaryInWorld(
   if (!isSecondaryUnlocked(s.type, p.deathStreak ?? 0, p.dollCharges ?? 0, p.weaponIndex) && p.secondary !== s.type) return
 
   if (s.type === 'obstacle') {
-    // 10.0s 冷却，不设同屏/同玩家数量上限，可无限生成
+    // 10.0s 冷却；D5：每名玩家最多同时存在 3 个战术掩体，超出时销毁最早生成的那个。
+    // 原因：无限造墙会永久封死关键通道（中央竖井、地下引力枪房），并加重空间桶碰撞负担。
+    const MAX_OBSTACLES_PER_PLAYER = 3
+    const mine = ctx.obstacles.filter(o => o.id.startsWith(`p_obs_${p.id}_`))
+    while (mine.length >= MAX_OBSTACLES_PER_PLAYER) {
+      const oldest = mine.shift()
+      if (!oldest) break
+      const idx = ctx.obstacles.indexOf(oldest)
+      if (idx >= 0) ctx.obstacles.splice(idx, 1)
+    }
+    if (mine.length >= MAX_OBSTACLES_PER_PLAYER) p.secondaryCooldown = def.cd
     p.secondaryCooldown = def.cd
     const w = 56
     const h = 76
@@ -404,7 +414,8 @@ export function explodeInWorld(
     const isTeammate = !isSelf && t.team === atkTeam && t.team !== 'ffa'
     if (isTeammate && !ffAllowed) continue
     if (isSelf && !selfAllowed) continue
-    const dmg = Math.round(maxDamage * falloff * (isSelf ? 0.25 : 1))
+    // 自伤系数 0.25 -> 1.0（用户要求）：贴脸自爆不再有 75% 减免，必须真正承担溅射风险。
+    const dmg = Math.round(maxDamage * falloff * (isSelf ? 1 : 1))
     const headDist = Math.hypot(dx, wrapDeltaY(cy, t.pos.y - 26))
     const isHead = headDist < ctx.config.headRadius * 1.6 && dist < radius * 0.6
     damagePlayerInWorld(ctx, t, isHead ? Math.round(dmg * 1.35) : dmg, pr, isHead, false, atkId, atkTeam, label)

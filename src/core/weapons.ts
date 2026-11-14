@@ -124,12 +124,12 @@ export const WEAPONS: WeaponDef[] = [
     reloadTime: 3.0, fireDelay: 0, terrainRadius: 18,      // 换弹 3s（平衡性补丁：减半）
     explosive: false, laser: true, pierceAll: true, pierceOnHeadshot: true, bounces: 2, beam: true,
     friendlyFire: true, selfDamage: true,   // 高斯：全部段可打到友军/自己
-    damagePerSecond: 90, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',
+    damagePerSecond: 135, ammoPerSecond: 6, moveSpeedMult: 0.95, fuelMult: 1.0, fovMult: 1.0, color: '#22d3ee',   // dps 90->135：原值需照射 1.12s 才杀满血，慢于突击步枪，捡特武反而更弱
     traitDesc: '即时光束 · 反射2次 · 全段自伤',
   },
   {
     id: 5, name: 'M249', shortName: 'M249', isSupplyOnly: true,
-    damage: 33, headshotMult: 1.8, pellets: 1, spread: 0.11, grazeDamageMin: 27,   // 与突击步枪同步（正中最高 33，擦边降到 27）
+    damage: 33, headshotMult: 1.8, pellets: 1, spread: 0.15, grazeDamageMin: 27,   // spread 0.11->0.15 回归中近距压制机枪（fovMult 保持 1.30 未动）
     speed: 1300, recoil: 66, magSize: 120, maxReserve: 240,
     reloadTime: 3.0, fireDelay: 0.06, terrainRadius: 8,   // M249 伤害=突击(33，同步擦边分级)，高射速补给枪
     explosive: false, pierceOnHeadshot: false, moveSpeedMult: 0.78, fuelMult: 0.7, fovMult: 1.30, color: '#f97316',
@@ -139,27 +139,27 @@ export const WEAPONS: WeaponDef[] = [
     id: 6, name: '引力枪', shortName: '引力枪', isSupplyOnly: true,
     damage: 160, headshotMult: 1.6, pellets: 1, spread: 0.01, grazeDamageMin: 27,   // 默认伤害=火箭筒(160)
     speed: 1100, recoil: 240, magSize: 6, maxReserve: 18,
-    reloadTime: 2.2, fireDelay: 0.9, terrainRadius: 130, lifeSeconds: 2.2,
+    reloadTime: 2.2, fireDelay: 0.75, terrainRadius: 130, lifeSeconds: 2.2,   // fireDelay 0.9->0.75
     explosive: true, isGravityOrb: true, gravityScale: 0.02, passWalls: true, dragPerSecond: 0.7,
     friendlyFire: true, selfDamage: true,   // 引力枪：爆炸友伤/自伤
     pierceOnHeadshot: false, moveSpeedMult: 0.86, fuelMult: 0.8, fovMult: 1.0, color: '#a855f7',   // 引力场弯曲其他子弹
-    falloffStart: 200, falloffEnd: 700, falloffMin: 0.12,   // 射程与霰弹类似（200→700），远端衰减更狠
+    falloffStart: 200, falloffEnd: 700, falloffMin: 0.35,   // falloffMin 0.12->0.35：射程与霰弹类似(200→700)，但远端不再跌破 80 伤害
     traitDesc: '穿墙引力场 · 弯折弹道',
   },
   {
     id: 7, name: '手枪', shortName: '手枪', isSupplyOnly: false,
-    damage: 24, headshotMult: 2.0, pellets: 1, spread: 0.090, grazeDamageMin: 20,
+    damage: 24, headshotMult: 2.2, pellets: 1, spread: 0.090, grazeDamageMin: 20,   // 爆头 2.0->2.2：爆头 53 伤害，两枪爆头即可击杀 100HP（原需 3 枪，精准无跨阈值回报）
     speed: 1000, recoil: 60, magSize: 12, maxReserve: 60,
-    reloadTime: 0.9, fireDelay: 0.17, terrainRadius: 6,
+    reloadTime: 0.9, fireDelay: 0.15, terrainRadius: 6,          // 射速 0.17->0.15（DPS 141->160）
     explosive: false, gravityScale: 0.03, pierceOnHeadshot: false,
     moveSpeedMult: 1.50, fuelMult: 2.00, ascendMult: 1.25, fovMult: 1.0, color: '#fde047',   // 移速1.5/飞行容量2.0/升空速度1.25
     traitDesc: '移速最快 · 双倍飞行',
   },
   {
     id: 8, name: '冲锋枪', shortName: '冲锋枪', extraSecondarySlot: true, isSupplyOnly: false,
-    damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.24, grazeDamageMin: 20,   // 伤害 = 手枪；极高射速用大散布/弹匣平衡
+    damage: 24, headshotMult: 1.8, pellets: 1, spread: 0.18, grazeDamageMin: 20,   // 伤害 = 手枪；散布 0.24->0.18 提升中近距有效命中（原与霰弹同散布不合理）
     speed: 1000, recoil: 48, magSize: 30, maxReserve: 150,     // 30/150
-    reloadTime: 1.2, fireDelay: 0.05, terrainRadius: 8,        // 射速极高；换弹 1.2s
+    reloadTime: 1.5, fireDelay: 0.05, terrainRadius: 8,        // 射速极高；换弹 1.2->1.5s 拉长空窗惩罚
     explosive: false, gravityScale: 0.04, pierceOnHeadshot: false,
     moveSpeedMult: 1.25, fuelMult: 1.0, fovMult: 1.0, color: '#4ade80',
     traitDesc: '极高射速 · 机动压制',
@@ -179,14 +179,17 @@ export function weaponFalloff(wep: WeaponDef, dist: number, exponent = 1): numbe
 }
 
 /**
- * 连续阵亡副手平衡性阶梯解锁顺序（已移除地雷，护盾只保留唯一 100HP 档）：
- * 默认手榴弹(0) → 障碍物(1) → 护盾(2) → teleport(3) → 替身人偶(4)
+ * 连续阵亡副手平衡性阶梯解锁顺序（已移除地雷，护盾只保留唯一档）：
+ * 默认手榴弹(0) → 障碍物(1) → teleport(2) → 护盾(3) → 替身人偶(4)
+ * 2026-11-14：shield 与 teleport 顺序对调 —— 护盾（伤害不溢出的 100HP 等效血量翻倍）
+ * 在 2 连死就解锁过强，实测对拼胜率 96.8% 甚至超过 4 连死的替身人偶；
+ * 改为 3 连死解锁，2 连死先给位移型的 teleport。
  */
 export const SECONDARY_UNLOCK_ORDER = [
   'frag',
   'obstacle',
-  'shield',
   'teleport',
+  'shield',
   'doll',
 ] as const
 
@@ -202,11 +205,11 @@ export const SECONDARIES: Record<string, SecondaryDef> = {
     desc: '10s冷却 · 无限生成240HP掩体',
   },
   shield: {
-    id: 'shield', name: '护盾', icon: '🛡️', cd: 10.0, unlockStreak: 2, supplyOnly: true,
-    desc: '100HP 护盾 · 伤害不溢出 · 碰撞箱略大',
+    id: 'shield', name: '护盾', icon: '🛡️', cd: 10.0, unlockStreak: 3, supplyOnly: true,
+    desc: '70HP 护盾 · 伤害不溢出 · 碰撞箱略大',
   },
   teleport: {
-    id: 'teleport', name: 'Teleport', icon: '🌀', cd: 10.0, unlockStreak: 3, supplyOnly: true,
+    id: 'teleport', name: 'Teleport', icon: '🌀', cd: 10.0, unlockStreak: 2, supplyOnly: true,
     desc: '读条后直接出现在右键位置',
   },
   doll: {
@@ -296,14 +299,14 @@ export interface GameConfig {
 export const DEFAULT_CONFIG: GameConfig = {
   maxHp: 100,
   headRadius: 13,
-  shieldHp: 100,
+  shieldHp: 70,
   shieldDuration: 5.0,
   dollDuration: 10.0,
   obstacleDefaultHp: 240,
   teleportCastTime: 0.35,
   grenadeDamage: 520,   // 一发致死：最远衰减(0.2)也有 104 伤害
   grenadeRadius: 100,
-  grenadeFuse: 1.65,
+  grenadeFuse: 1.25,
   mineDamage: 110,
   mineTriggerRadius: 48,
   mineRespawnTime: 14,

@@ -504,8 +504,12 @@ export function applyGravityOrbPull(
   obstacleBroadBuckets?: Obstacle[][],
 ): void {
   const RANGE = 260
-  const MAX_PULL = 240
+  // 对玩家的基础吸力：用户要求「加倍」（原 240 -> 480），并随时间递增。
+  const MAX_PULL = 480
   const MIN_RATIO = 0.35
+  // 引力随时间增强：以弹体总寿命为基准，剩余寿命越少强度越高，
+  // 最多放大到 2.0 倍（初段 1.0 倍，寿命耗尽时 2.0 倍）。
+  const RAMP_TO = 2.0
   let vx = 0
   let vy = 0
   for (let i = 0; i < activeGravityOrbs.length; i++) {
@@ -517,7 +521,13 @@ export function applyGravityOrbPull(
     if (dy > RANGE || dy < -RANGE) continue
     const d = Math.hypot(dx, dy)
     if (d > RANGE || d < 8) continue
-    const strength = MAX_PULL * (MIN_RATIO + (1 - MIN_RATIO) * (1 - d / RANGE))
+    // 时间增长因子：用该武器的出厂总寿命（lifeSeconds）作基准，
+    // 剩余寿命越少强度越高。找不到定义时退化为不增长。
+    const wepDef = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : undefined
+    const totalLife = wepDef?.lifeSeconds ?? 0
+    const progress = totalLife > 0 ? Math.min(1, Math.max(0, 1 - pr.life / totalLife)) : 0
+    const ramp = 1 + (RAMP_TO - 1) * progress
+    const strength = MAX_PULL * ramp * (MIN_RATIO + (1 - MIN_RATIO) * (1 - d / RANGE))
     vx += (dx / d) * strength
     vy += (dy / d) * strength
   }
@@ -587,7 +597,15 @@ export function stepProjectilesSubsystem(ctx: ProjectileContext, dt: number): vo
     }
     pr.vel.y += g * pr.gravityScale * dt
     pr.life -= dt
-    if (pr.life <= 0) continue
+    if (pr.life <= 0) {
+      // A2 近炸引信：引力弹寿命耗尽时自动引爆，而不是凭空消失。
+      // 原因：引力弹 passWalls=true 会穿过地面/墙体，若没直接命中玩家就白白浪费
+      // 130px 的 terrainRadius 爆炸范围。到期引爆后它才真正成为"区域控制武器"。
+      if (pr.isGravityOrb && pr.terrainRadius > 0 && pr.damage > 0) {
+        ctx.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 640, pr)
+      }
+      continue
+    }
 
     const dx = pr.vel.x * dt
     const dy = pr.vel.y * dt

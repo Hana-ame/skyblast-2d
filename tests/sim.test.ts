@@ -392,13 +392,13 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[3].speed, 780, 'bazooka speed x1.5 (520 -> 780)')
   assert.equal(WEAPONS[3].rocket, true, 'bazooka rocket sprite')
   assert.equal(WEAPONS[4].bounces, 2, 'gauss bounces 2 times')
-  assert.equal(WEAPONS[4].damagePerSecond, 90, 'gauss dps halved (180 -> 90)')
+  assert.equal(WEAPONS[4].damagePerSecond, 135, 'gauss dps restored to 135 (90 was too weak for a supply weapon)')
   assert.equal(WEAPONS[4].magSize, 24, 'gauss magazine 24 (4s)')
   assert.equal(WEAPONS[4].reloadTime, 3.0, 'gauss reload 3s (halved)')
   assert.ok(WEAPONS[5].magSize >= 120 && WEAPONS[5].maxReserve >= 240, 'gatling high ammo')
   assert.equal(WEAPONS[5].damage, WEAPONS[1].damage, 'M249 damage equals assault rifle')
   assert.ok(WEAPONS[5].fireDelay <= 0.1, 'M249 high fire rate (damage-synced with rifle, DPS preserved)')
-  assert.ok(WEAPONS[6].fireDelay >= 0.8 && WEAPONS[6].damage === WEAPONS[3].damage, 'gravity gun slower, damage equals rocket launcher')
+  assert.ok(WEAPONS[6].fireDelay >= 0.7 && WEAPONS[6].damage === WEAPONS[3].damage, 'gravity gun slower, damage equals rocket launcher (fireDelay 0.9 -> 0.75)')
   assert.equal(WEAPONS[4].beam, true, 'laser is hitscan beam')
   assert.equal(WEAPONS[7].isSupplyOnly, false, 'pistol is a primary weapon')
   assert.ok(WEAPONS[7].moveSpeedMult! > 1.2, 'pistol fastest move speed')
@@ -429,7 +429,7 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[2].grazeDamageMin, 99, 'sniper graze floor 99')
   assert.equal(WEAPONS[2].farRange, 900, 'sniper has far-range attenuation')
   assert.equal(WEAPONS[2].farDamage, 99, 'sniper far damage 99')
-  assert.deepEqual(SECONDARY_UNLOCK_ORDER, ['frag', 'obstacle', 'shield', 'teleport', 'doll'], 'secondary unlock order matches balance progression')
+  assert.deepEqual(SECONDARY_UNLOCK_ORDER, ['frag', 'obstacle', 'teleport', 'shield', 'doll'], 'secondary unlock order: teleport at 2 deaths, shield moved to 3')
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
   assert.ok(!SECONDARIES.frag.supplyOnly, 'frag selectable')
 
@@ -941,7 +941,7 @@ test('距离衰减：霰弹随距离掉伤；引力枪大幅衰减', () => {
   assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 100) - 1) < 1e-9, 'shotgun full damage close')
   assert.ok(Math.abs(weaponFalloff(WEAPONS[0], 700) - 0.45) < 1e-9, 'shotgun min multiplier at 700')
   assert.ok(weaponFalloff(WEAPONS[0], 400) < 0.95 && weaponFalloff(WEAPONS[0], 400) > 0.5, 'shotgun mid falloff')
-  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 700) - 0.12) < 1e-9, 'gravity min multiplier at 700')
+  assert.ok(Math.abs(weaponFalloff(WEAPONS[6], 700) - 0.35) < 1e-9, 'gravity min multiplier at 700 (0.12 -> 0.35, so it stops falling under ~80 damage)')
   assert.ok(weaponFalloff(WEAPONS[6], 400) < 0.8 && weaponFalloff(WEAPONS[6], 400) > 0.4, 'gravity heavy mid falloff')
   assert.equal(weaponFalloff(WEAPONS[1], 900), 1, 'assault rifle no falloff')
 
@@ -1580,7 +1580,7 @@ test('快照增量精简与高频弹丸事件化：静态设施零重复传输 +
 })
 
 
-test('连死副手阶梯解锁：按平衡性依次解锁 障碍物 → 护盾 → teleport → 替身人偶（已移除地雷），且击杀重置连死', () => {
+test('连死副手阶梯解锁：依次解锁 障碍物 → teleport → 护盾 → 替身人偶（已移除地雷），且击杀重置连死', () => {
   const w = new World(777)
   w.config.randomSpawn = false
   const p = w.addPlayer('Victim', 'red')
@@ -1597,7 +1597,7 @@ test('连死副手阶梯解锁：按平衡性依次解锁 障碍物 → 护盾 �
   assert.equal(w.obstacles.length, obsCount0, 'locked obstacle must not spawn')
   assert.equal(p.secondaryCooldown, 0)
 
-  const expectedProgression = ['obstacle', 'shield', 'teleport', 'doll']
+  const expectedProgression = ['obstacle', 'teleport', 'shield', 'doll']
   for (let i = 0; i < expectedProgression.length; i++) {
     const expectedSec = expectedProgression[i]
     // 确保持续测试 Victim 零击杀连死：每次重置 killer.lifeKills 不影响 Victim
@@ -1641,7 +1641,7 @@ test('连死副手阶梯解锁：按平衡性依次解锁 障碍物 → 护盾 �
   assert.equal(p.secondary, 'frag', 'switching away from SMG invalidates +1 tier secondary and reverts to frag')
 })
 
-test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且碰撞箱略大的唯一护盾 / teleport读条落右键点 / 二进制同步无损', () => {
+test('连死解锁副手实战效果：障碍物上限3 / 70HP不溢出且碰撞箱略大的唯一护盾 / teleport读条落右键点 / 二进制同步无损', () => {
   const w = new World(778)
   w.config.randomSpawn = false
   const p = w.addPlayer('Tester', 'red')
@@ -1650,7 +1650,7 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
   enemy.pos = { x: 3500, y: 3264 }
   p.deathStreak = 4 // 解锁全部阶梯
 
-  // 1) 障碍物 (obstacle)：10.0s 冷却，不设同屏数量上限，可无限生成
+  // 1) 障碍物 (obstacle)：10.0s 冷却；2026-11-14 起每名玩家最多同时存在 3 个（超出销毁最早的）
   assert.equal(SECONDARIES.obstacle.cd, 10.0)
   const obs0 = w.obstacles.length
   for (let k = 0; k < 5; k++) {
@@ -1658,18 +1658,18 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
     p.pos = { x: 2000 + k * 140, y: 3264 }
     w.step(DT, new Map([[p.id, input({ aim: 0, secondary: sec('obstacle') })]]))
   }
-  assert.equal(w.obstacles.length, obs0 + 5, 'all 5 player-spawned obstacles remain active (unlimited spawning)')
+  assert.equal(w.obstacles.length, obs0 + 3, 'only 3 player-spawned obstacles stay active at once (oldest is discarded)')
   assert.equal(w.bodyOverlapsAt(p.pos.x, p.pos.y), false, 'player not stuck in spawned obstacle')
 
-  // 2) 护盾 (shield)：唯一 100HP 护盾，不可叠加，且伤害不溢出（即使剩 20HP 护盾吃下 520 手雷/250 狙击爆头，本体仍满血 100HP）
-  assert.equal(w.config.shieldHp, 100, 'shield capacity is 100HP')
+  // 2) 护盾 (shield)：唯一 70HP 护盾（2026-11-14 由 100 下调），不可叠加，且伤害不溢出
+  assert.equal(w.config.shieldHp, 70, 'shield capacity is 70HP')
   p.secondaryCooldown = 0
   w.step(DT, new Map([[p.id, input({ secondary: sec('shield') })]]))
-  assert.equal(p.shieldHp, 100, 'shield starts at 100HP')
+  assert.equal(p.shieldHp, 70, 'shield starts at 70HP')
   assert.ok(p.shieldTimer > 0)
-  // 先受 80 伤害 -> 护盾剩余 20HP，本体 100HP
-  w.damagePlayer(p, 80, undefined, false, false, enemy.id, enemy.team, '测试')
-  assert.equal(p.hp, 100, 'shield absorbed 80 damage')
+  // 先受 50 伤害 -> 护盾剩余 20HP，本体 100HP
+  w.damagePlayer(p, 50, undefined, false, false, enemy.id, enemy.team, '测试')
+  assert.equal(p.hp, 100, 'shield absorbed 50 damage')
   assert.equal(p.shieldHp, 20, '20 shieldHp left')
   // 护盾已存在时再次按护盾不会叠加或重置（只允许出现一个）
   p.secondaryCooldown = 0
@@ -1679,7 +1679,7 @@ test('连死解锁副手实战效果：障碍物无限生成 / 100HP不溢出且
   w.damagePlayer(p, 250, undefined, true, false, enemy.id, enemy.team, '狙')
   assert.equal(p.shieldHp, 0, 'shield broken')
   assert.equal(p.shieldTimer, 0, 'shield timer cleared on break')
-  assert.equal(p.hp, 100, 'overflow damage (230) did NOT spill into player HP!')
+  assert.equal(p.hp, 100, 'overflow damage did NOT spill into player HP!')
 
   // 2b) 护盾开启时碰撞箱稍微扩大：擦边弹道（距身体中心 dx=20px，超出常规 bodyHalfX=16.2px 但小于护盾外扩 24.2px）未开盾不中、开盾命中护盾
   {

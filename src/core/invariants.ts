@@ -34,15 +34,17 @@ export function weaponViolations(): Violation[] {
   }
 
   // 副手平衡性阶梯解锁顺序硬性约定：frag(0) → obstacle(1) → shield(2) → teleport(3) → doll(4)
-  const EXPECTED_SEC_ORDER = ['frag', 'obstacle', 'shield', 'teleport', 'doll']
+  // 2026-11-14：shield 与 teleport 顺序对调（2 连死先给 teleport，护盾后移到 3 连死）
+  const EXPECTED_SEC_ORDER = ['frag', 'obstacle', 'teleport', 'shield', 'doll']
   if (SECONDARY_UNLOCK_ORDER.join(',') !== EXPECTED_SEC_ORDER.join(',')) {
     add('secondary.order', `SECONDARY_UNLOCK_ORDER "${SECONDARY_UNLOCK_ORDER.join(',')}" !== "${EXPECTED_SEC_ORDER.join(',')}"`)
   }
   if (SECONDARIES['mine']) {
     add('secondary.mine', 'mine should be removed from SECONDARIES')
   }
-  if (DEFAULT_CONFIG.shieldHp !== 100) {
-    add('config.shieldHp', `DEFAULT_CONFIG.shieldHp=${DEFAULT_CONFIG.shieldHp} expected 100`)
+  // 2026-11-14 平衡性调整：护盾 100 -> 70（伤害不溢出特性保留，但等效血量不再翻倍）
+  if (DEFAULT_CONFIG.shieldHp !== 70) {
+    add('config.shieldHp', `DEFAULT_CONFIG.shieldHp=${DEFAULT_CONFIG.shieldHp} expected 70`)
   }
   EXPECTED_SEC_ORDER.forEach((secId, idx) => {
     const def = SECONDARIES[secId]
@@ -102,7 +104,7 @@ export function weaponViolations(): Violation[] {
     const dur = laser.magSize / (laser.ammoPerSecond ?? 1)
     if (Math.abs(dur - 4) > 1e-9) add('rule.laserdur', '高斯枪单匣必须连续 4 秒')
     if (laser.reloadTime !== 3) add('rule.laserreload', '高斯枪换弹必须 3 秒（平衡性补丁：6s 减半）')
-    if (laser.damagePerSecond !== 90) add('rule.laserdps', '高斯枪 DPS 必须为 90（减半）')
+    if (laser.damagePerSecond !== 135) add('rule.laserdps', '高斯枪 DPS 必须为 135')
     if ((laser.fovMult ?? 1) !== 1) add('rule.laserfov', '高斯枪视野必须正常（1.0）')
     if (!laser.beam) add('rule.laserbeam', '高斯枪必须是持续光束')
     if (laser.bounces !== 2) add('rule.laserbounces', '高斯枪必须反射 2 次')
