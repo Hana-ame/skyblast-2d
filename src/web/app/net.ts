@@ -5,6 +5,7 @@ import { getPhysicsParams, setPhysicsParams } from '../../core/sim/physics.ts'
 import { resetBinaryCodecState, encodeServerMsgBinary, filterSnapshotAOI } from '../../net/protocol/BinaryCodec.ts'
 import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
 import { applyIntents } from '../../net/ServerSim.ts'
+import type { QueuedClientInput } from '../../net/ServerSim.ts'
 import { ClientSession } from '../../net/ClientSession.ts'
 import { StateSync } from '../../net/StateSync.ts'
 import { InputMapper } from '../../input/InputMapper.ts'
@@ -23,6 +24,7 @@ export interface HostGuestSlot {
   transport: FastServerTransport
   input: WorldInput
   lastAckSeq: number
+  inputQueue: QueuedClientInput[]
 }
 
 export interface HostRoomParamsPayload {
@@ -374,6 +376,8 @@ function sanitizeGuestTeam(wantTeam?: TeamId): TeamId {
   return world.players.filter(p => p.team === 'blue').length <= world.players.filter(p => p.team === 'red').length ? 'blue' : 'red'
 }
 
+const MAX_HOST_GUEST_INPUT_QUEUE = 16
+
 /** 房主侧接入一条已建立的 PeerConnLike */
 function acceptIncomingKcpGuest(
   conn: PeerConnLike,
@@ -407,12 +411,17 @@ function acceptIncomingKcpGuest(
     transport: srvTransport,
     input: defaultWorldInput(),
     lastAckSeq: 0,
+    inputQueue: [],
   }
   srvTransport.onClient((msg) => {
-    if (typeof msg.seq === 'number' && msg.seq > slot.lastAckSeq) {
-      slot.lastAckSeq = msg.seq
+    const seq = typeof msg.seq === 'number' ? msg.seq : 0
+    if (seq > 0 && seq <= slot.lastAckSeq) return
+    if (slot.inputQueue.length >= MAX_HOST_GUEST_INPUT_QUEUE) {
+      const dropped = slot.inputQueue.shift()!
+      if (dropped.seq > slot.lastAckSeq) slot.lastAckSeq = dropped.seq
+      slot.input = applyIntents(slot.input, dropped.intents)
     }
-    slot.input = applyIntents(slot.input, msg.intents)
+    slot.inputQueue.push({ seq, intents: msg.intents })
   })
 
   conn.on('data', (raw) => {
@@ -512,8 +521,15 @@ function attachClientKcpSession(conn: PeerConnLike, roomId: string): void {
     } catch { /* ignore */ }
   })
 
+  let appliedInitialSnapshot = false
   session.onSnapshot((snap: WorldSnapshot) => {
-    applyAuthoritativeSnapshotToClientWorld(snap)
+    // 仅在首次收到 welcome/首帧快照时立即初始化客户端世界；
+    // 后续高频快照只更新 StateSync 内部缓冲，统一由 loop.ts 的固定步长 stepNetworkFrame 在 capturePrevPositions 之后推进并写入 world，
+    // 彻底消除异步网络回调在两个渲染帧之间篡改 world.players 引发的插值基准错位与抖动！
+    if (!appliedInitialSnapshot) {
+      appliedInitialSnapshot = true
+      applyAuthoritativeSnapshotToClientWorld(snap)
+    }
   })
   session.onEvents((evs) => {
     if (evs && evs.length > 0) handleEvents(evs)
@@ -1112,7 +1128,8 @@ export function stepNetworkFrame(dt: number, localInput: WorldInput, allInputs: 
     })
     netState.clientSession.sendIntents(intents, dt)
     netState.clientTransport?.tickKcp?.(now)
-    netState.stateSync?.advance(dt, 1 / 60)
+    // 使用 StateSync 根据快照 tick 差自动计算的动态插值周期（适配 60Hz/30Hz/20Hz 步幅），避免 1/60s 过早停止插值
+    netState.stateSync?.advance(dt)
     const predictedSnap = netState.stateSync?.interpolated()
     if (predictedSnap) {
       applyAuthoritativeSnapshotToClientWorld(predictedSnap)
@@ -1127,6 +1144,16 @@ export function stepNetworkFrame(dt: number, localInput: WorldInput, allInputs: 
 
   if (netState.role === 'host') {
     for (const slot of netState.hostGuests.values()) {
+      // 每个房主物理 tick 严格消费 1 帧客机输入队列（若积压 >=4 帧则加速消费 2 帧），
+      // 保证房主确认的 lastAckSeq 与客机预测的 1 seq = 1 tick 严格 1:1 对齐！
+      if (slot.inputQueue.length > 0) {
+        const consumeCount = slot.inputQueue.length >= 4 ? 2 : 1
+        for (let k = 0; k < consumeCount && slot.inputQueue.length > 0; k++) {
+          const item = slot.inputQueue.shift()!
+          if (item.seq > slot.lastAckSeq) slot.lastAckSeq = item.seq
+          slot.input = applyIntents(slot.input, item.intents)
+        }
+      }
       allInputs.set(slot.playerId, {
         ...slot.input,
         secondary: slot.input.secondary ? { ...slot.input.secondary } : null,

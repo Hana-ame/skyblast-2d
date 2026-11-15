@@ -148,8 +148,11 @@ function updateCameraTracking(dtSec = FIXED): void {
   camera.fovFactor += (targetFov - camera.fovFactor) * fovK
 
   if (localPlayer.deployed) {
-    const tx = localPlayer.pos.x
-    const ty = localPlayer.pos.y - 12
+    // 相机必须跟随本地玩家的渲染插值位置（getRenderPos）而非未插值的物理步进终点 localPlayer.pos，
+    // 否则高刷屏或快照对齐时相机与玩家精灵产生半帧相位差，导致屏幕中心的玩家前后微颤！
+    const renLocal = getRenderPos('p', localPlayer.id, localPlayer.pos.x, localPlayer.pos.y)
+    const tx = renLocal.x
+    const ty = renLocal.y - 12
     // 原每 tick 0.2 的收敛率 -> 每秒 60 次的等效指数平滑；
     // 这里按真实帧时间换算，使 60Hz / 143Hz / 240Hz 下相机速度一致且逐帧连续。
     const k = 1 - Math.pow(1 - 0.2, Math.max(1e-3, dtSec) * 60)
@@ -366,9 +369,9 @@ export function startGameLoop(): void {
   })
   window.setInterval(() => {
     const now = performance.now()
-    if (document.hidden || (now - lastFrame > 120 && netState.role !== 'offline')) {
-      // 记录保活接管：真机上如果频繁出现这条标记，说明 rAF 被长时间挂起，
-      // 而 keepalive 与 rAF 的交替接管本身会放大顿挫（两个时钟争抢同一条推进路径）。
+    // 仅在标签页处于后台 (document.hidden) 或 rAF 彻底挂起 (>300ms) 时才接管保活推进，
+    // 避免在前台偶发帧波动时与 rAF 抢夺 lastFrame 和 acc 导致插值跳变。
+    if (document.hidden || (now - lastFrame > 300 && netState.role !== 'offline')) {
       diagMark('keepalive-takeover', {
         sinceLastFrameMs: Math.round(now - lastFrame),
         hidden: typeof document !== 'undefined' && document.hidden ? 1 : 0,

@@ -232,3 +232,119 @@ test('World：obstacleBroadBuckets 脏标记在掩体增删与受损销毁时即
   w.damageObstacle(ob, 999)
   assert.equal(w.bodyOverlapsAt(2040, 1240), false, '摧毁后空间桶应立即移除该掩体')
 })
+
+import { StateSync } from '../src/net/StateSync.ts'
+import { ServerSim } from '../src/net/ServerSim.ts'
+import { ClientSession } from '../src/net/ClientSession.ts'
+import { InputMapper } from '../src/input/InputMapper.ts'
+import { predictLocalPlayerStep } from '../src/core/sim/playerPhysics.ts'
+import { defaultWorldInput } from '../src/core/types.ts'
+
+test('StateSync：动态插值周期（20Hz/30Hz 步幅下 interval 自动匹配 tick 差）且未完成插值时收到新快照平滑衔接不回跳', () => {
+  const w = new World(701)
+  w.config.randomSpawn = false
+  const remote = w.addPlayer('RemoteRunner', 'blue')
+  remote.pos = { x: 1000, y: 2740 }
+  const sync = new StateSync(w.terrain, 999)
+
+  // snap1 @ tick=10, x=1000
+  w.tick = 10
+  sync.push(w.snapshot(), 999)
+
+  // snap2 @ tick=13 (3 ticks 步幅 = 20Hz), x=1030
+  w.tick = 13
+  remote.pos.x = 1030
+  sync.push(w.snapshot(), 999)
+
+  assert.ok(Math.abs(sync.getSnapshotInterval() - 3 / 60) < 1e-6, '3-tick 步幅应自动推导出 3/60s 插值周期')
+
+  // 推进 1 个物理帧 (1/60s)：如果是旧版写死 1/60s，此时就已经跳到 1030 并在后续 2 帧停滞；
+  // 修复后应平滑处在 1/3 进度 (x ≈ 1010)
+  sync.advance(1 / 60)
+  const p1 = sync.interpolated()!.players.find(p => p.id === remote.id)!
+  assert.ok(Math.abs(p1.pos.x - 1010) < 0.5, `第 1 帧应平滑插值至 1010，实测 ${p1.pos.x.toFixed(2)}`)
+
+  // 在 t=1/3 尚未走完时提前收到 snap3 @ tick=16, x=1060：
+  // 新的起点 prev 必须无缝衔接当前视觉位置 1010，而不是跳变到 1030！
+  w.tick = 16
+  remote.pos.x = 1060
+  sync.push(w.snapshot(), 999)
+  const pAfterPush = sync.interpolated()!.players.find(p => p.id === remote.id)!
+  assert.ok(Math.abs(pAfterPush.pos.x - 1010) < 0.5, `提前收到新快照时视觉位置必须保持连续 (1010)，不能瞬间跳到 1030，实测 ${pAfterPush.pos.x.toFixed(2)}`)
+})
+
+test('ServerSim 输入队列：网络抖动导致多包同 tick 到达时按队列逐帧消费，消除客户端回滚橡皮筋抖动', () => {
+  const w = new World(702, { name: 'burst-queue', solids: [] })
+  w.config.randomSpawn = false
+  w.terrain.grid.fill(0)
+  const p = w.addPlayer('ClientA', 'red')
+  p.pos = { x: 2000, y: 2000 }
+  const server = new ServerSim(w)
+
+  const burstQueue: (() => void)[] = []
+  let onServerCb: ((m: any) => void) | null = null
+  let onClientCb: ((m: any) => void) | null = null
+
+  const clientTransport = {
+    send(m: any) { burstQueue.push(() => onClientCb?.(m)) },
+    onServer(cb: (m: any) => void) { onServerCb = cb },
+  }
+  const serverTransport = {
+    send(m: any) { onServerCb?.(m) },
+    onClient(cb: (m: any) => void) { onClientCb = cb },
+  }
+
+  server.accept(p.id, serverTransport)
+  const sync = new StateSync(w.terrain, p.id)
+  const session = new ClientSession(clientTransport, p.id, sync)
+  const mapper = new InputMapper()
+
+  // 初始同步
+  server.step(1 / 60)
+
+  // 客户端连续发送 3 帧右移，但由于网络抖动，这 3 个包在同一个时刻扎堆到达服务器
+  for (let i = 0; i < 3; i++) {
+    session.sendIntents(mapper.map({ moveX: 1, aimAngle: 0, fire: false, jump: false, jetpack: false, reload: false }), 1 / 60)
+  }
+  while (burstQueue.length > 0) burstQueue.shift()!()
+
+  // 服务器仅推进第 1 个 tick：应当只消费 seq=1（lastAckSeq=1），保留 seq=2,3 在队列中，
+  // 从而让客户端重放 seq=2,3 后与客户端预测位置完全一致（0 抖动）！
+  server.step(1 / 60)
+  assert.equal(session.lastAckSeq, 1, '服务器第 1 个 tick 仅确认消费 seq=1，不吞掉同批到达的 seq=2,3')
+  assert.equal(session.pendingInputs.length, 2, '客户端保留 seq=2,3 待重放')
+  assert.equal(sync.reconcileOffset.x, 0, '回滚重放与预测完全吻合，产生 0 纠错偏移')
+
+  // 服务器继续推进第 2、第 3 个 tick，依次消费 seq=2 和 seq=3
+  server.step(1 / 60)
+  assert.equal(session.lastAckSeq, 2)
+  server.step(1 / 60)
+  assert.equal(session.lastAckSeq, 3)
+  assert.equal(session.pendingInputs.length, 0)
+  assert.equal(sync.reconcileOffset.x, 0)
+})
+
+test('predictLocalPlayerStep 物理对齐：狙击蓄力后坐力、引力弹牵引、切枪移速与玩家碰撞与权威 World 一致', () => {
+  const w = new World(703, { name: 'predict-parity', solids: [] })
+  w.config.randomSpawn = false
+  w.terrain.grid.fill(0)
+  const p = w.addPlayer('SniperP', 'red')
+  p.weaponIndex = 2 // 狙击枪（0.5s 蓄力 + 后坐力）
+  p.ammo[2] = 5
+  p.pos = { x: 3000, y: 2000 }
+  p.vel = { x: 0, y: 0 }
+
+  // 克隆一份给客户端预测独立运行
+  const predP = JSON.parse(JSON.stringify(p))
+
+  for (let i = 0; i < 35; i++) {
+    const inp = { ...defaultWorldInput(), fire: i === 0, aim: 0 }
+    w.step(1 / 60, new Map([[p.id, { ...inp }]]))
+    w.drainEvents()
+    predictLocalPlayerStep(predP, { ...inp }, 1 / 60, w.terrain, w.obstacles, w.mortars, w.watchtowers)
+  }
+
+  // 30 帧蓄力满后狙击枪自动击发并产生后坐力位移，客户端预测位置应与服务端权威位置严格一致
+  assert.ok(Math.abs(predP.pos.x - p.pos.x) < 0.01 && Math.abs(predP.pos.y - p.pos.y) < 0.01,
+    `蓄力狙击击发后客户端预测坐标 (${predP.pos.x.toFixed(2)},${predP.pos.y.toFixed(2)}) 必须与服务端 (${p.pos.x.toFixed(2)},${p.pos.y.toFixed(2)}) 完全一致`)
+})

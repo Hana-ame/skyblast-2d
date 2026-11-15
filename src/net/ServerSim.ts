@@ -23,9 +23,22 @@ export interface ServerSimOptions {
   aoiRadiusY?: number
 }
 
+export interface QueuedClientInput {
+  seq: number
+  intents: Intent[]
+}
+
+const MAX_SERVER_INPUT_QUEUE = 16
+
 export class ServerSim {
   private world: World
-  private clients: { id: number; transport: FastServerTransport; input: WorldInput; lastAckSeq: number }[] = []
+  private clients: {
+    id: number
+    transport: FastServerTransport
+    input: WorldInput
+    lastAckSeq: number
+    inputQueue: QueuedClientInput[]
+  }[] = []
   private events: WorldEvent[] = []
   private pendingBroadcastEvents: WorldEvent[] = []
   private syncEveryTicks: number
@@ -43,12 +56,22 @@ export class ServerSim {
   }
 
   accept(id: number, transport: ServerTransport): void {
-    const client = { id, transport: transport as FastServerTransport, input: defaultWorldInput(), lastAckSeq: 0 }
+    const client = {
+      id,
+      transport: transport as FastServerTransport,
+      input: defaultWorldInput(),
+      lastAckSeq: 0,
+      inputQueue: [] as QueuedClientInput[],
+    }
     transport.onClient((msg) => {
-      if (typeof msg.seq === 'number' && msg.seq > client.lastAckSeq) {
-        client.lastAckSeq = msg.seq
+      const seq = typeof msg.seq === 'number' ? msg.seq : 0
+      if (seq > 0 && seq <= client.lastAckSeq) return
+      if (client.inputQueue.length >= MAX_SERVER_INPUT_QUEUE) {
+        const dropped = client.inputQueue.shift()!
+        if (dropped.seq > client.lastAckSeq) client.lastAckSeq = dropped.seq
+        client.input = applyIntents(client.input, dropped.intents)
       }
-      client.input = applyIntents(client.input, msg.intents)
+      client.inputQueue.push({ seq, intents: msg.intents })
     })
     this.clients.push(client)
   }
@@ -62,6 +85,16 @@ export class ServerSim {
     const inputs = new Map<number, WorldInput>()
     for (let i = 0; i < this.clients.length; i++) {
       const c = this.clients[i]
+      // 每个服务端物理 tick 严格消费 1 帧客户端输入（若积压 >=4 帧则加速追赶），
+      // 保证服务端确认的 lastAckSeq 与客户端预测的 1 seq = 1 tick 步数严格 1:1 对齐！
+      if (c.inputQueue.length > 0) {
+        const consumeCount = c.inputQueue.length >= 4 ? 2 : 1
+        for (let k = 0; k < consumeCount && c.inputQueue.length > 0; k++) {
+          const item = c.inputQueue.shift()!
+          if (item.seq > c.lastAckSeq) c.lastAckSeq = item.seq
+          c.input = applyIntents(c.input, item.intents)
+        }
+      }
       inputs.set(c.id, c.input)
     }
     this.world.step(dt, inputs)

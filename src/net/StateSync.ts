@@ -1,12 +1,14 @@
 // net/StateSync.ts —— 联机层：客户端预测（Client-Side Prediction）+ 服务器纠错重放（Reconciliation）+ 远端插值（Interpolation）+ 弹丸本地推算（Dead Reckoning）
 import type { WorldSnapshot } from '../core/snap.ts'
 import type {
-  PlayerState, Projectile, Grenade, Landmine, Airstrike, WorldInput, WorldEvent,
+  PlayerState, Projectile, Grenade, Landmine, Airstrike, Obstacle, WorldInput, WorldEvent,
 } from '../core/types.ts'
 import { Terrain } from '../core/terrain.ts'
 import { WEAPONS } from '../core/weapons.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY } from '../core/wrap.ts'
-import { predictLocalPlayerStep } from '../core/sim/playerPhysics.ts'
+import { predictLocalPlayerStep, separateOverlappingPlayers } from '../core/sim/playerPhysics.ts'
+import type { PredictPlayerExtras } from '../core/sim/playerPhysics.ts'
+import { NUM_BUCKETS, PLAYER_BROAD_PAD, OBSTACLE_BROAD_PAD, bucketIdx } from '../core/sim/spatial.ts'
 import { WATCHTOWERS } from '../core/sim/landmarks.ts'
 import { stepClientProjectilesDeadReckoning } from '../core/sim/projectiles.ts'
 
@@ -18,15 +20,18 @@ export interface PendingInputFrame {
 
 const WORLD_W = 13200
 const WORLD_H = 4400
+const FIXED_DT = 1 / 60
 
-// 纠错阈值：偏差 >120px（如传送/重生/爆炸击飞）直接硬对齐；0.5~120px 走指数衰减平滑纠错
+// 纠错阈值：偏差 >120px（如传送/重生/爆炸击飞）直接硬对齐；1.5~120px 走指数衰减平滑纠错；<1.5px 忽略定点数(0.25px)量化噪声
 const SNAP_THRESHOLD = 120
-const SMOOTH_THRESHOLD = 0.5
+const SMOOTH_THRESHOLD = 1.5
 
 export class StateSync {
   private prev: WorldSnapshot | null = null
   private cur: WorldSnapshot | null = null
   private t = 0
+  /** 根据前后两帧权威快照的 tick 差动态计算的插值周期（秒），消除多客机 20/30Hz 步幅或抖动下的插值过早跑完停顿 */
+  private snapshotInterval = FIXED_DT
   private localPlayerId = 0
   private terrain: Terrain
   private predictedLocal: PlayerState | null = null
@@ -37,6 +42,11 @@ export class StateSync {
   private cachedDeadReckonedList: Projectile[] = []
   private deadReckonedListDirty = false
   private enableProjectileDeadReckoning = false
+
+  // 复用的客户端预测空间桶与引力弹缓冲（消除每帧分配）
+  private playerBroadBuckets: PlayerState[][] = Array.from({ length: NUM_BUCKETS }, () => [])
+  private obstacleBroadBuckets: Obstacle[][] = Array.from({ length: NUM_BUCKETS }, () => [])
+  private activeGravityOrbs: Projectile[] = []
 
   constructor(terrain?: Terrain, localPlayerId = 0) {
     if (terrain) {
@@ -60,13 +70,63 @@ export class StateSync {
     this.enableProjectileDeadReckoning = enabled
   }
 
+  getSnapshotInterval(): number {
+    return this.snapshotInterval
+  }
+
+  private buildPredictExtras(snap: WorldSnapshot | null): PredictPlayerExtras | undefined {
+    if (!snap) return undefined
+    for (let i = 0; i < NUM_BUCKETS; i++) {
+      this.playerBroadBuckets[i].length = 0
+      this.obstacleBroadBuckets[i].length = 0
+    }
+    for (let i = 0; i < snap.players.length; i++) {
+      const p = snap.players[i]
+      if (p.id === this.localPlayerId || !p.deployed || !p.alive || p.respawnTimer > 0) continue
+      const wx = wrapX(p.pos.x)
+      const b0 = bucketIdx(wrapX(wx - PLAYER_BROAD_PAD))
+      const b1 = bucketIdx(wrapX(wx + PLAYER_BROAD_PAD))
+      this.playerBroadBuckets[b0].push(p)
+      if (b1 !== b0) this.playerBroadBuckets[b1].push(p)
+    }
+    for (let i = 0; i < snap.obstacles.length; i++) {
+      const ob = snap.obstacles[i]
+      if (ob.hp <= 0) continue
+      const b0 = bucketIdx(wrapX(ob.x - OBSTACLE_BROAD_PAD))
+      const b1 = bucketIdx(wrapX(ob.x + ob.w + OBSTACLE_BROAD_PAD))
+      this.obstacleBroadBuckets[b0].push(ob)
+      if (b1 !== b0) {
+        let b = (b0 + 1) % NUM_BUCKETS
+        while (true) {
+          this.obstacleBroadBuckets[b].push(ob)
+          if (b === b1) break
+          b = (b + 1) % NUM_BUCKETS
+        }
+      }
+    }
+    this.activeGravityOrbs.length = 0
+    const projSource = this.enableProjectileDeadReckoning && this.deadReckonedProjectiles.size > 0
+      ? this.syncDeadReckonedList()
+      : snap.projectiles
+    for (let i = 0; i < projSource.length; i++) {
+      const pr = projSource[i]
+      if (pr.isGravityOrb && pr.life > 0) this.activeGravityOrbs.push(pr)
+    }
+    return {
+      playerBroadBuckets: this.playerBroadBuckets,
+      obstacleBroadBuckets: this.obstacleBroadBuckets,
+      activeGravityOrbs: this.activeGravityOrbs,
+    }
+  }
+
   /** 客户端本地立即预测输入（无需等待 RTT 与插值缓冲，按下即响应） */
-  applyLocalInput(input: WorldInput, dt = 1 / 60): PlayerState | null {
+  applyLocalInput(input: WorldInput, dt = FIXED_DT): PlayerState | null {
     if (!this.predictedLocal && this.cur && this.localPlayerId > 0) {
       const found = this.cur.players.find(p => p.id === this.localPlayerId)
       if (found) this.predictedLocal = clonePlayerState(found)
     }
     if (!this.predictedLocal) return null
+    const extras = this.buildPredictExtras(this.cur)
     predictLocalPlayerStep(
       this.predictedLocal,
       input,
@@ -75,7 +135,22 @@ export class StateSync {
       this.cur?.obstacles ?? [],
       this.cur?.mortars ?? [],
       WATCHTOWERS,
+      extras,
     )
+    if (extras?.playerBroadBuckets && this.cur) {
+      const wx = wrapX(this.predictedLocal.pos.x)
+      const b0 = bucketIdx(wrapX(wx - PLAYER_BROAD_PAD))
+      const b1 = bucketIdx(wrapX(wx + PLAYER_BROAD_PAD))
+      extras.playerBroadBuckets[b0].push(this.predictedLocal)
+      if (b1 !== b0) extras.playerBroadBuckets[b1].push(this.predictedLocal)
+      separateOverlappingPlayers(
+        [this.predictedLocal, ...this.cur.players.filter(p => p.id !== this.localPlayerId)],
+        extras.playerBroadBuckets,
+        this.terrain,
+        this.cur.obstacles,
+        extras.obstacleBroadBuckets,
+      )
+    }
     return this.predictedLocal
   }
 
@@ -87,7 +162,14 @@ export class StateSync {
     events?: WorldEvent[],
   ): void {
     if (localPlayerId > 0) this.localPlayerId = localPlayerId
-    this.prev = this.cur
+    if (this.cur && snap.tick > this.cur.tick) {
+      const tickDelta = Math.max(1, Math.min(12, snap.tick - this.cur.tick))
+      this.snapshotInterval = tickDelta * FIXED_DT
+    }
+    // 用当前已经插值到的过渡快照作为新的 prev 起点，避免前一个插值尚未走完 (t < 1) 时收到新包导致远端实体瞬间跳回旧 cur
+    this.prev = (this.prev && this.cur && this.t > 0 && this.t < 1)
+      ? lerpSnap(this.prev, this.cur, this.t)
+      : this.cur
     this.cur = snap
     this.t = 0
 
@@ -112,8 +194,16 @@ export class StateSync {
     if (this.localPlayerId > 0) {
       const authPlayer = snap.players.find(p => p.id === this.localPlayerId)
       if (authPlayer) {
+        const prevVisX = this.predictedLocal
+          ? wrapX(this.predictedLocal.pos.x + this.reconcileOffset.x)
+          : authPlayer.pos.x
+        const prevVisY = this.predictedLocal
+          ? wrapY(this.predictedLocal.pos.y + this.reconcileOffset.y)
+          : authPlayer.pos.y
+
         const replayed = clonePlayerState(authPlayer)
         if (pendingInputs && pendingInputs.length > 0) {
+          const extras = this.buildPredictExtras(snap)
           for (let i = 0; i < pendingInputs.length; i++) {
             const frame = pendingInputs[i]
             predictLocalPlayerStep(
@@ -124,31 +214,43 @@ export class StateSync {
               snap.obstacles,
               snap.mortars,
               WATCHTOWERS,
+              extras,
             )
           }
         }
         if (this.predictedLocal && authPlayer.alive && authPlayer.deployed && authPlayer.respawnTimer <= 0) {
           // 当前画面上的本地玩家视觉坐标 = predictedLocal + reconcileOffset
-          const prevVisX = wrapX(this.predictedLocal.pos.x + this.reconcileOffset.x)
-          const prevVisY = wrapY(this.predictedLocal.pos.y + this.reconcileOffset.y)
+          // 若重放位置与预测位置偏差在平滑阈值 (1.5px) 以内（例如 0.25px 二进制量化舍入误差），
+          // 直接保留平滑的客户端预测轨迹，避免因微小量化误差每帧重置 predictedLocal 造成锯齿抖动！
           const errX = wrapDeltaX(replayed.pos.x, prevVisX)
           const errY = wrapDeltaY(replayed.pos.y, prevVisY)
           const errDist = Math.hypot(errX, errY)
           if (errDist > SNAP_THRESHOLD) {
             this.reconcileOffset.x = 0
             this.reconcileOffset.y = 0
+            this.predictedLocal = replayed
           } else if (errDist >= SMOOTH_THRESHOLD) {
             this.reconcileOffset.x = errX
             this.reconcileOffset.y = errY
+            this.predictedLocal = replayed
           } else {
-            this.reconcileOffset.x = 0
-            this.reconcileOffset.y = 0
+            // 位置与速度完全吻合（偏差 < 1.5px）：仅同步非运动学权威属性（HP/护盾/击杀/死亡等），保持本地连续坐标与速度不跳变
+            this.predictedLocal = {
+              ...replayed,
+              pos: { x: this.predictedLocal.pos.x, y: this.predictedLocal.pos.y },
+              vel: { x: this.predictedLocal.vel.x, y: this.predictedLocal.vel.y },
+              recoilVel: this.predictedLocal.recoilVel
+                ? { x: this.predictedLocal.recoilVel.x, y: this.predictedLocal.recoilVel.y }
+                : replayed.recoilVel,
+              onGround: this.predictedLocal.onGround,
+              prevFireHeld: this.predictedLocal.prevFireHeld,
+            }
           }
         } else {
           this.reconcileOffset.x = 0
           this.reconcileOffset.y = 0
+          this.predictedLocal = replayed
         }
-        this.predictedLocal = replayed
       }
     }
   }
@@ -216,8 +318,9 @@ export class StateSync {
     return this.cachedDeadReckonedList
   }
 
-  advance(dt: number, interval = 0.1): void {
-    this.t = Math.min(1, this.t + dt / interval)
+  advance(dt: number, interval?: number): void {
+    const effInterval = Math.max(FIXED_DT, interval ?? this.snapshotInterval)
+    this.t = Math.min(1, this.t + dt / effInterval)
     // 平滑衰减纠错偏移（60Hz 下约 80ms 平滑收敛到 0）
     const decay = Math.pow(0.08, dt * 10)
     this.reconcileOffset.x *= decay

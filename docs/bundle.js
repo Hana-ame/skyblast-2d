@@ -266,6 +266,13 @@
     if (solids.length === 0) return null;
     return { name: typeof o.name === "string" ? o.name : "\u81EA\u5B9A\u4E49\u5730\u56FE", solids };
   }
+  function isCompatibleSavedMap(m) {
+    if (!m || !Array.isArray(m.solids) || m.solids.length === 0) return false;
+    const name = m.name ?? "";
+    if (name === defaultMapData().name || name === "\u81EA\u5B9A\u4E49\u5730\u56FE" || name === "\u81EA\u5B9A\u4E49\u5C01\u95ED\u7ADE\u6280\u573A") return true;
+    if (name.includes("\u62F1\u6865") || name.includes("\u7ADE\u6280\u573A")) return false;
+    return true;
+  }
 
   // src/core/terrain.ts
   var TILE_SIZE = 20;
@@ -382,23 +389,25 @@
       speed: 1e3,
       recoil: 1560,
       magSize: 8,
-      maxReserve: 72,
+      maxReserve: 32,
       // 后坐力 ×2
-      // 满匣射击间隔 0.42s（原 0.58s）；「边装边打」保持原 0.87s 不变 → 倍率 0.87/0.42≈2.0714
+      // 射击间隔 0.42s；装填单发 1.5/8=0.1875s。二者是唯一决定节奏的两个量：
+      // 弹匣内有弹时「打-打」= 0.42s，打空后「打-装填-打」= 0.42 + 0.1875 ≈ 0.61s，
+      // 自然满足「打-装填-打 比 打-打 长」，无需任何额外倍率。
       reloadTime: 1.5,
-      fireDelay: 0.42,
-      shellReloadFireDelayMult: 2.0714285714285716,
+      fireDelay: 0.38,
       terrainRadius: 12,
       explosive: false,
       pierceOnHeadshot: false,
-      moveSpeedMult: 1.08,
-      fuelMult: 1.05,
+      moveSpeedMult: 1.25,
+      fuelMult: 1.25,
       fovMult: 1,
       color: "#fbbf24",
-      falloffStart: 200,
-      falloffEnd: 700,
-      falloffMin: 0.45,
-      // 霰弹随距离衰减（中距仍可用）
+      // 移速/飞行容量统一 1.25x
+      falloffStart: 150,
+      falloffEnd: 620,
+      falloffMin: 0.3,
+      // 手枪弹组：近距离武器，衰减最早（150px 起）最狠（最低 30%）
       traitDesc: "\u8FD1\u8DDD\u9AD8\u4F24 \xB7 \u5168\u4E2D\u81F4\u6B7B"
     },
     {
@@ -409,9 +418,9 @@
       damage: 33,
       headshotMult: 2.2,
       pellets: 1,
-      spread: 0.045,
+      spread: 0.12,
       grazeDamageMin: 27,
-      // 命中主体正中最高 33；擦边按几何质量线性降到 27
+      // 命中主体正中最高 33；擦边按几何质量线性降到 27；散布 0.12（6.88°），与 M249(0.11) 接近
       speed: 1500,
       recoil: 84,
       magSize: 30,
@@ -420,6 +429,10 @@
       reloadTime: 1.7,
       fireDelay: 0.12,
       terrainRadius: 8,
+      falloffStart: 350,
+      falloffEnd: 1e3,
+      falloffMin: 0.55,
+      // 步枪组：中远射程，350px 起缓慢衰减至 55%
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 1,
@@ -459,9 +472,15 @@
       // edgeDamage 保留=99，作为「边缘命中上限」（连续分级的最低档即 99）。
       edgeDamage: 99,
       grazeDamageMin: 99,
+      // 狙击组：1200px 内满伤，超远距离缓慢衰减，最低保留 75%（137 -> 约 103，仍然致命但不再是全距离同伤）
+      // 注：farRange/farDamage 只有 invariants 检查、没有任何模拟代码消费，是死字段；
+      // 真正的距离衰减走 weaponFalloff（与所有武器同一条路径）。
+      falloffStart: 1200,
+      falloffEnd: 2400,
+      falloffMin: 0.75,
       farRange: 900,
       farDamage: 99,
-      // 超过 900px 额外衰减到 99（远距离不再必杀）
+      // 保留给 invariants 的历史约定（未参与实际伤害计算）
       traitDesc: "\u65E0\u9650\u5C04\u7A0B \xB7 \u547D\u4E2D\u5373\u6B7B"
     },
     {
@@ -527,12 +546,13 @@
       friendlyFire: true,
       selfDamage: true,
       // 高斯：全部段可打到友军/自己
-      damagePerSecond: 90,
+      damagePerSecond: 135,
       ammoPerSecond: 6,
       moveSpeedMult: 0.95,
       fuelMult: 1,
       fovMult: 1,
       color: "#22d3ee",
+      // dps 90->135：原值需照射 1.12s 才杀满血，慢于突击步枪，捡特武反而更弱
       traitDesc: "\u5373\u65F6\u5149\u675F \xB7 \u53CD\u5C042\u6B21 \xB7 \u5168\u6BB5\u81EA\u4F24"
     },
     {
@@ -543,9 +563,9 @@
       damage: 33,
       headshotMult: 1.8,
       pellets: 1,
-      spread: 0.11,
+      spread: 0.15,
       grazeDamageMin: 27,
-      // 与突击步枪同步（正中最高 33，擦边降到 27）
+      // spread 0.11->0.15 回归中近距压制机枪（fovMult 保持 1.30 未动）
       speed: 1300,
       recoil: 66,
       magSize: 120,
@@ -554,6 +574,10 @@
       fireDelay: 0.06,
       terrainRadius: 8,
       // M249 伤害=突击(33，同步擦边分级)，高射速补给枪
+      falloffStart: 350,
+      falloffEnd: 1e3,
+      falloffMin: 0.55,
+      // 步枪组：同突击步枪
       explosive: false,
       pierceOnHeadshot: false,
       moveSpeedMult: 0.78,
@@ -567,20 +591,21 @@
       name: "\u5F15\u529B\u67AA",
       shortName: "\u5F15\u529B\u67AA",
       isSupplyOnly: true,
-      damage: 33,
+      damage: 160,
       headshotMult: 1.6,
       pellets: 1,
       spread: 0.01,
       grazeDamageMin: 27,
-      // 伤害同步=突击步枪(33)
+      // 默认伤害=火箭筒(160)
       speed: 1100,
       recoil: 240,
       magSize: 6,
       maxReserve: 18,
       reloadTime: 2.2,
-      fireDelay: 0.9,
+      fireDelay: 0.75,
       terrainRadius: 130,
       lifeSeconds: 2.2,
+      // fireDelay 0.9->0.75
       explosive: true,
       isGravityOrb: true,
       gravityScale: 0.02,
@@ -595,10 +620,7 @@
       fovMult: 1,
       color: "#a855f7",
       // 引力场弯曲其他子弹
-      falloffStart: 200,
-      falloffEnd: 700,
-      falloffMin: 0.12,
-      // 射程与霰弹类似（200→700），远端衰减更狠
+      // 距离衰减：无（用户要求）。引力枪靠爆炸范围 + 引力场 + 穿墙定位，不做距离掉伤。
       traitDesc: "\u7A7F\u5899\u5F15\u529B\u573A \xB7 \u5F2F\u6298\u5F39\u9053"
     },
     {
@@ -607,20 +629,26 @@
       shortName: "\u624B\u67AA",
       isSupplyOnly: false,
       damage: 24,
-      headshotMult: 2,
+      headshotMult: 2.2,
       pellets: 1,
       spread: 0.09,
       grazeDamageMin: 20,
+      // 爆头 2.0->2.2：爆头 53 伤害，两枪爆头即可击杀 100HP（原需 3 枪，精准无跨阈值回报）
       speed: 1e3,
       recoil: 60,
       magSize: 12,
       maxReserve: 60,
       reloadTime: 0.9,
-      fireDelay: 0.17,
+      fireDelay: 0.15,
       terrainRadius: 6,
+      // 射速 0.17->0.15（DPS 141->160）
       explosive: false,
       gravityScale: 0.03,
       pierceOnHeadshot: false,
+      falloffStart: 320,
+      falloffEnd: 1100,
+      falloffMin: 0.55,
+      // 手枪独立组：半自动点射+高机动游走定位，衰减比霰弹/冲锋枪缓得多（原并入近距组时 450px 外仅 13 伤害、需 8 枪，几乎无威胁）
       moveSpeedMult: 1.5,
       fuelMult: 2,
       ascendMult: 1.25,
@@ -638,25 +666,30 @@
       damage: 24,
       headshotMult: 1.8,
       pellets: 1,
-      spread: 0.24,
+      spread: 0.18,
       grazeDamageMin: 20,
-      // 伤害 = 手枪；极高射速用大散布/弹匣平衡
+      // 伤害 = 手枪；散布 0.24->0.18 提升中近距有效命中（原与霰弹同散布不合理）
       speed: 1e3,
       recoil: 48,
       magSize: 30,
       maxReserve: 150,
       // 30/150
-      reloadTime: 1.2,
+      reloadTime: 1.5,
       fireDelay: 0.05,
       terrainRadius: 8,
-      // 射速极高；换弹 1.2s
+      // 射速极高；换弹 1.2->1.5s 拉长空窗惩罚
       explosive: false,
       gravityScale: 0.04,
       pierceOnHeadshot: false,
+      falloffStart: 150,
+      falloffEnd: 620,
+      falloffMin: 0.3,
+      // 手枪弹组：同霰弹/手枪
       moveSpeedMult: 1.25,
-      fuelMult: 1,
+      fuelMult: 1.25,
       fovMult: 1,
       color: "#4ade80",
+      // 飞行容量 1.0 -> 1.25（与移速统一）
       traitDesc: "\u6781\u9AD8\u5C04\u901F \xB7 \u673A\u52A8\u538B\u5236"
     }
   ];
@@ -673,8 +706,8 @@
   var SECONDARY_UNLOCK_ORDER = [
     "frag",
     "obstacle",
-    "shield",
     "teleport",
+    "shield",
     "doll"
   ];
   var SECONDARIES = {
@@ -700,16 +733,16 @@
       name: "\u62A4\u76FE",
       icon: "\u{1F6E1}\uFE0F",
       cd: 10,
-      unlockStreak: 2,
+      unlockStreak: 3,
       supplyOnly: true,
-      desc: "100HP \u62A4\u76FE \xB7 \u4F24\u5BB3\u4E0D\u6EA2\u51FA \xB7 \u78B0\u649E\u7BB1\u7565\u5927"
+      desc: "70HP \u62A4\u76FE \xB7 \u4F24\u5BB3\u4E0D\u6EA2\u51FA \xB7 \u78B0\u649E\u7BB1\u7565\u5927"
     },
     teleport: {
       id: "teleport",
       name: "Teleport",
       icon: "\u{1F300}",
       cd: 10,
-      unlockStreak: 3,
+      unlockStreak: 2,
       supplyOnly: true,
       desc: "\u8BFB\u6761\u540E\u76F4\u63A5\u51FA\u73B0\u5728\u53F3\u952E\u4F4D\u7F6E"
     },
@@ -740,7 +773,7 @@
   var DEFAULT_CONFIG = {
     maxHp: 100,
     headRadius: 13,
-    shieldHp: 100,
+    shieldHp: 70,
     shieldDuration: 5,
     dollDuration: 10,
     obstacleDefaultHp: 240,
@@ -748,7 +781,7 @@
     grenadeDamage: 520,
     // 一发致死：最远衰减(0.2)也有 104 伤害
     grenadeRadius: 100,
-    grenadeFuse: 1.65,
+    grenadeFuse: 1.25,
     mineDamage: 110,
     mineTriggerRadius: 48,
     mineRespawnTime: 14,
@@ -814,7 +847,6 @@
 
   // src/core/sim/landmarks.ts
   var BODY_HALF_W = 10;
-  var BODY_TOP = 26;
   var BODY_BOTTOM = 16;
   var CEILING_STAND = 264;
   var GROUND_STAND = BEDROCK_TOP - 60;
@@ -1067,11 +1099,12 @@
   function checkBodyOverlapsAt(terrain, obstacles, x, y, obstacleBroadBuckets) {
     const wx = x >= 0 && x < WORLD_W ? x : wrapX(x);
     const halfW = 10;
+    const EPS = 1e-3;
     const tGrid = terrain.grid;
-    const gx0 = Math.floor((wx - halfW) / TILE_SIZE);
-    const gx1 = Math.floor((wx + halfW) / TILE_SIZE);
-    const wyTop = y - 30 >= 0 && y - 30 < WORLD_H ? y - 30 : wrapY(y - 30);
-    const wyBot = y + 16 >= 0 && y + 16 < WORLD_H ? y + 16 : wrapY(y + 16);
+    const gx0 = Math.floor((wx - halfW + EPS) / TILE_SIZE);
+    const gx1 = Math.floor((wx + halfW - EPS) / TILE_SIZE);
+    const wyTop = y - 30 + EPS >= 0 && y - 30 + EPS < WORLD_H ? y - 30 + EPS : wrapY(y - 30 + EPS);
+    const wyBot = y + 16 - EPS >= 0 && y + 16 - EPS < WORLD_H ? y + 16 - EPS : wrapY(y + 16 - EPS);
     const gy0 = Math.floor(wyTop / TILE_SIZE);
     const gy1 = Math.floor(wyBot / TILE_SIZE);
     for (let gx = gx0; gx <= gx1; gx++) {
@@ -1087,7 +1120,7 @@
         const tileR = lx + TILE_SIZE / 2;
         const tileT = ly - TILE_SIZE / 2;
         const tileB = ly + TILE_SIZE / 2;
-        if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true;
+        if (tileR > -halfW + EPS && tileL < halfW - EPS && tileB > -30 + EPS && tileT < 16 - EPS) return true;
       }
     }
     const obList = obstacleBroadBuckets ? obstacleBroadBuckets[bucketIdx(wx)] : obstacles;
@@ -1101,7 +1134,7 @@
         const tileR = dx + ob.w / 2;
         const tileT = dy - ob.h / 2;
         const tileB = dy + ob.h / 2;
-        if (tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16) return true;
+        if (tileR > -halfW + EPS && tileL < halfW - EPS && tileB > -30 + EPS && tileT < 16 - EPS) return true;
       }
     }
     return false;
@@ -1159,47 +1192,12 @@
   // src/core/sim/playerPhysics.ts
   function bodiesOverlap(ax, ay, bx, by) {
     if (ay + 16 <= by - 30 || ay - 30 >= by + 16) return false;
-    return Math.abs(wrapDeltaX(ax, bx)) < 20;
-  }
-  function playerHitsPoint(playerBroadBuckets, x, y, selfId, curSelfX, curSelfY, nextSelfX, nextSelfY) {
-    const list = playerBroadBuckets[bucketIdx(x)];
-    if (!list || list.length === 0) return false;
-    for (let i = 0; i < list.length; i++) {
-      const other = list[i];
-      if (other.id === selfId) continue;
-      if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
-      if (y <= other.pos.y - 30 || y >= other.pos.y + 16) continue;
-      if (Math.abs(wrapDeltaX(x, other.pos.x)) <= 10) {
-        if (curSelfX !== void 0 && curSelfY !== void 0 && bodiesOverlap(curSelfX, curSelfY, other.pos.x, other.pos.y)) {
-          if (nextSelfX !== void 0 && Math.abs(wrapDeltaX(nextSelfX, other.pos.x)) > Math.abs(wrapDeltaX(curSelfX, other.pos.x)) + 1e-4) {
-            continue;
-          }
-          if (nextSelfY !== void 0 && nextSelfY < curSelfY && curSelfY <= other.pos.y) {
-            continue;
-          }
-        }
-        return true;
-      }
-    }
-    return false;
-  }
-  function playerBlockingAt(playerBroadBuckets, x, y, selfId) {
-    const list = playerBroadBuckets[bucketIdx(x)];
-    if (!list) return null;
-    for (let i = 0; i < list.length; i++) {
-      const other = list[i];
-      if (other.id === selfId) continue;
-      if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
-      if (bodiesOverlap(x, y, other.pos.x, other.pos.y)) return other;
-    }
-    return null;
+    return Math.abs(wrapDeltaX(ax, bx)) < 20 - 1e-3;
   }
   function tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, other, dir, amount) {
-    if (dir === 0) return;
+    if (dir === 0) return false;
     const nx = wrapX(other.pos.x + dir * amount);
-    if (terrain.isSolidAt(nx, other.pos.y - 6)) return;
-    if (terrain.isSolidAt(nx, other.pos.y + 15)) return;
-    if (findObstacleAt(obstacles, obstacleBroadBuckets, nx, other.pos.y)) return;
+    if (checkBodyOverlapsAt(terrain, obstacles, nx, other.pos.y, obstacleBroadBuckets)) return false;
     const list = playerBroadBuckets[bucketIdx(nx)];
     if (list) {
       for (let i = 0; i < list.length; i++) {
@@ -1208,19 +1206,20 @@
         if (!t.deployed || !t.alive || t.respawnTimer > 0) continue;
         if (bodiesOverlap(nx, other.pos.y, t.pos.x, t.pos.y)) {
           const wasOverlapping = bodiesOverlap(other.pos.x, other.pos.y, t.pos.x, t.pos.y);
-          if (!wasOverlapping) return;
+          if (!wasOverlapping) return false;
           const prevDist = Math.abs(wrapDeltaX(other.pos.x, t.pos.x));
           const nextDist = Math.abs(wrapDeltaX(nx, t.pos.x));
-          if (nextDist <= prevDist) return;
+          if (nextDist <= prevDist) return false;
         }
       }
     }
     other.pos.x = nx;
+    return true;
   }
   function torsoBlockedAt(terrain, obstacles, obstacleBroadBuckets, x, y) {
     const wx = wrapX(x);
     const checkPt = (px, py) => terrain.isSolidAt(px, py) || findObstacleAt(obstacles, obstacleBroadBuckets, px, py) !== null;
-    return checkPt(wx - 10, y - 4) || checkPt(wx + 10, y - 4) || checkPt(wx, y - 6) || checkPt(wx - 10, y - 26) || checkPt(wx + 10, y - 26) || checkPt(wx, y - 30);
+    return checkPt(wx - 9.5, y - 4) || checkPt(wx + 9.5, y - 4) || checkPt(wx, y - 6) || checkPt(wx - 9.5, y - 26) || checkPt(wx + 9.5, y - 26) || checkPt(wx, y - 29.5);
   }
   function ensureFreePosition(terrain, obstacles, obstacleBroadBuckets, p) {
     if (!torsoBlockedAt(terrain, obstacles, obstacleBroadBuckets, p.pos.x, p.pos.y)) return false;
@@ -1247,84 +1246,114 @@
     for (let iter = 0; iter < 6; iter++) {
       if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, p.pos.y, obstacleBroadBuckets)) break;
       const wx = wrapX(p.pos.x);
+      const wy = p.pos.y;
       let bestDx = 0;
       let bestDy = 0;
-      let bestLen = Infinity;
-      let found = false;
-      const consider = (tileL, tileR, tileT, tileB) => {
-        if (!(tileR > -halfW && tileL < halfW && tileB > -30 && tileT < 16)) return;
-        const d1 = tileL - halfW;
-        if (Math.abs(d1) < bestLen) {
-          bestLen = Math.abs(d1);
-          bestDx = d1;
-          bestDy = 0;
-          found = true;
-        }
-        const d2 = tileR + halfW;
-        if (Math.abs(d2) < bestLen) {
-          bestLen = Math.abs(d2);
-          bestDx = d2;
-          bestDy = 0;
-          found = true;
-        }
-        const d3 = tileB + 30;
-        if (Math.abs(d3) < bestLen) {
-          bestLen = Math.abs(d3);
+      let bestDist = Infinity;
+      const steps = [1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24];
+      for (let si = 0; si < steps.length; si++) {
+        const d = steps[si];
+        if (d >= bestDist) break;
+        if (!checkBodyOverlapsAt(terrain, obstacles, wx, wrapY(wy - d), obstacleBroadBuckets)) {
           bestDx = 0;
-          bestDy = d3;
-          found = true;
+          bestDy = -d;
+          bestDist = d;
+          break;
         }
-        const d4 = tileT - 16;
-        if (Math.abs(d4) < bestLen) {
-          bestLen = Math.abs(d4);
+        if (!checkBodyOverlapsAt(terrain, obstacles, wx, wrapY(wy + d), obstacleBroadBuckets)) {
           bestDx = 0;
-          bestDy = d4;
-          found = true;
+          bestDy = d;
+          bestDist = d;
+          break;
         }
-      };
-      const gx0 = Math.floor((wx - halfW) / TILE_SIZE);
-      const gx1 = Math.floor((wx + halfW) / TILE_SIZE);
-      const gy0 = Math.floor(wrapY(p.pos.y - 30) / TILE_SIZE);
-      const gy1 = Math.floor(wrapY(p.pos.y + 16) / TILE_SIZE);
-      for (let gx = gx0; gx <= gx1; gx++) {
-        for (let gy = gy0; gy <= gy1; gy++) {
-          const cellX = wrapX(gx * TILE_SIZE) + TILE_SIZE / 2;
-          const cellY = wrapY(gy * TILE_SIZE) + TILE_SIZE / 2;
-          if (!terrain.isSolidAt(cellX, cellY)) continue;
-          const lx = wrapDeltaX(wx, cellX);
-          const ly = wrapDeltaY(p.pos.y, cellY);
-          consider(lx - TILE_SIZE / 2, lx + TILE_SIZE / 2, ly - TILE_SIZE / 2, ly + TILE_SIZE / 2);
+        if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(wx - d), wy, obstacleBroadBuckets)) {
+          bestDx = -d;
+          bestDy = 0;
+          bestDist = d;
+          break;
+        }
+        if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(wx + d), wy, obstacleBroadBuckets)) {
+          bestDx = d;
+          bestDy = 0;
+          bestDist = d;
+          break;
         }
       }
-      for (let i = 0; i < obstacles.length; i++) {
-        const ob = obstacles[i];
-        if (ob.hp <= 0) continue;
-        const lx = wrapDeltaX(wx, ob.x + ob.w / 2);
-        const ly = wrapDeltaY(p.pos.y, ob.y + ob.h / 2);
-        consider(lx - ob.w / 2, lx + ob.w / 2, ly - ob.h / 2, ly + ob.h / 2);
-      }
-      if (found) {
-        p.pos.x = wrapX(p.pos.x + bestDx);
-        p.pos.y = wrapY(p.pos.y + bestDy);
+      if (bestDist < Infinity) {
+        p.pos.x = wrapX(wx + bestDx);
+        p.pos.y = wrapY(wy + bestDy);
+        if (bestDx !== 0) p.vel.x = 0;
+        if (bestDy < 0 && p.vel.y > 0) {
+          p.vel.y = 0;
+          p.onGround = true;
+        }
+        if (bestDy > 0 && p.vel.y < 0) p.vel.y = 0;
         moved = true;
-      } else {
-        ensureFreePosition(terrain, obstacles, obstacleBroadBuckets, p);
+        break;
+      }
+      const footRow = Math.floor((wy + 15.5) / TILE_SIZE);
+      const snapUpY = footRow * TILE_SIZE - 16;
+      if (!checkBodyOverlapsAt(terrain, obstacles, wx, snapUpY, obstacleBroadBuckets)) {
+        p.pos.y = snapUpY;
+        p.vel.y = 0;
+        p.onGround = true;
+        moved = true;
+        break;
+      }
+      const leftCol = Math.floor((wx - halfW) / TILE_SIZE);
+      const rightCol = Math.floor((wx + halfW) / TILE_SIZE);
+      const pushRightX = (leftCol + 1) * TILE_SIZE + halfW + 0.5;
+      const pushLeftX = rightCol * TILE_SIZE - halfW - 0.5;
+      if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(pushRightX), wy, obstacleBroadBuckets)) {
+        p.pos.x = wrapX(pushRightX);
+        p.vel.x = 0;
+        moved = true;
+        break;
+      }
+      if (!checkBodyOverlapsAt(terrain, obstacles, wrapX(pushLeftX), wy, obstacleBroadBuckets)) {
+        p.pos.x = wrapX(pushLeftX);
+        p.vel.x = 0;
         moved = true;
         break;
       }
     }
     return moved;
   }
-  function hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, x, y, curSelfX, curSelfY, nextSelfX, nextSelfY) {
-    const wx = x >= 0 && x < 13200 ? x : wrapX(x);
-    const wy = y >= 0 && y < 4400 ? y : wrapY(y);
-    if (tGrid[(wy * 0.05 | 0) * GRID_W + (wx * 0.05 | 0)] !== 0) return true;
-    if (findObstacleAt(obstacles, obstacleBroadBuckets, wx, y) !== null) return true;
-    if (playerBroadBuckets) return playerHitsPoint(playerBroadBuckets, wx, y, selfId, curSelfX, curSelfY, nextSelfX, nextSelfY);
-    return false;
+  function findHorizontalPlayerBlocker(playerBroadBuckets, p, curX, curY, nx) {
+    const list = playerBroadBuckets[bucketIdx(nx)];
+    if (!list || list.length === 0) return null;
+    for (let i = 0; i < list.length; i++) {
+      const other = list[i];
+      if (other.id === p.id) continue;
+      if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
+      if (curY + 14 <= other.pos.y - 26 || curY - 28 >= other.pos.y + 14) continue;
+      const curAbsDx = Math.abs(wrapDeltaX(curX, other.pos.x));
+      const nextAbsDx = Math.abs(wrapDeltaX(nx, other.pos.x));
+      if (nextAbsDx >= 20 - 1e-3) continue;
+      if (curAbsDx < 19.5) continue;
+      const moveDir = wrapDeltaX(curX, nx);
+      if (moveDir * other.vel.x < -1) continue;
+      return other;
+    }
+    return null;
   }
-  function hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy, curSelfX, curSelfY) {
-    return hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy + BODY_BOTTOM, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx - BODY_HALF_W, cy, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx + BODY_HALF_W, cy, curSelfX, curSelfY, cx, cy) || hitSingleBodyPoint(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, selfId, cx, cy - BODY_TOP, curSelfX, curSelfY, cx, cy);
+  function findVerticalHeadSupportPlayer(playerBroadBuckets, p, curX, curY, ny, vyTotal) {
+    if (vyTotal < 0) return null;
+    const list = playerBroadBuckets[bucketIdx(curX)];
+    if (!list || list.length === 0) return null;
+    for (let i = 0; i < list.length; i++) {
+      const other = list[i];
+      if (other.id === p.id) continue;
+      if (!other.deployed || !other.alive || other.respawnTimer > 0) continue;
+      if (Math.abs(wrapDeltaX(curX, other.pos.x)) >= 18) continue;
+      const headStandY = other.pos.y - 46;
+      const dyCur = wrapDeltaY(headStandY, curY);
+      const dyNext = wrapDeltaY(headStandY, ny);
+      if (dyCur <= 4 && dyNext >= -0.5 && dyNext <= 24) {
+        return other;
+      }
+    }
+    return null;
   }
   function stepPlayerKinematic(p, _w, dt, terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, mortars, watchtowers) {
     if (!p.alive || p.respawnTimer > 0) return;
@@ -1360,37 +1389,74 @@
         }
       }
     }
-    const tGrid = terrain.grid;
+    if (checkBodyOverlapsAt(terrain, obstacles, p.pos.x, p.pos.y, obstacleBroadBuckets)) {
+      resolvePenetration(terrain, obstacles, obstacleBroadBuckets, p);
+    }
     if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };
     const rv = p.recoilVel;
     const curX = p.pos.x;
     const curY = p.pos.y;
-    const nx = wrapX(curX + p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR);
-    if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, curY, curX, curY)) {
-      p.pos.x = nx;
-    } else if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, nx, curY - 10, curX, curY)) {
-      p.pos.x = nx;
-      p.pos.y -= 10;
-    } else {
-      if (playerBroadBuckets) {
-        const blocker = playerBlockingAt(playerBroadBuckets, nx, curY, p.id);
-        if (blocker) {
-          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, blocker, Math.sign(wrapDeltaX(curX, nx)), 1.4);
+    const dxMove = p.vel.x * dt + rv.x * RECOIL_DISPLACEMENT_FACTOR;
+    const nx = wrapX(curX + dxMove);
+    if (Math.abs(dxMove) > 1e-6) {
+      if (checkBodyOverlapsAt(terrain, obstacles, nx, curY, obstacleBroadBuckets)) {
+        let lo = 0;
+        let hi = 1;
+        for (let s = 0; s < 5; s++) {
+          const mid = (lo + hi) * 0.5;
+          const tx = wrapX(curX + dxMove * mid);
+          if (!checkBodyOverlapsAt(terrain, obstacles, tx, curY, obstacleBroadBuckets)) lo = mid;
+          else hi = mid;
+        }
+        p.pos.x = wrapX(curX + dxMove * lo);
+        p.vel.x = 0;
+        rv.x = 0;
+      } else {
+        const dir = Math.sign(dxMove);
+        const pinnedBehindByWall = checkBodyOverlapsAt(terrain, obstacles, wrapX(curX - dir * 3), curY, obstacleBroadBuckets);
+        const blocker = !pinnedBehindByWall && playerBroadBuckets ? findHorizontalPlayerBlocker(playerBroadBuckets, p, curX, curY, nx) : null;
+        if (blocker && playerBroadBuckets) {
+          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, blocker, dir, 1.6);
+          const targetX = wrapX(blocker.pos.x - dir * 20);
+          const stepToward = wrapDeltaX(curX, targetX);
+          if (stepToward * dir > 0 && Math.abs(stepToward) <= Math.abs(dxMove) + 1e-3 && !checkBodyOverlapsAt(terrain, obstacles, targetX, curY, obstacleBroadBuckets)) {
+            p.pos.x = targetX;
+          }
+          p.vel.x = 0;
+          rv.x = 0;
+        } else {
+          p.pos.x = nx;
         }
       }
-      p.vel.x = 0;
-      rv.x = 0;
     }
     const vyTotal = p.vel.y + rv.y;
-    const nyRaw = p.pos.y + p.vel.y * dt + rv.y * RECOIL_DISPLACEMENT_FACTOR;
-    const ny = wrapY(nyRaw);
-    if (!hitAnyBodyPoints(tGrid, obstacles, obstacleBroadBuckets, playerBroadBuckets, p.id, p.pos.x, ny, p.pos.x, p.pos.y)) {
-      p.pos.y = ny;
-      p.onGround = false;
-    } else {
+    const dyMove = p.vel.y * dt + rv.y * RECOIL_DISPLACEMENT_FACTOR;
+    const ny = wrapY(p.pos.y + dyMove);
+    const headSupport = playerBroadBuckets ? findVerticalHeadSupportPlayer(playerBroadBuckets, p, p.pos.x, p.pos.y, ny, vyTotal) : null;
+    if (checkBodyOverlapsAt(terrain, obstacles, p.pos.x, ny, obstacleBroadBuckets)) {
+      let lo = 0;
+      let hi = 1;
+      for (let s = 0; s < 5; s++) {
+        const mid = (lo + hi) * 0.5;
+        const ty = wrapY(p.pos.y + dyMove * mid);
+        if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, ty, obstacleBroadBuckets)) lo = mid;
+        else hi = mid;
+      }
+      p.pos.y = wrapY(p.pos.y + dyMove * lo);
       p.onGround = vyTotal > 0;
       p.vel.y = 0;
       rv.y = 0;
+    } else if (headSupport) {
+      const standY = wrapY(headSupport.pos.y - 46);
+      if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, standY, obstacleBroadBuckets)) {
+        p.pos.y = standY;
+      }
+      p.onGround = true;
+      p.vel.y = 0;
+      rv.y = 0;
+    } else {
+      p.pos.y = ny;
+      p.onGround = false;
     }
     p.pos.x = wrapX(p.pos.x);
     p.pos.y = wrapY(p.pos.y);
@@ -1413,23 +1479,47 @@
         const top = Math.max(a.pos.y - 30, b.pos.y - 30);
         const bottom = Math.min(a.pos.y + 16, b.pos.y + 16);
         const oy = bottom - top;
-        if (oy > 0 && (ox <= 20 && dx <= 8 || oy <= ox)) {
-          const upper = a.pos.y <= b.pos.y ? a : b;
-          const upY = wrapY(upper.pos.y - oy);
-          if (!terrain.isSolidAt(upper.pos.x, upY - 26)) upper.pos.y = upY;
+        const absDy = Math.abs(wrapDeltaY(a.pos.y, b.pos.y));
+        if (oy > 0 && absDy >= 30 && oy <= ox) {
+          const upper = wrapDeltaY(b.pos.y, a.pos.y) < 0 ? a : b;
+          const lower = upper === a ? b : a;
+          const upY = wrapY(lower.pos.y - 46);
+          if (!checkBodyOverlapsAt(terrain, obstacles, upper.pos.x, upY, obstacleBroadBuckets)) {
+            upper.pos.y = upY;
+            if (upper.vel.y > 0) upper.vel.y = 0;
+            upper.onGround = true;
+          }
         } else {
           const dir = Math.sign(wrapDeltaX(a.pos.x, b.pos.x)) || (a.id < b.id ? 1 : -1);
-          const pushAmt = Math.min(2.4, Math.max(0.8, ox * 0.45));
-          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, b, dir, pushAmt);
-          tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, a, -dir, pushAmt);
+          const pushAmt = Math.min(2, Math.max(0.6, ox * 0.35));
+          if (Math.abs(a.vel.x) > 1 && Math.abs(b.vel.x) <= 1) {
+            tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, b, dir, pushAmt);
+          } else if (Math.abs(b.vel.x) > 1 && Math.abs(a.vel.x) <= 1) {
+            tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, a, -dir, pushAmt);
+          } else {
+            tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, b, dir, pushAmt);
+            tryNudgePlayer(terrain, obstacles, obstacleBroadBuckets, playerBroadBuckets, a, -dir, pushAmt);
+          }
         }
         if (++nudged >= 3) break;
       }
     }
   }
-  function predictLocalPlayerStep(p, w, dt, terrain, obstacles = [], mortars = [], watchtowers = []) {
+  function predictLocalPlayerStep(p, w, dt, terrain, obstacles = [], mortars = [], watchtowers = [], extras) {
     if (!p.deployed || !p.alive || p.respawnTimer > 0) return;
-    p.aim = w.aim;
+    if (w.switchWeapon !== null && w.switchWeapon !== p.weaponIndex) {
+      const wep = WEAPONS[w.switchWeapon];
+      if (wep && !wep.isSupplyOnly) {
+        p.weaponIndex = wep.id;
+        p.lastPrimaryIndex = wep.id;
+        p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1));
+        p.reloading = false;
+        p.reloadTimer = 0;
+        p.fireCooldown = Math.max(p.fireCooldown, 0.3);
+      }
+    }
+    const charging = p.chargeTimer > 0 && p.chargeAim !== void 0 && !w.trackChargeAim;
+    p.aim = charging ? p.chargeAim : w.aim;
     const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0];
     if (p.mountedTowerId) {
       p.vel.x = 0;
@@ -1444,7 +1534,170 @@
     if (canJet) jetpack(p.vel, dt, wepCur.ascendMult ?? 1);
     p.jetpack = canJet;
     p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax);
-    stepPlayerKinematic(p, w, dt, terrain, obstacles, void 0, void 0, mortars, watchtowers);
+    if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt);
+    if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt);
+    if (p.shieldTimer > 0) {
+      p.shieldTimer -= dt;
+      if (p.shieldTimer <= 0) {
+        p.shieldTimer = 0;
+        p.shieldHp = 0;
+      }
+    }
+    if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt);
+    if (p.teleportTimer && p.teleportTimer > 0 && p.teleportTarget) {
+      p.teleportTimer -= dt;
+      if (p.teleportTimer <= 0) {
+        const target = p.teleportTarget;
+        p.teleportTimer = 0;
+        p.teleportTarget = null;
+        p.mountedTowerId = null;
+        p.watchtowerTimer = 0;
+        p.pos = { x: wrapX(target.x), y: clamp(target.y, 40, 4360) };
+        if (p.vel.y > 0) p.vel.y = 0;
+        resolvePenetration(terrain, obstacles, extras?.obstacleBroadBuckets, p);
+        ensureFreePosition(terrain, obstacles, extras?.obstacleBroadBuckets, p);
+      }
+    }
+    if (p.reloading) {
+      if (!wepCur.shellReload || p.fireCooldown <= 0) p.reloadTimer -= dt;
+      if (p.reloadTimer <= 0) {
+        const wep = WEAPONS[p.weaponIndex];
+        const avail = p.reserveAmmo[p.weaponIndex] || 0;
+        if (wep.shellReload) {
+          if (avail > 0 && p.ammo[p.weaponIndex] < wep.magSize) {
+            p.ammo[p.weaponIndex] += 1;
+            p.reserveAmmo[p.weaponIndex] = avail - 1;
+          }
+          const stillNeeds = p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0;
+          if (stillNeeds) {
+            p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize);
+          } else {
+            p.reloading = false;
+            p.reloadTimer = 0;
+          }
+        } else {
+          p.reloading = false;
+          p.reloadTimer = 0;
+          const needed = wep.magSize - p.ammo[p.weaponIndex];
+          const transfer = Math.min(needed, avail);
+          p.ammo[p.weaponIndex] += transfer;
+          p.reserveAmmo[p.weaponIndex] = avail - transfer;
+        }
+      }
+    }
+    if (w.reload && !w.fire && !p.reloading) {
+      const wep = WEAPONS[p.weaponIndex];
+      if (wep && p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0) {
+        p.reloading = true;
+        p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime;
+      }
+    }
+    if (p.doll) {
+      p.doll.timer -= dt;
+      if (p.doll.timer <= 0) {
+        const d = p.doll;
+        p.doll = null;
+        p.mountedTowerId = null;
+        p.watchtowerTimer = 0;
+        p.pos = { x: wrapX(d.pos.x), y: d.pos.y };
+        p.vel = { x: 0, y: 0 };
+        p.hp = Math.max(1, d.hp);
+        p.shieldHp = d.shieldHp;
+        p.fuel = d.fuel;
+        p.weaponIndex = d.weaponIndex;
+        p.ammo = [...d.ammo];
+        p.reserveAmmo = [...d.reserveAmmo];
+      }
+    }
+    const mountedMortar = mortars.find((m) => m.operatorId === p.id);
+    if (!mountedMortar && !wepCur.beam) {
+      const applyFireRecoil = () => {
+        const canFireWhileReloading = !!wepCur.shellReload && (p.ammo[p.weaponIndex] ?? 0) > 0;
+        if ((!p.reloading || canFireWhileReloading) && p.fireCooldown <= 0 && (p.ammo[p.weaponIndex] ?? 0) > 0) {
+          if (wepCur.shellReload && p.reloading) {
+            p.reloading = false;
+            p.reloadTimer = 0;
+          }
+          p.ammo[p.weaponIndex] = Math.max(0, (p.ammo[p.weaponIndex] ?? 0) - 1);
+          p.fireCooldown = wepCur.fireDelay;
+          if (wepCur.recoil > 0) {
+            const rk = recoilDelta(wepCur.recoil, p.aim);
+            if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 };
+            p.recoilVel.x = rk.x;
+            p.recoilVel.y = rk.y;
+          }
+          if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) {
+            p.reloading = true;
+            p.reloadTimer = wepCur.shellReload ? wepCur.reloadTime / Math.max(1, wepCur.magSize) : wepCur.reloadTime;
+          }
+        }
+      };
+      if ((wepCur.chargeSeconds ?? 0) > 0) {
+        const firePressed = w.fire && !p.prevFireHeld;
+        if (firePressed && p.chargeTimer <= 0 && p.fireCooldown <= 0) {
+          if ((p.ammo[p.weaponIndex] ?? 0) > 0) {
+            p.chargeAim = p.aim;
+            p.chargeTimer = 1e-4;
+          }
+        }
+        if (p.chargeTimer > 0) {
+          if (w.trackChargeAim) p.chargeAim = p.aim;
+          p.chargeTimer += dt;
+          if (p.chargeTimer >= (wepCur.chargeSeconds ?? 0)) {
+            if (p.chargeAim !== void 0) p.aim = p.chargeAim;
+            applyFireRecoil();
+            p.chargeTimer = 0;
+            p.chargeAim = void 0;
+          }
+        }
+      } else if (w.fire) {
+        applyFireRecoil();
+      }
+    }
+    p.prevFireHeld = w.fire;
+    stepPlayerKinematic(
+      p,
+      w,
+      dt,
+      terrain,
+      obstacles,
+      extras?.obstacleBroadBuckets,
+      extras?.playerBroadBuckets,
+      mortars,
+      watchtowers
+    );
+    const orbs = extras?.activeGravityOrbs;
+    if (orbs && orbs.length > 0 && p.alive && p.respawnTimer <= 0) {
+      const RANGE = 260;
+      const MAX_PULL = 480;
+      const MIN_RATIO = 0.35;
+      const RAMP_TO = 2;
+      let vx = 0;
+      let vy = 0;
+      for (let i = 0; i < orbs.length; i++) {
+        const pr = orbs[i];
+        if (!pr.isGravityOrb || pr.life <= 0) continue;
+        const dx = wrapDeltaX(p.pos.x, pr.pos.x);
+        if (dx > RANGE || dx < -RANGE) continue;
+        const dy = wrapDeltaY(p.pos.y - 12, pr.pos.y);
+        if (dy > RANGE || dy < -RANGE) continue;
+        const d = Math.hypot(dx, dy);
+        if (d > RANGE || d < 8) continue;
+        const wepDef = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
+        const totalLife = wepDef?.lifeSeconds ?? 0;
+        const progress = totalLife > 0 ? Math.min(1, Math.max(0, 1 - pr.life / totalLife)) : 0;
+        const ramp = 1 + (RAMP_TO - 1) * progress;
+        const strength = MAX_PULL * ramp * (MIN_RATIO + (1 - MIN_RATIO) * (1 - d / RANGE));
+        vx += dx / d * strength;
+        vy += dy / d * strength;
+      }
+      if (vx !== 0 || vy !== 0) {
+        const tryX = wrapX(p.pos.x + vx * dt);
+        if (!checkBodyOverlapsAt(terrain, obstacles, tryX, p.pos.y, extras?.obstacleBroadBuckets)) p.pos.x = tryX;
+        const tryY = wrapY(p.pos.y + vy * dt);
+        if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, tryY, extras?.obstacleBroadBuckets)) p.pos.y = tryY;
+      }
+    }
   }
 
   // src/core/sim/projectiles.ts
@@ -1794,8 +2047,9 @@
   }
   function applyGravityOrbPull(terrain, obstacles, activeGravityOrbs, p, dt, obstacleBroadBuckets) {
     const RANGE = 260;
-    const MAX_PULL = 240;
+    const MAX_PULL = 480;
     const MIN_RATIO = 0.35;
+    const RAMP_TO = 2;
     let vx = 0;
     let vy = 0;
     for (let i = 0; i < activeGravityOrbs.length; i++) {
@@ -1807,7 +2061,11 @@
       if (dy > RANGE || dy < -RANGE) continue;
       const d = Math.hypot(dx, dy);
       if (d > RANGE || d < 8) continue;
-      const strength = MAX_PULL * (MIN_RATIO + (1 - MIN_RATIO) * (1 - d / RANGE));
+      const wepDef = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : void 0;
+      const totalLife = wepDef?.lifeSeconds ?? 0;
+      const progress = totalLife > 0 ? Math.min(1, Math.max(0, 1 - pr.life / totalLife)) : 0;
+      const ramp = 1 + (RAMP_TO - 1) * progress;
+      const strength = MAX_PULL * ramp * (MIN_RATIO + (1 - MIN_RATIO) * (1 - d / RANGE));
       vx += dx / d * strength;
       vy += dy / d * strength;
     }
@@ -1872,7 +2130,12 @@
       }
       pr.vel.y += g * pr.gravityScale * dt;
       pr.life -= dt;
-      if (pr.life <= 0) continue;
+      if (pr.life <= 0) {
+        if (pr.isGravityOrb && pr.terrainRadius > 0 && pr.damage > 0) {
+          ctx2.explode(pr.pos.x, pr.pos.y, pr.terrainRadius, pr.damage, 640, pr);
+        }
+        continue;
+      }
       const dx = pr.vel.x * dt;
       const dy = pr.vel.y * dt;
       const dist = Math.hypot(dx, dy);
@@ -2025,7 +2288,7 @@
       }
       if (dead) {
         ctx2.events.push({ kind: "projectile_destroy", projectileId: pr.id });
-        pr.life = 0;
+        pr.life = -999;
       }
     }
   }
@@ -2050,6 +2313,40 @@
   }
 
   // src/core/sim/throwables.ts
+  var GRENADE_HITBOX_RADIUS = 6;
+  function isPointInPlayerGrenadeHitbox(t, x, y, headRadius, pad = GRENADE_HITBOX_RADIUS) {
+    if (!t.deployed || !t.alive || t.respawnTimer > 0) return false;
+    const shieldPad = t.shieldTimer > 0 && t.shieldHp > 0 ? SHIELD_HITBOX_PAD : 0;
+    const dx = wrapDeltaX(t.pos.x, x);
+    const absDx = Math.abs(dx);
+    const headR = headRadius + pad + shieldPad;
+    const bodyHalfW = BODY_HALF_W + pad + shieldPad;
+    if (absDx > Math.max(headR, bodyHalfW)) return false;
+    const dyHead = wrapDeltaY(t.pos.y - 24, y);
+    if (dx * dx + dyHead * dyHead <= headR * headR) return true;
+    const dyBody = wrapDeltaY(t.pos.y, y);
+    if (absDx <= bodyHalfW && dyBody >= -30 - pad - shieldPad && dyBody <= BODY_BOTTOM + pad + shieldPad) {
+      return true;
+    }
+    return false;
+  }
+  function findPlayerBlockingGrenadeAt(ctx2, g, nx, ny, curX, curY) {
+    const headR = ctx2.config.headRadius;
+    const list = ctx2.playerBroadBuckets[bucketIdx(wrapX(nx))] ?? ctx2.players;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if (!t.deployed || !t.alive || t.respawnTimer > 0) continue;
+      if (!isPointInPlayerGrenadeHitbox(t, nx, ny, headR)) continue;
+      if (isPointInPlayerGrenadeHitbox(t, curX, curY, headR)) {
+        if (t.id === g.owner && (g.bounces ?? 0) === 0) continue;
+        const prevDist = wrapDist(curX, curY, t.pos.x, t.pos.y - 12);
+        const nextDist = wrapDist(nx, ny, t.pos.x, t.pos.y - 12);
+        if (nextDist >= prevDist - 1e-4) continue;
+      }
+      return t;
+    }
+    return null;
+  }
   function stepPlayerTeleport(ctx2, p, dt) {
     if (!p.teleportTimer || p.teleportTimer <= 0 || !p.teleportTarget) return;
     if (!p.alive || p.respawnTimer > 0 || !p.deployed) {
@@ -2114,6 +2411,15 @@
     }
     if (!isSecondaryUnlocked(s.type, p.deathStreak ?? 0, p.dollCharges ?? 0, p.weaponIndex) && p.secondary !== s.type) return;
     if (s.type === "obstacle") {
+      const MAX_OBSTACLES_PER_PLAYER = 3;
+      const mine = ctx2.obstacles.filter((o) => o.id.startsWith(`p_obs_${p.id}_`));
+      while (mine.length >= MAX_OBSTACLES_PER_PLAYER) {
+        const oldest = mine.shift();
+        if (!oldest) break;
+        const idx = ctx2.obstacles.indexOf(oldest);
+        if (idx >= 0) ctx2.obstacles.splice(idx, 1);
+      }
+      if (mine.length >= MAX_OBSTACLES_PER_PLAYER) p.secondaryCooldown = def.cd;
       p.secondaryCooldown = def.cd;
       const w = 56;
       const h = 76;
@@ -2248,10 +2554,15 @@
     t.shieldHp = 0;
     t.shieldTimer = 0;
     t.watchtowerTimer = 0;
+    t.mountedTowerId = null;
     t.teleportTimer = 0;
     t.teleportTarget = null;
-    const mk = ctx2.mortars.find((m) => m.operatorId === t.id);
-    if (mk) mk.operatorId = null;
+    if (t.recoilVel) {
+      t.recoilVel.x = 0;
+      t.recoilVel.y = 0;
+    }
+    for (const m of ctx2.mortars) if (m.operatorId === t.id) m.operatorId = null;
+    for (const tw of ctx2.watchtowers) if (tw.operatorId === t.id) tw.operatorId = null;
     const killer = ctx2.playerById.get(atkId) ?? ctx2.players.find((x) => x.id === atkId);
     if (killer && atkId !== t.id) {
       killer.kills++;
@@ -2324,7 +2635,7 @@
       const isTeammate = !isSelf && t.team === atkTeam && t.team !== "ffa";
       if (isTeammate && !ffAllowed) continue;
       if (isSelf && !selfAllowed) continue;
-      const dmg = Math.round(maxDamage * falloff * (isSelf ? 0.25 : 1));
+      const dmg = Math.round(maxDamage * falloff * (isSelf ? 1 : 1));
       const headDist = Math.hypot(dx, wrapDeltaY(cy, t.pos.y - 26));
       const isHead = headDist < ctx2.config.headRadius * 1.6 && dist < radius * 0.6;
       damagePlayerInWorld(ctx2, t, isHead ? Math.round(dmg * 1.35) : dmg, pr, isHead, false, atkId, atkTeam, label);
@@ -2335,19 +2646,35 @@
     for (const g of ctx2.grenades) {
       g.vel.y += g0 * 0.88 * dt;
       g.vel.x *= 0.995;
-      const nx = wrapX(g.pos.x + g.vel.x * dt);
-      if (ctx2.terrain.isSolidAt(nx, g.pos.y) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, nx, g.pos.y)) g.vel.x *= -0.55;
-      else g.pos.x = nx;
-      const ny = g.pos.y + g.vel.y * dt;
-      if (ctx2.terrain.isSolidAt(g.pos.x, ny) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, g.pos.x, ny)) {
-        g.vel.y *= -0.45;
-        g.vel.x *= 0.78;
-        if (Math.abs(g.vel.y) < 72) {
-          g.vel.y = 0;
-          g.vel.x *= 0.88;
-          if (Math.abs(g.vel.x) < 8) g.vel.x = 0;
+      const stepDist = Math.hypot(g.vel.x * dt, g.vel.y * dt);
+      const subSteps = Math.max(1, Math.ceil(stepDist / 5));
+      const subDt = dt / subSteps;
+      for (let s = 0; s < subSteps; s++) {
+        const curX = g.pos.x;
+        const curY = g.pos.y;
+        const nx = wrapX(curX + g.vel.x * subDt);
+        const hitPlayerX = findPlayerBlockingGrenadeAt(ctx2, g, nx, curY, curX, curY);
+        if (ctx2.terrain.isSolidAt(nx, curY) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, nx, curY) || hitPlayerX !== null) {
+          g.vel.x *= -0.55;
+          g.bounces = (g.bounces ?? 0) + 1;
+        } else {
+          g.pos.x = nx;
         }
-      } else g.pos.y = wrapY(ny);
+        const ny = curY + g.vel.y * subDt;
+        const hitPlayerY = findPlayerBlockingGrenadeAt(ctx2, g, g.pos.x, ny, g.pos.x, curY);
+        if (ctx2.terrain.isSolidAt(g.pos.x, ny) || findObstacleAt(ctx2.obstacles, ctx2.obstacleBroadBuckets, g.pos.x, ny) || hitPlayerY !== null) {
+          g.vel.y *= -0.45;
+          g.vel.x *= 0.78;
+          g.bounces = (g.bounces ?? 0) + 1;
+          if (Math.abs(g.vel.y) < 72) {
+            g.vel.y = 0;
+            g.vel.x *= 0.88;
+            if (Math.abs(g.vel.x) < 8) g.vel.x = 0;
+          }
+        } else {
+          g.pos.y = wrapY(ny);
+        }
+      }
       g.fuse -= dt;
       if (g.fuse <= 0) {
         explodeInWorld(ctx2, g.pos.x, g.pos.y, ctx2.config.grenadeRadius, ctx2.config.grenadeDamage, 16 * 60, void 0, g.owner, void 0, "\u624B\u69B4\u5F39");
@@ -2557,10 +2884,18 @@
     }
     return null;
   }
-  function recallDollState(events, p) {
+  function recallDollState(events, p, mortars, watchtowers) {
     if (!p.doll) return;
     const d = p.doll;
     p.doll = null;
+    if (mortars) {
+      for (const m of mortars) if (m.operatorId === p.id) m.operatorId = null;
+    }
+    if (watchtowers) {
+      for (const tw of watchtowers) if (tw.operatorId === p.id || tw.id === p.mountedTowerId) tw.operatorId = null;
+    }
+    p.mountedTowerId = null;
+    p.watchtowerTimer = 0;
     p.pos = { x: wrapX(d.pos.x), y: d.pos.y };
     p.vel = { x: 0, y: 0 };
     p.hp = Math.max(1, d.hp);
@@ -2601,7 +2936,7 @@
     }
     for (const tw of ctx2.watchtowers) {
       if (tw.operatorId === null && wrapDist(p.pos.x, p.pos.y, tw.x, tw.y) < 130) {
-        tw.operatorId = tw.id ? p.id : p.id;
+        tw.operatorId = p.id;
         p.mountedTowerId = tw.id;
         p.pos = { x: tw.x, y: tw.y - 150 + 12 };
         p.vel = { x: 0, y: 0 };
@@ -2855,6 +3190,8 @@
     crate = 1;
     ammoSpawnTimer = 0;
     stuckTicks = /* @__PURE__ */ new Map();
+    obstaclesDirty = true;
+    lastObstaclesLen = -1;
     playerBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
     obstacleBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
     playerById = /* @__PURE__ */ new Map();
@@ -2894,6 +3231,7 @@
       this.ammoSpawnTimer = t;
     }
     rebuildSpatial() {
+      this.obstaclesDirty = true;
       this.rebuildSpatialBuckets();
     }
     onHitCount() {
@@ -2903,13 +3241,15 @@
       return (this.playerById.get(id) ?? this.players.find((p) => p.id === id))?.team ?? "ffa";
     }
     recallDoll(p) {
-      recallDollState(this.events, p);
+      recallDollState(this.events, p, this.mortars, this.watchtowers);
     }
     damagePlayer(t, amount, pr, isHead, isPierced, attackerId, attackerTeam, weaponLabel) {
       damagePlayerInWorld(this, t, amount, pr, isHead, isPierced, attackerId, attackerTeam, weaponLabel);
     }
     damageObstacle(ob, dmg) {
+      const prevLen = this.obstacles.length;
       damageObstacleInWorld(this, ob, dmg);
+      if (this.obstacles.length !== prevLen || ob.hp <= 0) this.rebuildObstacleBucketsOnly();
     }
     explode(cx, cy, radius, maxDamage, knockback, pr, ownerId, ownerTeam, weaponLabel, implosion = false) {
       explodeInWorld(this, cx, cy, radius, maxDamage, knockback, pr, ownerId, ownerTeam, weaponLabel, implosion);
@@ -2921,22 +3261,8 @@
       p.reloading = true;
       p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime;
     }
-    rebuildSpatialBuckets() {
-      for (let i = 0; i < NUM_BUCKETS; i++) {
-        this.playerBroadBuckets[i].length = 0;
-        this.obstacleBroadBuckets[i].length = 0;
-      }
-      this.playerById.clear();
-      for (let i = 0; i < this.players.length; i++) {
-        const p = this.players[i];
-        this.playerById.set(p.id, p);
-        if (!p.deployed || !p.alive || p.respawnTimer > 0) continue;
-        const wx = wrapX(p.pos.x);
-        const b0 = bucketIdx(wrapX(wx - PLAYER_BROAD_PAD));
-        const b1 = bucketIdx(wrapX(wx + PLAYER_BROAD_PAD));
-        this.playerBroadBuckets[b0].push(p);
-        if (b1 !== b0) this.playerBroadBuckets[b1].push(p);
-      }
+    rebuildObstacleBucketsOnly() {
+      for (let i = 0; i < NUM_BUCKETS; i++) this.obstacleBroadBuckets[i].length = 0;
       for (let i = 0; i < this.obstacles.length; i++) {
         const ob = this.obstacles[i];
         if (ob.hp <= 0) continue;
@@ -2948,10 +3274,19 @@
           const px = Math.min(endX, startX + s * BUCKET_SIZE);
           const b = bucketIdx(wrapX(px));
           if (b !== prevB) {
-            if (!this.obstacleBroadBuckets[b].includes(ob)) this.obstacleBroadBuckets[b].push(ob);
+            const bucket = this.obstacleBroadBuckets[b];
+            if (bucket[bucket.length - 1] !== ob && !bucket.includes(ob)) bucket.push(ob);
             prevB = b;
           }
         }
+      }
+      this.obstaclesDirty = false;
+      this.lastObstaclesLen = this.obstacles.length;
+    }
+    rebuildSpatialBuckets() {
+      this.rebuildPlayerBucketsOnly();
+      if (this.obstaclesDirty || this.lastObstaclesLen !== this.obstacles.length) {
+        this.rebuildObstacleBucketsOnly();
       }
     }
     rebuildPlayerBucketsOnly() {
@@ -2973,6 +3308,7 @@
       this.mineSeq = 1;
       if (this.lagHistory) this.lagHistory.length = 0;
       this.obstacles = OBSTACLE_PRESETS.map((o) => ({ ...o, maxHp: o.hp }));
+      this.obstaclesDirty = true;
       this.capturePoints = CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
       this.mortars = MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
       this.watchtowers = WATCHTOWERS.map((t) => ({ ...t, operatorId: null }));
@@ -2990,13 +3326,13 @@
         preset: true,
         respawnTimer: 0
       }));
-      const isIsolatedWeaponTestArena = Boolean(
-        this.mapName && (this.mapName.startsWith("sniper-") || this.mapName.startsWith("shell-") || this.mapName.startsWith("cs-pump"))
+      const hideCenterCrate = Boolean(
+        this.config.disableCenterSupplyCrate || this.mapName && (this.mapName.startsWith("sniper-") || this.mapName.startsWith("shell-") || this.mapName.startsWith("cs-pump"))
       );
       this.supplyCrates = [
         ...SUPPLY_SPOTS.map((spot, idx) => {
           const w = WEAPONS[spot.weaponId ?? 4 + idx % 3];
-          const hideForUnitTest = isIsolatedWeaponTestArena && spot.x === GAUSS_CENTER_X && spot.y === GAUSS_CENTER_Y;
+          const hideForTest = hideCenterCrate && spot.x === GAUSS_CENTER_X && spot.y === GAUSS_CENTER_Y;
           return {
             id: this.crate++,
             x: spot.x,
@@ -3006,8 +3342,8 @@
             weaponId: w.id,
             weaponName: w.name,
             color: w.color,
-            active: !hideForUnitTest,
-            respawnTimer: hideForUnitTest ? 9999 : 0
+            active: !hideForTest,
+            respawnTimer: hideForTest ? 9999 : 0
           };
         }),
         ...DOLL_SUPPLY_SPOTS.map((spot) => ({
@@ -3030,8 +3366,26 @@
       this.airstrikes = [];
       this.ammoSpawnTimer = 0;
       this.scores = { red: 0, blue: 0, green: 0, ffa: 0 };
-      for (const p of this.players) p.selectedSpawnId = "base";
+      this.stuckTicks.clear();
+      for (const p of this.players) {
+        p.selectedSpawnId = "base";
+        p.mountedTowerId = null;
+        p.watchtowerTimer = 0;
+        if (p.recoilVel) {
+          p.recoilVel.x = 0;
+          p.recoilVel.y = 0;
+        }
+      }
       this.rebuildSpatialBuckets();
+    }
+    removePlayer(playerId) {
+      const idx = this.players.findIndex((p) => p.id === playerId);
+      if (idx >= 0) this.players.splice(idx, 1);
+      this.playerById.delete(playerId);
+      this.stuckTicks.delete(playerId);
+      this.playerLagMs.delete(playerId);
+      for (const m of this.mortars) if (m.operatorId === playerId) m.operatorId = null;
+      for (const tw of this.watchtowers) if (tw.operatorId === playerId) tw.operatorId = null;
     }
     addPlayer(name = "Player", team = "ffa") {
       const p = {
@@ -3176,11 +3530,7 @@
         }
         if (p.deployed && p.alive) {
           if (this.bodyOverlapsAt(p.pos.x, p.pos.y)) {
-            const fixed = resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
-            if (fixed) {
-              p.vel.x = 0;
-              p.vel.y = 0;
-            }
+            resolvePenetration(this.terrain, this.obstacles, this.obstacleBroadBuckets, p);
             const n = (this.stuckTicks.get(p.id) ?? 0) + 1;
             this.stuckTicks.set(p.id, n);
             if (n >= 20) {
@@ -3204,7 +3554,7 @@
         const pr = this.projectiles[i];
         if (pr.life > 0 && pr.damage > 0) {
           this.projectiles[pw++] = pr;
-        } else if (!this.events.some((e) => e.kind === "projectile_destroy" && e.projectileId === pr.id)) {
+        } else if (pr.life > -900) {
           this.events.push({ kind: "projectile_destroy", projectileId: pr.id });
         }
       }
@@ -3280,14 +3630,8 @@
       if (p.watchtowerTimer > 0) p.watchtowerTimer = Math.max(0, p.watchtowerTimer - dt);
       if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt);
       stepPlayerTeleport(this, p, dt);
-      if (w.fire && wepCur.shellReload && p.reloading && p.ammo[p.weaponIndex] > 0) {
-        p.reloading = false;
-        p.reloadTimer = 0;
-      }
       if (p.reloading) {
-        if (!wepCur.shellReload || p.fireCooldown <= 0) {
-          p.reloadTimer -= dt;
-        }
+        if (!wepCur.shellReload || p.fireCooldown <= 0) p.reloadTimer -= dt;
         if (p.reloadTimer <= 0) {
           const wep = WEAPONS[p.weaponIndex];
           const avail = p.reserveAmmo[p.weaponIndex] || 0;
@@ -3316,7 +3660,7 @@
       if (w.reload && !w.fire) this.startReload(p);
       if (p.doll) {
         p.doll.timer -= dt;
-        if (p.doll.timer <= 0) recallDollState(this.events, p);
+        if (p.doll.timer <= 0) recallDollState(this.events, p, this.mortars, this.watchtowers);
       }
       const mountedNow = this.mortars.find((m) => m.operatorId === p.id);
       if (mountedNow) {
@@ -3456,6 +3800,7 @@
           ...p,
           pos: { x: p.pos.x, y: p.pos.y },
           vel: { x: p.vel.x, y: p.vel.y },
+          recoilVel: p.recoilVel ? { x: p.recoilVel.x, y: p.recoilVel.y } : void 0,
           ammo: [...p.ammo],
           reserveAmmo: [...p.reserveAmmo],
           teleportTarget: p.teleportTarget ? { x: p.teleportTarget.x, y: p.teleportTarget.y } : null,
@@ -3477,9 +3822,11 @@
 
   // src/core/balanceOverrides.ts
   var OVERRIDES_STORAGE_KEY = "skyblast_balance_overrides_v1";
+  var LEGACY_BALANCE_KEY = "pvp-balance-overrides-v1";
   var BALANCE_KEY = OVERRIDES_STORAGE_KEY;
   var WEAPON_NUMERIC_KEYS = [
     "damage",
+    "grazeDamageMin",
     "headshotMult",
     "pellets",
     "spread",
@@ -3490,6 +3837,7 @@
     "reloadTime",
     "fireDelay",
     "terrainRadius",
+    "blastFalloffExponent",
     "gravityScale",
     "bounces",
     "dragPerSecond",
@@ -3508,7 +3856,45 @@
     "farDamage",
     "edgeDamage"
   ];
-  var WEAPON_BOOL_KEYS = ["explosive", "pierceOnHeadshot", "pierceAll", "passWalls", "friendlyFire", "selfDamage"];
+  var WEAPON_BOOL_KEYS = [
+    "explosive",
+    "pierceOnHeadshot",
+    "pierceAll",
+    "passWalls",
+    "friendlyFire",
+    "selfDamage",
+    // 机制开关（此前调不到）：逐发装填/激光/火箭/光束/引力球/额外副武器槽
+    "shellReload",
+    "laser",
+    "rocket",
+    "beam",
+    "isGravityOrb",
+    "extraSecondarySlot"
+  ];
+  var PHYSICS_KEYS = [
+    "mass",
+    "gravity",
+    "moveSpeed",
+    "jumpImpulse",
+    "maxFall",
+    "jetpackAccel",
+    "jetpackMaxUp",
+    "jetpackFuel",
+    "jetpackDrain",
+    "jetpackRecharge"
+  ];
+  var PHYSICS_BOUNDS = {
+    mass: [0.1, 20],
+    gravity: [-5e3, 1e4],
+    moveSpeed: [0, 3e3],
+    jumpImpulse: [0, 3e3],
+    maxFall: [0, 6e3],
+    jetpackAccel: [0, 2e4],
+    jetpackMaxUp: [0, 3e3],
+    jetpackFuel: [0.01, 20],
+    jetpackDrain: [0.01, 50],
+    jetpackRecharge: [0, 50]
+  };
   var CONFIG_NUMERIC_KEYS = [
     "maxHp",
     "respawnDelay",
@@ -3520,10 +3906,28 @@
     "fragRechargeSeconds",
     "dollMaxCharges",
     "dollDuration",
+    "shieldHp",
+    "shieldDuration",
+    "obstacleDefaultHp",
+    "teleportCastTime",
     "mortarDamage",
     "mortarRadius",
     "watchtowerDuration",
-    "watchtowerFovMult"
+    "watchtowerFovMult",
+    // 此前缺失：地雷 / 空袭 / 迫击炮冷却 / 手枪基础值 / 占点 / 弹药补给
+    "mineDamage",
+    "mineTriggerRadius",
+    "mineRespawnTime",
+    "airstrikeDamage",
+    "airstrikeRadius",
+    "mortarCooldown",
+    "pistolDamage",
+    "pistolHeadshotMult",
+    "captureRadius",
+    "captureRate",
+    "ammoPackInterval",
+    "ammoPackMaxActive",
+    "supplyRespawnTime"
   ];
   var CONFIG_BOOL_KEYS = ["randomSpawn", "loadoutLock", "grenadeFriendlyFire", "grenadeSelfDamage"];
   var num = (v) => {
@@ -3533,6 +3937,7 @@
   var clamp2 = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
   var WEAPON_BOUNDS = {
     damage: [0, 2e3],
+    grazeDamageMin: [0, 2e3],
     headshotMult: [0.5, 10],
     pellets: [1, 32],
     spread: [0, 1.5],
@@ -3543,6 +3948,7 @@
     reloadTime: [0.05, 30],
     fireDelay: [0, 10],
     terrainRadius: [0, 400],
+    blastFalloffExponent: [0.5, 5],
     gravityScale: [0, 5],
     bounces: [0, 16],
     dragPerSecond: [0.05, 1],
@@ -3595,7 +4001,7 @@
       for (const k of CONFIG_NUMERIC_KEYS) {
         if (k in c) {
           const n = num(c[k]);
-          if (n !== null) clean[k] = clamp2(n, 0, 1e4);
+          if (n !== null) clean[k] = clamp2(n, 0, 1e6);
         }
       }
       for (const k of CONFIG_BOOL_KEYS) {
@@ -3606,10 +4012,13 @@
     if (r.physics && typeof r.physics === "object") {
       const ph = r.physics;
       const clean = {};
-      for (const k of ["gravity", "moveSpeed", "jumpVelocity", "jetpackThrust", "jetpackMaxUp", "jetpackFuel"]) {
+      for (const k of PHYSICS_KEYS) {
         if (k in ph) {
           const n = num(ph[k]);
-          if (n !== null) clean[k] = clamp2(n, -5e3, 1e4);
+          if (n !== null) {
+            const b = PHYSICS_BOUNDS[k] ?? [-5e3, 1e4];
+            clean[k] = clamp2(n, b[0], b[1]);
+          }
         }
       }
       if (Object.keys(clean).length > 0) out.physics = clean;
@@ -3632,9 +4041,11 @@
 
   // src/web/effects.ts
   var MAX_PARTICLES = 400;
+  var ALPHA_BUCKETS = 4;
   var Effects = class {
     particles = [];
     overwriteCursor = 0;
+    batchMap = /* @__PURE__ */ new Map();
     rnd() {
       return Math.random();
     }
@@ -3783,8 +4194,12 @@
         p.vx *= 0.99;
       }
     }
-    /** 渲染：由调用方提供 世界→屏幕 的偏移函数（相机居中坐标系） */
+    /** 渲染：按颜色 + 量化透明度（4档）合并路径提交，减少 85%+ 的 Canvas 状态切换与 beginPath/fill 调用 */
     render(ctx2, screenOf, inView2, sxFn, syFn) {
+      if (this.particles.length === 0) return;
+      for (const buckets of this.batchMap.values()) {
+        for (let b = 0; b < ALPHA_BUCKETS; b++) buckets[b].length = 0;
+      }
       for (let i = 0; i < this.particles.length; i++) {
         const p = this.particles[i];
         let sx2;
@@ -3798,12 +4213,40 @@
           sy2 = s.y;
         }
         if (!inView2(sx2, sy2)) continue;
-        const alpha = p.fade ? Math.max(0, p.life / p.maxLife) : 1;
-        ctx2.globalAlpha = alpha;
-        ctx2.fillStyle = p.color;
-        ctx2.beginPath();
-        ctx2.arc(sx2, sy2, p.size, 0, Math.PI * 2);
-        ctx2.fill();
+        const alpha = p.fade ? Math.max(0, Math.min(1, p.life / p.maxLife)) : 1;
+        if (alpha <= 0.02) continue;
+        const lv = Math.min(ALPHA_BUCKETS - 1, Math.floor(alpha * ALPHA_BUCKETS));
+        let buckets = this.batchMap.get(p.color);
+        if (!buckets) {
+          buckets = Array.from({ length: ALPHA_BUCKETS }, () => []);
+          this.batchMap.set(p.color, buckets);
+        }
+        buckets[lv].push(sx2, sy2, p.size);
+      }
+      for (const [color, buckets] of this.batchMap.entries()) {
+        let colorSet = false;
+        for (let lv = 0; lv < ALPHA_BUCKETS; lv++) {
+          const coords = buckets[lv];
+          if (coords.length === 0) continue;
+          if (!colorSet) {
+            ctx2.fillStyle = color;
+            colorSet = true;
+          }
+          ctx2.globalAlpha = (lv + 0.6) / ALPHA_BUCKETS;
+          ctx2.beginPath();
+          for (let k = 0; k < coords.length; k += 3) {
+            const sx2 = coords[k];
+            const sy2 = coords[k + 1];
+            const r = coords[k + 2];
+            if (r <= 3.2) {
+              ctx2.rect(sx2 - r, sy2 - r, r * 2, r * 2);
+            } else {
+              ctx2.moveTo(sx2 + r, sy2);
+              ctx2.arc(sx2, sy2, r, 0, Math.PI * 2);
+            }
+          }
+          ctx2.fill();
+        }
       }
       ctx2.globalAlpha = 1;
     }
@@ -3842,6 +4285,12 @@
   var canvas = document.getElementById("gameCanvas");
   var ctx = canvas ? canvas.getContext("2d", { alpha: false, desynchronized: true }) : null;
   var camera = { x: 6600, y: 1500, fovFactor: 1 };
+  var REFERENCE_VIEW_WIDTH = 1500;
+  function viewCompensation() {
+    const w = canvas ? canvas.width : 0;
+    if (w <= 0) return 1;
+    return Math.min(3, Math.max(0.5, REFERENCE_VIEW_WIDTH / w));
+  }
   var screenFx = { shake: 0 };
   var resizeDebounceMs = 120;
   var resizeTimer = null;
@@ -3853,7 +4302,10 @@
     const ih = window.innerHeight || document.documentElement?.clientHeight || rect.height || 640;
     const rawW = vv?.width ? Math.min(iw, vv.width) : iw;
     const rawH = vv?.height ? Math.min(ih, vv.height) : ih;
-    return { w: Math.max(320, Math.round(rawW)), h: Math.max(240, Math.round(rawH)) };
+    const isRotated = typeof document !== "undefined" && Boolean(document.body?.classList?.contains("auto-landscape-rotated"));
+    const w = isRotated ? Math.max(rawW, rawH) : rawW;
+    const h = isRotated ? Math.min(rawW, rawH) : rawH;
+    return { w: Math.max(320, Math.round(w)), h: Math.max(240, Math.round(h)) };
   }
   function resizeCanvas() {
     if (!canvas) return;
@@ -3877,7 +4329,7 @@
       const raw = localStorage.getItem("pvp-custom-map");
       if (!raw) return void 0;
       const m = sanitizeMapData(JSON.parse(raw));
-      if (!m || m.name !== defaultMapData().name) return void 0;
+      if (!isCompatibleSavedMap(m)) return void 0;
       return m;
     } catch {
       return void 0;
@@ -3886,7 +4338,7 @@
   var customMap = loadCustomMap();
   function loadBalanceOverrides() {
     try {
-      const raw = localStorage.getItem(BALANCE_KEY);
+      const raw = localStorage.getItem(BALANCE_KEY) ?? localStorage.getItem(LEGACY_BALANCE_KEY);
       if (!raw) return null;
       return sanitizeOverrides(JSON.parse(raw));
     } catch {
@@ -3902,7 +4354,43 @@
   var localPlayer = world.addPlayer("SkyHunter", "red");
   localPlayer.deployed = false;
   world.config.randomSpawn = false;
-  var botNames = ["AlphaBot-7", "Valkyrie-AI", "Titan-09", "NovaStriker", "ZeroGrav-X", "OmegaHound", "Phantom-AI", "IronClad-8"];
+  var MAX_BOT_COUNT = 32;
+  var botNames = [
+    "AlphaBot-7",
+    "Valkyrie-AI",
+    "Titan-09",
+    "NovaStriker",
+    "ZeroGrav-X",
+    "OmegaHound",
+    "Phantom-AI",
+    "IronClad-8",
+    "CyberHawk-9",
+    "NebulaRex-10",
+    "VortexUnit-11",
+    "ApexSentinel-12",
+    "ShadowPulse-13",
+    "StarForge-14",
+    "AegisCore-15",
+    "BlazeVector-16",
+    "QuantumEdge-17",
+    "StormBreaker-18",
+    "Hyperion-19",
+    "NightStalker-20",
+    "SolarFlare-21",
+    "FrostByte-22",
+    "ThunderBolt-23",
+    "CrimsonWing-24",
+    "CobaltViper-25",
+    "SpectreZero-26",
+    "AstraGuard-27",
+    "MechaPrime-28",
+    "IonRanger-29",
+    "PulseDrifter-30",
+    "ZenithBlade-31",
+    "OmegaPrime-32"
+  ];
+  var botTeams = Array.from({ length: MAX_BOT_COUNT }, (_, i) => i % 2 === 0 ? "blue" : "red");
+  var botSecs = Array.from({ length: MAX_BOT_COUNT }, (_, i) => i % 4 === 1 ? "doll" : "frag");
   var bots = [];
   var pendingLoadout = { weaponIndex: 0, secondaryType: "frag", spawnPointId: "base" };
   var mode = {
@@ -3962,34 +4450,183 @@
 
   // src/web/fullscreen.ts
   var pseudoFullscreen = false;
+  var autoLandscapeRotated = false;
+  var deferredInstallPrompt = null;
+  function getDeferredInstallPrompt() {
+    return deferredInstallPrompt;
+  }
+  function clearDeferredInstallPrompt() {
+    deferredInstallPrompt = null;
+  }
+  function isStandaloneApp() {
+    if (typeof window === "undefined") return false;
+    const nav = navigator;
+    const matchStandalone = window.matchMedia?.("(display-mode: fullscreen), (display-mode: standalone), (display-mode: minimal-ui)")?.matches;
+    return Boolean(nav.standalone || matchStandalone);
+  }
+  function isMobileOrTouchDevice() {
+    if (typeof window === "undefined") return false;
+    const coarse = window.matchMedia?.("(pointer: coarse)")?.matches;
+    const touch = "ontouchstart" in window || (navigator?.maxTouchPoints ?? 0) > 0;
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+    const mobileUa = /Android|iPhone|iPad|iPod|HarmonyOS|Mobile/i.test(ua);
+    return Boolean(coarse || mobileUa || touch && Math.min(window.innerWidth || 1024, window.innerHeight || 768) <= 1024);
+  }
+  function tryLockScreenLandscape() {
+    if (typeof screen === "undefined") return;
+    try {
+      const scr = screen;
+      if (scr.orientation && typeof scr.orientation.lock === "function") {
+        scr.orientation.lock("landscape").catch(() => {
+          scr.orientation?.lock?.("landscape-primary")?.catch(() => {
+          });
+        });
+      } else {
+        scr.lockOrientation?.("landscape");
+        scr.mozLockOrientation?.("landscape");
+        scr.msLockOrientation?.("landscape");
+      }
+    } catch {
+    }
+  }
+  function syncLandscapeOrientation() {
+    if (typeof window === "undefined" || typeof document === "undefined" || !document.body) return false;
+    const iw = window.innerWidth || document.documentElement?.clientWidth || 1024;
+    const ih = window.innerHeight || document.documentElement?.clientHeight || 640;
+    const shouldRotate = isMobileOrTouchDevice() && iw < ih;
+    autoLandscapeRotated = shouldRotate;
+    if (document.body.classList) {
+      document.body.classList.toggle("auto-landscape-rotated", shouldRotate);
+    }
+    return shouldRotate;
+  }
+  function getElementLandscapeMetrics(el, clientX, clientY) {
+    const rect = el.getBoundingClientRect();
+    if (autoLandscapeRotated) {
+      const width2 = Math.max(1, rect.height);
+      const height2 = Math.max(1, rect.width);
+      const relX = clientY - rect.top;
+      const relY = rect.right - clientX;
+      const rawDx = clientX - (rect.left + rect.width / 2);
+      const rawDy = clientY - (rect.top + rect.height / 2);
+      return {
+        relX,
+        relY,
+        width: width2,
+        height: height2,
+        dxFromCenter: rawDy,
+        dyFromCenter: -rawDx
+      };
+    }
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    return {
+      relX: clientX - rect.left,
+      relY: clientY - rect.top,
+      width,
+      height,
+      dxFromCenter: clientX - (rect.left + rect.width / 2),
+      dyFromCenter: clientY - (rect.top + rect.height / 2)
+    };
+  }
   function isFullscreen() {
+    if (typeof document === "undefined") return pseudoFullscreen;
     const d = document;
     return !!(d.fullscreenElement ?? d.webkitFullscreenElement) || pseudoFullscreen;
   }
-  function toggleFullscreen() {
+  function enterFullscreenAndLandscape() {
+    if (typeof document === "undefined") return false;
     const el = document.documentElement;
+    pseudoFullscreen = true;
+    document.body?.classList?.add("pseudo-fullscreen");
+    try {
+      const p = el.requestFullscreen?.({ navigationUI: "hide" }) ?? el.webkitRequestFullscreen?.();
+      if (p && typeof p.catch === "function") {
+        ;
+        p.then(() => {
+          tryLockScreenLandscape();
+          syncLandscapeOrientation();
+        }).catch(() => {
+          tryLockScreenLandscape();
+          syncLandscapeOrientation();
+        });
+      } else {
+        tryLockScreenLandscape();
+      }
+    } catch {
+      tryLockScreenLandscape();
+    }
+    syncLandscapeOrientation();
+    try {
+      window.scrollTo?.(0, 1);
+    } catch {
+    }
+    return true;
+  }
+  function toggleFullscreen() {
     const d = document;
     if (isFullscreen()) {
       pseudoFullscreen = false;
-      document.body.classList.remove("pseudo-fullscreen");
+      document.body?.classList?.remove("pseudo-fullscreen");
       try {
         const p = d.exitFullscreen?.() ?? d.webkitExitFullscreen?.();
         if (p && typeof p.catch === "function") p.catch(() => {
         });
       } catch {
       }
+      syncLandscapeOrientation();
       return false;
     } else {
-      pseudoFullscreen = true;
-      document.body.classList.add("pseudo-fullscreen");
-      try {
-        const p = el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.();
-        if (p && typeof p.catch === "function") p.catch(() => {
-        });
-      } catch {
-      }
-      return true;
+      return enterFullscreenAndLandscape();
     }
+  }
+  function setupMobilePwaAndAutoLandscape(onViewportUpdate) {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(() => {
+        });
+      });
+    }
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      const btn = document.getElementById("pwaInstallBtn");
+      if (btn) btn.classList.remove("hidden");
+      const lobbyBtn = document.getElementById("lobbyInstallAppBtn");
+      if (lobbyBtn) lobbyBtn.classList.remove("hidden");
+    });
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      enterFullscreenAndLandscape();
+      onViewportUpdate?.();
+    });
+    syncLandscapeOrientation();
+    if (isMobileOrTouchDevice() || isStandaloneApp()) {
+      document.body?.classList?.add("pseudo-fullscreen");
+      tryLockScreenLandscape();
+    }
+    const handleOrientOrResize = () => {
+      syncLandscapeOrientation();
+      onViewportUpdate?.();
+    };
+    window.addEventListener("resize", handleOrientOrResize);
+    window.addEventListener("orientationchange", handleOrientOrResize);
+    document.addEventListener("fullscreenchange", handleOrientOrResize);
+    const onFirstMobileGesture = (ev) => {
+      if (!isMobileOrTouchDevice()) return;
+      const target = ev.target;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (!isFullscreen()) {
+        enterFullscreenAndLandscape();
+        onViewportUpdate?.();
+      } else {
+        tryLockScreenLandscape();
+        syncLandscapeOrientation();
+      }
+    };
+    window.addEventListener("touchstart", onFirstMobileGesture, { passive: true });
+    window.addEventListener("click", onFirstMobileGesture, { passive: true });
   }
 
   // src/web/textures.ts
@@ -4694,6 +5331,32 @@
   // src/web/app/audio.ts
   var audioCtx = null;
   var activeOscCount = 0;
+  var MUTE_KEY = "skyblast-muted";
+  var muted = false;
+  try {
+    if (typeof localStorage !== "undefined") muted = localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+  }
+  function isMuted() {
+    return muted;
+  }
+  function setMuted(next) {
+    muted = !!next;
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+    } catch {
+    }
+    if (audioCtx) {
+      if (muted) audioCtx.suspend().catch(() => {
+      });
+      else audioCtx.resume().catch(() => {
+      });
+    }
+  }
+  function toggleMuted() {
+    setMuted(!muted);
+    return muted;
+  }
   var MAX_ACTIVE_OSC = 12;
   var lastPlayMs = {};
   var SOUND_COOLDOWN_MS = {
@@ -4706,6 +5369,7 @@
     supply: 60
   };
   function getAudioCtx() {
+    if (muted) return null;
     if (!featureFlags.proceduralAudio) return null;
     if (typeof window === "undefined") return null;
     const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -4870,7 +5534,7 @@
     ctx2.fillStyle = "#475569";
     ctx2.fillRect(packX + 1, -10, 5.5, 3);
     ctx2.fillRect(packX + 1, -2, 5.5, 2);
-    const fuelMax = Math.max(0.5, wep.fuelMult ?? 1);
+    const fuelMax = Math.max(0.1, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1));
     const fuelRatio = Math.max(0, Math.min(1, p.fuel / fuelMax));
     ctx2.fillStyle = "#090d16";
     ctx2.fillRect(packX + 2.2, -6, 3, 8);
@@ -6236,6 +6900,72 @@
   }
   var textEncoder = new TextEncoder();
   var textDecoder = new TextDecoder();
+  function buildDefaultCapturePointsDict() {
+    return CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
+  }
+  function buildDefaultSupplyCratesDict() {
+    const crates = [];
+    let id = 1;
+    for (const s of SUPPLY_SPOTS) {
+      const wid = s.weaponId ?? 4;
+      const w = WEAPONS[wid];
+      crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: "weapon", weaponId: wid, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 });
+    }
+    for (const s of DOLL_SUPPLY_SPOTS) {
+      crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: "doll", weaponId: -1, weaponName: "\u{1F38E} \u66FF\u8EAB\u4EBA\u5076", color: "#f472b6", active: true, respawnTimer: 0 });
+    }
+    return crates;
+  }
+  function buildDefaultMortarsDict() {
+    return MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
+  }
+  var BinaryCodecSession = class {
+    staticDictCapturePoints = buildDefaultCapturePointsDict();
+    staticDictSupplyCrates = buildDefaultSupplyCratesDict();
+    staticDictMortars = buildDefaultMortarsDict();
+    staticDictAmmoSpots = new Map(AMMO_SPOTS.map((a) => [a.x, a.area]));
+    encodedPlayerNames = /* @__PURE__ */ new Map();
+    decodedPlayerNames = /* @__PURE__ */ new Map();
+    lastEncObsSig = "";
+    lastEncCpSig = "";
+    lastEncAmmoSig = "";
+    lastEncCrateSig = "";
+    lastEncMortarSig = "";
+    lastDecObstacles = [];
+    lastDecCapturePoints = [];
+    lastDecAmmoPacks = [];
+    lastDecSupplyCrates = [];
+    lastDecMortars = [];
+    encodedBallisticProjs = /* @__PURE__ */ new Map();
+    decodedBallisticProjs = /* @__PURE__ */ new Map();
+    lastDecodedTick = 0;
+    reset() {
+      this.staticDictCapturePoints = buildDefaultCapturePointsDict();
+      this.staticDictSupplyCrates = buildDefaultSupplyCratesDict();
+      this.staticDictMortars = buildDefaultMortarsDict();
+      this.staticDictAmmoSpots.clear();
+      for (const a of AMMO_SPOTS) this.staticDictAmmoSpots.set(a.x, a.area);
+      this.encodedPlayerNames.clear();
+      this.decodedPlayerNames.clear();
+      this.lastEncObsSig = "";
+      this.lastEncCpSig = "";
+      this.lastEncAmmoSig = "";
+      this.lastEncCrateSig = "";
+      this.lastEncMortarSig = "";
+      this.lastDecObstacles = [];
+      this.lastDecCapturePoints = [];
+      this.lastDecAmmoPacks = [];
+      this.lastDecSupplyCrates = [];
+      this.lastDecMortars = [];
+      this.encodedBallisticProjs.clear();
+      this.decodedBallisticProjs.clear();
+      this.lastDecodedTick = 0;
+    }
+  };
+  function createBinaryCodecSession() {
+    return new BinaryCodecSession();
+  }
+  var defaultCodecSession = new BinaryCodecSession();
   var ByteWriter = class {
     buf;
     view;
@@ -6330,37 +7060,63 @@
       this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     }
     u8() {
+      if (this.offset + 1 > this.buf.byteLength) return 0;
       return this.buf[this.offset++];
     }
     i8() {
+      if (this.offset + 1 > this.buf.byteLength) return 0;
       return this.view.getInt8(this.offset++);
     }
     u16() {
+      if (this.offset + 2 > this.buf.byteLength) {
+        this.offset = this.buf.byteLength;
+        return 0;
+      }
       const v = this.view.getUint16(this.offset, true);
       this.offset += 2;
       return v;
     }
     i16() {
+      if (this.offset + 2 > this.buf.byteLength) {
+        this.offset = this.buf.byteLength;
+        return 0;
+      }
       const v = this.view.getInt16(this.offset, true);
       this.offset += 2;
       return v;
     }
     u32() {
+      if (this.offset + 4 > this.buf.byteLength) {
+        this.offset = this.buf.byteLength;
+        return 0;
+      }
       const v = this.view.getUint32(this.offset, true);
       this.offset += 4;
       return v;
     }
     i32() {
+      if (this.offset + 4 > this.buf.byteLength) {
+        this.offset = this.buf.byteLength;
+        return 0;
+      }
       const v = this.view.getInt32(this.offset, true);
       this.offset += 4;
       return v;
     }
     f32() {
+      if (this.offset + 4 > this.buf.byteLength) {
+        this.offset = this.buf.byteLength;
+        return 0;
+      }
       const v = this.view.getFloat32(this.offset, true);
       this.offset += 4;
       return v;
     }
     f64() {
+      if (this.offset + 8 > this.buf.byteLength) {
+        this.offset = this.buf.byteLength;
+        return 0;
+      }
       const v = this.view.getFloat64(this.offset, true);
       this.offset += 8;
       return v;
@@ -6369,7 +7125,7 @@
       const len = this.u16();
       if (len === 0) return "";
       const start = this.offset;
-      const end = start + len;
+      const end = Math.min(this.buf.byteLength, start + len);
       this.offset = end;
       if (len <= 64) {
         let ascii = "";
@@ -6385,73 +7141,22 @@
   };
   var sharedServerWriter = new ByteWriter(32768);
   var sharedClientWriter = new ByteWriter(512);
-  function buildDefaultCapturePointsDict() {
-    return CP_INITS.map((c) => ({ ...c, progress: c.ownerTeam ? 100 : 0, capturingTeam: null }));
-  }
-  function buildDefaultSupplyCratesDict() {
-    const crates = [];
-    let id = 1;
-    for (const s of SUPPLY_SPOTS) {
-      const wid = s.weaponId ?? 4;
-      const w = WEAPONS[wid];
-      crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: "weapon", weaponId: wid, weaponName: w.name, color: w.color, active: true, respawnTimer: 0 });
-    }
-    for (const s of DOLL_SUPPLY_SPOTS) {
-      crates.push({ id: id++, x: s.x, y: s.y, area: s.area, kind: "doll", weaponId: -1, weaponName: "\u{1F38E} \u66FF\u8EAB\u4EBA\u5076", color: "#f472b6", active: true, respawnTimer: 0 });
-    }
-    return crates;
-  }
-  function buildDefaultMortarsDict() {
-    return MORTARS_INIT.map((m) => ({ ...m, cooldown: 0, operatorId: null }));
-  }
-  var staticDictCapturePoints = buildDefaultCapturePointsDict();
-  var staticDictSupplyCrates = buildDefaultSupplyCratesDict();
-  var staticDictMortars = buildDefaultMortarsDict();
-  var staticDictAmmoSpots = new Map(AMMO_SPOTS.map((a) => [a.x, a.area]));
-  var encodedPlayerNames = /* @__PURE__ */ new Map();
-  var decodedPlayerNames = /* @__PURE__ */ new Map();
-  var lastEncObsSig = "";
-  var lastEncCpSig = "";
-  var lastEncAmmoSig = "";
-  var lastEncCrateSig = "";
-  var lastEncMortarSig = "";
-  var lastDecObstacles = [];
-  var lastDecCapturePoints = [];
-  var lastDecAmmoPacks = [];
-  var lastDecSupplyCrates = [];
-  var lastDecMortars = [];
-  var encodedBallisticProjs = /* @__PURE__ */ new Map();
-  var decodedBallisticProjs = /* @__PURE__ */ new Map();
-  var lastDecodedTick = 0;
-  function resetBinaryCodecState() {
-    staticDictCapturePoints = buildDefaultCapturePointsDict();
-    staticDictSupplyCrates = buildDefaultSupplyCratesDict();
-    staticDictMortars = buildDefaultMortarsDict();
-    staticDictAmmoSpots.clear();
-    for (const a of AMMO_SPOTS) staticDictAmmoSpots.set(a.x, a.area);
-    encodedPlayerNames.clear();
-    decodedPlayerNames.clear();
-    lastEncObsSig = "";
-    lastEncCpSig = "";
-    lastEncAmmoSig = "";
-    lastEncCrateSig = "";
-    lastEncMortarSig = "";
-    encodedBallisticProjs.clear();
-    decodedBallisticProjs.clear();
-    lastDecodedTick = 0;
+  function resetBinaryCodecState(session = defaultCodecSession) {
+    session.reset();
   }
   function encodeServerMsgBinary(msg, opts = {}) {
+    const sess = opts.session ?? defaultCodecSession;
     const w = sharedServerWriter;
     w.reset();
     w.ensure(64);
     w.u32(MAGIC_SERVER);
     const hasEvents = !!(msg.events && msg.events.length > 0);
     const hasWelcome = !!msg.welcome;
-    if (hasWelcome || msg.snap.tick % 60 === 0) encodedPlayerNames.clear();
+    if (hasWelcome || msg.snap.tick % 60 === 0) sess.encodedPlayerNames.clear();
     const hasAckSeqs = !!(msg.snap.ackSeqs && Object.keys(msg.snap.ackSeqs).length > 0);
     const hdrFlags = 1 | (hasEvents ? 2 : 0) | (hasWelcome ? 4 : 0) | (hasAckSeqs ? 8 : 0) | (opts.deltaFacilities ? 16 : 0) | (opts.deltaProjectiles ? 32 : 0);
     w.u8(hdrFlags);
-    encodeSnapshot(w, msg.snap, opts);
+    encodeSnapshot(w, msg.snap, opts, sess);
     if (hasEvents && msg.events) {
       w.ensure(4);
       w.u16(msg.events.length);
@@ -6476,13 +7181,13 @@
     }
     return w.finish();
   }
-  function decodeServerMsgBinary(bytes) {
+  function decodeServerMsgBinary(bytes, session = defaultCodecSession) {
     if (bytes.byteLength < 5) return null;
     const r = new ByteReader(bytes);
     const magic = r.u32();
     if (magic !== MAGIC_SERVER) return null;
     const hdrFlags = r.u8();
-    const snap = decodeSnapshot(r, !!(hdrFlags & 16), !!(hdrFlags & 32));
+    const snap = decodeSnapshot(r, !!(hdrFlags & 16), !!(hdrFlags & 32), session);
     const out = { snap };
     if (hdrFlags & 2) {
       const evCount = r.u16();
@@ -6510,7 +7215,7 @@
     }
     return out;
   }
-  function encodeSnapshot(w, s, opts) {
+  function encodeSnapshot(w, s, opts, sess) {
     w.ensure(32);
     w.u32(s.tick);
     w.i32(s.seed);
@@ -6520,7 +7225,7 @@
     w.u16(s.scores.ffa ?? 0);
     w.u16(s.players.length);
     for (let i = 0; i < s.players.length; i++) {
-      encodePlayer(w, s.players[i]);
+      encodePlayer(w, s.players[i], sess);
     }
     if (!opts.deltaProjectiles) {
       w.ensure(4);
@@ -6536,16 +7241,16 @@
       for (let i = 0; i < s.projectiles.length; i++) {
         const pr = s.projectiles[i];
         currentAliveIds.add(pr.id);
-        const prevBounces = encodedBallisticProjs.get(pr.id);
+        const prevBounces = sess.encodedBallisticProjs.get(pr.id);
         if (!hasGravityOrb && !pr.isGravityOrb && prevBounces === pr.bounces) {
           deadReckonedIds.push(pr.id);
         } else {
           fullSend.push(pr);
-          encodedBallisticProjs.set(pr.id, pr.bounces);
+          sess.encodedBallisticProjs.set(pr.id, pr.bounces);
         }
       }
-      for (const oldId of encodedBallisticProjs.keys()) {
-        if (!currentAliveIds.has(oldId)) encodedBallisticProjs.delete(oldId);
+      for (const oldId of sess.encodedBallisticProjs.keys()) {
+        if (!currentAliveIds.has(oldId)) sess.encodedBallisticProjs.delete(oldId);
       }
       w.ensure(6 + deadReckonedIds.length * 2);
       w.u16(fullSend.length);
@@ -6605,12 +7310,12 @@
       const ammoSig = s.ammoPacks.map((a) => a.id).join("|");
       const crateSig = s.supplyCrates.map((c) => `${c.id}:${c.active ? 1 : 0}:${c.weaponId}`).join("|");
       const mortarSig = s.mortars.map((m) => `${m.operatorId}:${qAim(m.angle)}:${m.cooldown > 0 ? 1 : 0}`).join("|");
-      facilityMask = (obsSig !== lastEncObsSig ? 1 : 0) | (cpSig !== lastEncCpSig ? 2 : 0) | (ammoSig !== lastEncAmmoSig ? 4 : 0) | (crateSig !== lastEncCrateSig ? 8 : 0) | (mortarSig !== lastEncMortarSig ? 16 : 0);
-      lastEncObsSig = obsSig;
-      lastEncCpSig = cpSig;
-      lastEncAmmoSig = ammoSig;
-      lastEncCrateSig = crateSig;
-      lastEncMortarSig = mortarSig;
+      facilityMask = (obsSig !== sess.lastEncObsSig ? 1 : 0) | (cpSig !== sess.lastEncCpSig ? 2 : 0) | (ammoSig !== sess.lastEncAmmoSig ? 4 : 0) | (crateSig !== sess.lastEncCrateSig ? 8 : 0) | (mortarSig !== sess.lastEncMortarSig ? 16 : 0);
+      sess.lastEncObsSig = obsSig;
+      sess.lastEncCpSig = cpSig;
+      sess.lastEncAmmoSig = ammoSig;
+      sess.lastEncCrateSig = crateSig;
+      sess.lastEncMortarSig = mortarSig;
       w.ensure(2);
       w.u8(facilityMask);
     }
@@ -6643,10 +7348,10 @@
       }
     }
     if (facilityMask & 2) {
-      if (!staticDictCapturePoints && s.capturePoints.length > 0) {
-        staticDictCapturePoints = s.capturePoints.map((c) => ({ ...c }));
+      if (!sess.staticDictCapturePoints && s.capturePoints.length > 0) {
+        sess.staticDictCapturePoints = s.capturePoints.map((c) => ({ ...c }));
       }
-      const canFastCp = staticDictCapturePoints !== null && staticDictCapturePoints.length === s.capturePoints.length && s.capturePoints.every((c, idx) => c.id === staticDictCapturePoints[idx].id && c.x === staticDictCapturePoints[idx].x);
+      const canFastCp = sess.staticDictCapturePoints !== null && sess.staticDictCapturePoints.length === s.capturePoints.length && s.capturePoints.every((c, idx) => c.id === sess.staticDictCapturePoints[idx].id && c.x === sess.staticDictCapturePoints[idx].x);
       w.ensure(2 + s.capturePoints.length * 16);
       w.u8(s.capturePoints.length);
       w.u8(canFastCp ? 1 : 0);
@@ -6671,7 +7376,7 @@
       w.u8(s.ammoPacks.length);
       for (let i = 0; i < s.ammoPacks.length; i++) {
         const a = s.ammoPacks[i];
-        const knownArea = staticDictAmmoSpots.get(a.x) === a.area;
+        const knownArea = sess.staticDictAmmoSpots.get(a.x) === a.area;
         w.ensure(12);
         w.u16(a.id);
         w.u16(qPosX(a.x));
@@ -6679,17 +7384,17 @@
         if (knownArea) {
           w.u8(1);
         } else {
-          staticDictAmmoSpots.set(a.x, a.area);
+          sess.staticDictAmmoSpots.set(a.x, a.area);
           w.u8(0);
           w.str(a.area);
         }
       }
     }
     if (facilityMask & 8) {
-      if (!staticDictSupplyCrates && s.supplyCrates.length > 0) {
-        staticDictSupplyCrates = s.supplyCrates.map((c) => ({ ...c }));
+      if (!sess.staticDictSupplyCrates && s.supplyCrates.length > 0) {
+        sess.staticDictSupplyCrates = s.supplyCrates.map((c) => ({ ...c }));
       }
-      const canFastCrate = staticDictSupplyCrates !== null && staticDictSupplyCrates.length === s.supplyCrates.length && s.supplyCrates.every((c, idx) => c.x === staticDictSupplyCrates[idx].x && c.kind === staticDictSupplyCrates[idx].kind);
+      const canFastCrate = sess.staticDictSupplyCrates !== null && sess.staticDictSupplyCrates.length === s.supplyCrates.length && s.supplyCrates.every((c, idx) => c.x === sess.staticDictSupplyCrates[idx].x && c.kind === sess.staticDictSupplyCrates[idx].kind);
       w.ensure(4 + s.supplyCrates.length * 8);
       w.u8(s.supplyCrates.length);
       w.u8(canFastCrate ? 1 : 0);
@@ -6719,10 +7424,10 @@
       }
     }
     if (facilityMask & 16) {
-      if (!staticDictMortars && s.mortars.length > 0) {
-        staticDictMortars = s.mortars.map((m) => ({ ...m }));
+      if (!sess.staticDictMortars && s.mortars.length > 0) {
+        sess.staticDictMortars = s.mortars.map((m) => ({ ...m }));
       }
-      const canFastMortar = staticDictMortars !== null && staticDictMortars.length === s.mortars.length && s.mortars.every((m, idx) => m.id === staticDictMortars[idx].id && m.x === staticDictMortars[idx].x);
+      const canFastMortar = sess.staticDictMortars !== null && sess.staticDictMortars.length === s.mortars.length && s.mortars.every((m, idx) => m.id === sess.staticDictMortars[idx].id && m.x === sess.staticDictMortars[idx].x);
       w.ensure(4 + s.mortars.length * 8);
       w.u8(s.mortars.length);
       w.u8(canFastMortar ? 1 : 0);
@@ -6743,7 +7448,7 @@
       }
     }
   }
-  function decodeSnapshot(r, isDeltaFacilities, isDeltaProjectiles) {
+  function decodeSnapshot(r, isDeltaFacilities, isDeltaProjectiles, sess) {
     const tick = r.u32();
     const seed = r.i32();
     const scores = {
@@ -6754,30 +7459,35 @@
     };
     const pCount = r.u16();
     const players = new Array(pCount);
-    for (let i = 0; i < pCount; i++) players[i] = decodePlayer(r);
+    for (let i = 0; i < pCount; i++) players[i] = decodePlayer(r, sess);
     let projectiles;
     if (!isDeltaProjectiles) {
+      sess.decodedBallisticProjs.clear();
       const prjCount = r.u16();
       projectiles = new Array(prjCount);
       for (let i = 0; i < prjCount; i++) {
         const pr = decodeProjectile(r);
         projectiles[i] = pr;
-        decodedBallisticProjs.set(pr.id & 65535, pr);
+        sess.decodedBallisticProjs.set(pr.id & 65535, pr);
       }
     } else {
-      const dtTicks = lastDecodedTick > 0 && tick > lastDecodedTick ? tick - lastDecodedTick : 1;
+      const dtTicks = sess.lastDecodedTick > 0 && tick > sess.lastDecodedTick ? tick - sess.lastDecodedTick : 1;
+      const activeShortIds = /* @__PURE__ */ new Set();
       const fullCount = r.u16();
       const freshProjs = new Array(fullCount);
       for (let i = 0; i < fullCount; i++) {
         const pr = decodeProjectile(r);
         freshProjs[i] = pr;
-        decodedBallisticProjs.set(pr.id & 65535, pr);
+        const sid = pr.id & 65535;
+        activeShortIds.add(sid);
+        sess.decodedBallisticProjs.set(sid, pr);
       }
       const keptCount = r.u16();
       const keptProjs = [];
       for (let i = 0; i < keptCount; i++) {
         const shortId = r.u16();
-        const cached = decodedBallisticProjs.get(shortId);
+        activeShortIds.add(shortId);
+        const cached = sess.decodedBallisticProjs.get(shortId);
         if (cached) {
           stepClientProjectilesDeadReckoning([cached], 1 / 60 * dtTicks);
           keptProjs.push({
@@ -6788,9 +7498,12 @@
           });
         }
       }
+      for (const oldKey of sess.decodedBallisticProjs.keys()) {
+        if (!activeShortIds.has(oldKey)) sess.decodedBallisticProjs.delete(oldKey);
+      }
       projectiles = [...freshProjs, ...keptProjs];
     }
-    lastDecodedTick = tick;
+    sess.lastDecodedTick = tick;
     const gCount = r.u16();
     const grenades = new Array(gCount);
     for (let i = 0; i < gCount; i++) {
@@ -6867,9 +7580,9 @@
           };
         }
       }
-      lastDecObstacles = obstacles.map((o) => ({ ...o }));
+      sess.lastDecObstacles = obstacles.map((o) => ({ ...o }));
     } else {
-      obstacles = lastDecObstacles.map((o) => ({ ...o }));
+      obstacles = sess.lastDecObstacles.map((o) => ({ ...o }));
     }
     let capturePoints;
     if (facilityMask & 2) {
@@ -6878,8 +7591,8 @@
       capturePoints = new Array(cpCount);
       for (let i = 0; i < cpCount; i++) {
         let id, code, name, x, y;
-        if (isFastCp && staticDictCapturePoints && staticDictCapturePoints[i]) {
-          const tpl = staticDictCapturePoints[i];
+        if (isFastCp && sess.staticDictCapturePoints && sess.staticDictCapturePoints[i]) {
+          const tpl = sess.staticDictCapturePoints[i];
           id = tpl.id;
           code = tpl.code;
           name = tpl.name;
@@ -6906,12 +7619,12 @@
           capturingTeam: capIdx >= 0 ? TEAMS[capIdx] : null
         };
       }
-      if (!staticDictCapturePoints && capturePoints.length > 0) {
-        staticDictCapturePoints = capturePoints.map((c) => ({ ...c }));
+      if (!sess.staticDictCapturePoints && capturePoints.length > 0) {
+        sess.staticDictCapturePoints = capturePoints.map((c) => ({ ...c }));
       }
-      lastDecCapturePoints = capturePoints.map((c) => ({ ...c }));
+      sess.lastDecCapturePoints = capturePoints.map((c) => ({ ...c }));
     } else {
-      capturePoints = lastDecCapturePoints.map((c) => ({ ...c }));
+      capturePoints = sess.lastDecCapturePoints.map((c) => ({ ...c }));
     }
     let ammoPacks;
     if (facilityMask & 4) {
@@ -6924,16 +7637,16 @@
         const isKnown = r.u8() === 1;
         let area = "";
         if (isKnown) {
-          area = staticDictAmmoSpots.get(x) ?? "";
+          area = sess.staticDictAmmoSpots.get(x) ?? "";
         } else {
           area = r.str();
-          staticDictAmmoSpots.set(x, area);
+          sess.staticDictAmmoSpots.set(x, area);
         }
         ammoPacks[i] = { id, x, y, area };
       }
-      lastDecAmmoPacks = ammoPacks.map((a) => ({ ...a }));
+      sess.lastDecAmmoPacks = ammoPacks.map((a) => ({ ...a }));
     } else {
-      ammoPacks = lastDecAmmoPacks.map((a) => ({ ...a }));
+      ammoPacks = sess.lastDecAmmoPacks.map((a) => ({ ...a }));
     }
     let supplyCrates;
     if (facilityMask & 8) {
@@ -6941,8 +7654,8 @@
       const isFastCrate = r.u8() === 1;
       supplyCrates = new Array(scCount);
       for (let i = 0; i < scCount; i++) {
-        if (isFastCrate && staticDictSupplyCrates && staticDictSupplyCrates[i]) {
-          const tpl = staticDictSupplyCrates[i];
+        if (isFastCrate && sess.staticDictSupplyCrates && sess.staticDictSupplyCrates[i]) {
+          const tpl = sess.staticDictSupplyCrates[i];
           const id = r.u16();
           const weaponId = r.i8();
           const active = r.u8() !== 0;
@@ -6972,12 +7685,12 @@
           };
         }
       }
-      if (!staticDictSupplyCrates && supplyCrates.length > 0) {
-        staticDictSupplyCrates = supplyCrates.map((c) => ({ ...c }));
+      if (!sess.staticDictSupplyCrates && supplyCrates.length > 0) {
+        sess.staticDictSupplyCrates = supplyCrates.map((c) => ({ ...c }));
       }
-      lastDecSupplyCrates = supplyCrates.map((c) => ({ ...c }));
+      sess.lastDecSupplyCrates = supplyCrates.map((c) => ({ ...c }));
     } else {
-      supplyCrates = lastDecSupplyCrates.map((c) => ({ ...c }));
+      supplyCrates = sess.lastDecSupplyCrates.map((c) => ({ ...c }));
     }
     let mortars;
     if (facilityMask & 16) {
@@ -6986,8 +7699,8 @@
       mortars = new Array(mtCount);
       for (let i = 0; i < mtCount; i++) {
         let id, name, x, y, power;
-        if (isFastMortar && staticDictMortars && staticDictMortars[i]) {
-          const tpl = staticDictMortars[i];
+        if (isFastMortar && sess.staticDictMortars && sess.staticDictMortars[i]) {
+          const tpl = sess.staticDictMortars[i];
           id = tpl.id;
           name = tpl.name;
           x = tpl.x;
@@ -7005,12 +7718,12 @@
         const op = r.i16();
         mortars[i] = { id, name, x, y, angle, power, cooldown, operatorId: op >= 0 ? op : null };
       }
-      if (!staticDictMortars && mortars.length > 0) {
-        staticDictMortars = mortars.map((m) => ({ ...m }));
+      if (!sess.staticDictMortars && mortars.length > 0) {
+        sess.staticDictMortars = mortars.map((m) => ({ ...m }));
       }
-      lastDecMortars = mortars.map((m) => ({ ...m }));
+      sess.lastDecMortars = mortars.map((m) => ({ ...m }));
     } else {
-      mortars = lastDecMortars.map((m) => ({ ...m }));
+      mortars = sess.lastDecMortars.map((m) => ({ ...m }));
     }
     return {
       tick,
@@ -7028,7 +7741,7 @@
       scores
     };
   }
-  function encodePlayer(w, p) {
+  function encodePlayer(w, p, sess) {
     w.ensure(48);
     w.u16(p.id);
     w.u16(qPosX(p.pos.x));
@@ -7049,13 +7762,15 @@
     w.u16(clamp(Math.round(p.fuel * 1e3), 0, 65535));
     w.u16(p.kills);
     w.u16(p.deaths);
-    const dollAndSec = clamp(p.dollCharges, 0, 7) & 7 | (secIdx & 7) << 3;
+    const hasRecoilVel = Boolean(p.recoilVel && (Math.abs(p.recoilVel.x) > 0.5 || Math.abs(p.recoilVel.y) > 0.5));
+    const hasDiffLastPrimary = Boolean(p.lastPrimaryIndex !== void 0 && p.lastPrimaryIndex !== p.weaponIndex);
+    const dollAndSec = clamp(p.dollCharges, 0, 7) & 7 | (secIdx & 7) << 3 | (hasRecoilVel ? 64 : 0) | (hasDiffLastPrimary ? 128 : 0);
     w.u8(dollAndSec);
     w.u8(clamp(p.deathStreak ?? 0, 0, 255));
-    if (encodedPlayerNames.get(p.id) === p.name) {
+    if (sess.encodedPlayerNames.get(p.id) === p.name) {
       w.u8(1);
     } else {
-      encodedPlayerNames.set(p.id, p.name);
+      sess.encodedPlayerNames.set(p.id, p.name);
       w.u8(0);
       w.str(p.name);
     }
@@ -7083,7 +7798,10 @@
     }
     if (timerMask & 2) w.u16(qTimerMs(p.reloadTimer));
     if (timerMask & 4) w.u16(qTimerMs(p.fireCooldown));
-    if (timerMask & 8) w.u16(qTimerMs(p.chargeTimer));
+    if (timerMask & 8) {
+      w.u16(qTimerMs(p.chargeTimer));
+      w.i16(qAim(p.chargeAim ?? p.aim));
+    }
     if (timerMask & 16) w.u16(qTimerMs(p.secondaryCooldown));
     if (timerMask & 32) w.u16(qTimerMs(p.fragRechargeTimer));
     if (timerMask & 64) {
@@ -7103,6 +7821,15 @@
         w.u16(qPosY(p.teleportTarget.y));
       }
     }
+    if (hasRecoilVel && p.recoilVel) {
+      w.ensure(4);
+      w.i16(qVel(p.recoilVel.x));
+      w.i16(qVel(p.recoilVel.y));
+    }
+    if (hasDiffLastPrimary) {
+      w.ensure(1);
+      w.u8((p.lastPrimaryIndex ?? p.weaponIndex) & 15);
+    }
     if (p.doll) {
       w.ensure(32 + p.doll.ammo.length * 4);
       w.u16(qPosX(p.doll.pos.x));
@@ -7119,7 +7846,7 @@
       }
     }
   }
-  function decodePlayer(r) {
+  function decodePlayer(r, sess) {
     const id = r.u16();
     const px = uPosX(r.u16());
     const py = uPosY(r.u16());
@@ -7147,15 +7874,17 @@
     const dollAndSec = r.u8();
     const dollCharges = dollAndSec & 7;
     const secIdx = dollAndSec >> 3 & 7;
+    const hasRecoilVel = !!(dollAndSec & 64);
+    const hasDiffLastPrimary = !!(dollAndSec & 128);
     const secondary = SECONDARY_UNLOCK_ORDER[secIdx] ?? "frag";
     const deathStreak = r.u8();
     const nameCached = r.u8() === 1;
     let name = "";
     if (nameCached) {
-      name = decodedPlayerNames.get(id) ?? "Player_" + id;
+      name = sess.decodedPlayerNames.get(id) ?? "Player_" + id;
     } else {
       name = r.str();
-      decodedPlayerNames.set(id, name);
+      sess.decodedPlayerNames.set(id, name);
     }
     const curAmmo = r.u16() * 0.01;
     const curReserve = r.u16();
@@ -7175,7 +7904,12 @@
     }
     const reloadTimer = timerMask & 2 ? uTimerMs(r.u16()) : 0;
     const fireCooldown = timerMask & 4 ? uTimerMs(r.u16()) : 0;
-    const chargeTimer = timerMask & 8 ? uTimerMs(r.u16()) : 0;
+    let chargeTimer = 0;
+    let chargeAim = void 0;
+    if (timerMask & 8) {
+      chargeTimer = uTimerMs(r.u16());
+      chargeAim = uAim(r.i16());
+    }
     const secondaryCooldown = timerMask & 16 ? uTimerMs(r.u16()) : 0;
     const fragRechargeTimer = timerMask & 32 ? uTimerMs(r.u16()) : 0;
     let shieldHp = 0;
@@ -7202,6 +7936,8 @@
         teleportTarget = { x: uPosX(r.u16()), y: uPosY(r.u16()) };
       }
     }
+    const recoilVel = hasRecoilVel ? { x: uVel(r.i16()), y: uVel(r.i16()) } : void 0;
+    const lastPrimaryIndex = hasDiffLastPrimary ? r.u8() & 15 : WEAPONS[weaponIndex]?.isSupplyOnly ? 1 : weaponIndex;
     let doll = null;
     if (hasDoll) {
       const dx = uPosX(r.u16());
@@ -7233,6 +7969,7 @@
       id,
       pos: { x: px, y: py },
       vel: { x: vx, y: vy },
+      recoilVel,
       aim,
       team,
       name,
@@ -7242,12 +7979,14 @@
       deployed,
       onGround,
       weaponIndex,
+      lastPrimaryIndex,
       ammo,
       reserveAmmo,
       reloading,
       reloadTimer,
       fireCooldown,
       chargeTimer,
+      chargeAim,
       secondary,
       secondaryCooldown,
       fragCharges,
@@ -7671,12 +8410,16 @@
     nocwnd = 1;
     current = 0;
     sndQueue = [];
+    sndQueueHead = 0;
     rcvQueue = [];
     sndBuf = [];
     rcvBuf = [];
     ackList = [];
     unreliableQueue = [];
+    unreliableHead = 0;
     output;
+    flushBuf;
+    flushView;
     // 统计遥测
     txPackets = 0;
     rxPackets = 0;
@@ -7692,6 +8435,8 @@
       this.sndWnd = Math.max(16, opts.sndWnd ?? 128);
       this.rcvWnd = Math.max(16, opts.rcvWnd ?? 128);
       this.rmtWnd = this.rcvWnd;
+      this.flushBuf = new Uint8Array(this.mtu * 2);
+      this.flushView = new DataView(this.flushBuf.buffer);
       this.setNoDelay(
         opts.nodelay ?? 1,
         opts.interval ?? 10,
@@ -7768,8 +8513,16 @@
     }
     /** 从接收队列提取一条完整应用层报文（自动处理分片重组与直通帧） */
     recv() {
-      if (this.unreliableQueue.length > 0) {
-        return this.unreliableQueue.shift();
+      if (this.unreliableHead < this.unreliableQueue.length) {
+        const item = this.unreliableQueue[this.unreliableHead++];
+        if (this.unreliableHead >= this.unreliableQueue.length) {
+          this.unreliableQueue.length = 0;
+          this.unreliableHead = 0;
+        } else if (this.unreliableHead >= 64) {
+          this.unreliableQueue.splice(0, this.unreliableHead);
+          this.unreliableHead = 0;
+        }
+        return item;
       }
       if (this.rcvQueue.length === 0) return null;
       const first = this.rcvQueue[0];
@@ -7789,10 +8542,11 @@
       const out = new Uint8Array(totalLen);
       let offset = 0;
       for (let i = 0; i < segCount; i++) {
-        const seg = this.rcvQueue.shift();
+        const seg = this.rcvQueue[i];
         out.set(seg.data, offset);
         offset += seg.data.byteLength;
       }
+      this.rcvQueue.splice(0, segCount);
       this.moveRcvBufToQueue();
       return out;
     }
@@ -7892,12 +8646,16 @@
         this.flush();
       }
     }
-    /** 立即冲刷发送队列、ACK 列表与超时/快速重传段（低延迟模式下每次 send 后可立即调用） */
+    /** 立即冲刷发送队列、ACK 列表与超时/快速重传段（复用预分配 flushBuf，消除每帧 TypedArray 垃圾） */
     flush(nowMs2 = this.current) {
       this.current = nowMs2 >>> 0;
       const wnd = this.wndUnused();
-      const buffer = new Uint8Array(this.mtu * 2);
-      const view = new DataView(buffer.buffer);
+      if (this.flushBuf.byteLength < this.mtu * 2) {
+        this.flushBuf = new Uint8Array(this.mtu * 2);
+        this.flushView = new DataView(this.flushBuf.buffer);
+      }
+      const buffer = this.flushBuf;
+      const view = this.flushView;
       let offset = 0;
       const flushBuffer = () => {
         if (offset > 0) {
@@ -7924,8 +8682,8 @@
       }
       this.ackList.length = 0;
       const cwndLimit = this.nocwnd ? Math.min(this.sndWnd, this.rmtWnd) : Math.min(this.sndWnd, this.rmtWnd, this.cwnd);
-      while (this.sndNxt < this.sndUna + cwndLimit && this.sndQueue.length > 0) {
-        const seg = this.sndQueue.shift();
+      while (this.sndNxt < this.sndUna + cwndLimit && this.sndQueueHead < this.sndQueue.length) {
+        const seg = this.sndQueue[this.sndQueueHead++];
         seg.conv = this.conv;
         seg.cmd = IKCP_CMD_PUSH;
         seg.wnd = wnd;
@@ -7937,6 +8695,13 @@
         seg.fastack = 0;
         seg.xmit = 0;
         this.sndBuf.push(seg);
+      }
+      if (this.sndQueueHead >= this.sndQueue.length) {
+        this.sndQueue.length = 0;
+        this.sndQueueHead = 0;
+      } else if (this.sndQueueHead >= 64) {
+        this.sndQueue.splice(0, this.sndQueueHead);
+        this.sndQueueHead = 0;
       }
       const resent = this.fastresend > 0 ? this.fastresend : 4294967295;
       const rtomin = this.nodelay === 0 ? this.rxRto >>> 3 : 0;
@@ -8073,15 +8838,19 @@
       this.moveRcvBufToQueue();
     }
     moveRcvBufToQueue() {
-      while (this.rcvBuf.length > 0) {
-        const seg = this.rcvBuf[0];
+      let moveCount = 0;
+      while (moveCount < this.rcvBuf.length) {
+        const seg = this.rcvBuf[moveCount];
         if (seg.sn === this.rcvNxt && this.rcvQueue.length < this.rcvWnd) {
-          this.rcvBuf.shift();
           this.rcvQueue.push(seg);
           this.rcvNxt++;
+          moveCount++;
         } else {
           break;
         }
+      }
+      if (moveCount > 0) {
+        this.rcvBuf.splice(0, moveCount);
       }
     }
   };
@@ -8094,9 +8863,9 @@
   }
 
   // src/net/transport/Peer.ts
-  function encodeServerWireFrame(m, forceFull = false) {
+  function encodeServerWireFrame(m, forceFull = false, session) {
     const isKeyframe = forceFull || Boolean(m.welcome) || Boolean(m.events && m.events.length > 0) || m.snap.tick % 30 === 0;
-    return encodeServerMsgBinary(m, { deltaFacilities: !isKeyframe });
+    return encodeServerMsgBinary(m, { deltaFacilities: !isKeyframe, session });
   }
   function encodeClientWireFrame(m) {
     return encodeClientMsgBinary(m);
@@ -8113,12 +8882,12 @@
     }
     return null;
   }
-  function parseServerMsg(raw) {
-    if (raw instanceof Uint8Array) return decodeServerMsgBinary(raw);
-    if (raw instanceof ArrayBuffer) return decodeServerMsgBinary(new Uint8Array(raw));
+  function parseServerMsg(raw, session) {
+    if (raw instanceof Uint8Array) return decodeServerMsgBinary(raw, session);
+    if (raw instanceof ArrayBuffer) return decodeServerMsgBinary(new Uint8Array(raw), session);
     if (typeof raw === "string") {
       if (raw.startsWith(BINARY_STR_PREFIX)) {
-        return decodeServerMsgBinary(frameStringToBytes(raw));
+        return decodeServerMsgBinary(frameStringToBytes(raw), session);
       }
       try {
         return JSON.parse(raw);
@@ -8204,19 +8973,20 @@
   function createPeerClient(conn, kcpOpts = {}) {
     let onServer = null;
     const conv = kcpOpts.conv ?? DEFAULT_KCP_CONV;
+    const codecSession = createBinaryCodecSession();
     const handleIncomingBytes = (bytes) => {
       if (isKcpPacket(bytes, conv)) {
         const t = nowMs();
         kcp.input(bytes, t);
         let payload;
         while ((payload = kcp.recv()) !== null) {
-          const m2 = parseServerMsg(payload);
+          const m2 = parseServerMsg(payload, codecSession);
           if (m2 && "snap" in m2) onServer?.(m2);
         }
         kcp.flush(t);
         return;
       }
-      const m = parseServerMsg(bytes);
+      const m = parseServerMsg(bytes, codecSession);
       if (m && "snap" in m) onServer?.(m);
     };
     const dcBridge = configureWebRtcUnreliableChannel(conn, handleIncomingBytes);
@@ -8233,11 +9003,12 @@
         handleIncomingBytes(bytes);
         return;
       }
-      const m = parseServerMsg(raw);
+      const m = parseServerMsg(raw, codecSession);
       if (m && "snap" in m) onServer?.(m);
     });
     return {
       kcp,
+      codecSession,
       send(m) {
         const t = nowMs();
         const wire = encodeClientWireFrame(m);
@@ -8258,6 +9029,7 @@
   function createPeerServer(conn, kcpOpts = {}) {
     let onClient = null;
     const conv = kcpOpts.conv ?? DEFAULT_KCP_CONV;
+    const codecSession = createBinaryCodecSession();
     const handleIncomingBytes = (bytes) => {
       if (isKcpPacket(bytes, conv)) {
         const t = nowMs();
@@ -8292,9 +9064,10 @@
     });
     return {
       kcp,
+      codecSession,
       send(m) {
         const t = nowMs();
-        const wire = encodeServerWireFrame(m);
+        const wire = encodeServerWireFrame(m, false, codecSession);
         if (m.welcome || wire.byteLength <= kcp.mss * 32) {
           kcp.send(wire);
           kcp.flush(t);
@@ -8445,12 +9218,15 @@
   // src/net/StateSync.ts
   var WORLD_W2 = 13200;
   var WORLD_H2 = 4400;
+  var FIXED_DT = 1 / 60;
   var SNAP_THRESHOLD = 120;
-  var SMOOTH_THRESHOLD = 0.5;
+  var SMOOTH_THRESHOLD = 1.5;
   var StateSync = class {
     prev = null;
     cur = null;
     t = 0;
+    /** 根据前后两帧权威快照的 tick 差动态计算的插值周期（秒），消除多客机 20/30Hz 步幅或抖动下的插值过早跑完停顿 */
+    snapshotInterval = FIXED_DT;
     localPlayerId = 0;
     terrain;
     predictedLocal = null;
@@ -8458,7 +9234,13 @@
     reconcileOffset = { x: 0, y: 0 };
     /** 客户端通过事件化同步+本地推算维护的飞行弹丸表（支撑直线/抛物线弹丸事件化同步） */
     deadReckonedProjectiles = /* @__PURE__ */ new Map();
+    cachedDeadReckonedList = [];
+    deadReckonedListDirty = false;
     enableProjectileDeadReckoning = false;
+    // 复用的客户端预测空间桶与引力弹缓冲（消除每帧分配）
+    playerBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
+    obstacleBroadBuckets = Array.from({ length: NUM_BUCKETS }, () => []);
+    activeGravityOrbs = [];
     constructor(terrain, localPlayerId = 0) {
       if (terrain) {
         this.terrain = terrain;
@@ -8477,13 +9259,59 @@
     setProjectileDeadReckoning(enabled2) {
       this.enableProjectileDeadReckoning = enabled2;
     }
+    getSnapshotInterval() {
+      return this.snapshotInterval;
+    }
+    buildPredictExtras(snap) {
+      if (!snap) return void 0;
+      for (let i = 0; i < NUM_BUCKETS; i++) {
+        this.playerBroadBuckets[i].length = 0;
+        this.obstacleBroadBuckets[i].length = 0;
+      }
+      for (let i = 0; i < snap.players.length; i++) {
+        const p = snap.players[i];
+        if (p.id === this.localPlayerId || !p.deployed || !p.alive || p.respawnTimer > 0) continue;
+        const wx = wrapX(p.pos.x);
+        const b0 = bucketIdx(wrapX(wx - PLAYER_BROAD_PAD));
+        const b1 = bucketIdx(wrapX(wx + PLAYER_BROAD_PAD));
+        this.playerBroadBuckets[b0].push(p);
+        if (b1 !== b0) this.playerBroadBuckets[b1].push(p);
+      }
+      for (let i = 0; i < snap.obstacles.length; i++) {
+        const ob = snap.obstacles[i];
+        if (ob.hp <= 0) continue;
+        const b0 = bucketIdx(wrapX(ob.x - OBSTACLE_BROAD_PAD));
+        const b1 = bucketIdx(wrapX(ob.x + ob.w + OBSTACLE_BROAD_PAD));
+        this.obstacleBroadBuckets[b0].push(ob);
+        if (b1 !== b0) {
+          let b = (b0 + 1) % NUM_BUCKETS;
+          while (true) {
+            this.obstacleBroadBuckets[b].push(ob);
+            if (b === b1) break;
+            b = (b + 1) % NUM_BUCKETS;
+          }
+        }
+      }
+      this.activeGravityOrbs.length = 0;
+      const projSource = this.enableProjectileDeadReckoning && this.deadReckonedProjectiles.size > 0 ? this.syncDeadReckonedList() : snap.projectiles;
+      for (let i = 0; i < projSource.length; i++) {
+        const pr = projSource[i];
+        if (pr.isGravityOrb && pr.life > 0) this.activeGravityOrbs.push(pr);
+      }
+      return {
+        playerBroadBuckets: this.playerBroadBuckets,
+        obstacleBroadBuckets: this.obstacleBroadBuckets,
+        activeGravityOrbs: this.activeGravityOrbs
+      };
+    }
     /** 客户端本地立即预测输入（无需等待 RTT 与插值缓冲，按下即响应） */
-    applyLocalInput(input, dt = 1 / 60) {
+    applyLocalInput(input, dt = FIXED_DT) {
       if (!this.predictedLocal && this.cur && this.localPlayerId > 0) {
         const found = this.cur.players.find((p) => p.id === this.localPlayerId);
         if (found) this.predictedLocal = clonePlayerState(found);
       }
       if (!this.predictedLocal) return null;
+      const extras = this.buildPredictExtras(this.cur);
       predictLocalPlayerStep(
         this.predictedLocal,
         input,
@@ -8491,14 +9319,33 @@
         this.terrain,
         this.cur?.obstacles ?? [],
         this.cur?.mortars ?? [],
-        WATCHTOWERS
+        WATCHTOWERS,
+        extras
       );
+      if (extras?.playerBroadBuckets && this.cur) {
+        const wx = wrapX(this.predictedLocal.pos.x);
+        const b0 = bucketIdx(wrapX(wx - PLAYER_BROAD_PAD));
+        const b1 = bucketIdx(wrapX(wx + PLAYER_BROAD_PAD));
+        extras.playerBroadBuckets[b0].push(this.predictedLocal);
+        if (b1 !== b0) extras.playerBroadBuckets[b1].push(this.predictedLocal);
+        separateOverlappingPlayers(
+          [this.predictedLocal, ...this.cur.players.filter((p) => p.id !== this.localPlayerId)],
+          extras.playerBroadBuckets,
+          this.terrain,
+          this.cur.obstacles,
+          extras.obstacleBroadBuckets
+        );
+      }
       return this.predictedLocal;
     }
     /** 接收权威快照：若提供 localPlayerId 与未确认输入队列，则执行服务器回滚与重放（Server Reconciliation） */
     push(snap, localPlayerId = this.localPlayerId, pendingInputs, events) {
       if (localPlayerId > 0) this.localPlayerId = localPlayerId;
-      this.prev = this.cur;
+      if (this.cur && snap.tick > this.cur.tick) {
+        const tickDelta = Math.max(1, Math.min(12, snap.tick - this.cur.tick));
+        this.snapshotInterval = tickDelta * FIXED_DT;
+      }
+      this.prev = this.prev && this.cur && this.t > 0 && this.t < 1 ? lerpSnap(this.prev, this.cur, this.t) : this.cur;
       this.cur = snap;
       this.t = 0;
       if (events && events.length > 0) {
@@ -8514,12 +9361,16 @@
             hitTargets: [...pr.hitTargets]
           });
         }
+        this.deadReckonedListDirty = true;
       }
       if (this.localPlayerId > 0) {
         const authPlayer = snap.players.find((p) => p.id === this.localPlayerId);
         if (authPlayer) {
+          const prevVisX = this.predictedLocal ? wrapX(this.predictedLocal.pos.x + this.reconcileOffset.x) : authPlayer.pos.x;
+          const prevVisY = this.predictedLocal ? wrapY(this.predictedLocal.pos.y + this.reconcileOffset.y) : authPlayer.pos.y;
           const replayed = clonePlayerState(authPlayer);
           if (pendingInputs && pendingInputs.length > 0) {
+            const extras = this.buildPredictExtras(snap);
             for (let i = 0; i < pendingInputs.length; i++) {
               const frame = pendingInputs[i];
               predictLocalPlayerStep(
@@ -8529,31 +9380,38 @@
                 this.terrain,
                 snap.obstacles,
                 snap.mortars,
-                WATCHTOWERS
+                WATCHTOWERS,
+                extras
               );
             }
           }
           if (this.predictedLocal && authPlayer.alive && authPlayer.deployed && authPlayer.respawnTimer <= 0) {
-            const prevVisX = wrapX(this.predictedLocal.pos.x + this.reconcileOffset.x);
-            const prevVisY = wrapY(this.predictedLocal.pos.y + this.reconcileOffset.y);
             const errX = wrapDeltaX(replayed.pos.x, prevVisX);
             const errY = wrapDeltaY(replayed.pos.y, prevVisY);
             const errDist = Math.hypot(errX, errY);
             if (errDist > SNAP_THRESHOLD) {
               this.reconcileOffset.x = 0;
               this.reconcileOffset.y = 0;
+              this.predictedLocal = replayed;
             } else if (errDist >= SMOOTH_THRESHOLD) {
               this.reconcileOffset.x = errX;
               this.reconcileOffset.y = errY;
+              this.predictedLocal = replayed;
             } else {
-              this.reconcileOffset.x = 0;
-              this.reconcileOffset.y = 0;
+              this.predictedLocal = {
+                ...replayed,
+                pos: { x: this.predictedLocal.pos.x, y: this.predictedLocal.pos.y },
+                vel: { x: this.predictedLocal.vel.x, y: this.predictedLocal.vel.y },
+                recoilVel: this.predictedLocal.recoilVel ? { x: this.predictedLocal.recoilVel.x, y: this.predictedLocal.recoilVel.y } : replayed.recoilVel,
+                onGround: this.predictedLocal.onGround,
+                prevFireHeld: this.predictedLocal.prevFireHeld
+              };
             }
           } else {
             this.reconcileOffset.x = 0;
             this.reconcileOffset.y = 0;
+            this.predictedLocal = replayed;
           }
-          this.predictedLocal = replayed;
         }
       }
     }
@@ -8591,6 +9449,7 @@
             rocket: !!wep?.rocket,
             dragPerSecond: wep?.dragPerSecond ?? 1
           });
+          this.deadReckonedListDirty = true;
         } else if (e.kind === "projectile_bounce" && e.projectileId !== void 0) {
           const pr = this.deadReckonedProjectiles.get(e.projectileId);
           if (pr) {
@@ -8601,22 +9460,38 @@
             if (e.bounces !== void 0) pr.bounces = e.bounces;
           }
         } else if (e.kind === "projectile_destroy" && e.projectileId !== void 0) {
-          this.deadReckonedProjectiles.delete(e.projectileId);
+          if (this.deadReckonedProjectiles.delete(e.projectileId)) {
+            this.deadReckonedListDirty = true;
+          }
         }
       }
     }
-    advance(dt, interval = 0.1) {
-      this.t = Math.min(1, this.t + dt / interval);
+    syncDeadReckonedList() {
+      if (this.deadReckonedListDirty) {
+        this.cachedDeadReckonedList.length = 0;
+        for (const pr of this.deadReckonedProjectiles.values()) {
+          this.cachedDeadReckonedList.push(pr);
+        }
+        this.deadReckonedListDirty = false;
+      }
+      return this.cachedDeadReckonedList;
+    }
+    advance(dt, interval) {
+      const effInterval = Math.max(FIXED_DT, interval ?? this.snapshotInterval);
+      this.t = Math.min(1, this.t + dt / effInterval);
       const decay = Math.pow(0.08, dt * 10);
       this.reconcileOffset.x *= decay;
       this.reconcileOffset.y *= decay;
       if (Math.abs(this.reconcileOffset.x) < 0.1) this.reconcileOffset.x = 0;
       if (Math.abs(this.reconcileOffset.y) < 0.1) this.reconcileOffset.y = 0;
       if (this.deadReckonedProjectiles.size > 0) {
-        const list = Array.from(this.deadReckonedProjectiles.values());
+        const list = this.syncDeadReckonedList();
         stepClientProjectilesDeadReckoning(list, dt, this.terrain);
         for (let i = 0; i < list.length; i++) {
-          if (list[i].life <= 0) this.deadReckonedProjectiles.delete(list[i].id);
+          if (list[i].life <= 0) {
+            this.deadReckonedProjectiles.delete(list[i].id);
+            this.deadReckonedListDirty = true;
+          }
         }
       }
     }
@@ -8631,7 +9506,7 @@
       };
     }
     getDeadReckonedProjectiles() {
-      return Array.from(this.deadReckonedProjectiles.values());
+      return this.syncDeadReckonedList();
     }
     interpolated() {
       if (!this.cur) return null;
@@ -8655,6 +9530,8 @@
       ...p,
       pos: { x: p.pos.x, y: p.pos.y },
       vel: { x: p.vel.x, y: p.vel.y },
+      recoilVel: p.recoilVel ? { x: p.recoilVel.x, y: p.recoilVel.y } : void 0,
+      teleportTarget: p.teleportTarget ? { x: p.teleportTarget.x, y: p.teleportTarget.y } : null,
       ammo: [...p.ammo],
       reserveAmmo: [...p.reserveAmmo],
       selectedSpawnId: p.selectedSpawnId,
@@ -8755,8 +9632,8 @@
     for (const e of evs) {
       if (e.kind === "kill") {
         const killer = e.killerId ?? e.attackerId;
-        const killerP = killer !== void 0 ? world.players.find((p) => p.id === killer) : void 0;
-        const victimP = e.victimId !== void 0 ? world.players.find((p) => p.id === e.victimId) : void 0;
+        const killerP = killer !== void 0 ? world.playerById.get(killer) ?? world.players.find((p) => p.id === killer) : void 0;
+        const victimP = e.victimId !== void 0 ? world.playerById.get(e.victimId) ?? world.players.find((p) => p.id === e.victimId) : void 0;
         const kName = e.killerName ?? killerP?.name ?? "\u6218\u573A\u73AF\u5883";
         const kTeam = e.killerTeam ?? killerP?.team ?? "ffa";
         const vName = e.victimName ?? victimP?.name ?? "?";
@@ -8780,7 +9657,7 @@
       } else if (e.kind === "capture") {
         showToast(`\u{1F6A9} \u636E\u70B9 ${e.pointCode} \u88AB ${e.team} \u5360\u9886\uFF01`);
       } else if (e.kind === "supply_pickup") {
-        const picker = e.playerId !== void 0 ? world.players.find((p) => p.id === e.playerId) : void 0;
+        const picker = e.playerId !== void 0 ? world.playerById.get(e.playerId) ?? world.players.find((p) => p.id === e.playerId) : void 0;
         const who = e.playerName ?? picker?.name;
         const isSelf = e.playerId !== void 0 && e.playerId === localPlayer.id;
         showToast(who ? `\u{1F4E6} ${isSelf ? "\u4F60" : who} \u62FE\u53D6\u4E86\u3010${e.weaponName}\u3011` : `\u{1F4E6} \u62FE\u53D6\u3010${e.weaponName}\u3011`);
@@ -9078,6 +9955,7 @@
     if (wantTeam === "red" || wantTeam === "blue") return wantTeam;
     return world.players.filter((p) => p.team === "blue").length <= world.players.filter((p) => p.team === "red").length ? "blue" : "red";
   }
+  var MAX_HOST_GUEST_INPUT_QUEUE = 16;
   function acceptIncomingKcpGuest(conn, label = "KCP-Guest", initTeam, initWeaponIdx, initSecondary) {
     const srvTransport = createPeerServer(conn, {
       nodelay: 1,
@@ -9102,13 +9980,18 @@
       conn,
       transport: srvTransport,
       input: defaultWorldInput(),
-      lastAckSeq: 0
+      lastAckSeq: 0,
+      inputQueue: []
     };
     srvTransport.onClient((msg) => {
-      if (typeof msg.seq === "number" && msg.seq > slot2.lastAckSeq) {
-        slot2.lastAckSeq = msg.seq;
+      const seq = typeof msg.seq === "number" ? msg.seq : 0;
+      if (seq > 0 && seq <= slot2.lastAckSeq) return;
+      if (slot2.inputQueue.length >= MAX_HOST_GUEST_INPUT_QUEUE) {
+        const dropped = slot2.inputQueue.shift();
+        if (dropped.seq > slot2.lastAckSeq) slot2.lastAckSeq = dropped.seq;
+        slot2.input = applyIntents(slot2.input, dropped.intents);
       }
-      slot2.input = applyIntents(slot2.input, msg.intents);
+      slot2.inputQueue.push({ seq, intents: msg.intents });
     });
     conn.on("data", (raw) => {
       if (typeof raw !== "string" || !raw.includes("__sb2Ctrl")) return;
@@ -9142,7 +10025,7 @@
     });
     netState.hostGuests.set(guestPlayer.id, slot2);
     netState.peerCount = netState.hostGuests.size;
-    resetBinaryCodecState();
+    resetBinaryCodecState(srvTransport.codecSession);
     srvTransport.send({
       snap: world.snapshot(),
       welcome: { playerId: guestPlayer.id, name: guestPlayer.name, team: guestPlayer.team }
@@ -9151,7 +10034,7 @@
     srvTransport.kcp?.sendPing(performance.now());
     conn.on("close", () => {
       netState.hostGuests.delete(guestPlayer.id);
-      world.players = world.players.filter((p) => p.id !== guestPlayer.id);
+      world.removePlayer(guestPlayer.id);
       netState.peerCount = netState.hostGuests.size;
       updateTeamCountUI();
       updateNetStatusUI();
@@ -9200,8 +10083,12 @@
       } catch {
       }
     });
+    let appliedInitialSnapshot = false;
     session.onSnapshot((snap) => {
-      applyAuthoritativeSnapshotToClientWorld(snap);
+      if (!appliedInitialSnapshot) {
+        appliedInitialSnapshot = true;
+        applyAuthoritativeSnapshotToClientWorld(snap);
+      }
     });
     session.onEvents((evs) => {
       if (evs && evs.length > 0) handleEvents(evs);
@@ -9219,6 +10106,11 @@
     world.tick = interp.tick;
     world.scores = { ...interp.scores };
     world.players = interp.players;
+    world.playerById.clear();
+    for (let i = 0; i < interp.players.length; i++) {
+      const p = interp.players[i];
+      world.playerById.set(p.id, p);
+    }
     world.projectiles = interp.projectiles;
     world.grenades = interp.grenades;
     world.landmines = interp.landmines;
@@ -9228,8 +10120,13 @@
     world.ammoPacks = interp.ammoPacks;
     world.supplyCrates = interp.supplyCrates;
     world.mortars = interp.mortars;
+    for (let i = 0; i < world.watchtowers.length; i++) {
+      const tw = world.watchtowers[i];
+      const op = interp.players.find((p) => p.alive && p.deployed && p.mountedTowerId === tw.id);
+      tw.operatorId = op ? op.id : null;
+    }
     const myId = netState.clientSession?.playerId ?? localPlayer.id;
-    const meInSnap = interp.players.find((p) => p.id === myId);
+    const meInSnap = world.playerById.get(myId);
     if (meInSnap) {
       const keepSpawnId = pendingLoadout.spawnPointId || meInSnap.selectedSpawnId || "base";
       Object.assign(localPlayer, meInSnap);
@@ -9630,7 +10527,7 @@
   }
   function leaveMultiplayerRoom() {
     for (const slot2 of netState.hostGuests.values()) {
-      world.players = world.players.filter((p) => p.id !== slot2.playerId);
+      world.removePlayer(slot2.playerId);
     }
     for (const fn of netState.cleanupFns) {
       try {
@@ -9810,7 +10707,7 @@
       });
       netState.clientSession.sendIntents(intents, dt);
       netState.clientTransport?.tickKcp?.(now);
-      netState.stateSync?.advance(dt, 1 / 60);
+      netState.stateSync?.advance(dt);
       const predictedSnap = netState.stateSync?.interpolated();
       if (predictedSnap) {
         applyAuthoritativeSnapshotToClientWorld(predictedSnap);
@@ -9824,6 +10721,14 @@
     }
     if (netState.role === "host") {
       for (const slot2 of netState.hostGuests.values()) {
+        if (slot2.inputQueue.length > 0) {
+          const consumeCount = slot2.inputQueue.length >= 4 ? 2 : 1;
+          for (let k = 0; k < consumeCount && slot2.inputQueue.length > 0; k++) {
+            const item = slot2.inputQueue.shift();
+            if (item.seq > slot2.lastAckSeq) slot2.lastAckSeq = item.seq;
+            slot2.input = applyIntents(slot2.input, item.intents);
+          }
+        }
         allInputs.set(slot2.playerId, {
           ...slot2.input,
           secondary: slot2.input.secondary ? { ...slot2.input.secondary } : null
@@ -9873,7 +10778,11 @@
         if (!hasCriticalEvents && slot2.transport.sendRawFrame) {
           const wire = encodeServerMsgBinary(
             { snap: aoiSnap, events: outEvents },
-            { deltaFacilities: !isKeyframe, deltaProjectiles: !isKeyframe }
+            {
+              deltaFacilities: !isKeyframe,
+              deltaProjectiles: !isKeyframe,
+              session: slot2.transport.codecSession
+            }
           );
           slot2.transport.sendRawFrame(wire);
         } else {
@@ -10112,6 +11021,12 @@
       btn.classList.toggle("opacity-40", isClient);
       btn.classList.toggle("cursor-not-allowed", isClient);
     });
+    const botCountInp = getEl("botCountInput");
+    if (botCountInp) {
+      botCountInp.disabled = isClient;
+      botCountInp.classList.toggle("opacity-40", isClient);
+      botCountInp.classList.toggle("cursor-not-allowed", isClient);
+    }
     const openParamsLobbyBtn = getEl("lobbyOpenParamsBtn");
     if (openParamsLobbyBtn) {
       openParamsLobbyBtn.disabled = isClient;
@@ -10179,7 +11094,7 @@
       const slot2 = Number(btn.getAttribute("data-wep") || 0);
       setClassIfChanged(
         btn,
-        slot2 === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-left transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500"
+        slot2 === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-center transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500"
       );
     });
     document.querySelectorAll(".death-sec-btn").forEach((btn) => {
@@ -10198,18 +11113,18 @@
       const slot2 = Number(btn.getAttribute("data-wep") || 0);
       setClassIfChanged(
         btn,
-        slot2 === wepIdx ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-left transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500"
+        slot2 === wepIdx ? "lobby-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-center transition" : "lobby-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500"
       );
     });
     document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
       const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx);
       if (!unlocked) {
-        setClassIfChanged(btn, "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-left transition cursor-not-allowed opacity-60");
+        setClassIfChanged(btn, "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60");
       } else {
         setClassIfChanged(
           btn,
-          sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-left transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-slate-500"
+          sec === pendingLoadout.secondaryType ? "lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-center transition" : "lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500"
         );
       }
       ;
@@ -10286,10 +11201,10 @@
   function handleMinimapClick(clientX, clientY, canvasId = "hudMinimapCanvas") {
     const mm = getEl(canvasId);
     if (!mm) return;
-    const rect = mm.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const wx = clamp((clientX - rect.left) / rect.width * WORLD_W, 0, WORLD_W);
-    const wy = clamp((clientY - rect.top) / rect.height * WORLD_H, 0, WORLD_H);
+    const m = getElementLandscapeMetrics(mm, clientX, clientY);
+    if (m.width <= 0 || m.height <= 0) return;
+    const wx = clamp(m.relX / m.width * WORLD_W, 0, WORLD_W);
+    const wy = clamp(m.relY / m.height * WORLD_H, 0, WORLD_H);
     if (localPlayer.team !== "ffa") {
       const baseX = localPlayer.team === "blue" ? 12940 : 260;
       const baseY = 3264;
@@ -10567,7 +11482,10 @@
       if (typeof c.fillText === "function") {
         c.font = isDeathMap ? "bold 10px monospace" : "bold 7.5px monospace";
         c.fillStyle = isSel ? "#6ee7b7" : selectable ? "#ffffff" : "rgba(226,232,240,0.88)";
-        c.fillText(cp.code, cx - (isDeathMap ? 3.2 : 2.2), cy - dotR - (isDeathMap ? 3 : 1.8));
+        c.save();
+        c.textAlign = "center";
+        c.fillText(cp.code, cx, cy - dotR - (isDeathMap ? 3 : 1.8));
+        c.restore();
       }
     }
     for (let i = 0; i < world.players.length; i++) {
@@ -10632,7 +11550,7 @@
     const mm = getEl("deathMinimapCanvas");
     if (mm) drawTacticalMinimapOnCanvas(mm, true);
   }
-  function updateHudUI2() {
+  function updateHudUI() {
     setTextIfChanged(getEl("hudPlayerName"), localPlayer.name);
     const fovBadge = getEl("hudSniperFovBadge");
     if (fovBadge) {
@@ -10826,7 +11744,7 @@
       banner.classList.add("hidden");
     }
   }
-  function updateScoreboardUI2() {
+  function updateScoreboardUI() {
   }
   function updateTeamCountUI() {
     const counts = { red: 0, blue: 0, ffa: 0 };
@@ -10859,8 +11777,12 @@
     setVal("paramWepDamage", "valWepDamage", w.damage);
     setVal("paramWepHeadshot", "valWepHeadshot", w.headshotMult, "x");
     setVal("paramWepSpeed", "valWepSpeed", w.speed);
+    setVal("paramWepSpread", "valWepSpread", +(w.spread ?? 0).toFixed(3));
+    setVal("paramWepFireDelay", "valWepFireDelay", +(w.fireDelay ?? 0).toFixed(2), "s");
     setVal("paramWepMag", "valWepMag", w.magSize);
     setVal("paramWepReload", "valWepReload", w.reloadTime, "s");
+    setVal("paramWepMove", "valWepMove", +(w.moveSpeedMult ?? 1).toFixed(2), "x");
+    setVal("paramWepFuel", "valWepFuel", +(w.fuelMult ?? 1).toFixed(2), "x");
     setVal("paramGrenadeDmg", "valGrenadeDmg", world.config.grenadeDamage);
     setVal("paramGrenadeRadius", "valGrenadeRadius", world.config.grenadeRadius);
     setVal("paramMineDmg", "valMineDmg", world.config.mineDamage);
@@ -11026,6 +11948,12 @@
   };
   var ROUTE_CYCLE = ["main_deck", "sky_arch", "underground", "main_deck"];
   var botMemoryMap = /* @__PURE__ */ new Map();
+  function nextBotRand(mem) {
+    let t = (mem.rngState += 1831565813) | 0;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
   function defaultRouteForSlot(slotIdx) {
     return ROUTE_CYCLE[slotIdx % ROUTE_CYCLE.length];
   }
@@ -11053,12 +11981,82 @@
     const wep = WEAPONS[bot.weaponIndex] ?? WEAPONS[1];
     return getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1);
   }
+  function chooseHorizontalDir(dx, mem, deadband = 14) {
+    if (Math.abs(dx) <= deadband) return 0;
+    return dx > 0 ? 1 : -1;
+  }
+  function refreshBotTactics(bot, mem, hasLOS, dist, rawDx) {
+    const r1 = nextBotRand(mem);
+    const r2 = nextBotRand(mem);
+    const r3 = nextBotRand(mem);
+    mem.tacticTimer = 22 + Math.floor(r1 * 34);
+    mem.aimOffset = (r2 - 0.5) * 0.055;
+    mem.targetJitter = (r3 - 0.5) * 180;
+    if (hasLOS && dist < 980) {
+      const towardDir = rawDx >= 0 ? 1 : -1;
+      const wepId = bot.weaponIndex;
+      const isCloseWep = wepId === 0 || wepId === 8 || wepId === 6;
+      const isFarWep = wepId === 2 || wepId === 3 || wepId === 4;
+      const roll = nextBotRand(mem);
+      if (isCloseWep) {
+        if (dist > 240) {
+          mem.tacticMove = roll < 0.68 ? towardDir : roll < 0.86 ? -towardDir : 0;
+        } else {
+          mem.tacticMove = roll < 0.45 ? towardDir : roll < 0.85 ? -towardDir : 0;
+        }
+      } else if (isFarWep) {
+        if (dist < 340) {
+          mem.tacticMove = roll < 0.68 ? -towardDir : roll < 0.85 ? 0 : towardDir;
+        } else if (dist < 760) {
+          mem.tacticMove = roll < 0.36 ? -1 : roll < 0.72 ? 1 : 0;
+        } else {
+          mem.tacticMove = roll < 0.62 ? towardDir : roll < 0.82 ? -towardDir : 0;
+        }
+      } else {
+        if (dist < 260) {
+          mem.tacticMove = roll < 0.55 ? -towardDir : roll < 0.85 ? towardDir : 0;
+        } else if (dist < 620) {
+          mem.tacticMove = roll < 0.42 ? towardDir : roll < 0.78 ? -towardDir : 0;
+        } else {
+          mem.tacticMove = roll < 0.75 ? towardDir : roll < 0.9 ? -towardDir : 0;
+        }
+      }
+      if (nextBotRand(mem) < 0.18) {
+        mem.tacticJetTicks = 6 + Math.floor(nextBotRand(mem) * 10);
+      }
+    } else {
+      mem.tacticMove = mem.patrolDir;
+      if (!mem.manualRouteLocked && nextBotRand(mem) < 0.06) {
+        mem.tacticJetTicks = 5 + Math.floor(nextBotRand(mem) * 8);
+      }
+    }
+  }
   function alignPatrolRouteOnSpawn(bot, mem) {
     const bx = bot.pos.x;
     const by = bot.pos.y;
+    const goal = getEnemyOriginalBaseSpawn(bot);
     const defaultDir = bot.team === "red" ? 1 : bot.team === "blue" ? -1 : bx <= 6600 ? 1 : -1;
     if (!mem.manualRouteLocked) {
-      mem.routeId = "main_deck";
+      if (by < MAIN_DECK_TOP - 220) {
+        mem.routeId = "sky_arch";
+      } else if (by > MAIN_DECK_TOP + 120) {
+        mem.routeId = "underground";
+      } else {
+        const r = nextBotRand(mem);
+        const slotRoute = defaultRouteForSlot(mem.slotIdx);
+        if (r < 0.55) {
+          mem.routeId = "main_deck";
+        } else if (r < 0.82) {
+          mem.routeId = slotRoute;
+        } else {
+          mem.routeId = r < 0.91 ? "sky_arch" : "underground";
+        }
+      }
+      if (mem.initialized && nextBotRand(mem) < 0.35) {
+        const nextWep = BOT_PRIMARY_POOL[Math.floor(nextBotRand(mem) * BOT_PRIMARY_POOL.length)];
+        bot.weaponIndex = nextWep;
+        bot.lastPrimaryIndex = nextWep;
+      }
     } else if (by < MAIN_DECK_TOP - 220) {
       mem.routeId = "sky_arch";
     } else if (by > MAIN_DECK_TOP + 120) {
@@ -11068,11 +12066,15 @@
     }
     const route = PATROL_ROUTES[mem.routeId];
     mem.waypointIdx = findNearestWaypointIndex(route, bx, by);
-    mem.patrolDir = defaultDir;
+    mem.patrolDir = goal.x >= bx ? 1 : defaultDir;
     if (mem.waypointIdx === 0) mem.patrolDir = 1;
     else if (mem.waypointIdx === route.length - 1) mem.patrolDir = -1;
+    mem.lastMoveDir = mem.patrolDir;
+    mem.moveSwitchCooldown = 0;
     mem.stuckTicks = 0;
     mem.unstuckTimer = 0;
+    mem.coverHoldTimer = 0;
+    mem.coverCooldownTimer = 0;
     mem.initialized = true;
   }
   function getBotMemory(bot, slotIdx = 0) {
@@ -11080,11 +12082,14 @@
     if (!mem) {
       const routeId = defaultRouteForSlot(slotIdx);
       const defaultDir = bot.team === "blue" ? -1 : 1;
+      const seed = (world.seed ^ Math.imul(bot.id + 1, 2654435769) ^ Math.imul(slotIdx + 7, 2246822507)) >>> 0 || 1;
       mem = {
         slotIdx,
         routeId,
         waypointIdx: 0,
         patrolDir: defaultDir,
+        lastMoveDir: defaultDir,
+        moveSwitchCooldown: 0,
         lastX: bot.pos.x,
         lastY: bot.pos.y,
         stuckTicks: 0,
@@ -11092,7 +12097,18 @@
         unstuckDir: defaultDir,
         rechargingFuel: false,
         sniperReleaseTick: false,
-        initialized: false
+        initialized: false,
+        coverHoldTimer: 0,
+        coverCooldownTimer: 0,
+        rngState: seed,
+        tacticTimer: 10 + slotIdx % 20,
+        tacticMove: defaultDir,
+        tacticJetTicks: 0,
+        aimOffset: 0,
+        targetJitter: 0,
+        burstCycle: 9 + slotIdx % 5,
+        burstDuty: 6 + slotIdx % 3,
+        aggression: 0.82 + slotIdx * 17 % 10 * 0.04
       };
       alignPatrolRouteOnSpawn(bot, mem);
       botMemoryMap.set(bot.id, mem);
@@ -11116,7 +12132,8 @@
     const enemyTeam = playerTeam === "red" ? "blue" : "red";
     return idx % 2 === 0 ? enemyTeam : playerTeam;
   }
-  function syncBotsCount(target) {
+  function syncBotsCount(rawTarget) {
+    const target = Math.max(0, Math.min(MAX_BOT_COUNT, Math.floor(Number.isFinite(rawTarget) ? rawTarget : 0)));
     world.config.randomSpawn = mode.current === "ffa";
     while (bots.length > target) {
       const b = bots.pop();
@@ -11145,6 +12162,16 @@
         alignPatrolRouteOnSpawn(b, mem);
       }
     });
+    if (typeof document !== "undefined") {
+      const inp = document.getElementById("botCountInput");
+      if (inp && inp.value !== String(target)) inp.value = String(target);
+      const btns = document.querySelectorAll(".bot-count-btn");
+      if (btns && typeof btns.forEach === "function") {
+        btns.forEach((b) => {
+          b.className = Number(b.getAttribute("data-bots")) === target ? "bot-count-btn px-2 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs text-center" : "bot-count-btn px-2 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700 text-center";
+        });
+      }
+    }
     updateTeamCountUI();
     updateSpawnPointButtonsUI();
   }
@@ -11184,6 +12211,8 @@
   function pickBotTarget(bot) {
     const bx = bot.pos.x;
     const by = bot.pos.y - 12;
+    const mem = botMemoryMap.get(bot.id);
+    const jitter = mem && !mem.manualRouteLocked ? mem.targetJitter : 0;
     let bestTarget = null;
     let bestScore = Infinity;
     const players = world.players;
@@ -11196,7 +12225,8 @@
       const d = directDist(bx, by, ex, ey);
       const los = d < 1800 && hasLineOfSight(bx, by, ex, ey);
       const sameLayer = Math.abs(e.pos.y - bot.pos.y) < 280;
-      const score = d - (los ? 3200 : 0) - (sameLayer ? 400 : 0);
+      const idBias = (bot.id * 31 + e.id * 17) % 11 * (jitter * 0.08);
+      const score = d - (los ? 3200 : 0) - (sameLayer ? 400 : 0) + idBias;
       if (score < bestScore) {
         bestScore = score;
         bestTarget = e;
@@ -11250,13 +12280,29 @@
     }
     return best;
   }
-  function updateBotSelectedSpawn(bot, mem) {
+  function updateBotSelectedSpawn(bot, _mem) {
     bot.selectedSpawnId = "base";
-    if (!mem.manualRouteLocked) {
-      mem.routeId = "main_deck";
-      const goal = getEnemyOriginalBaseSpawn(bot);
-      mem.patrolDir = goal.x >= bot.pos.x ? 1 : -1;
+  }
+  function findThreatenedFriendlyFlag(bot) {
+    if (!featureFlags.smartBotTactics || bot.team === "ffa") return null;
+    let best = null;
+    let bestScore = Infinity;
+    for (let i = 0; i < world.capturePoints.length; i++) {
+      const cp = world.capturePoints[i];
+      if (Math.abs(cp.y - bot.pos.y) > 200) continue;
+      const isDrainingOwn = cp.ownerTeam === bot.team && cp.progress < 100;
+      const isEnemyCapturing = cp.ownerTeam === null && cp.capturingTeam !== null && cp.capturingTeam !== bot.team && cp.progress > 0;
+      if (!isDrainingOwn && !isEnemyCapturing) continue;
+      const dx = Math.abs(cp.x - bot.pos.x);
+      if (dx > 2800) continue;
+      const urgency = isDrainingOwn ? (100 - cp.progress) * 8 : cp.progress * 6;
+      const score = dx - urgency;
+      if (score < bestScore) {
+        bestScore = score;
+        best = cp;
+      }
     }
+    return best;
   }
   function hasOpenShaftAbove(bx, by) {
     for (let dy = 42; dy <= 122; dy += 26) {
@@ -11266,11 +12312,43 @@
     }
     return true;
   }
-  function advancePatrolWaypoint(mem, route) {
-    let nextIdx = mem.waypointIdx + mem.patrolDir;
+  function advancePatrolWaypoint(bot, mem, route) {
     if (!mem.manualRouteLocked) {
-      nextIdx = Math.max(0, Math.min(route.length - 1, nextIdx));
-    } else if (nextIdx >= route.length) {
+      const bx = bot.pos.x;
+      const by = bot.pos.y;
+      const threatenedCp = findThreatenedFriendlyFlag(bot);
+      if (threatenedCp && Math.abs(threatenedCp.x - bx) > 85) {
+        mem.patrolDir = threatenedCp.x >= bx ? 1 : -1;
+      }
+      const r = nextBotRand(mem);
+      if (mem.routeId === "main_deck" && Math.abs(by - (MAIN_DECK_TOP - 16)) < 45) {
+        if ((bx < 1650 || bx > 11550) && r < 0.22) {
+          mem.routeId = "sky_arch";
+          const nextRoute = PATROL_ROUTES.sky_arch;
+          mem.waypointIdx = findNearestWaypointIndex(nextRoute, bx, by);
+          mem.patrolDir = bx < 6600 ? 1 : -1;
+          mem.stuckTicks = 0;
+          return;
+        }
+        if (bx > 5800 && bx < 7400 && r >= 0.22 && r < 0.34) {
+          mem.routeId = "underground";
+          const nextRoute = PATROL_ROUTES.underground;
+          mem.waypointIdx = findNearestWaypointIndex(nextRoute, bx, by);
+          mem.stuckTicks = 0;
+          return;
+        }
+      } else if ((mem.routeId === "sky_arch" || mem.routeId === "underground") && (mem.waypointIdx === 0 || mem.waypointIdx === route.length - 1) && r < 0.35) {
+        mem.routeId = "main_deck";
+        const nextRoute = PATROL_ROUTES.main_deck;
+        mem.waypointIdx = findNearestWaypointIndex(nextRoute, bx, by);
+        const goal = getEnemyOriginalBaseSpawn(bot);
+        mem.patrolDir = goal.x >= bx ? 1 : -1;
+        mem.stuckTicks = 0;
+        return;
+      }
+    }
+    let nextIdx = mem.waypointIdx + mem.patrolDir;
+    if (nextIdx >= route.length) {
       mem.patrolDir = -1;
       nextIdx = Math.max(0, route.length - 2);
     } else if (nextIdx < 0) {
@@ -11301,23 +12379,35 @@
     } else if (bot.fuel <= 0.02) {
       mem.rechargingFuel = true;
     }
-    const route = PATROL_ROUTES[mem.routeId];
+    let route = PATROL_ROUTES[mem.routeId];
     mem.waypointIdx = Math.max(0, Math.min(route.length - 1, mem.waypointIdx));
     let wp = route[mem.waypointIdx];
-    const tolX = wp.tolX ?? (mem.routeId === "sky_arch" ? 80 : 54);
-    const tolY = wp.tolY ?? (mem.routeId === "sky_arch" ? 28 : 44);
+    const tolX = wp.tolX ?? (mem.routeId === "sky_arch" ? 80 : 58);
+    const tolY = wp.tolY ?? (mem.routeId === "sky_arch" ? 28 : 48);
     const requireGround = mem.routeId === "sky_arch";
     if ((!requireGround || supported) && Math.abs(bx - wp.x) <= tolX && Math.abs(by - wp.y) <= tolY) {
-      advancePatrolWaypoint(mem, route);
+      advancePatrolWaypoint(bot, mem, route);
+      route = PATROL_ROUTES[mem.routeId];
       wp = route[mem.waypointIdx];
     }
-    if (stepDist < 1.1 && !mem.rechargingFuel) {
+    if (stepDist < 1.15 && !mem.rechargingFuel && mem.coverHoldTimer === 0) {
       mem.stuckTicks++;
-      if (mem.stuckTicks > 70) {
-        mem.unstuckTimer = 20;
-        mem.unstuckDir = bx < 1e3 ? 1 : bx > 12200 ? -1 : -mem.patrolDir;
+      const stuckThreshold = mem.manualRouteLocked ? 70 : 48;
+      if (mem.stuckTicks > stuckThreshold) {
+        mem.unstuckTimer = mem.manualRouteLocked ? 20 : 22 + Math.floor(nextBotRand(mem) * 16);
+        if (bx < 1e3) {
+          mem.unstuckDir = 1;
+        } else if (bx > 12200) {
+          mem.unstuckDir = -1;
+        } else if (!mem.manualRouteLocked && nextBotRand(mem) < 0.45) {
+          mem.patrolDir = -mem.patrolDir;
+          mem.unstuckDir = mem.patrolDir;
+        } else {
+          mem.unstuckDir = -mem.lastMoveDir;
+        }
         mem.waypointIdx = findNearestWaypointIndex(route, bx, by);
-        advancePatrolWaypoint(mem, route);
+        advancePatrolWaypoint(bot, mem, route);
+        route = PATROL_ROUTES[mem.routeId];
         wp = route[mem.waypointIdx];
       }
     } else if (stepDist > 2.2) {
@@ -11403,22 +12493,22 @@
         if (by <= wp.y - 6) {
           const goalSpawn = !mem.manualRouteLocked ? getEnemyOriginalBaseSpawn(bot) : null;
           const targetX = goalSpawn && (mem.patrolDir > 0 && bx >= wp.x - 48 || mem.patrolDir < 0 && bx <= wp.x + 48) ? goalSpawn.x : wp.x;
-          move = Math.abs(targetX - bx) <= 18 ? 0 : targetX >= bx ? 1 : -1;
+          move = chooseHorizontalDir(targetX - bx, mem, 18);
         } else {
-          move = distToShaft > 12 ? shaftX > bx ? 1 : -1 : 0;
+          move = distToShaft > 14 ? shaftX > bx ? 1 : -1 : 0;
         }
         return { move, jump: jump2, jetpack: jetpack2, dive };
       }
       if (wp.ascendX !== void 0 && Math.abs(bx - wp.ascendX) < 105 && !supported) {
-        move = wp.x >= bx ? 1 : -1;
+        move = chooseHorizontalDir(wp.x - bx, mem, 12) || mem.patrolDir;
         if (by >= wp.y - 8) jetpack2 = true;
         return { move, jump: jump2, jetpack: jetpack2, dive };
       }
       if (wp.y > by + 80) {
-        move = wp.x >= bx ? 1 : -1;
+        move = chooseHorizontalDir(wp.x - bx, mem, 16) || mem.patrolDir;
         return { move, jump: false, jetpack: false, dive: true };
       }
-      move = wp.x >= bx ? 1 : -1;
+      move = chooseHorizontalDir(wp.x - bx, mem, 14) || mem.patrolDir;
       if (world.terrain.isSolidAt(bx + move * 28, by - 10)) {
         if (bot.onGround) jump2 = true;
       }
@@ -11461,11 +12551,11 @@
             move = dx >= 0 ? 1 : -1;
           }
         } else {
-          move = dx >= 0 ? 1 : -1;
+          move = chooseHorizontalDir(dx, mem, 12) || mem.patrolDir;
         }
         return { move, jump: jump2, jetpack: jetpack2, dive };
       }
-      move = dx >= 0 ? 1 : -1;
+      move = chooseHorizontalDir(dx, mem, 12) || mem.patrolDir;
       const steppingOffEdge = supported && !world.terrain.isSolidAt(bx + move * 36, by + 24);
       if (steppingOffEdge) {
         if (bot.onGround) jump2 = true;
@@ -11484,7 +12574,7 @@
       }
       return { move, jump: jump2, jetpack: jetpack2, dive };
     }
-    move = wp.x >= bx ? 1 : -1;
+    move = chooseHorizontalDir(wp.x - bx, mem, 14) || mem.patrolDir;
     if (by > MAIN_DECK_TOP + 8 && by <= MAIN_DECK_TOP + 80) {
       if (bot.onGround) jump2 = true;
       if (!mem.rechargingFuel) jetpack2 = true;
@@ -11509,6 +12599,9 @@
     if (!bot.deployed || !bot.alive || bot.respawnTimer > 0) return w;
     const mem = getBotMemory(bot);
     updateBotSelectedSpawn(bot, mem);
+    if (mem.moveSwitchCooldown > 0) mem.moveSwitchCooldown--;
+    if (mem.coverCooldownTimer > 0) mem.coverCooldownTimer--;
+    if (mem.tacticJetTicks > 0) mem.tacticJetTicks--;
     const nav = computePatrolNavigation(bot, mem);
     w.move = nav.move;
     w.jump = nav.jump;
@@ -11523,23 +12616,91 @@
     }
     const bx = bot.pos.x;
     const by = bot.pos.y - 12;
-    const tx = target ? target.pos.x : bx + mem.patrolDir * 400;
+    const tx = target ? target.pos.x : bx + mem.lastMoveDir * 400;
     const ty = target ? target.pos.y - 12 : by;
     const rawDx = tx - bx;
     const rawDy = ty - by;
     const dist = target ? Math.hypot(rawDx, rawDy) : 9999;
     const hasLOS = !!target && dist < 1650 && hasLineOfSight(bx, by, tx, ty);
+    if (!mem.manualRouteLocked) {
+      mem.tacticTimer--;
+      if (mem.tacticTimer <= 0) {
+        refreshBotTactics(bot, mem, hasLOS, dist, rawDx);
+      }
+    }
+    const maxFuel = getBotMaxFuel(bot);
+    if (featureFlags.smartBotTactics && !mem.manualRouteLocked && mem.unstuckTimer <= 0 && hasLOS && target && dist < 920 && Math.abs(rawDy) < 260) {
+      const stepEdgeDanger = !world.terrain.isSolidAt(bx + mem.tacticMove * 44, bot.pos.y + 24);
+      if (!stepEdgeDanger) {
+        w.move = mem.tacticMove;
+      }
+      if (mem.tacticJetTicks > 0 && !mem.rechargingFuel && bot.fuel > maxFuel * 0.48 && hasOpenShaftAbove(bx, bot.pos.y)) {
+        if (bot.onGround) w.jump = true;
+        w.jetpack = true;
+      }
+    } else if (!mem.manualRouteLocked && mem.unstuckTimer <= 0 && mem.tacticJetTicks > 0 && !mem.rechargingFuel && bot.fuel > maxFuel * 0.65 && hasOpenShaftAbove(bx, bot.pos.y)) {
+      if (bot.onGround) w.jump = true;
+    }
+    if (featureFlags.smartBotTactics && !mem.manualRouteLocked && mem.unstuckTimer <= 0 && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
+      let cover = mem.coverCache ?? null;
+      if (mem.coverCacheTick === void 0 || world.tick - mem.coverCacheTick >= 8 || mem.coverCacheTargetId !== target.id) {
+        cover = findNearestCoverPosition(bot, target);
+        mem.coverCacheTick = world.tick;
+        mem.coverCacheTargetId = target.id;
+        mem.coverCache = cover;
+      }
+      const needCoverHide = bot.reloading || bot.hp < 75 || curAmmo <= 0 || bot.fireCooldown > 0.35 && dist < 680;
+      if (cover && needCoverHide && mem.coverCooldownTimer <= 0) {
+        mem.coverHoldTimer++;
+        if (mem.coverHoldTimer > 95) {
+          mem.coverHoldTimer = 0;
+          mem.coverCooldownTimer = 110;
+        } else {
+          const dxCover = cover.x - bx;
+          if (Math.abs(dxCover) > 22) {
+            w.move = dxCover > 0 ? 1 : -1;
+          } else {
+            w.move = 0;
+            w.jump = false;
+            w.jetpack = false;
+          }
+        }
+      } else if (mem.coverHoldTimer > 0) {
+        mem.coverHoldTimer = 0;
+        mem.coverCooldownTimer = 75;
+      }
+    } else {
+      mem.coverHoldTimer = 0;
+    }
+    if (w.move !== 0) {
+      if (w.move !== mem.lastMoveDir) {
+        if (mem.moveSwitchCooldown <= 0 || mem.unstuckTimer > 0) {
+          mem.lastMoveDir = w.move;
+          mem.moveSwitchCooldown = mem.manualRouteLocked ? 2 : 10;
+        } else {
+          w.move = mem.lastMoveDir;
+        }
+      }
+    }
     if (hasLOS && target) {
       const projSpeed = Math.max(600, wep.speed || 1200);
       const travelTime = Math.min(0.45, dist / projSpeed);
       const leadX = wep.beam ? tx : tx + target.vel.x * travelTime * 0.65;
       const leadY = wep.beam ? ty : ty + target.vel.y * travelTime * 0.45 - (wep.gravityScale ? 0.5 * 1250 * wep.gravityScale * travelTime * travelTime * 18 : 0);
-      const jitter = Math.sin(world.tick * 0.19 + bot.id * 2.3) * 0.018;
-      w.aim = Math.atan2(leadY - by, leadX - bx) + jitter;
+      const sway = Math.sin(world.tick * 0.17 + bot.id * 2.3) * 0.016 + (mem.manualRouteLocked ? 0 : mem.aimOffset);
+      w.aim = Math.atan2(leadY - by, leadX - bx) + sway;
+      mem.smoothIdleAim = w.aim;
     } else {
-      const lookDir = nav.move !== 0 ? nav.move : mem.patrolDir;
-      const pitch = nav.jetpack ? -0.42 : nav.dive ? 0.55 : -0.06;
-      w.aim = lookDir > 0 ? pitch : Math.PI - pitch;
+      const lookDir = mem.lastMoveDir;
+      const pitch = w.jetpack ? -0.42 : w.dive ? 0.55 : -0.06;
+      const wantAim = lookDir > 0 ? pitch : Math.PI - pitch;
+      const prevAim = mem.smoothIdleAim ?? wantAim;
+      let delta = wantAim - prevAim;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      const MAX_TURN = 0.18;
+      mem.smoothIdleAim = prevAim + Math.max(-MAX_TURN, Math.min(MAX_TURN, delta));
+      w.aim = mem.smoothIdleAim;
     }
     const muzzleBlocked = isMuzzleBlockedNear(bot, w.aim, wep.explosive ? 110 : 64);
     if (!hasLOS && curAmmo < wep.magSize * 0.4 && curReserve > 0 && !bot.reloading) {
@@ -11558,43 +12719,35 @@
       } else if (wep.beam) {
         w.fire = true;
       } else {
-        w.fire = (world.tick + bot.id * 3) % 10 < 7;
+        const cycle = Math.max(6, mem.burstCycle);
+        const duty = Math.min(cycle - 1, Math.max(4, mem.burstDuty));
+        w.fire = (world.tick + bot.id * 3) % cycle < duty;
       }
     } else {
       w.fire = false;
       mem.sniperReleaseTick = false;
     }
-    if (!mem.manualRouteLocked && target && dist < 1250 && (hasLOS || Math.abs(rawDy) < 160)) {
-      let cover = mem.coverCache ?? null;
-      if (mem.coverCacheTick === void 0 || world.tick - mem.coverCacheTick >= 6 || mem.coverCacheTargetId !== target.id) {
-        cover = findNearestCoverPosition(bot, target);
-        mem.coverCacheTick = world.tick;
-        mem.coverCacheTargetId = target.id;
-        mem.coverCache = cover;
-      }
-      const needCoverHide = bot.reloading || bot.hp < 75 || bot.fireCooldown > 0.16 || curAmmo <= 0;
-      if (cover && (needCoverHide || Math.abs(cover.x - bx) < 220)) {
-        const dxCover = cover.x - bx;
-        if (Math.abs(dxCover) > 14) {
-          w.move = dxCover > 0 ? 1 : -1;
-        } else if (needCoverHide) {
-          w.move = 0;
-          w.jump = false;
-          w.jetpack = false;
-        }
+    const streak = bot.deathStreak ?? 0;
+    const threatenedCpNow = findThreatenedFriendlyFlag(bot);
+    if (featureFlags.smartBotTactics && threatenedCpNow && Math.abs(threatenedCpNow.x - bx) < 260) {
+      if (isSecondaryUnlocked("shield", streak, bot.dollCharges ?? 0, bot.weaponIndex) && bot.shieldHp <= 0) {
+        bot.secondary = "shield";
+      } else if (isSecondaryUnlocked("obstacle", streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
+        bot.secondary = "obstacle";
       }
     }
-    const streak = bot.deathStreak ?? 0;
     if (!isSecondaryUnlocked(bot.secondary, streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
       bot.secondary = "frag";
     }
-    if (bot.secondaryCooldown <= 0 && (world.tick + bot.id * 7) % 15 === 0) {
+    const secCheckInterval = 12 + bot.id % 7;
+    if (bot.secondaryCooldown <= 0 && (world.tick + bot.id * 7) % secCheckInterval === 0) {
       const secId = bot.secondary;
       if (isSecondaryUnlocked(secId, streak, bot.dollCharges, bot.weaponIndex)) {
         if (secId === "shield" && hasLOS && dist < 680 && (bot.hp < 95 || dist < 420)) {
           w.secondary = { type: "shield", targetX: bx, targetY: by };
         } else if (secId === "frag" && bot.fragCharges > 0 && hasLOS && dist > 180 && dist < 620 && !muzzleBlocked) {
-          w.secondary = { type: "frag", targetX: tx, targetY: ty };
+          const throwSpread = mem.manualRouteLocked ? 0 : (nextBotRand(mem) - 0.5) * 36;
+          w.secondary = { type: "frag", targetX: tx + throwSpread, targetY: ty - 10 };
         } else if (secId === "obstacle" && bot.onGround && hasLOS && dist > 200 && dist < 650 && Math.abs(rawDy) < 140) {
           w.secondary = { type: "obstacle", targetX: bx + (rawDx >= 0 ? 80 : -80), targetY: bot.pos.y };
         } else if (secId === "doll" && bot.doll === null && hasLOS && dist < 560) {
@@ -11692,6 +12845,10 @@
     if (typeof window !== "undefined" && window.visualViewport) {
       window.visualViewport.addEventListener("resize", onViewportChange);
     }
+    setupMobilePwaAndAutoLandscape(() => {
+      requestResizeCanvas();
+      renderIge();
+    });
     resizeCanvas();
     window.addEventListener("keydown", (e) => {
       warmupAudioCtx();
@@ -11713,13 +12870,17 @@
       else if (e.code === "Digit5") tryChangePrimaryWeapon(7);
       else if (e.code === "Digit6") tryChangePrimaryWeapon(3);
     });
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") igeSpace = true;
+    });
     window.addEventListener("keyup", (e) => {
       keys[e.code] = false;
+      if (e.code === "Space") igeSpace = false;
     });
     canvas?.addEventListener("mousemove", (e) => {
-      const rect = canvas.getBoundingClientRect();
-      mouse.x = e.clientX - rect.left;
-      mouse.y = e.clientY - rect.top;
+      const m = getElementLandscapeMetrics(canvas, e.clientX, e.clientY);
+      mouse.x = m.relX;
+      mouse.y = m.relY;
       if (!touchState.aimActive) touchState.aimUsed = false;
     });
     canvas?.addEventListener("mousedown", (e) => {
@@ -11815,15 +12976,26 @@
     document.querySelectorAll(".bot-count-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (!isHostAuthority()) return;
-        const cnt = Number(btn.getAttribute("data-bots") || 0);
+        const cnt = Math.max(0, Math.min(32, Number(btn.getAttribute("data-bots") || 0)));
         syncBotsCount(cnt);
         broadcastHostRoomParams();
         updateNetStatusUI();
-        document.querySelectorAll(".bot-count-btn").forEach((b) => {
-          b.className = Number(b.getAttribute("data-bots")) === cnt ? "bot-count-btn px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-extrabold text-xs" : "bot-count-btn px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 font-semibold text-xs border border-slate-700";
-        });
       });
     });
+    const botCountInput = document.getElementById("botCountInput");
+    if (botCountInput) {
+      const applyCustomBotCount = () => {
+        if (!isHostAuthority()) return;
+        const raw = Number(botCountInput.value);
+        const cnt = Number.isFinite(raw) ? Math.max(0, Math.min(32, Math.floor(raw))) : 0;
+        botCountInput.value = String(cnt);
+        syncBotsCount(cnt);
+        broadcastHostRoomParams();
+        updateNetStatusUI();
+      };
+      botCountInput.addEventListener("change", applyCustomBotCount);
+      botCountInput.addEventListener("input", applyCustomBotCount);
+    }
     document.getElementById("peerHostBtn")?.addEventListener("click", () => {
       startHostRoom();
       syncLobbyRoleUI("host");
@@ -11901,6 +13073,29 @@
       updateFsLabel();
     });
     document.addEventListener("fullscreenchange", updateFsLabel);
+    const handleInstallOrFullscreenApp = async () => {
+      enterFullscreenAndLandscape();
+      resizeCanvas();
+      updateFsLabel();
+      const promptEv = getDeferredInstallPrompt();
+      if (promptEv) {
+        try {
+          await promptEv.prompt();
+          await promptEv.userChoice;
+        } catch {
+        }
+        clearDeferredInstallPrompt();
+        showToast("\u{1F4F2} \u5DF2\u89E6\u53D1\u5E94\u7528\u5B89\u88C5\u5E76\u8FDB\u5165\u5168\u5C4F\u6A2A\u5C4F\u6A21\u5F0F");
+      } else {
+        showToast("\u{1F4F2} \u5DF2\u5F00\u542F\u5168\u5C4F\u6A2A\u5C4F\uFF01\u624B\u673A\u7AEF\u53EF\u901A\u8FC7\u6D4F\u89C8\u5668\u83DC\u5355\u300C\u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55 / \u5B89\u88C5\u5E94\u7528\u300D\u5B89\u88C5\u5230\u684C\u9762");
+      }
+    };
+    document.getElementById("pwaInstallBtn")?.addEventListener("click", () => {
+      void handleInstallOrFullscreenApp();
+    });
+    document.getElementById("lobbyInstallAppBtn")?.addEventListener("click", () => {
+      void handleInstallOrFullscreenApp();
+    });
     document.getElementById("hudReloadBtn")?.addEventListener("click", () => {
       inputQueue.reload = true;
     });
@@ -11922,7 +13117,7 @@
     let igeDragCur = null;
     let igePanning = false;
     let igePanLast = { x: 0, y: 0 };
-    const igeSpace = false;
+    let igeSpace = false;
     function renderIge() {
       if (!igeCanvas || !igeModal || igeModal.classList.contains("hidden")) return;
       const c = igeCanvas.getContext("2d");
@@ -12174,7 +13369,7 @@
       mode.current = nextMode;
       document.querySelectorAll(".mode-btn").forEach((b) => {
         const sel = b.getAttribute("data-mode") === nextMode;
-        b.className = "mode-btn px-3 py-2 rounded-xl text-left transition border " + (sel ? "border-2 border-emerald-400 bg-emerald-500/20" : "border border-slate-700 bg-slate-950/60 hover:border-slate-500");
+        b.className = "mode-btn px-3 py-2 rounded-xl text-center transition border " + (sel ? "border-2 border-emerald-400 bg-emerald-500/20" : "border border-slate-700 bg-slate-950/60 hover:border-slate-500");
       });
       if (nextMode === "ffa") {
         localPlayer.team = "ffa";
@@ -12224,6 +13419,11 @@
     });
     document.getElementById("startBattleBtn")?.addEventListener("click", () => {
       warmupAudioCtx();
+      if (isMobileOrTouchDevice() || touchState.enabled) {
+        enterFullscreenAndLandscape();
+        resizeCanvas();
+        updateFsLabel();
+      }
       if (uiState.lobbyRole === "client" && netState.role !== "client") {
         const raw = cleanRoomIdString(document.getElementById("peerRemoteIdInput")?.value || "");
         if (raw) {
@@ -12250,6 +13450,33 @@
       updateSpawnPointButtonsUI();
       showToast("\u2705 \u5DF2\u91CD\u7F6E\u5730\u5F62");
     });
+    const muteBtn = document.getElementById("hudMuteBtn");
+    const syncMuteBtn = () => {
+      if (!muteBtn) return;
+      const m = isMuted();
+      muteBtn.textContent = m ? "\u{1F507}" : "\u{1F50A}";
+      muteBtn.title = m ? "\u53D6\u6D88\u9759\u97F3" : "\u9759\u97F3";
+      muteBtn.classList.toggle("bg-rose-900/70", m);
+      muteBtn.classList.toggle("border-rose-500", m);
+      muteBtn.classList.toggle("text-rose-200", m);
+      muteBtn.classList.toggle("bg-slate-800/80", !m);
+      muteBtn.classList.toggle("border-slate-600", !m);
+      muteBtn.classList.toggle("text-slate-200", !m);
+    };
+    muteBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleMuted();
+      syncMuteBtn();
+    });
+    window.addEventListener("keydown", (e) => {
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.code === "KeyM" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        toggleMuted();
+        syncMuteBtn();
+      }
+    });
+    syncMuteBtn();
     const paramsModal = document.getElementById("paramsModal");
     const openParams = () => {
       if (!isHostAuthority()) return;
@@ -12309,11 +13536,23 @@
     bindRangeParam("paramWepSpeed", "valWepSpeed", "", (v) => {
       WEAPONS[paramState.weaponIdx].speed = v;
     });
+    bindRangeParam("paramWepSpread", "valWepSpread", "", (v) => {
+      WEAPONS[paramState.weaponIdx].spread = v;
+    });
+    bindRangeParam("paramWepFireDelay", "valWepFireDelay", "s", (v) => {
+      WEAPONS[paramState.weaponIdx].fireDelay = v;
+    });
     bindRangeParam("paramWepMag", "valWepMag", "", (v) => {
       WEAPONS[paramState.weaponIdx].magSize = v;
     });
     bindRangeParam("paramWepReload", "valWepReload", "s", (v) => {
       WEAPONS[paramState.weaponIdx].reloadTime = v;
+    });
+    bindRangeParam("paramWepMove", "valWepMove", "x", (v) => {
+      WEAPONS[paramState.weaponIdx].moveSpeedMult = v;
+    });
+    bindRangeParam("paramWepFuel", "valWepFuel", "x", (v) => {
+      WEAPONS[paramState.weaponIdx].fuelMult = v;
     });
     bindRangeParam("paramGrenadeDmg", "valGrenadeDmg", "", (v) => {
       world.config.grenadeDamage = v;
@@ -12346,9 +13585,9 @@
       const ascendHintEl = document.getElementById("touchMoveAscendBadge");
       const aimFireHintEl = document.getElementById("touchAimFireBadge");
       const handleMove = (clientX, clientY) => {
-        const rect = zoneEl.getBoundingClientRect();
-        let dx = clientX - (rect.left + rect.width / 2);
-        let dy = clientY - (rect.top + rect.height / 2);
+        const m = getElementLandscapeMetrics(zoneEl, clientX, clientY);
+        let dx = m.dxFromCenter;
+        let dy = m.dyFromCenter;
         const dist = Math.hypot(dx, dy);
         if (dist > maxDist) {
           dx = dx / dist * maxDist;
@@ -12427,7 +13666,7 @@
     syncTeamButtonsUI();
     document.querySelectorAll(".mode-btn").forEach((b) => {
       const sel = b.getAttribute("data-mode") === mode.current;
-      b.className = "mode-btn px-3 py-2 rounded-xl text-left transition border " + (sel ? "border-2 border-emerald-400 bg-emerald-500/20" : "border border-slate-700 bg-slate-950/60 hover:border-slate-500");
+      b.className = "mode-btn px-3 py-2 rounded-xl text-center transition border " + (sel ? "border-2 border-emerald-400 bg-emerald-500/20" : "border border-slate-700 bg-slate-950/60 hover:border-slate-500");
     });
     const triggerSecondaryTouch = (e) => {
       if (e && e.cancelable) e.preventDefault();
@@ -12482,7 +13721,7 @@
       liveIds.clear();
       return;
     }
-    for (const id of Array.from(prevPos.keys())) {
+    for (const id of prevPos.keys()) {
       if (!liveIds.has(id)) prevPos.delete(id);
     }
     liveIds.clear();
@@ -12495,16 +13734,20 @@
       const key = keyOf(kind, e.id);
       const prev = prevPos.get(key);
       if (!prev) continue;
-      const dx = e.pos.x - prev.x;
-      const dy = e.pos.y - prev.y;
+      const rawDx = e.pos.x - prev.x;
+      const rawDy = e.pos.y - prev.y;
+      const dx = Math.abs(rawDx) <= 400 ? rawDx : wrapDeltaX(prev.x, e.pos.x);
+      const dy = Math.abs(rawDy) <= 400 ? rawDy : wrapDeltaY(prev.y, e.pos.y);
       if (Math.abs(dx) > 400 || Math.abs(dy) > 400) continue;
       let slot2 = posOverlay.get(key);
       if (!slot2) {
         slot2 = { x: 0, y: 0 };
         posOverlay.set(key, slot2);
       }
-      slot2.x = prev.x + dx * a;
-      slot2.y = prev.y + dy * a;
+      const nx = prev.x + dx * a;
+      const ny = prev.y + dy * a;
+      slot2.x = Math.abs(rawDx) <= 400 ? nx : wrapX(nx);
+      slot2.y = Math.abs(rawDy) <= 400 ? ny : wrapY(ny);
     }
   }
   function beginOverlayFrame() {
@@ -13263,12 +14506,14 @@
         break;
       }
     }
-    const targetFov = localPlayer.mountedTowerId ? 2 : mounted ? 1 : wep.fovMult || 1;
+    const vc = viewCompensation();
+    const targetFov = (localPlayer.mountedTowerId ? 2 : mounted ? 1 : wep.fovMult || 1) * vc;
     const fovK = 1 - Math.pow(1 - 0.12, Math.max(1e-3, dtSec) * 60);
     camera.fovFactor += (targetFov - camera.fovFactor) * fovK;
     if (localPlayer.deployed) {
-      const tx = localPlayer.pos.x;
-      const ty = localPlayer.pos.y - 12;
+      const renLocal = getRenderPos("p", localPlayer.id, localPlayer.pos.x, localPlayer.pos.y);
+      const tx = renLocal.x;
+      const ty = renLocal.y - 12;
       const k = 1 - Math.pow(1 - 0.2, Math.max(1e-3, dtSec) * 60);
       camera.x = wrapX(camera.x + wrapDeltaX(camera.x, tx) * k);
       camera.y = wrapY(camera.y + wrapDeltaY(camera.y, ty) * k);
@@ -13430,8 +14675,8 @@
         const stepMs = tRender - tStepsBegin;
         renderScene();
         const tHud = performance.now();
-        updateHudUI2();
-        updateScoreboardUI2();
+        updateHudUI();
+        updateScoreboardUI();
         updateDebugHudTelemetry(smoothFps);
         const tEnd = performance.now();
         const renPos = getRenderPos("p", localPlayer.id, localPlayer.pos.x, localPlayer.pos.y);
@@ -13456,7 +14701,7 @@
     });
     window.setInterval(() => {
       const now = performance.now();
-      if (document.hidden || now - lastFrame > 120 && netState.role !== "offline") {
+      if (document.hidden || now - lastFrame > 300 && netState.role !== "offline") {
         diagMark("keepalive-takeover", {
           sinceLastFrameMs: Math.round(now - lastFrame),
           hidden: typeof document !== "undefined" && document.hidden ? 1 : 0,
@@ -13569,8 +14814,8 @@
     applyPendingLoadoutAndSpawn,
     render: () => {
       renderScene();
-      updateHudUI2();
-      updateScoreboardUI2();
+      updateHudUI();
+      updateScoreboardUI();
       updateHudWeaponButtons();
       syncFeatureFlagsUI();
     },
@@ -13628,7 +14873,7 @@
   };
   (function loadSavedParams() {
     try {
-      if (localStorage.getItem("pvp-balance-overrides-v1")) return;
+      if (localStorage.getItem(BALANCE_KEY) || localStorage.getItem("pvp-balance-overrides-v1")) return;
       const raw = localStorage.getItem("pvp-physics-params-v2");
       if (raw) setPhysicsParams(JSON.parse(raw));
     } catch {

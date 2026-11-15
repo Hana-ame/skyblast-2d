@@ -4,10 +4,10 @@ import { applyGravity, jetpack, jump, updateJetpackFuel, getPhysicsParams, stepR
 import { TILE_SIZE } from '../terrain.ts'
 import type { Terrain } from '../terrain.ts'
 import { WEAPONS } from '../weapons.ts'
-import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist } from '../wrap.ts'
+import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
 import { JUMP_PADS, SPAWN_POINTS } from './landmarks.ts'
 import { bucketIdx, findObstacleAt, checkBodyOverlapsAt } from './spatial.ts'
-import type { PlayerState, WorldInput, Obstacle, Mortar, Watchtower } from '../types.ts'
+import type { PlayerState, WorldInput, Obstacle, Mortar, Watchtower, Projectile } from '../types.ts'
 
 /** 两个玩家身体 AABB 是否相交（宽 20，高 -30..+16，脚底锚点） */
 export function bodiesOverlap(ax: number, ay: number, bx: number, by: number): boolean {
@@ -476,8 +476,15 @@ export function separateOverlappingPlayers(
   }
 }
 
+export interface PredictPlayerExtras {
+  playerBroadBuckets?: PlayerState[][]
+  obstacleBroadBuckets?: Obstacle[][]
+  activeGravityOrbs?: Projectile[]
+}
+
 /** 客户端本地预测与服务器回滚重放（Reconciliation）专用纯函数：
- *  推进单个玩家一帧的输入响应（移动速度、跳跃、喷气推力、燃料消耗与地形/障碍碰撞），与 World.applyPlayerInput + stepPlayerKinematic 严格同构。 */
+ *  推进单个玩家一帧的输入响应（移动速度、跳跃、喷气推力、燃料消耗、装填、蓄力后坐力、传送读条、引力弹牵引与地形/掩体/玩家碰撞），
+ *  与 World.applyPlayerInput + stepPlayerKinematic 严格同构。 */
 export function predictLocalPlayerStep(
   p: PlayerState,
   w: WorldInput,
@@ -486,8 +493,22 @@ export function predictLocalPlayerStep(
   obstacles: Obstacle[] = [],
   mortars: Mortar[] = [],
   watchtowers: Watchtower[] = [],
+  extras?: PredictPlayerExtras,
 ): void {
   if (!p.deployed || !p.alive || p.respawnTimer > 0) return
+
+  if (w.switchWeapon !== null && w.switchWeapon !== p.weaponIndex) {
+    const wep = WEAPONS[w.switchWeapon]
+    if (wep && !wep.isSupplyOnly) {
+      p.weaponIndex = wep.id
+      p.lastPrimaryIndex = wep.id
+      p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
+      p.reloading = false
+      p.reloadTimer = 0
+      p.fireCooldown = Math.max(p.fireCooldown, 0.3)
+    }
+  }
+
   const charging = p.chargeTimer > 0 && p.chargeAim !== undefined && !w.trackChargeAim
   p.aim = charging ? p.chargeAim! : w.aim
   const wepCur = WEAPONS[p.weaponIndex] ?? WEAPONS[0]
@@ -506,22 +527,171 @@ export function predictLocalPlayerStep(
   p.fuel = updateJetpackFuel(fuel, w.jetpack, !!p.onGround, dt, fuelMax)
 
   if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt)
-  const mountedMortar = mortars.find(m => m.operatorId === p.id)
-  if (!mountedMortar && w.fire && (wepCur.chargeSeconds ?? 0) <= 0 && !wepCur.beam) {
-    const canFireWhileReloading = !!wepCur.shellReload && (p.ammo[p.weaponIndex] ?? 0) > 0
-    if ((!p.reloading || canFireWhileReloading) && p.fireCooldown <= 0 && (p.ammo[p.weaponIndex] ?? 0) > 0) {
-      // 与 World.fire 严格同构：击发中断装填，开火间隔只取 fireDelay，
-      // 不引入 shellReloadFireDelayMult 之类的额外倍率。
-      if (wepCur.shellReload && p.reloading) { p.reloading = false; p.reloadTimer = 0 }
-      p.ammo[p.weaponIndex] = Math.max(0, (p.ammo[p.weaponIndex] ?? 0) - 1)
-      p.fireCooldown = wepCur.fireDelay
-      if (wepCur.recoil > 0) {
-        const rk = recoilDelta(wepCur.recoil, p.aim)
-        if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
-        p.recoilVel.x = rk.x; p.recoilVel.y = rk.y
-      }
+  if (p.secondaryCooldown > 0) p.secondaryCooldown = Math.max(0, p.secondaryCooldown - dt)
+  if (p.shieldTimer > 0) {
+    p.shieldTimer -= dt
+    if (p.shieldTimer <= 0) { p.shieldTimer = 0; p.shieldHp = 0 }
+  }
+  if (p.warpCooldown > 0) p.warpCooldown = Math.max(0, p.warpCooldown - dt)
+
+  // Teleport 读条推进
+  if (p.teleportTimer && p.teleportTimer > 0 && p.teleportTarget) {
+    p.teleportTimer -= dt
+    if (p.teleportTimer <= 0) {
+      const target = p.teleportTarget
+      p.teleportTimer = 0
+      p.teleportTarget = null
+      p.mountedTowerId = null
+      p.watchtowerTimer = 0
+      p.pos = { x: wrapX(target.x), y: clamp(target.y, 40, 4360) }
+      if (p.vel.y > 0) p.vel.y = 0
+      resolvePenetration(terrain, obstacles, extras?.obstacleBroadBuckets, p)
+      ensureFreePosition(terrain, obstacles, extras?.obstacleBroadBuckets, p)
     }
   }
 
-  stepPlayerKinematic(p, w, dt, terrain, obstacles, undefined, undefined, mortars, watchtowers)
+  // 装填推进（含霰弹逐发装填）
+  if (p.reloading) {
+    if (!wepCur.shellReload || p.fireCooldown <= 0) p.reloadTimer -= dt
+    if (p.reloadTimer <= 0) {
+      const wep = WEAPONS[p.weaponIndex]
+      const avail = p.reserveAmmo[p.weaponIndex] || 0
+      if (wep.shellReload) {
+        if (avail > 0 && p.ammo[p.weaponIndex] < wep.magSize) {
+          p.ammo[p.weaponIndex] += 1
+          p.reserveAmmo[p.weaponIndex] = avail - 1
+        }
+        const stillNeeds = p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0
+        if (stillNeeds) {
+          p.reloadTimer = wep.reloadTime / Math.max(1, wep.magSize)
+        } else {
+          p.reloading = false
+          p.reloadTimer = 0
+        }
+      } else {
+        p.reloading = false
+        p.reloadTimer = 0
+        const needed = wep.magSize - p.ammo[p.weaponIndex]
+        const transfer = Math.min(needed, avail)
+        p.ammo[p.weaponIndex] += transfer
+        p.reserveAmmo[p.weaponIndex] = avail - transfer
+      }
+    }
+  }
+  if (w.reload && !w.fire && !p.reloading) {
+    const wep = WEAPONS[p.weaponIndex]
+    if (wep && p.ammo[p.weaponIndex] < wep.magSize && (p.reserveAmmo[p.weaponIndex] || 0) > 0) {
+      p.reloading = true
+      p.reloadTimer = wep.shellReload ? wep.reloadTime / Math.max(1, wep.magSize) : wep.reloadTime
+    }
+  }
+
+  // 替身人偶倒计时回溯预测
+  if (p.doll) {
+    p.doll.timer -= dt
+    if (p.doll.timer <= 0) {
+      const d = p.doll
+      p.doll = null
+      p.mountedTowerId = null
+      p.watchtowerTimer = 0
+      p.pos = { x: wrapX(d.pos.x), y: d.pos.y }
+      p.vel = { x: 0, y: 0 }
+      p.hp = Math.max(1, d.hp)
+      p.shieldHp = d.shieldHp
+      p.fuel = d.fuel
+      p.weaponIndex = d.weaponIndex
+      p.ammo = [...d.ammo]
+      p.reserveAmmo = [...d.reserveAmmo]
+    }
+  }
+
+  const mountedMortar = mortars.find(m => m.operatorId === p.id)
+  if (!mountedMortar && !wepCur.beam) {
+    const applyFireRecoil = (): void => {
+      const canFireWhileReloading = !!wepCur.shellReload && (p.ammo[p.weaponIndex] ?? 0) > 0
+      if ((!p.reloading || canFireWhileReloading) && p.fireCooldown <= 0 && (p.ammo[p.weaponIndex] ?? 0) > 0) {
+        if (wepCur.shellReload && p.reloading) { p.reloading = false; p.reloadTimer = 0 }
+        p.ammo[p.weaponIndex] = Math.max(0, (p.ammo[p.weaponIndex] ?? 0) - 1)
+        p.fireCooldown = wepCur.fireDelay
+        if (wepCur.recoil > 0) {
+          const rk = recoilDelta(wepCur.recoil, p.aim)
+          if (!p.recoilVel) p.recoilVel = { x: 0, y: 0 }
+          p.recoilVel.x = rk.x; p.recoilVel.y = rk.y
+        }
+        if (p.ammo[p.weaponIndex] <= 0 && (p.reserveAmmo[p.weaponIndex] || 0) > 0) {
+          p.reloading = true
+          p.reloadTimer = wepCur.shellReload ? wepCur.reloadTime / Math.max(1, wepCur.magSize) : wepCur.reloadTime
+        }
+      }
+    }
+
+    if ((wepCur.chargeSeconds ?? 0) > 0) {
+      const firePressed = w.fire && !p.prevFireHeld
+      if (firePressed && p.chargeTimer <= 0 && p.fireCooldown <= 0) {
+        if ((p.ammo[p.weaponIndex] ?? 0) > 0) {
+          p.chargeAim = p.aim
+          p.chargeTimer = 1e-4
+        }
+      }
+      if (p.chargeTimer > 0) {
+        if (w.trackChargeAim) p.chargeAim = p.aim
+        p.chargeTimer += dt
+        if (p.chargeTimer >= (wepCur.chargeSeconds ?? 0)) {
+          if (p.chargeAim !== undefined) p.aim = p.chargeAim
+          applyFireRecoil()
+          p.chargeTimer = 0
+          p.chargeAim = undefined
+        }
+      }
+    } else if (w.fire) {
+      applyFireRecoil()
+    }
+  }
+  p.prevFireHeld = w.fire
+
+  stepPlayerKinematic(
+    p,
+    w,
+    dt,
+    terrain,
+    obstacles,
+    extras?.obstacleBroadBuckets,
+    extras?.playerBroadBuckets,
+    mortars,
+    watchtowers,
+  )
+
+  // 引力弹牵引预测（与 World.step 中的 applyGravityOrbPull 对齐）
+  const orbs = extras?.activeGravityOrbs
+  if (orbs && orbs.length > 0 && p.alive && p.respawnTimer <= 0) {
+    const RANGE = 260
+    const MAX_PULL = 480
+    const MIN_RATIO = 0.35
+    const RAMP_TO = 2.0
+    let vx = 0
+    let vy = 0
+    for (let i = 0; i < orbs.length; i++) {
+      const pr = orbs[i]
+      if (!pr.isGravityOrb || pr.life <= 0) continue
+      const dx = wrapDeltaX(p.pos.x, pr.pos.x)
+      if (dx > RANGE || dx < -RANGE) continue
+      const dy = wrapDeltaY(p.pos.y - 12, pr.pos.y)
+      if (dy > RANGE || dy < -RANGE) continue
+      const d = Math.hypot(dx, dy)
+      if (d > RANGE || d < 8) continue
+      const wepDef = pr.weaponId >= 0 ? WEAPONS[pr.weaponId] : undefined
+      const totalLife = wepDef?.lifeSeconds ?? 0
+      const progress = totalLife > 0 ? Math.min(1, Math.max(0, 1 - pr.life / totalLife)) : 0
+      const ramp = 1 + (RAMP_TO - 1) * progress
+      const strength = MAX_PULL * ramp * (MIN_RATIO + (1 - MIN_RATIO) * (1 - d / RANGE))
+      vx += (dx / d) * strength
+      vy += (dy / d) * strength
+    }
+    if (vx !== 0 || vy !== 0) {
+      const tryX = wrapX(p.pos.x + vx * dt)
+      if (!checkBodyOverlapsAt(terrain, obstacles, tryX, p.pos.y, extras?.obstacleBroadBuckets)) p.pos.x = tryX
+      const tryY = wrapY(p.pos.y + vy * dt)
+      if (!checkBodyOverlapsAt(terrain, obstacles, p.pos.x, tryY, extras?.obstacleBroadBuckets)) p.pos.y = tryY
+    }
+  }
 }
