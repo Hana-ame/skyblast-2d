@@ -9,6 +9,7 @@ import { showToast } from '../app/toast.ts'
 import { handleEvents, death } from '../app/events.ts'
 import { playProceduralSound } from '../app/audio.ts'
 import { installDiag, diagRecordFrame, diagMark } from '../app/diag.ts'
+import { viewCompensation } from '../app/context.ts'
 import { capturePrevPositions, prunePrevPositions, beginOverlayFrame, buildPositionOverlay, getRenderPos } from './interp.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
@@ -135,9 +136,12 @@ function updateCameraTracking(dtSec = FIXED): void {
   for (let i = 0; i < world.mortars.length; i++) {
     if (world.mortars[i].operatorId === localPlayer.id) { mounted = true; break }
   }
-  const targetFov = localPlayer.mountedTowerId
+  // 设备视野补偿：窄画布（手机横屏）放大 fovFactor，使可见世界范围与 PC 一致，
+  // 否则手机画布像素少 -> canvas.width × fovFactor 小 -> 视野明显比 PC 窄。
+  const vc = viewCompensation()
+  const targetFov = (localPlayer.mountedTowerId
     ? 2.0
-    : (mounted ? 1.0 : (wep.fovMult || 1.0))
+    : (mounted ? 1.0 : (wep.fovMult || 1.0))) * vc
   // 帧率无关的指数平滑：每 1/60 秒收敛比例约 0.12，换算成任意 dt
   const fovK = 1 - Math.pow(1 - 0.12, Math.max(1e-3, dtSec) * 60)
 

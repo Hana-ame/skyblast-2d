@@ -75,6 +75,30 @@ export const ctx = canvas
   ? canvas.getContext('2d', { alpha: false, desynchronized: true })
   : null
 export const camera = { x: 6600, y: 1500, fovFactor: 1.0 }
+
+/**
+ * 视野补偿：让不同屏幕尺寸的设备看到**同样的世界范围**。
+ *
+ * 渲染时可见世界宽度 = canvas.width × fovFactor。PC 上画布宽通常 ~1500px，
+ * 而手机横屏画布只有 ~800px，若 fovFactor 都用 1.0，手机看到的世界宽度
+ * 只有 PC 的一半多（这正是"手机视野太小"的根因）。
+ *
+ * 这里以 REFERENCE_VIEW_WIDTH 为基准，设备画布更窄时按比例放大 fovFactor，
+ * 使 canvas.width × fovFactor 恒等于基准视野宽度；宽屏设备则保持 1.0 不缩小
+ * （避免大屏为了"一致"反而看到更少）。
+ */
+const REFERENCE_VIEW_WIDTH = 1500
+/**
+ * 视野补偿倍率：使 canvas.width × 补偿 = 基准视野宽度，**双向生效**。
+ * 窄画布（手机）放大 -> 看到更多世界；宽画布（大屏 PC）收缩 -> 不会比手机看得更远。
+ * 这样不同设备的战术信息量一致，而不是"大屏天然占便宜"。
+ */
+export function viewCompensation(): number {
+  const w = canvas ? canvas.width : 0
+  if (w <= 0) return 1
+  // 限制在 [0.5, 3] 之间，避免极端分辨率下产生离谱缩放
+  return Math.min(3, Math.max(0.5, REFERENCE_VIEW_WIDTH / w))
+}
 export const screenFx = { shake: 0 }
 
 /** 画布后备缓冲尺寸只在真正需要时改写：每次赋值都会重建后备缓冲与 GPU 纹理，

@@ -642,3 +642,57 @@ body.auto-landscape-rotated {
   overflow: hidden !important;
   touch-action: none !important;
 }
+
+/* ==========================================================================
+   手机 / 小屏 HUD 紧凑适配
+   --------------------------------------------------------------------------
+   问题：HUD 用 Tailwind 的 sm: 断点（640px），但手机横屏在"布局视口"上
+   往往仍报告为竖屏宽度，加上 1x 渲染下可用像素本就紧张，左上状态面板
+   （min-width 185/210px）、右上小地图、底部武器栏三块会互相挤压甚至溢出。
+   方案：按真实可视高度/宽度判断"矮屏"，统一收紧各 HUD 块的尺寸与字号，
+   不改动桌面端任何表现。
+   ========================================================================== */
+
+/* 矮屏（横屏手机常见：可视高度 <= 520px）或极窄屏：整体收紧 */
+@media (max-height: 520px), (max-width: 620px) {
+  /* 左上状态面板：缩小内边距与最小宽度，避免挤压小地图 */
+  #topHudBar > .glass-panel {
+    min-width: 132px !important;
+    padding: 4px 7px !important;
+    gap: 3px !important;
+    border-radius: 10px !important;
+  }
+  #hudPlayerName { font-size: 10px !important; max-width: 62px !important; }
+  #hudHpBarWrap { height: 8px !important; }
+  #topHudBar .text-xs { font-size: 10px !important; }
+  #topHudBar .text-\[10px\] { font-size: 9px !important; }
+
+  /* 右上小地图：限制最大尺寸，给状态面板让路 */
+  #miniMapWrap, #minimapWrap { max-width: 128px !important; }
+  #topHudBar canvas { max-width: 128px !important; max-height: 84px !important; }
+
+  /* 底部武器栏：收紧间距与字号 */
+  #bottomWeaponDock { bottom: 4px !important; padding-left: 4px !important; padding-right: 4px !important; }
+  #bottomWeaponDock .glass-panel { padding: 3px 6px !important; gap: 5px !important; border-radius: 10px !important; }
+  #currentWeaponName { font-size: 11px !important; max-width: 56px !important; }
+  #bottomWeaponDock .text-\[10px\] { font-size: 9px !important; }
+
+  /* 换弹进度条：避免顶到屏幕外 */
+  #reloadProgressWrap { top: -6px !important; transform: translate(-50%, -100%) !important; }
+
+  /* 占点进度卡与交互提示：上移，避免与底部武器栏重叠 */
+  #hudCaptureProgressCard { bottom: 64px !important; }
+  #interactBanner { bottom: 56px !important; }
+
+  /* 击杀信息：缩小并限制宽度 */
+  #killFeedContainer { max-width: 150px !important; gap: 3px !important; }
+  #killFeedContainer > * { font-size: 9px !important; padding: 2px 5px !important; }
+}
+
+/* 极矮屏（例如手机横屏但浏览器地址栏占位）：进一步压缩，优先保证不重叠 */
+@media (max-height: 400px) {
+  #topHudBar > .glass-panel { min-width: 112px !important; }
+  #miniMapWrap, #minimapWrap { max-width: 104px !important; }
+  #topHudBar canvas { max-width: 104px !important; max-height: 66px !important; }
+  #bottomWeaponDock .glass-panel { padding: 2px 5px !important; gap: 4px !important; }
+}
