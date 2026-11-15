@@ -141,11 +141,21 @@ test('阵亡界面：容器必须可滚动，且内容不会因为 flex 垂直�
   assert.ok(/id="deathCard"[^>]*class="[^"]*my-auto/.test(html), '#deathCard 需要 my-auto')
 
   // ④ html/body 上有 touch-action:none，必须给阵亡层单独放开竖向滑动
-  assert.ok(/#deathScreen\s*\{[^}]*touch-action:\s*pan-y/.test(css), '#deathScreen 必须显式放开 touch-action: pan-y')
+  assert.ok(/#deathScreen[^{]*\{[^}]*touch-action:\s*pan-y/.test(css), '#deathScreen 必须显式放开 touch-action: pan-y')
 
   // ⑤ 触摸滚动兜底（祖先 touch-action:none 会连坐禁用原生触摸滚动）
-  assert.ok(bindings.includes('bindDeathScreenDragScroll'), 'bindings.ts 必须提供触摸拖拽滚动兜底')
+  assert.ok(bindings.includes('bindOverlayDragScroll'), 'bindings.ts 必须提供触摸拖拽滚动兜底')
   assert.ok(bindings.includes('el.scrollTop = startTop - dy'), '拖拽滚动必须真的改 scrollTop')
+
+  // ⑥ 同样卡在 touch-action:none 里的浮层不止阵亡界面：大厅 / 参数弹窗
+  //    也是 overflow-y-auto + items-center，矮屏上同样会被裁剪，必须一起处理
+  for (const id of ['lobbyModal', 'paramsModal']) {
+    assert.ok(bindings.includes(`bindOverlayDragScroll(document.getElementById('${id}'))`),
+      `${id} 也必须绑定拖拽滚动兜底`)
+    assert.ok(new RegExp(`#${id}[^{]*\\{[^}]*touch-action:\\s*pan-y`).test(css) ||
+      new RegExp(`#deathScreen,[\\s\\S]{0,120}#${id}`).test(css),
+      `${id} 必须放开 touch-action: pan-y`)
+  }
 })
 
 test('手机小地图：不能只压缩 canvas 尺寸，必须整块面板缩放并保持原始比例', () => {

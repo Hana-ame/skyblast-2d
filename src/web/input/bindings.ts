@@ -859,16 +859,15 @@ export function bindAllEvents(): void {
   bindJoystick(document.getElementById('touchAimZone'), document.getElementById('touchAimStick'), true)
 
   /**
-   * 阵亡界面滚动兜底。
+   * 浮层滚动兜底（阵亡界面 + 大厅/参数弹窗）。
    * html/body 上有 touch-action:none（游戏画布必须吃满手势），子元素里的原生触摸滚动
    * 在移动浏览器上会被这条祖先规则连坐禁用 —— 表现就是「阵亡界面卡住、滑不动，
    * 最上面的武器选择够不到」。这里用最小实现补一个拖拽滚动：
    *   - 单指竖向拖动 > 6px 才接管，避免误伤按钮点击；
-   *   - 拖动后吞掉紧随其后的 click，防止松手时误选武器/复活点；
+   *   - 拖动后 400ms 内吞掉紧随其后的 click，防止松手时误选武器/复活点；
    *   - 只有内容真的溢出（scrollHeight > clientHeight）才需要它，反之不干扰。
    */
-  function bindDeathScreenDragScroll(): void {
-    const el = document.getElementById('deathScreen')
+  function bindOverlayDragScroll(el: HTMLElement | null): void {
     if (!el) return
     let startY = 0
     let startTop = 0
@@ -911,7 +910,9 @@ export function bindAllEvents(): void {
       }
     }, true)
   }
-  bindDeathScreenDragScroll()
+  bindOverlayDragScroll(document.getElementById('deathScreen'))
+  bindOverlayDragScroll(document.getElementById('lobbyModal'))
+  bindOverlayDragScroll(document.getElementById('paramsModal'))
 
   syncTeamButtonsUI()
   document.querySelectorAll('.mode-btn').forEach((b) => {

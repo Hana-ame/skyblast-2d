@@ -13667,8 +13667,7 @@
     }
     bindJoystick(document.getElementById("touchMoveZone"), document.getElementById("touchMoveStick"), false);
     bindJoystick(document.getElementById("touchAimZone"), document.getElementById("touchAimStick"), true);
-    function bindDeathScreenDragScroll() {
-      const el = document.getElementById("deathScreen");
+    function bindOverlayDragScroll(el) {
       if (!el) return;
       let startY = 0;
       let startTop = 0;
@@ -13707,7 +13706,9 @@
         }
       }, true);
     }
-    bindDeathScreenDragScroll();
+    bindOverlayDragScroll(document.getElementById("deathScreen"));
+    bindOverlayDragScroll(document.getElementById("lobbyModal"));
+    bindOverlayDragScroll(document.getElementById("paramsModal"));
     syncTeamButtonsUI();
     document.querySelectorAll(".mode-btn").forEach((b) => {
       const sel = b.getAttribute("data-mode") === mode.current;

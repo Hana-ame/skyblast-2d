@@ -724,8 +724,12 @@ body.auto-landscape-rotated {
    之前是 flex + items-center：卡片一旦比视口高，顶部会被顶到负坐标，
    滚动条也拉不回那段内容 —— 手机上最上面的武器选择直接看不到、选不了。
    ========================================================================== */
-#deathScreen {
-  /* html/body 上有 touch-action:none（游戏画布需要），这里必须显式放开竖向滑动 */
+#deathScreen,
+#lobbyModal,
+#paramsModal {
+  /* html/body 上有 touch-action:none（游戏画布需要），这里必须显式放开竖向滑动。
+     大厅/参数弹窗同样是 overflow-y-auto + items-center，矮屏上内容和阵亡界面
+     一样会被顶出可视区，所以三个浮层统一放开。 */
   touch-action: pan-y !important;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
