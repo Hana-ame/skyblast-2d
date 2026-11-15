@@ -89,3 +89,29 @@ test('击杀信息默认透明度为 30%', () => {
   const style = m![1]
   assert.ok(/opacity:\s*0\.3\b/.test(style), `击杀信息容器应默认 opacity:0.3，实际 style="${style}"`)
 })
+
+test('静音按钮：HUD 中存在按钮，且 audio.ts 提供可持久化的静音开关', () => {
+  const html = read('docs/index.html')
+  const audio = read('src/web/app/audio.ts')
+  const bindings = read('src/web/input/bindings.ts')
+
+  // ① 按钮必须真的在 HUD 里
+  const btn = /id="hudMuteBtn"[^>]*>([\s\S]*?)<\/button>/.exec(html)
+  assert.ok(btn, 'HUD 必须有 id="hudMuteBtn" 的静音按钮')
+
+  // ② audio.ts 必须导出静音 API
+  for (const fn of ['export function isMuted', 'export function setMuted', 'export function toggleMuted']) {
+    assert.ok(audio.includes(fn), `audio.ts 必须提供 ${fn}`)
+  }
+  // ③ 静音必须真的拦截声音播放（在 getAudioCtx 里返回 null，所有音效统一生效）
+  assert.ok(/function getAudioCtx\(\): AudioContext \| null \{\s*\n\s*if \(muted\) return null/.test(audio),
+    'getAudioCtx 必须在静音时返回 null，使所有音效统一静默')
+  // ④ 状态必须持久化
+  assert.ok(audio.includes('localStorage.setItem(MUTE_KEY'), '静音状态必须写入 localStorage')
+  assert.ok(audio.includes('localStorage.getItem(MUTE_KEY)'), '启动时必须读取持久化的静音状态')
+
+  // ⑤ 按钮必须已接线，且图标随状态切换
+  assert.ok(bindings.includes("getElementById('hudMuteBtn')"), 'bindings.ts 必须绑定静音按钮')
+  assert.ok(bindings.includes('toggleMuted()'), '点击必须调用 toggleMuted')
+  assert.ok(/muteBtn\.textContent = m \? '🔇' : '🔊'/.test(bindings), '图标必须随静音状态切换')
+})

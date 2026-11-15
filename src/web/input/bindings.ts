@@ -10,7 +10,7 @@ import {
   keys, mouse, touchState, inputQueue, resizeCanvas, requestResizeCanvas,
 } from '../app/context.ts'
 import { showToast } from '../app/toast.ts'
-import { warmupAudioCtx } from '../app/audio.ts'
+import { warmupAudioCtx, isMuted, toggleMuted } from '../app/audio.ts'
 import {
   updateHudWeaponButtons, updateSpawnPointButtonsUI, updateTeamCountUI,
   tryChangePrimaryWeapon, tryChangeSecondaryWeapon,
@@ -690,6 +690,35 @@ export function bindAllEvents(): void {
     updateSpawnPointButtonsUI()
     showToast('✅ 已重置地形')
   })
+
+  // 静音按钮：图标随状态切换，状态持久化在 audio.ts（localStorage）
+  const muteBtn = document.getElementById('hudMuteBtn') as HTMLButtonElement | null
+  const syncMuteBtn = (): void => {
+    if (!muteBtn) return
+    const m = isMuted()
+    muteBtn.textContent = m ? '🔇' : '🔊'
+    muteBtn.title = m ? '取消静音' : '静音'
+    muteBtn.classList.toggle('bg-rose-900/70', m)
+    muteBtn.classList.toggle('border-rose-500', m)
+    muteBtn.classList.toggle('text-rose-200', m)
+    muteBtn.classList.toggle('bg-slate-800/80', !m)
+    muteBtn.classList.toggle('border-slate-600', !m)
+    muteBtn.classList.toggle('text-slate-200', !m)
+  }
+  muteBtn?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    toggleMuted()
+    syncMuteBtn()
+  })
+  // 快捷键 M：不输入文本时切换静音
+  window.addEventListener('keydown', (e) => {
+    const tag = (e.target as HTMLElement | null)?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      toggleMuted(); syncMuteBtn()
+    }
+  })
+  syncMuteBtn()
 
   const paramsModal = document.getElementById('paramsModal')
   const openParams = (): void => {

@@ -3,6 +3,36 @@ import { featureFlags } from './context.ts'
 
 let audioCtx: AudioContext | null = null
 let activeOscCount = 0
+
+// ── 静音开关（持久化到 localStorage）──────────────────────────────────────
+// 实现方式是在 getAudioCtx() 里直接返回 null：所有 play* 入口拿不到 ctx 就静默返回，
+// 无需逐个音效判断，也不会留下悬挂的 oscillator。
+const MUTE_KEY = 'skyblast-muted'
+let muted = false
+try {
+  if (typeof localStorage !== 'undefined') muted = localStorage.getItem(MUTE_KEY) === '1'
+} catch { /* 隐私模式等场景忽略 */ }
+
+export function isMuted(): boolean {
+  return muted
+}
+
+export function setMuted(next: boolean): void {
+  muted = !!next
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(MUTE_KEY, muted ? '1' : '0')
+  } catch { /* 忽略写入失败 */ }
+  // 静音时主动挂起 AudioContext 释放音频硬件；取消静音时恢复
+  if (audioCtx) {
+    if (muted) audioCtx.suspend().catch(() => {})
+    else audioCtx.resume().catch(() => {})
+  }
+}
+
+export function toggleMuted(): boolean {
+  setMuted(!muted)
+  return muted
+}
 const MAX_ACTIVE_OSC = 12
 const lastPlayMs: Record<string, number> = {}
 
@@ -17,6 +47,7 @@ const SOUND_COOLDOWN_MS: Record<string, number> = {
 }
 
 function getAudioCtx(): AudioContext | null {
+  if (muted) return null
   if (!featureFlags.proceduralAudio) return null
   if (typeof window === 'undefined') return null
   const Ctor = (window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
