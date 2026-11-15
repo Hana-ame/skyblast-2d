@@ -181,6 +181,8 @@ function onLocalDeath(): void {
     ds.classList.remove('hidden')
     ds.classList.add('flex')
     ds.scrollTop = 0
+    const body = document.getElementById('deathModalBody')
+    if (body) body.scrollTop = 0
   }
 }
 

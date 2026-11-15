@@ -571,14 +571,15 @@ input, select, textarea {
   .lg\:grid-cols-\[minmax\(0\,1fr\)_280px\] { grid-template-columns: minmax(0, 1fr) 280px; }
 }
 @media (max-height: 820px) {
-  #lobbyModal .p-4 { padding: 0.65rem; }
-  #lobbyModal .gap-3 { gap: 0.5rem; }
-  #lobbyModal .p-3 { padding: 0.55rem; }
-  #lobbyModal .py-2\.5 { padding-top: 0.4rem; padding-bottom: 0.4rem; }
-  #lobbyModal .py-3 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
-  #lobbyModal .lobby-wep-btn, #lobbyModal .lobby-sec-btn { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+  #lobbyModal .p-4, #deathScreen .p-4 { padding: 0.65rem; }
+  #lobbyModal .gap-3, #deathScreen .gap-3 { gap: 0.5rem; }
+  #lobbyModal .p-3, #deathScreen .p-3 { padding: 0.55rem; }
+  #lobbyModal .py-2\.5, #deathScreen .py-2\.5 { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+  #lobbyModal .py-3, #deathScreen .py-3 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  #lobbyModal .lobby-wep-btn, #lobbyModal .lobby-sec-btn,
+  #deathScreen .death-wep-btn, #deathScreen .death-sec-btn { padding-top: 0.35rem; padding-bottom: 0.35rem; }
   #lobbyModal #startBattleBtn { padding-top: 0.6rem; padding-bottom: 0.6rem; }
-  #lobbyModal .p-3\.5 { padding: 0.55rem; }
+  #lobbyModal .p-3\.5, #deathScreen .p-3\.5 { padding: 0.55rem; }
 }
 
 .h-3 { height: 0.75rem; }
@@ -682,11 +683,13 @@ body.auto-landscape-rotated {
     font-size: 9px !important;
   }
 
-  /* 右上小地图：只收窄「面板」，canvas 自己按原始 244x80 比例缩放。
-     早期写法给 canvas 同时套 width+height，两条约束各自独立生效 →
-     canvas 被压成 180x60（原本 244x80）地图被压扁，而面板没跟着缩小，
-     右侧就留出一块完全没有绘制的空缺。 */
-  #hudMinimapPanel { width: 176px !important; padding: 3px !important; }
+  /* 右上小地图：只收窄「面板」，canvas 按原始 244x80 比例跟着缩。
+     给 canvas 同时套 width+height 双约束会让两条约束各自生效 →
+     地图被压扁、面板却没收窄，右侧留出一块完全没有绘制的空缺。 */
+  #hudMinimapPanel {
+    width: 176px !important;
+    padding: 3px !important;
+  }
   #miniMapWrap, #minimapWrap { max-width: 176px !important; }
   #topHudBar #hudMinimapCanvas { border-radius: 8px !important; }
 
@@ -715,24 +718,6 @@ body.auto-landscape-rotated {
   #miniMapWrap, #minimapWrap { max-width: 168px !important; }
   #bottomWeaponDock .glass-panel { padding: 2px 5px !important; gap: 4px !important; }
 }
-
-/* ==========================================================================
-   小地图 canvas：永远按自身原始比例缩放（244x80 / 528x168）。
-   宽度交给面板，高度由 aspect-ratio 推导 —— 既不会被压扁、也不会留空缺。
-   ========================================================================== */
-#hudMinimapCanvas {
-  width: 100% !important;
-  height: auto !important;
-  max-width: none !important;
-  max-height: none !important;
-  aspect-ratio: 244 / 80;
-}
-#deathMinimapCanvas {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 528 / 168;
-}
-#deathMinimapPanel { width: 100%; max-width: 528px; margin-left: auto; margin-right: auto; }
 
 .inset-2 { top: 0.5rem; right: 0.5rem; bottom: 0.5rem; left: 0.5rem; }
 .border-rose-300\/45 { border-color: rgba(253, 164, 175, 0.45); }
@@ -765,38 +750,22 @@ body.auto-landscape-rotated {
   touch-action: pan-y;
 }
 
-@media (max-height: 520px), (max-width: 620px) {
-  #deathScreen {
-    padding-top: 8px !important;
-    padding-bottom: 12px !important;
-  }
-  #deathScreen > div {
-    padding: 10px 12px !important;
-  }
-  #deathScreen .death-wep-btn {
-    padding: 5px 6px !important;
-  }
-  #deathScreen .death-sec-btn {
-    padding: 4px 8px !important;
-  }
-  /* 矮屏别再写死 canvas 高度（会让 528x168 的图被压扁），改收窄面板宽度，
-     高度继续由 aspect-ratio 推导 */
-  #deathMinimapPanel {
-    max-width: 360px !important;
-  }
-}
+
 
 /* ==========================================================================
-   触屏瞄准摇杆：虚线圆 = 开火触发圈。
-   直径 92px = 阈值 0.88 × 最大推程 52px × 2 —— 摇杆球心越过这条线才开火，
-   圈内只做瞄准微调，视觉提示与实际判定严格一致。
+   小地图 canvas：永远按自身原始比例缩放（244x80 / 528x168）。
+   宽度交给面板，高度由 aspect-ratio 推导 —— 既不会被压扁、也不会留空缺。
    ========================================================================== */
-#touchAimFireRing {
-  width: 92px;
-  height: 92px;
-  transition: border-color 80ms linear, box-shadow 80ms linear;
+#hudMinimapCanvas {
+  width: 100% !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  aspect-ratio: 244 / 80;
 }
-#touchAimFireRing.is-firing {
-  border-color: rgba(252, 211, 77, 0.95) !important;
-  box-shadow: 0 0 14px rgba(244, 63, 94, 0.85) inset, 0 0 10px rgba(252, 211, 77, 0.55);
+#deathMinimapCanvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 528 / 168;
 }
+#deathMinimapPanel { width: 100%; margin-left: auto; margin-right: auto; }

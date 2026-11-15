@@ -11054,36 +11054,34 @@
     const sig = `${WEAPONS[0]?.magSize}:${WEAPONS[1]?.magSize}:${WEAPONS[2]?.magSize}:${world.config.fragRechargeSeconds}:${world.config.shieldHp}`;
     if (sig === lastLoadoutTextSig) return;
     lastLoadoutTextSig = sig;
-    document.querySelectorAll(".death-wep-btn").forEach((btn) => {
-      const slot2 = Number(btn.getAttribute("data-wep") || 0);
-      const wep = WEAPONS[slot2];
-      if (!wep) return;
-      const divs = btn.querySelectorAll("div");
-      if (divs[0]) setTextIfChanged(divs[0], wep.shortName);
-      if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep));
-    });
-    document.querySelectorAll(".lobby-wep-btn").forEach((btn, idx) => {
-      const slot2 = Number(btn.getAttribute("data-wep") || 0);
-      const wep = WEAPONS[slot2];
-      if (!wep) return;
-      const divs = btn.querySelectorAll("div");
-      if (divs[0]) setTextIfChanged(divs[0], `${idx + 1}. ${wep.shortName}`);
-      if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep));
-    });
-    document.querySelectorAll(".death-sec-btn").forEach((btn) => {
-      const sec = btn.getAttribute("data-sec") || "frag";
-      const def = SECONDARIES[sec];
-      if (!def) return;
-      setTextIfChanged(btn, formatSecondaryButtonTitle(def, true));
-    });
-    document.querySelectorAll(".lobby-sec-btn").forEach((btn) => {
-      const sec = btn.getAttribute("data-sec") || "frag";
-      const def = SECONDARIES[sec];
-      if (!def) return;
-      const divs = btn.querySelectorAll("div");
-      if (divs[0]) setTextIfChanged(divs[0], formatSecondaryButtonTitle(def, false));
-      if (divs[1]) setTextIfChanged(divs[1], formatSecondaryCardSubtitle(def, world.config));
-    });
+    const syncWepBtns = (selector) => {
+      document.querySelectorAll(selector).forEach((btn, idx) => {
+        const slot2 = Number(btn.getAttribute("data-wep") || 0);
+        const wep = WEAPONS[slot2];
+        if (!wep) return;
+        const divs = btn.querySelectorAll("div");
+        if (divs[0]) setTextIfChanged(divs[0], `${idx + 1}. ${wep.shortName}`);
+        if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep));
+      });
+    };
+    syncWepBtns(".death-wep-btn");
+    syncWepBtns(".lobby-wep-btn");
+    const syncSecBtns = (selector) => {
+      document.querySelectorAll(selector).forEach((btn) => {
+        const sec = btn.getAttribute("data-sec") || "frag";
+        const def = SECONDARIES[sec];
+        if (!def) return;
+        const divs = btn.querySelectorAll("div");
+        if (divs.length >= 2) {
+          setTextIfChanged(divs[0], formatSecondaryButtonTitle(def, false));
+          setTextIfChanged(divs[1], formatSecondaryCardSubtitle(def, world.config));
+        } else {
+          setTextIfChanged(btn, formatSecondaryButtonTitle(def, true));
+        }
+      });
+    };
+    syncSecBtns(".death-sec-btn");
+    syncSecBtns(".lobby-sec-btn");
   }
   function updateHudWeaponButtons() {
     syncLoadoutTextFromSingleSource();
@@ -11098,17 +11096,21 @@
       const slot2 = Number(btn.getAttribute("data-wep") || 0);
       setClassIfChanged(
         btn,
-        slot2 === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-center transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500"
+        slot2 === wepIdx ? "death-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-center transition" : "death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500"
       );
     });
     document.querySelectorAll(".death-sec-btn").forEach((btn) => {
       const sec = btn.getAttribute("data-sec") || "frag";
       const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx);
-      const isSelected = sec === pendingLoadout.secondaryType;
-      setClassIfChanged(
-        btn,
-        "death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs transition " + (isSelected ? "border-2 border-rose-400 bg-rose-500/20 font-extrabold text-white" : unlocked ? "border-slate-600 bg-slate-900/90 font-semibold text-slate-200 hover:border-rose-400/60" : "border-slate-800 bg-slate-950/40 font-semibold text-slate-500 opacity-55 cursor-not-allowed")
-      );
+      if (!unlocked) {
+        setClassIfChanged(btn, "death-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60");
+      } else {
+        setClassIfChanged(
+          btn,
+          sec === pendingLoadout.secondaryType ? "death-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-center transition" : "death-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500"
+        );
+      }
+      ;
       btn.disabled = !unlocked;
     });
     const streakNote = getEl("deathSecNote");
@@ -13606,7 +13608,9 @@
           touchState.aimY = ny;
           const firing = Math.hypot(nx, ny) >= TOUCH_FIRE_THRESHOLD;
           stickEl.className = firing ? "w-14 h-14 rounded-full bg-rose-500/85 border-2 border-amber-200 shadow-[0_0_18px_rgba(244,63,94,0.85)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50" : "w-14 h-14 rounded-full bg-rose-500/55 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50";
-          aimFireRingEl?.classList.toggle("is-firing", firing);
+          if (aimFireRingEl) {
+            aimFireRingEl.className = firing ? "absolute inset-2 rounded-full border-2 border-dashed border-amber-300/90 pointer-events-none" : "absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none";
+          }
           if (aimFireHintEl) aimFireHintEl.textContent = firing ? "\u{1F525} \u5C04\u51FB" : "\u{1F3AF} \u7784\u51C6";
         } else {
           touchState.moveX = nx;
@@ -13650,7 +13654,9 @@
             touchState.aimY = 0;
             stickEl.style.transform = "translate(0px, 0px)";
             stickEl.className = "w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75";
-            aimFireRingEl?.classList.remove("is-firing");
+            if (aimFireRingEl) {
+              aimFireRingEl.className = "absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none";
+            }
             if (aimFireHintEl) aimFireHintEl.textContent = "\u7784\u51C6 / \u5916\u63A8\u5F00\u706B";
           } else if (!isAim && t.identifier === touchState.moveId) {
             touchState.moveActive = false;
@@ -14699,6 +14705,8 @@
       ds.classList.remove("hidden");
       ds.classList.add("flex");
       ds.scrollTop = 0;
+      const body = document.getElementById("deathModalBody");
+      if (body) body.scrollTop = 0;
     }
   }
   function onLocalRespawn() {

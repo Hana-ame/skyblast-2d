@@ -878,19 +878,15 @@ test('护栏·UI 文本单一数据源校验：index.html 死亡界面与大厅�
 
   // 2. 校验死亡界面与大厅中不再包含已移除的 mine 副武器按钮，且解锁阶梯与 SECONDARY_UNLOCK_ORDER 完全一致
   assert.ok(!html.includes('data-sec="mine"'), 'mine button removed from docs/index.html')
-  const deathSecIds = [...html.matchAll(/<button[^>]*data-sec="([a-z_]+)"[^>]*class="death-sec-btn[^"]*"[^>]*>([\s\S]*?)<\/button>/g)]
-  assert.deepEqual(deathSecIds.map(m => m[1]), [...SECONDARY_UNLOCK_ORDER], 'death screen secondary buttons match SECONDARY_UNLOCK_ORDER')
-  for (const m of deathSecIds) {
-    const def = SECONDARIES[m[1]]
-    assert.equal(m[2].trim(), formatSecondaryButtonTitle(def, true), `death secondary button "${m[1]}" text matches single source`)
-  }
-
-  const lobbySecMatches = [...html.matchAll(/<button[^>]*data-sec="([a-z_]+)"[^>]*class="lobby-sec-btn[^"]*"[^>]*>[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>\s*<div[^>]*>([\s\S]*?)<\/div>\s*<\/button>/g)]
-  assert.deepEqual(lobbySecMatches.map(m => m[1]), [...SECONDARY_UNLOCK_ORDER], 'lobby secondary buttons match SECONDARY_UNLOCK_ORDER')
-  for (const m of lobbySecMatches) {
-    const def = SECONDARIES[m[1]]
-    assert.equal(m[2].trim(), formatSecondaryButtonTitle(def, false), `lobby secondary title "${m[1]}" matches single source`)
-    assert.equal(m[3].trim(), formatSecondaryCardSubtitle(def, DEFAULT_CONFIG), `lobby secondary subtitle "${m[1]}" matches single source`)
+  // 阵亡界面与房间设定大厅现在共用同款「标题 + 副标题」双行卡片，两处都要逐行比对单一数据源
+  for (const cls of ['death-sec-btn', 'lobby-sec-btn']) {
+    const secBtns = [...html.matchAll(new RegExp(`<button[^>]*data-sec="([a-z_]+)"[^>]*class="${cls}[^"]*"[^>]*>[\\s\\S]*?<div[^>]*>([\\s\\S]*?)<\\/div>\\s*<div[^>]*>([\\s\\S]*?)<\\/div>\\s*<\\/button>`, 'g'))]
+    assert.deepEqual(secBtns.map(m => m[1]), [...SECONDARY_UNLOCK_ORDER], `${cls} buttons match SECONDARY_UNLOCK_ORDER`)
+    for (const m of secBtns) {
+      const def = SECONDARIES[m[1]]
+      assert.equal(m[2].trim(), formatSecondaryButtonTitle(def, false), `${cls} "${m[1]}" title matches single source`)
+      assert.equal(m[3].trim(), formatSecondaryCardSubtitle(def, DEFAULT_CONFIG), `${cls} "${m[1]}" subtitle matches single source`)
+    }
   }
 })
 

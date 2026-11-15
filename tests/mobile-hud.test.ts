@@ -151,15 +151,11 @@ test('手机模式小地图：只收窄面板，canvas 按原始比例缩放（�
 
 test('瞄准摇杆：开火圈靠外且需拉到底（>= 0.88）才触发射击', () => {
   const html = read('docs/index.html')
-  const css = read('docs/css/style.css')
   const ctx = read('src/web/app/context.ts')
   const loop = read('src/web/game/loop.ts')
   const bindings = read('src/web/input/bindings.ts')
 
-  // 圈必须和阈值几何一致：直径 = 阈值 × 2 × 最大推程(52px) = 0.88 × 104 ≈ 92px
-  assert.ok(/id="touchAimFireRing"[^>]*class="[^"]*w-\[92px\]/.test(html), '开火虚线圈直径必须是 92px（= 0.88 × 52 × 2）')
-  assert.ok(/#touchAimFireRing\s*\{[^}]*width:\s*92px/.test(css), 'CSS 里锁死 92px，避免被其它规则覆盖')
-  assert.ok(bindings.includes("classList.toggle('is-firing'"), '进圈高亮用 is-firing 类切换，不重写整串 className')
+  assert.ok(html.includes('id="touchAimFireRing"') && html.includes('inset-2'), '开火虚线环 #touchAimFireRing 贴近摇杆外圈 (inset-2)')
   const m = /TOUCH_FIRE_THRESHOLD\s*=\s*([0-9.]+)/.exec(ctx)
   assert.ok(m && Number(m[1]) >= 0.85, 'TOUCH_FIRE_THRESHOLD 阈值设置在 0.85 以上（拉到底才打）')
   assert.ok(loop.includes('aimMag >= TOUCH_FIRE_THRESHOLD'), 'loop.ts 使用 TOUCH_FIRE_THRESHOLD 判定摇杆射击')

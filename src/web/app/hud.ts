@@ -339,39 +339,35 @@ export function syncLoadoutTextFromSingleSource(): void {
   if (sig === lastLoadoutTextSig) return
   lastLoadoutTextSig = sig
 
-  document.querySelectorAll('.death-wep-btn').forEach((btn) => {
-    const slot = Number(btn.getAttribute('data-wep') || 0)
-    const wep = WEAPONS[slot]
-    if (!wep) return
-    const divs = btn.querySelectorAll('div')
-    if (divs[0]) setTextIfChanged(divs[0], wep.shortName)
-    if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep))
-  })
+  const syncWepBtns = (selector: string): void => {
+    document.querySelectorAll(selector).forEach((btn, idx) => {
+      const slot = Number(btn.getAttribute('data-wep') || 0)
+      const wep = WEAPONS[slot]
+      if (!wep) return
+      const divs = btn.querySelectorAll('div')
+      if (divs[0]) setTextIfChanged(divs[0], `${idx + 1}. ${wep.shortName}`)
+      if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep))
+    })
+  }
+  syncWepBtns('.death-wep-btn')
+  syncWepBtns('.lobby-wep-btn')
 
-  document.querySelectorAll('.lobby-wep-btn').forEach((btn, idx) => {
-    const slot = Number(btn.getAttribute('data-wep') || 0)
-    const wep = WEAPONS[slot]
-    if (!wep) return
-    const divs = btn.querySelectorAll('div')
-    if (divs[0]) setTextIfChanged(divs[0], `${idx + 1}. ${wep.shortName}`)
-    if (divs[1]) setTextIfChanged(divs[1], formatWeaponCardSubtitle(wep))
-  })
-
-  document.querySelectorAll('.death-sec-btn').forEach((btn) => {
-    const sec = btn.getAttribute('data-sec') || 'frag'
-    const def = SECONDARIES[sec]
-    if (!def) return
-    setTextIfChanged(btn, formatSecondaryButtonTitle(def, true))
-  })
-
-  document.querySelectorAll('.lobby-sec-btn').forEach((btn) => {
-    const sec = btn.getAttribute('data-sec') || 'frag'
-    const def = SECONDARIES[sec]
-    if (!def) return
-    const divs = btn.querySelectorAll('div')
-    if (divs[0]) setTextIfChanged(divs[0], formatSecondaryButtonTitle(def, false))
-    if (divs[1]) setTextIfChanged(divs[1], formatSecondaryCardSubtitle(def, world.config))
-  })
+  const syncSecBtns = (selector: string): void => {
+    document.querySelectorAll(selector).forEach((btn) => {
+      const sec = btn.getAttribute('data-sec') || 'frag'
+      const def = SECONDARIES[sec]
+      if (!def) return
+      const divs = btn.querySelectorAll('div')
+      if (divs.length >= 2) {
+        setTextIfChanged(divs[0], formatSecondaryButtonTitle(def, false))
+        setTextIfChanged(divs[1], formatSecondaryCardSubtitle(def, world.config))
+      } else {
+        setTextIfChanged(btn, formatSecondaryButtonTitle(def, true))
+      }
+    })
+  }
+  syncSecBtns('.death-sec-btn')
+  syncSecBtns('.lobby-sec-btn')
 }
 
 export function updateHudWeaponButtons(): void {
@@ -390,23 +386,23 @@ export function updateHudWeaponButtons(): void {
     setClassIfChanged(
       btn,
       slot === wepIdx
-        ? 'death-wep-btn px-2.5 py-2 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 text-center transition'
+        ? 'death-wep-btn px-2.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-500/20 text-center transition'
         : 'death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500',
     )
   })
   document.querySelectorAll('.death-sec-btn').forEach((btn) => {
     const sec = btn.getAttribute('data-sec') || 'frag'
     const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx)
-    const isSelected = sec === pendingLoadout.secondaryType
-    setClassIfChanged(
-      btn,
-      'death-sec-btn px-2.5 py-1.5 rounded-lg border text-xs transition ' +
-        (isSelected
-          ? 'border-2 border-rose-400 bg-rose-500/20 font-extrabold text-white'
-          : unlocked
-            ? 'border-slate-600 bg-slate-900/90 font-semibold text-slate-200 hover:border-rose-400/60'
-            : 'border-slate-800 bg-slate-950/40 font-semibold text-slate-500 opacity-55 cursor-not-allowed'),
-    )
+    if (!unlocked) {
+      setClassIfChanged(btn, 'death-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60')
+    } else {
+      setClassIfChanged(
+        btn,
+        sec === pendingLoadout.secondaryType
+          ? 'death-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-center transition'
+          : 'death-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500',
+      )
+    }
     ;(btn as HTMLButtonElement).disabled = !unlocked
   })
   const streakNote = getEl('deathSecNote')
