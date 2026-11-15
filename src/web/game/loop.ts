@@ -102,7 +102,6 @@ function buildLocalInput(): WorldInput {
     }
   }
 
-  // 开火圈在摇杆外缘：推到 TOUCH_FIRE_THRESHOLD 以上才开火，圈内只做瞄准微调
   const touchWantsFire = touchState.enabled && touchState.aimActive && aimMag >= TOUCH_FIRE_THRESHOLD
   // 手柄摇杆开火时，狙击枪在 0.5s 读条期间持续追踪当前摇杆拖动方向（0.5s 之后所在位置发射）；键鼠仍锁定按下瞬间方向
   w.trackChargeAim = touchState.enabled && touchState.aimActive
@@ -178,7 +177,11 @@ function onLocalDeath(): void {
   updateSpawnPointButtonsUI()
   renderDeathStats(true)
   const ds = document.getElementById('deathScreen')
-  if (ds) { ds.classList.remove('hidden'); ds.classList.add('flex') }
+  if (ds) {
+    ds.classList.remove('hidden')
+    ds.classList.add('flex')
+    ds.scrollTop = 0
+  }
 }
 
 function onLocalRespawn(): void {

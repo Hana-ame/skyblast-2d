@@ -204,6 +204,9 @@ export const uiState = {
 // ── 输入状态 ──
 export const keys: Record<string, boolean> = {}
 export const mouse = { x: 0, y: 0, worldX: 6600, worldY: 1500, down: false }
+/** 移动端瞄准摇杆外推开火阈值（0~1）：靠近外圈拉到底才开火 */
+export const TOUCH_FIRE_THRESHOLD = 0.88
+
 export const touchState = {
   enabled: false,
   moveActive: false, moveId: -1, moveX: 0, moveY: 0,
@@ -213,13 +216,6 @@ export const touchState = {
   wasGroundedBeforeAscend: false,
   aimUsed: false,
 }
-
-/**
- * 触屏瞄准摇杆的开火触发阈值（0~1，相对最大推程）。
- * 用户明确要求「开火圈更靠外，尽量拉到最底才打」：0.42 的时候轻轻一推就开火，
- * 想微调瞄准角度根本做不到；0.9 表示推到 90% 行程才开火，圈内只瞄准。
- */
-export const TOUCH_FIRE_THRESHOLD = 0.9
 export const inputQueue: {
   interact: boolean
   secondary: { type: string; targetX: number; targetY: number } | null

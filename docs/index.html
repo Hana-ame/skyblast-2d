@@ -63,6 +63,21 @@
       </div>
     </div>
 
+    <!-- 屏幕上方常驻：房间与 Ping 信息栏（从系统配置栏独立拆出，始终常驻显示） -->
+    <div id="topRoomPingWrap" class="flex items-start justify-center pointer-events-none shrink-0">
+      <div id="topRoomPingBar" class="glass-panel rounded-xl px-2 py-1 flex items-center gap-1.5 pointer-events-auto shadow-xl border border-slate-700/80">
+        <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px]">
+          <span id="netStatusDot" class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+          <span id="netStatusText" class="text-slate-200 font-bold">Host</span>
+          <span id="peerCountBadge" class="text-cyan-400 font-bold">单机/4AI</span>
+          <span id="kcpRttBadge" class="text-[10px] font-mono font-bold text-emerald-300 border-l border-slate-700 pl-1.5 tabular-nums">Ping 0ms</span>
+        </div>
+        <button id="openLobbyBtn" type="button" class="px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-[11px] font-extrabold text-white transition shrink-0">
+          🏠 房间
+        </button>
+      </div>
+    </div>
+
     <!-- 右上角：战术雷达小地图（代替原记分板与队伍信息）+ 按下触发按钮才展开的系统栏 -->
     <div class="flex flex-col items-end gap-1.5 pointer-events-none">
       <div class="flex items-start gap-1.5 pointer-events-auto">
@@ -70,7 +85,7 @@
           <canvas id="hudMinimapCanvas" width="244" height="80" class="w-full h-[80px] rounded-xl bg-slate-950/95 border border-slate-800 cursor-pointer block"></canvas>
           <span id="hudZoneCoordText" class="hidden"></span>
         </div>
-        <!-- 特定位置系统栏展开按钮（平时只露出此小按钮，按下才展开 Host/房间/触屏/全屏/Debug 栏） -->
+        <!-- 特定位置系统栏展开按钮（平时只露出此小按钮，按下才展开特性/触屏/全屏/Debug 栏） -->
         <button id="toggleSysBarBtn" type="button" class="glass-panel w-8 h-8 rounded-xl border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-xs font-extrabold text-slate-200 flex items-center justify-center shadow-xl transition">
           ⚙️
         </button>
@@ -78,17 +93,8 @@
 
       <!-- 隐藏式系统工具栏（默认 hidden，按下右上角 #toggleSysBarBtn 才显示） -->
       <div id="topSystemToolbar" class="hidden glass-panel rounded-2xl px-2 py-1 flex items-center gap-1.5 pointer-events-auto shadow-xl border border-slate-700/80">
-        <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px]">
-          <span id="netStatusDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span id="netStatusText" class="text-slate-300 font-medium">Host</span>
-          <span id="peerCountBadge" class="text-cyan-400 font-bold">4AI</span>
-          <span id="kcpRttBadge" class="hidden text-[10px] font-mono text-emerald-300 border-l border-slate-700 pl-1.5">0ms</span>
-        </div>
         <button id="toggleFlagsHudBtn" type="button" class="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200 border border-emerald-400/50 text-[11px] font-extrabold transition flex items-center gap-1">
           🎛️ <span id="hudFlagsCountText">6/6</span>
-        </button>
-        <button id="openLobbyBtn" type="button" class="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-[11px] font-extrabold text-white transition">
-          🏠 房间
         </button>
         <button id="toggleTouchBtn" type="button" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-700 transition">
           🎮 手柄：关
@@ -232,10 +238,8 @@
   </div>
 
   <!-- ==================== 阵亡界面 ==================== -->
-  <!-- 注意：外层必须是「可滚动块级容器 + 内容 my-auto」而不是 flex+items-center。
-       flex 居中时内容一旦高于视口，顶部会被顶到负坐标且无法滚动到，导致手机上选不到最上面的武器按钮。 -->
-  <div id="deathScreen" data-role="death-scroll" class="hidden fixed inset-0 z-[70] flex flex-col items-center overflow-y-auto bg-slate-950/94 pointer-events-auto py-2">
-    <div id="deathCard" class="w-[min(96vw,1000px)] shrink-0 rounded-2xl border border-rose-500/40 bg-slate-900/95 p-4 shadow-2xl my-auto">
+  <div id="deathScreen" class="hidden fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/94 pointer-events-auto py-3 sm:py-6">
+    <div class="w-[min(94vw,1000px)] rounded-2xl border border-rose-500/40 bg-slate-900/95 p-3 sm:p-5 shadow-2xl mx-auto my-auto">
       <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
         <div class="min-w-0 flex items-center gap-2.5">
           <div class="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-lg shrink-0">💀</div>
@@ -275,7 +279,7 @@
         </div>
       </div>
 
-      <div id="deathBody" class="mt-3 grid grid-cols-1 gap-4 items-start">
+      <div class="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4 items-start">
         <div class="min-w-0">
           <div id="deathWeaponGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <button type="button" data-wep="0" class="death-wep-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition">
@@ -313,7 +317,7 @@
             <span id="deathSecNote" class="text-[10px] text-slate-400 ml-1"></span>
           </div>
 
-          <!-- 阵亡界面小地图选点：canvas 用原始 528x168 比例自适应，避免固定高度把地图拉扁 -->
+          <!-- 阵亡界面小地图选点 -->
           <div id="deathMinimapPanel" class="mt-3 rounded-xl border border-slate-700/80 bg-slate-950/80 p-2">
             <div class="flex items-center justify-between gap-2 mb-1.5">
               <span id="deathSelectedSpawnBadge" class="px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-400/50 text-[11px] font-extrabold text-emerald-200">
@@ -323,7 +327,7 @@
                 🏠 基地
               </button>
             </div>
-            <canvas id="deathMinimapCanvas" width="528" height="168" class="w-full block rounded-xl bg-slate-950 border border-slate-800 cursor-pointer shadow-inner"></canvas>
+            <canvas id="deathMinimapCanvas" width="528" height="168" class="w-full h-[148px] sm:h-[168px] rounded-xl bg-slate-950 border border-slate-800 cursor-pointer block shadow-inner"></canvas>
           </div>
         </div>
 
@@ -406,10 +410,10 @@
       <div id="touchMoveStick" class="w-14 h-14 rounded-full bg-sky-400/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75"></div>
     </div>
 
-    <div id="touchAimZone" class="absolute bottom-5 right-5 w-40 h-40 rounded-full bg-slate-900/50 border-2 border-rose-400/45 pointer-events-auto flex flex-col items-center justify-between py-2.5 touch-none shadow-[0_0_24px_rgba(244,63,94,0.18)]">
-      <div id="touchAimFireBadge" class="text-[10px] text-rose-200/75 font-bold text-center pointer-events-none">瞄准 / 外推开火</div>
-      <div id="touchAimFireRing" class="rounded-full border border-dashed border-rose-300/30 pointer-events-none"></div>
-      <div class="text-[9px] text-rose-300/60 font-semibold pointer-events-none">FIRE</div>
+    <div id="touchAimZone" class="absolute bottom-5 right-5 w-40 h-40 rounded-full bg-slate-900/50 border-2 border-rose-400/45 pointer-events-auto flex flex-col items-center justify-between py-3 touch-none shadow-[0_0_24px_rgba(244,63,94,0.18)]">
+      <div id="touchAimFireBadge" class="text-[10px] text-rose-200/75 font-bold text-center pointer-events-none relative z-10">瞄准 / 外推开火</div>
+      <div id="touchAimFireRing" class="absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none"></div>
+      <div class="text-[9px] text-rose-300/60 font-semibold pointer-events-none relative z-10">FIRE</div>
       <div id="touchAimStick" class="w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75"></div>
     </div>
 
@@ -886,6 +890,6 @@
   <!-- 轻提示 Toast -->
   <div id="toastBanner" class="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
-  <script src="./bundle.js?v=18d1d5224f"></script>
+  <script src="./bundle.js?v=73974b8ea5"></script>
 </body>
 </html>

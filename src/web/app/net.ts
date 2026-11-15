@@ -287,7 +287,10 @@ export function updateNetStatusUI(): void {
     if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400'
     if (txt) txt.textContent = 'Host'
     if (badge) badge.textContent = `单机/${bots.length}AI`
-    if (rttBadge) rttBadge.classList.add('hidden')
+    if (rttBadge) {
+      rttBadge.classList.remove('hidden')
+      rttBadge.textContent = 'Ping 0ms'
+    }
     if (roleBadge) {
       roleBadge.textContent = '👑 Host'
       roleBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
@@ -299,7 +302,7 @@ export function updateNetStatusUI(): void {
     if (badge) badge.textContent = `${netState.peerCount + 1}人`
     if (rttBadge) {
       rttBadge.classList.remove('hidden')
-      rttBadge.textContent = `${srtt || 1}ms`
+      rttBadge.textContent = `Ping ${srtt || 1}ms`
     }
     if (roleBadge) {
       roleBadge.textContent = `👑 Host (${netState.roomId})`
@@ -312,7 +315,7 @@ export function updateNetStatusUI(): void {
     if (badge) badge.textContent = 'Client'
     if (rttBadge) {
       rttBadge.classList.remove('hidden')
-      rttBadge.textContent = `${srtt || 1}ms`
+      rttBadge.textContent = `Ping ${srtt || 1}ms`
     }
     if (roleBadge) {
       roleBadge.textContent = `🚀 Client (${netState.roomId})`

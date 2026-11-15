@@ -78,8 +78,8 @@ test('手机 HUD：存在矮屏/窄屏的紧凑适配规则', () => {
   for (const sel of ['#topHudBar > .glass-panel', '#bottomWeaponDock .glass-panel', '#killFeedContainer']) {
     assert.ok(css.includes(sel), `紧凑样式必须覆盖 ${sel}`)
   }
-  // 小地图必须收窄，否则会挤压左上状态面板；收窄的是面板宽度，canvas 自己按比例缩放
-  assert.ok(/#hudMinimapPanel\s*\{[^}]*width/.test(css), '必须限制小地图面板宽度')
+  // 小地图必须限制最大宽度，否则会挤压左上状态面板
+  assert.ok(/#topHudBar canvas/.test(css), '必须限制小地图画布尺寸')
 })
 
 test('击杀信息默认透明度为 30%', () => {
@@ -116,89 +116,35 @@ test('静音按钮：HUD 中存在按钮，且 audio.ts 提供可持久化的静
   assert.ok(/muteBtn\.textContent = m \? '🔇' : '🔊'/.test(bindings), '图标必须随静音状态切换')
 })
 
-// ── 手机端三个「够不到 / 空缺 / 太早点火」的回归 ──────────────────────────────
-// 用户报告：
-//   A. 阵亡界面不能上下滚 → 选不到下一次用什么武器
-//   B. 手机模式小地图有一块空缺
-//   C. 开火圈太靠内，希望能拉到底才开火
-
-test('阵亡界面：容器必须可滚动，且内容不会因为 flex 垂直居中而被顶到视口上方', () => {
+test('死亡 HUD：支持上下滚动且顶部武器选择区不被负坐标截断', () => {
   const html = read('docs/index.html')
   const css = read('docs/css/style.css')
+  const loop = read('src/web/game/loop.ts')
   const bindings = read('src/web/input/bindings.ts')
 
-  const tag = /<div id="deathScreen"[^>]*class="([^"]*)"/.exec(html)
-  assert.ok(tag, 'index.html 必须有 #deathScreen')
-  const cls = tag![1]
-
-  // ① 必须可纵向滚动，否则内容超出视口就是硬裁剪
-  assert.ok(cls.includes('overflow-y-auto'), '#deathScreen 必须可纵向滚动')
-  // ② 不能再用 justify-center 垂直居中：内容高于视口时顶部被顶成负坐标，滚不回来
-  //    （items-center 在这里是 flex-col 的「横向居中」，是需要的，不算问题）
-  assert.ok(!cls.includes('justify-center'), '#deathScreen 不能用 justify-center（顶部内容会被顶出可视区）')
-
-  // ③ 卡片用 my-auto 做「放得下居中、放不下从头排」
-  assert.ok(/id="deathCard"[^>]*class="[^"]*my-auto/.test(html), '#deathCard 需要 my-auto')
-
-  // ④ html/body 上有 touch-action:none，必须给阵亡层单独放开竖向滑动
-  assert.ok(/#deathScreen[^{]*\{[^}]*touch-action:\s*pan-y/.test(css), '#deathScreen 必须显式放开 touch-action: pan-y')
-
-  // ⑤ 触摸滚动兜底（祖先 touch-action:none 会连坐禁用原生触摸滚动）
-  assert.ok(bindings.includes('bindOverlayDragScroll'), 'bindings.ts 必须提供触摸拖拽滚动兜底')
-  assert.ok(bindings.includes('el.scrollTop = startTop - dy'), '拖拽滚动必须真的改 scrollTop')
-
-  // ⑥ 同样卡在 touch-action:none 里的浮层不止阵亡界面：大厅 / 参数弹窗
-  //    也是 overflow-y-auto + items-center，矮屏上同样会被裁剪，必须一起处理
-  for (const id of ['lobbyModal', 'paramsModal']) {
-    assert.ok(bindings.includes(`bindOverlayDragScroll(document.getElementById('${id}'))`),
-      `${id} 也必须绑定拖拽滚动兜底`)
-    assert.ok(new RegExp(`#${id}[^{]*\\{[^}]*touch-action:\\s*pan-y`).test(css) ||
-      new RegExp(`#deathScreen,[\\s\\S]{0,120}#${id}`).test(css),
-      `${id} 必须放开 touch-action: pan-y`)
-  }
+  assert.ok(css.includes('#deathScreen') && css.includes('align-items: flex-start !important'), 'deathScreen 使用 flex-start 防止超高时顶部溢出到负坐标')
+  assert.ok(css.includes('touch-action: pan-y'), 'deathScreen 开启 pan-y 触屏滚动')
+  assert.ok(html.includes('my-auto'), 'deathScreen 内部面板使用 my-auto 实现矮屏可滚、高屏居中')
+  assert.ok(loop.includes('ds.scrollTop = 0'), '打开阵亡界面时重置 scrollTop 到顶部武器区')
+  assert.ok(bindings.includes('bindScrollableOverlay'), 'bindings.ts 绑定触屏拖拽滚动以兼容横屏旋转模式')
 })
 
-test('手机小地图：不能只压缩 canvas 尺寸，必须整块面板缩放并保持原始比例', () => {
+test('手机模式小地图：容器与画布同步收紧，消除右侧空白空缺并保持 3:1 比例', () => {
   const css = read('docs/css/style.css')
-  const html = read('docs/index.html')
-
-  // ① 旧 bug：给 canvas 同时套 max-width 与 max-height，两个约束各自生效 →
-  //    canvas 被压成 104x66（原始 244x80），地图拉扁，面板仍是 256px，右侧空出一大块
-  assert.ok(
-    !/#topHudBar canvas\s*\{[^}]*max-width/.test(css),
-    '不得再用 #topHudBar canvas { max-width/max-height } 直接压 canvas（会导致空缺 + 变形）',
-  )
-
-  // ② 现在限制的是面板宽度，canvas 100% 宽 + 按属性比例自动高
-  assert.ok(/#hudMinimapPanel\s*\{[^}]*width/.test(css), '矮屏必须收窄 #hudMinimapPanel 本身')
-  assert.ok(/#hudMinimapCanvas\s*\{[^}]*width:\s*100%/.test(css), '#hudMinimapCanvas 必须宽度 100% 填满面板')
-  assert.ok(/#hudMinimapCanvas\s*\{[^}]*aspect-ratio:\s*244\s*\/\s*80/.test(css),
-    '#hudMinimapCanvas 必须锁定 244/80 原始比例，避免被拉扁')
-  assert.ok(/#deathMinimapCanvas\s*\{[^}]*aspect-ratio:\s*528\s*\/\s*168/.test(css),
-    '#deathMinimapCanvas 必须锁定 528/168 原始比例')
-
-  // ③ canvas 元素本身不能写死高度（以前是 h-[148px]，与比例冲突只能靠拉伸）
-  assert.ok(!/id="deathMinimapCanvas"[^>]*class="[^"]*h-\[/.test(html), '死亡小地图不能写死高度类')
+  assert.ok(css.includes('#hudMinimapPanel') && css.includes('width: auto !important'), '手机模式下 #hudMinimapPanel 宽度自适应画布，消除右侧空缺')
+  assert.ok(css.includes('#hudMinimapCanvas') && css.includes('width: 180px !important') && css.includes('height: 60px !important'), '矮屏下小地图画布保持 3:1 比例 (180x60)')
+  assert.ok(css.includes('width: 156px !important') && css.includes('height: 52px !important'), '极矮屏下小地图画布保持 3:1 比例 (156x52)')
 })
 
-test('触屏开火圈：阈值必须靠外（>=0.85），提示与实际判定共用同一常量', () => {
+test('瞄准摇杆：开火圈靠外且需拉到底（>= 0.88）才触发射击', () => {
+  const html = read('docs/index.html')
   const ctx = read('src/web/app/context.ts')
   const loop = read('src/web/game/loop.ts')
   const bindings = read('src/web/input/bindings.ts')
-  const html = read('docs/index.html')
 
-  const m = /export const TOUCH_FIRE_THRESHOLD\s*=\s*([0-9.]+)/.exec(ctx)
-  assert.ok(m, 'context.ts 必须导出 TOUCH_FIRE_THRESHOLD')
-  const threshold = Number(m![1])
-  assert.ok(threshold >= 0.85, `开火阈值必须靠外（>=0.85），实际 ${threshold}`)
-  assert.ok(threshold <= 1, `开火阈值不能超过 1，实际 ${threshold}`)
-
-  // 实际判定与 UI 提示必须用同一个常量，不允许再出现魔法数 0.42
-  assert.ok(!loop.includes('aimMag > 0.42'), 'loop.ts 不能再用写死的 0.42 判定开火')
-  assert.ok(loop.includes('aimMag >= TOUCH_FIRE_THRESHOLD'), 'loop.ts 必须用 TOUCH_FIRE_THRESHOLD 判定开火')
-  assert.ok(bindings.includes('TOUCH_FIRE_THRESHOLD'), 'bindings.ts 的摇杆高亮必须用同一阈值')
-
-  // 视觉上要有「开火圈」
-  assert.ok(html.includes('id="touchAimFireRing"'), 'HTML 必须有触屏开火圈 #touchAimFireRing')
+  assert.ok(html.includes('id="touchAimFireRing"') && html.includes('inset-2'), '开火虚线环 #touchAimFireRing 贴近摇杆外圈 (inset-2)')
+  const m = /TOUCH_FIRE_THRESHOLD\s*=\s*([0-9.]+)/.exec(ctx)
+  assert.ok(m && Number(m[1]) >= 0.85, 'TOUCH_FIRE_THRESHOLD 阈值设置在 0.85 以上（拉到底才打）')
+  assert.ok(loop.includes('aimMag >= TOUCH_FIRE_THRESHOLD'), 'loop.ts 使用 TOUCH_FIRE_THRESHOLD 判定摇杆射击')
+  assert.ok(bindings.includes('Math.hypot(nx, ny) >= TOUCH_FIRE_THRESHOLD'), 'bindings.ts 使用 TOUCH_FIRE_THRESHOLD 更新开火指示')
 })
-

@@ -17,7 +17,7 @@ html, body {
   background-color: #020617;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #f1f5f9;
-  touch-action: none;
+  touch-action: pan-x pan-y;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -57,6 +57,7 @@ input, select, textarea {
 }
 #gameCanvas {
   position: fixed;
+  touch-action: none;
   top: 0;
   left: 0;
   right: 0;
@@ -629,7 +630,6 @@ body.pseudo-fullscreen {
   width: 100dvw !important;
   height: 100dvh !important;
   overflow: hidden !important;
-  touch-action: none !important;
 }
 body.auto-landscape-rotated {
   position: fixed !important;
@@ -640,7 +640,6 @@ body.auto-landscape-rotated {
   transform: rotate(90deg) !important;
   transform-origin: 0 0 !important;
   overflow: hidden !important;
-  touch-action: none !important;
 }
 
 /* ==========================================================================
@@ -667,12 +666,36 @@ body.auto-landscape-rotated {
   #topHudBar .text-xs { font-size: 10px !important; }
   #topHudBar .text-\[10px\] { font-size: 9px !important; }
 
-  /* 右上小地图：限制的是「面板宽度」，canvas 自己按原始比例缩放。
-     早期写法直接给 canvas 套 max-width/max-height，两个约束各自独立生效，
-     结果是 canvas 被压成 104x66（原始 244x80）——地图被拉扁，同时面板仍占
-     256px，右侧就空出一大块没有任何绘制的黑色区域。 */
-  #hudMinimapPanel { width: 176px !important; padding: 3px !important; }
-  #miniMapWrap, #minimapWrap { max-width: 176px !important; }
+
+  /* 顶部常驻房间与 Ping 信息栏：矮屏紧凑化 */
+  #topRoomPingBar {
+    padding: 3px 6px !important;
+    gap: 4px !important;
+    border-radius: 10px !important;
+  }
+  #topRoomPingBar > div {
+    padding: 1px 6px !important;
+    gap: 4px !important;
+  }
+  #openLobbyBtn {
+    padding: 2px 6px !important;
+    font-size: 9px !important;
+  }
+
+  /* 右上小地图：容器与画布同步收紧，消除右侧空白空缺并保持 3:1 比例 */
+  #hudMinimapPanel, #miniMapWrap, #minimapWrap {
+    width: auto !important;
+    max-width: 188px !important;
+    padding: 4px !important;
+    border-radius: 12px !important;
+  }
+  #topHudBar canvas, #hudMinimapCanvas {
+    width: 180px !important;
+    max-width: 180px !important;
+    height: 60px !important;
+    max-height: 60px !important;
+    border-radius: 8px !important;
+  }
 
   /* 底部武器栏：收紧间距与字号 */
   #bottomWeaponDock { bottom: 4px !important; padding-left: 4px !important; padding-right: 4px !important; }
@@ -695,71 +718,66 @@ body.auto-landscape-rotated {
 /* 极矮屏（例如手机横屏但浏览器地址栏占位）：进一步压缩，优先保证不重叠 */
 @media (max-height: 400px) {
   #topHudBar > .glass-panel { min-width: 112px !important; }
-  #hudMinimapPanel { width: 168px !important; }
-  #miniMapWrap, #minimapWrap { max-width: 168px !important; }
+  #hudMinimapPanel, #miniMapWrap, #minimapWrap {
+    width: auto !important;
+    max-width: 162px !important;
+    padding: 3px !important;
+  }
+  #topHudBar canvas, #hudMinimapCanvas {
+    width: 156px !important;
+    max-width: 156px !important;
+    height: 52px !important;
+    max-height: 52px !important;
+  }
   #bottomWeaponDock .glass-panel { padding: 2px 5px !important; gap: 4px !important; }
 }
 
-/* ==========================================================================
-   小地图 canvas：永远按自身原始比例缩放（244x80 / 528x168），
-   宽度交给容器，高度自动推导 —— 既不会被拉扁，也不会在面板里留空缺。
-   ========================================================================== */
-#hudMinimapCanvas {
-  width: 100% !important;
-  height: auto !important;
-  max-width: none !important;
-  max-height: none !important;
-  aspect-ratio: 244 / 80;
+.inset-2 { top: 0.5rem; right: 0.5rem; bottom: 0.5rem; left: 0.5rem; }
+.border-rose-300\/45 { border-color: rgba(253, 164, 175, 0.45); }
+.border-amber-300\/90 { border-color: rgba(252, 211, 77, 0.9); }
+@media (min-width: 640px) {
+  .sm\:py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
 }
-#deathMinimapCanvas {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 528 / 168;
-}
-#deathMinimapPanel { width: 100%; max-width: 528px; margin-left: auto; margin-right: auto; }
 
-/* ==========================================================================
-   阵亡界面：容器可上下滚动，内容用 my-auto 做「放得下就居中、放不下就从头滚」
-   --------------------------------------------------------------------------
-   之前是 flex + items-center：卡片一旦比视口高，顶部会被顶到负坐标，
-   滚动条也拉不回那段内容 —— 手机上最上面的武器选择直接看不到、选不了。
-   ========================================================================== */
+/* 阵亡界面与弹窗滚动修复：
+   避免 flex items-center 在内容超高时将顶部武器区推入负坐标（scrollTop < 0 不可达区域），
+   使用 align-items: flex-start 配合子面板 margin: auto 实现「矮时居中、高时从顶可滚」，
+   并显式开启 pan-y 触控滚动。 */
 #deathScreen,
 #lobbyModal,
 #paramsModal {
-  /* html/body 上有 touch-action:none（游戏画布需要），这里必须显式放开竖向滑动。
-     大厅/参数弹窗同样是 overflow-y-auto + items-center，矮屏上内容和阵亡界面
-     一样会被顶出可视区，所以三个浮层统一放开。 */
+  align-items: flex-start !important;
   touch-action: pan-y !important;
-  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+#deathScreen > div,
+#lobbyModal > div,
+#paramsModal > div {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+#deathScreen *,
+#lobbyModal *,
+#paramsModal * {
+  touch-action: pan-y;
 }
 
-@media (min-width: 640px) {
-  /* 横屏手机（640~1023px，含 iPhone SE 667 宽）也走左右两栏，
-     否则排名块会把卡片顶到 550px+，必须滚动才能看全武器选择。 */
-  #deathBody { grid-template-columns: minmax(0, 1fr) 204px; }
-}
-@media (min-width: 1024px) {
-  #deathBody { grid-template-columns: minmax(0, 1fr) 280px; }
-}
-
-/* 矮屏：阵亡界面整体收紧，把武器选择留在首屏 */
-@media (max-height: 560px) {
-  #deathScreen { padding-top: 4px; padding-bottom: 4px; }
-  #deathCard { padding: 8px 10px; border-radius: 12px; }
-  #deathCard .death-wep-btn { padding: 4px 6px; }
-  #deathCard .death-wep-btn > div:first-child { font-size: 11px; line-height: 1.15; }
-  #deathCard .death-wep-btn > div:last-child { font-size: 9px; line-height: 1.15; }
-  #deathCard .death-sec-btn { padding: 3px 6px; font-size: 10px; }
-  #deathCard #deathCountdown { font-size: 18px; }
-  #deathMinimapPanel { margin-top: 6px; padding: 4px; max-width: 380px; }
-  #deathRankList { max-height: 120px; }
-}
-
-/* 触屏瞄准摇杆：虚线圆=开火触发圈，拉到圈上才开火，进圈时高亮 */
-#touchAimFireRing { width: 94px; height: 94px; transition: border-color 80ms linear, box-shadow 80ms linear; }
-#touchAimFireRing.is-firing {
-  border-color: rgba(252, 211, 77, 0.95) !important;
-  box-shadow: 0 0 14px rgba(244, 63, 94, 0.85) inset, 0 0 10px rgba(252, 211, 77, 0.55);
+@media (max-height: 520px), (max-width: 620px) {
+  #deathScreen {
+    padding-top: 8px !important;
+    padding-bottom: 12px !important;
+  }
+  #deathScreen > div {
+    padding: 10px 12px !important;
+  }
+  #deathScreen .death-wep-btn {
+    padding: 5px 6px !important;
+  }
+  #deathScreen .death-sec-btn {
+    padding: 4px 8px !important;
+  }
+  #deathMinimapCanvas {
+    height: 112px !important;
+  }
 }

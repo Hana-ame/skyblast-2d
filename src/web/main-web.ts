@@ -17,6 +17,7 @@ import {
   updateHudUI, updateScoreboardUI, syncFeatureFlagsUI,
 } from './app/hud.ts'
 import { syncParamsToUI } from './app/params.ts'
+import { updateNetStatusUI } from './app/net.ts'
 import { setPhysicsParams, getPhysicsParams, resetPhysicsParams } from '../core/sim/physics.ts'
 import {
   installDiag, diagExport, reportToText, buildReport, diagFrames, diagTable,
@@ -29,6 +30,7 @@ bindAllEvents()
 autoDetectDeviceInput()
 localPlayer.team = 'red'   // 默认红队基地部署（FFA 出生点已移除）
 syncBotsCount(4)
+updateNetStatusUI()
 updateHudWeaponButtons()
 updateSpawnPointButtonsUI()
 updateTeamCountUI()

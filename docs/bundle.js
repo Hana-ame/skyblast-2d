@@ -4406,6 +4406,7 @@
   };
   var keys = {};
   var mouse = { x: 0, y: 0, worldX: 6600, worldY: 1500, down: false };
+  var TOUCH_FIRE_THRESHOLD = 0.88;
   var touchState = {
     enabled: false,
     moveActive: false,
@@ -4421,7 +4422,6 @@
     wasGroundedBeforeAscend: false,
     aimUsed: false
   };
-  var TOUCH_FIRE_THRESHOLD = 0.9;
   var inputQueue = { interact: false, secondary: null, reload: false };
   var effects = new Effects();
   var beams = [];
@@ -9911,7 +9911,10 @@
       if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400";
       if (txt) txt.textContent = "Host";
       if (badge) badge.textContent = `\u5355\u673A/${bots.length}AI`;
-      if (rttBadge) rttBadge.classList.add("hidden");
+      if (rttBadge) {
+        rttBadge.classList.remove("hidden");
+        rttBadge.textContent = "Ping 0ms";
+      }
       if (roleBadge) {
         roleBadge.textContent = "\u{1F451} Host";
         roleBadge.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
@@ -9923,7 +9926,7 @@
       if (badge) badge.textContent = `${netState.peerCount + 1}\u4EBA`;
       if (rttBadge) {
         rttBadge.classList.remove("hidden");
-        rttBadge.textContent = `${srtt || 1}ms`;
+        rttBadge.textContent = `Ping ${srtt || 1}ms`;
       }
       if (roleBadge) {
         roleBadge.textContent = `\u{1F451} Host (${netState.roomId})`;
@@ -9936,7 +9939,7 @@
       if (badge) badge.textContent = "Client";
       if (rttBadge) {
         rttBadge.classList.remove("hidden");
-        rttBadge.textContent = `${srtt || 1}ms`;
+        rttBadge.textContent = `Ping ${srtt || 1}ms`;
       }
       if (roleBadge) {
         roleBadge.textContent = `\u{1F680} Client (${netState.roomId})`;
@@ -13603,7 +13606,9 @@
           touchState.aimY = ny;
           const firing = Math.hypot(nx, ny) >= TOUCH_FIRE_THRESHOLD;
           stickEl.className = firing ? "w-14 h-14 rounded-full bg-rose-500/85 border-2 border-amber-200 shadow-[0_0_18px_rgba(244,63,94,0.85)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50" : "w-14 h-14 rounded-full bg-rose-500/55 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50";
-          aimFireRingEl?.classList.toggle("is-firing", firing);
+          if (aimFireRingEl) {
+            aimFireRingEl.className = firing ? "absolute inset-2 rounded-full border-2 border-dashed border-amber-300/90 pointer-events-none" : "absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none";
+          }
           if (aimFireHintEl) aimFireHintEl.textContent = firing ? "\u{1F525} \u5C04\u51FB" : "\u{1F3AF} \u7784\u51C6";
         } else {
           touchState.moveX = nx;
@@ -13647,7 +13652,9 @@
             touchState.aimY = 0;
             stickEl.style.transform = "translate(0px, 0px)";
             stickEl.className = "w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75";
-            aimFireRingEl?.classList.remove("is-firing");
+            if (aimFireRingEl) {
+              aimFireRingEl.className = "absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none";
+            }
             if (aimFireHintEl) aimFireHintEl.textContent = "\u7784\u51C6 / \u5916\u63A8\u5F00\u706B";
           } else if (!isAim && t.identifier === touchState.moveId) {
             touchState.moveActive = false;
@@ -13667,48 +13674,161 @@
     }
     bindJoystick(document.getElementById("touchMoveZone"), document.getElementById("touchMoveStick"), false);
     bindJoystick(document.getElementById("touchAimZone"), document.getElementById("touchAimStick"), true);
-    function bindOverlayDragScroll(el) {
-      if (!el) return;
-      let startY = 0;
-      let startTop = 0;
-      let active = false;
-      let movedPx = 0;
-      let swallowClickUntil = 0;
-      el.addEventListener("touchstart", (e) => {
-        if (e.touches.length !== 1) {
-          active = false;
-          return;
-        }
-        active = true;
-        movedPx = 0;
-        startY = e.touches[0].clientY;
-        startTop = el.scrollTop;
-      }, { passive: true });
-      el.addEventListener("touchmove", (e) => {
-        if (!active || e.touches.length !== 1) return;
-        const dy = e.touches[0].clientY - startY;
-        if (Math.abs(dy) <= 6 && movedPx === 0) return;
-        movedPx = Math.abs(dy);
-        el.scrollTop = startTop - dy;
-        if (e.cancelable) e.preventDefault();
-      }, { passive: false });
-      const stop = () => {
-        if (active && movedPx > 8) swallowClickUntil = performance.now() + 400;
-        active = false;
+    function bindScrollableOverlay(overlayEl) {
+      if (!overlayEl) return;
+      let activeTouchId = null;
+      let mouseDragging = false;
+      let startRelX = 0;
+      let startRelY = 0;
+      let lastRelY = 0;
+      let didDrag = false;
+      let hadTouchMove = false;
+      let touchStartTarget = null;
+      let suppressClickUntil = 0;
+      let scrollTargets = [];
+      const isInteractiveInput = (target) => {
+        const el = target;
+        if (!el || typeof el.closest !== "function") return false;
+        return Boolean(el.closest('input[type="range"], input[type="text"], input[type="number"], select, textarea'));
       };
-      el.addEventListener("touchend", stop);
-      el.addEventListener("touchcancel", stop);
-      el.addEventListener("click", (e) => {
-        if (performance.now() < swallowClickUntil) {
-          swallowClickUntil = 0;
+      const collectScrollTargets = (target) => {
+        const list = [];
+        let cur = target;
+        while (cur && cur !== overlayEl && cur !== document.body) {
+          if (cur.scrollHeight > cur.clientHeight + 1) {
+            const oy = window.getComputedStyle(cur).overflowY;
+            if (oy === "auto" || oy === "scroll") list.push(cur);
+          }
+          cur = cur.parentElement;
+        }
+        if (overlayEl.scrollHeight > overlayEl.clientHeight + 1) {
+          list.push(overlayEl);
+        }
+        overlayEl.querySelectorAll(".overflow-y-auto").forEach((child) => {
+          if (!list.includes(child) && child.scrollHeight > child.clientHeight + 1) {
+            list.push(child);
+          }
+        });
+        if (list.length === 0) list.push(overlayEl);
+        return list;
+      };
+      const applyScrollDelta = (deltaScroll) => {
+        if (Math.abs(deltaScroll) < 0.1) return;
+        for (let i = 0; i < scrollTargets.length; i++) {
+          const el = scrollTargets[i];
+          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+          if (maxScroll <= 0) continue;
+          if (deltaScroll > 0 && el.scrollTop < maxScroll - 0.5) {
+            el.scrollTop = Math.min(maxScroll, el.scrollTop + deltaScroll);
+            return;
+          }
+          if (deltaScroll < 0 && el.scrollTop > 0.5) {
+            el.scrollTop = Math.max(0, el.scrollTop + deltaScroll);
+            return;
+          }
+        }
+        const fallback = scrollTargets[scrollTargets.length - 1] ?? overlayEl;
+        fallback.scrollTop += deltaScroll;
+      };
+      overlayEl.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1 || isInteractiveInput(e.target)) return;
+        const t = e.touches[0];
+        activeTouchId = t.identifier;
+        const m = getElementLandscapeMetrics(overlayEl, t.clientX, t.clientY);
+        startRelX = m.relX;
+        startRelY = m.relY;
+        lastRelY = m.relY;
+        didDrag = false;
+        hadTouchMove = false;
+        touchStartTarget = e.target;
+        scrollTargets = collectScrollTargets(e.target);
+      }, { capture: true, passive: true });
+      overlayEl.addEventListener("touchmove", (e) => {
+        if (activeTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier === activeTouchId) {
+            hadTouchMove = true;
+            if (e.cancelable) e.preventDefault();
+            const m = getElementLandscapeMetrics(overlayEl, t.clientX, t.clientY);
+            const totalDist = Math.hypot(m.relX - startRelX, m.relY - startRelY);
+            const stepDy = m.relY - lastRelY;
+            lastRelY = m.relY;
+            if (!didDrag && totalDist > 5) {
+              didDrag = true;
+              scrollTargets = collectScrollTargets(e.target);
+            }
+            applyScrollDelta(-stepDy);
+            break;
+          }
+        }
+      }, { capture: true, passive: false });
+      const endTouch = (e) => {
+        if (activeTouchId === null) return;
+        const wasDrag = didDrag;
+        const wasMoved = hadTouchMove;
+        const targetEl = touchStartTarget;
+        activeTouchId = null;
+        didDrag = false;
+        hadTouchMove = false;
+        touchStartTarget = null;
+        if (wasDrag) {
+          suppressClickUntil = performance.now() + 350;
+        } else if (wasMoved && targetEl && e.type === "touchend") {
+          suppressClickUntil = performance.now() + 350;
+          const clickable = (typeof targetEl.closest === "function" ? targetEl.closest("button, a, input, select, textarea, label, canvas, [data-wep], [data-sec], [data-spawn], [data-flag]") : null) ?? targetEl;
+          const touch = e.changedTouches[0];
+          if (clickable.tagName === "CANVAS" && touch) {
+            clickable.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: touch.clientX, clientY: touch.clientY }));
+          } else if (typeof clickable.click === "function") {
+            clickable.click();
+          }
+        }
+      };
+      overlayEl.addEventListener("touchend", endTouch, { capture: true, passive: true });
+      overlayEl.addEventListener("touchcancel", endTouch, { capture: true, passive: true });
+      overlayEl.addEventListener("mousedown", (e) => {
+        if (e.button !== 0 || activeTouchId !== null || isInteractiveInput(e.target)) return;
+        mouseDragging = true;
+        const m = getElementLandscapeMetrics(overlayEl, e.clientX, e.clientY);
+        startRelX = m.relX;
+        startRelY = m.relY;
+        lastRelY = m.relY;
+        didDrag = false;
+        scrollTargets = collectScrollTargets(e.target);
+      }, { capture: true });
+      window.addEventListener("mousemove", (e) => {
+        if (!mouseDragging || activeTouchId !== null) return;
+        const m = getElementLandscapeMetrics(overlayEl, e.clientX, e.clientY);
+        const totalDy = m.relY - startRelY;
+        const stepDy = m.relY - lastRelY;
+        if (!didDrag && Math.abs(totalDy) > 5) {
+          didDrag = true;
+        }
+        if (didDrag) {
+          applyScrollDelta(-stepDy);
+          lastRelY = m.relY;
+        }
+      }, { capture: true });
+      window.addEventListener("mouseup", () => {
+        if (!mouseDragging) return;
+        if (didDrag) suppressClickUntil = performance.now() + 320;
+        mouseDragging = false;
+        didDrag = false;
+      }, { capture: true });
+      overlayEl.addEventListener("click", (e) => {
+        if (e.isTrusted && performance.now() < suppressClickUntil) {
           e.preventDefault();
           e.stopPropagation();
+          suppressClickUntil = 0;
         }
-      }, true);
+      }, { capture: true });
     }
-    bindOverlayDragScroll(document.getElementById("deathScreen"));
-    bindOverlayDragScroll(document.getElementById("lobbyModal"));
-    bindOverlayDragScroll(document.getElementById("paramsModal"));
+    bindScrollableOverlay(document.getElementById("deathScreen"));
+    bindScrollableOverlay(document.getElementById("lobbyModal"));
+    bindScrollableOverlay(document.getElementById("paramsModal"));
+    bindScrollableOverlay(document.getElementById("hudFlagsPanel"));
+    bindScrollableOverlay(document.getElementById("debugHudPanel"));
     syncTeamButtonsUI();
     document.querySelectorAll(".mode-btn").forEach((b) => {
       const sel = b.getAttribute("data-mode") === mode.current;
@@ -14582,6 +14702,7 @@
     if (ds) {
       ds.classList.remove("hidden");
       ds.classList.add("flex");
+      ds.scrollTop = 0;
     }
   }
   function onLocalRespawn() {
@@ -14820,6 +14941,7 @@
   autoDetectDeviceInput();
   localPlayer.team = "red";
   syncBotsCount(4);
+  updateNetStatusUI();
   updateHudWeaponButtons();
   updateSpawnPointButtonsUI();
   updateTeamCountUI();

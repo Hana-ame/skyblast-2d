@@ -794,12 +794,15 @@ export function bindAllEvents(): void {
       if (isAim) {
         touchState.aimX = nx
         touchState.aimY = ny
-        // 推到最外圈（阈值）才开火：与 loop.ts 的 touchWantsFire 用同一个常量，避免提示和实际判定不一致
         const firing = Math.hypot(nx, ny) >= TOUCH_FIRE_THRESHOLD
         stickEl.className = firing
           ? 'w-14 h-14 rounded-full bg-rose-500/85 border-2 border-amber-200 shadow-[0_0_18px_rgba(244,63,94,0.85)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
           : 'w-14 h-14 rounded-full bg-rose-500/55 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
-        aimFireRingEl?.classList.toggle('is-firing', firing)
+        if (aimFireRingEl) {
+          aimFireRingEl.className = firing
+            ? 'absolute inset-2 rounded-full border-2 border-dashed border-amber-300/90 pointer-events-none'
+            : 'absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none'
+        }
         if (aimFireHintEl) aimFireHintEl.textContent = firing ? '🔥 射击' : '🎯 瞄准'
       } else {
         touchState.moveX = nx
@@ -839,7 +842,9 @@ export function bindAllEvents(): void {
           touchState.aimActive = false; touchState.aimX = 0; touchState.aimY = 0
           stickEl.style.transform = 'translate(0px, 0px)'
           stickEl.className = 'w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75'
-          aimFireRingEl?.classList.remove('is-firing')
+          if (aimFireRingEl) {
+            aimFireRingEl.className = 'absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none'
+          }
           if (aimFireHintEl) aimFireHintEl.textContent = '瞄准 / 外推开火'
         } else if (!isAim && t.identifier === touchState.moveId) {
           touchState.moveActive = false; touchState.moveX = 0; touchState.moveY = 0
@@ -857,62 +862,177 @@ export function bindAllEvents(): void {
   }
   bindJoystick(document.getElementById('touchMoveZone'), document.getElementById('touchMoveStick'), false)
   bindJoystick(document.getElementById('touchAimZone'), document.getElementById('touchAimStick'), true)
+  // 支持阵亡界面与弹窗在移动端触屏（含 90° 自动横屏旋转）、Pointer 触控笔/触屏及鼠标拖拽下顺畅上下滚动
+  function bindScrollableOverlay(overlayEl: HTMLElement | null): void {
+    if (!overlayEl) return
+    let activeTouchId: number | null = null
+    let mouseDragging = false
+    let startRelX = 0
+    let startRelY = 0
+    let lastRelY = 0
+    let didDrag = false
+    let hadTouchMove = false
+    let touchStartTarget: EventTarget | null = null
+    let suppressClickUntil = 0
+    let scrollTargets: HTMLElement[] = []
 
-  /**
-   * 浮层滚动兜底（阵亡界面 + 大厅/参数弹窗）。
-   * html/body 上有 touch-action:none（游戏画布必须吃满手势），子元素里的原生触摸滚动
-   * 在移动浏览器上会被这条祖先规则连坐禁用 —— 表现就是「阵亡界面卡住、滑不动，
-   * 最上面的武器选择够不到」。这里用最小实现补一个拖拽滚动：
-   *   - 单指竖向拖动 > 6px 才接管，避免误伤按钮点击；
-   *   - 拖动后 400ms 内吞掉紧随其后的 click，防止松手时误选武器/复活点；
-   *   - 只有内容真的溢出（scrollHeight > clientHeight）才需要它，反之不干扰。
-   */
-  function bindOverlayDragScroll(el: HTMLElement | null): void {
-    if (!el) return
-    let startY = 0
-    let startTop = 0
-    let active = false
-    let movedPx = 0
-    // 用时间戳而不是布尔量标记「这次拖动刚结束」：拖动后浏览器会在 touchend 之后补发一个
-    // click，但如果手指抬在按钮外、或浏览器压根没补发，布尔量就会一直留着把下一次点击吃掉。
-    let swallowClickUntil = 0
-
-    el.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) { active = false; return }
-      active = true
-      movedPx = 0
-      startY = e.touches[0].clientY
-      startTop = el.scrollTop
-    }, { passive: true })
-
-    el.addEventListener('touchmove', (e) => {
-      if (!active || e.touches.length !== 1) return
-      const dy = e.touches[0].clientY - startY
-      if (Math.abs(dy) <= 6 && movedPx === 0) return
-      movedPx = Math.abs(dy)
-      el.scrollTop = startTop - dy
-      if (e.cancelable) e.preventDefault()
-    }, { passive: false })
-
-    const stop = (): void => {
-      if (active && movedPx > 8) swallowClickUntil = performance.now() + 400
-      active = false
+    const isInteractiveInput = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null
+      if (!el || typeof el.closest !== 'function') return false
+      return Boolean(el.closest('input[type="range"], input[type="text"], input[type="number"], select, textarea'))
     }
-    el.addEventListener('touchend', stop)
-    el.addEventListener('touchcancel', stop)
 
-    // 捕获阶段拦下拖动结束后误触发的点击（按钮本身在 capture 之后才会收到事件）
-    el.addEventListener('click', (e) => {
-      if (performance.now() < swallowClickUntil) {
-        swallowClickUntil = 0
+    const collectScrollTargets = (target: EventTarget | null): HTMLElement[] => {
+      const list: HTMLElement[] = []
+      let cur = target as HTMLElement | null
+      while (cur && cur !== overlayEl && cur !== document.body) {
+        if (cur.scrollHeight > cur.clientHeight + 1) {
+          const oy = window.getComputedStyle(cur).overflowY
+          if (oy === 'auto' || oy === 'scroll') list.push(cur)
+        }
+        cur = cur.parentElement
+      }
+      if (overlayEl.scrollHeight > overlayEl.clientHeight + 1) {
+        list.push(overlayEl)
+      }
+      overlayEl.querySelectorAll<HTMLElement>('.overflow-y-auto').forEach((child) => {
+        if (!list.includes(child) && child.scrollHeight > child.clientHeight + 1) {
+          list.push(child)
+        }
+      })
+      if (list.length === 0) list.push(overlayEl)
+      return list
+    }
+
+    const applyScrollDelta = (deltaScroll: number): void => {
+      if (Math.abs(deltaScroll) < 0.1) return
+      for (let i = 0; i < scrollTargets.length; i++) {
+        const el = scrollTargets[i]
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+        if (maxScroll <= 0) continue
+        if (deltaScroll > 0 && el.scrollTop < maxScroll - 0.5) {
+          el.scrollTop = Math.min(maxScroll, el.scrollTop + deltaScroll)
+          return
+        }
+        if (deltaScroll < 0 && el.scrollTop > 0.5) {
+          el.scrollTop = Math.max(0, el.scrollTop + deltaScroll)
+          return
+        }
+      }
+      const fallback = scrollTargets[scrollTargets.length - 1] ?? overlayEl
+      fallback.scrollTop += deltaScroll
+    }
+
+    overlayEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1 || isInteractiveInput(e.target)) return
+      const t = e.touches[0]
+      activeTouchId = t.identifier
+      const m = getElementLandscapeMetrics(overlayEl, t.clientX, t.clientY)
+      startRelX = m.relX
+      startRelY = m.relY
+      lastRelY = m.relY
+      didDrag = false
+      hadTouchMove = false
+      touchStartTarget = e.target
+      scrollTargets = collectScrollTargets(e.target)
+    }, { capture: true, passive: true })
+
+    overlayEl.addEventListener('touchmove', (e) => {
+      if (activeTouchId === null) return
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i]
+        if (t.identifier === activeTouchId) {
+          hadTouchMove = true
+          // 必须在第一次 touchmove 即调用 preventDefault，防止移动端浏览器接管手势后将后续 touchmove 设为不可取消或触发 touchcancel
+          if (e.cancelable) e.preventDefault()
+          const m = getElementLandscapeMetrics(overlayEl, t.clientX, t.clientY)
+          const totalDist = Math.hypot(m.relX - startRelX, m.relY - startRelY)
+          const stepDy = m.relY - lastRelY
+          lastRelY = m.relY
+          if (!didDrag && totalDist > 5) {
+            didDrag = true
+            scrollTargets = collectScrollTargets(e.target)
+          }
+          applyScrollDelta(-stepDy)
+          break
+        }
+      }
+    }, { capture: true, passive: false })
+
+    const endTouch = (e: TouchEvent): void => {
+      if (activeTouchId === null) return
+      const wasDrag = didDrag
+      const wasMoved = hadTouchMove
+      const targetEl = touchStartTarget as HTMLElement | null
+      activeTouchId = null
+      didDrag = false
+      hadTouchMove = false
+      touchStartTarget = null
+      if (wasDrag) {
+        suppressClickUntil = performance.now() + 350
+      } else if (wasMoved && targetEl && e.type === 'touchend') {
+        // 轻点时手指若有 1~4px 微小抖动触发了 touchmove.preventDefault()，浏览器可能不再派发合成 click，此处主动补发一次点击
+        suppressClickUntil = performance.now() + 350
+        const clickable = (typeof targetEl.closest === 'function'
+          ? targetEl.closest<HTMLElement>('button, a, input, select, textarea, label, canvas, [data-wep], [data-sec], [data-spawn], [data-flag]')
+          : null) ?? targetEl
+        const touch = e.changedTouches[0]
+        if (clickable.tagName === 'CANVAS' && touch) {
+          clickable.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: touch.clientX, clientY: touch.clientY }))
+        } else if (typeof clickable.click === 'function') {
+          clickable.click()
+        }
+      }
+    }
+    overlayEl.addEventListener('touchend', endTouch, { capture: true, passive: true })
+    overlayEl.addEventListener('touchcancel', endTouch, { capture: true, passive: true })
+
+    overlayEl.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || activeTouchId !== null || isInteractiveInput(e.target)) return
+      mouseDragging = true
+      const m = getElementLandscapeMetrics(overlayEl, e.clientX, e.clientY)
+      startRelX = m.relX
+      startRelY = m.relY
+      lastRelY = m.relY
+      didDrag = false
+      scrollTargets = collectScrollTargets(e.target)
+    }, { capture: true })
+
+    window.addEventListener('mousemove', (e) => {
+      if (!mouseDragging || activeTouchId !== null) return
+      const m = getElementLandscapeMetrics(overlayEl, e.clientX, e.clientY)
+      const totalDy = m.relY - startRelY
+      const stepDy = m.relY - lastRelY
+      if (!didDrag && Math.abs(totalDy) > 5) {
+        didDrag = true
+      }
+      if (didDrag) {
+        applyScrollDelta(-stepDy)
+        lastRelY = m.relY
+      }
+    }, { capture: true })
+
+    window.addEventListener('mouseup', () => {
+      if (!mouseDragging) return
+      if (didDrag) suppressClickUntil = performance.now() + 320
+      mouseDragging = false
+      didDrag = false
+    }, { capture: true })
+
+    overlayEl.addEventListener('click', (e) => {
+      if (e.isTrusted && performance.now() < suppressClickUntil) {
         e.preventDefault()
         e.stopPropagation()
+        suppressClickUntil = 0
       }
-    }, true)
+    }, { capture: true })
   }
-  bindOverlayDragScroll(document.getElementById('deathScreen'))
-  bindOverlayDragScroll(document.getElementById('lobbyModal'))
-  bindOverlayDragScroll(document.getElementById('paramsModal'))
+  bindScrollableOverlay(document.getElementById('deathScreen'))
+  bindScrollableOverlay(document.getElementById('lobbyModal'))
+  bindScrollableOverlay(document.getElementById('paramsModal'))
+  bindScrollableOverlay(document.getElementById('hudFlagsPanel'))
+  bindScrollableOverlay(document.getElementById('debugHudPanel'))
+
 
   syncTeamButtonsUI()
   document.querySelectorAll('.mode-btn').forEach((b) => {

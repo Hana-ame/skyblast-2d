@@ -270,7 +270,7 @@ export function fitCanvas(canvas: HTMLCanvasElement, logicalW: number, logicalH:
   window.addEventListener('resize', resize)
   window.addEventListener('orientationchange', resize)
 
-  document.body.style.touchAction = 'none'
+  canvas.style.touchAction = 'none'
   document.body.style.overflow = 'hidden'
 
   return {
