@@ -7,7 +7,7 @@ import { diagExport } from '../app/diag.ts'
 // web/input/bindings.ts —— DOM 事件绑定（纯房间码 String + 房主下发参数 + 双队FFA许可配置 + 精简HUD）
 import {
   canvas, world, localPlayer, bots, pendingLoadout, mode, uiState,
-  keys, mouse, touchState, inputQueue, resizeCanvas, requestResizeCanvas,
+  keys, mouse, touchState, inputQueue, resizeCanvas, requestResizeCanvas, TOUCH_FIRE_THRESHOLD,
 } from '../app/context.ts'
 import { showToast } from '../app/toast.ts'
 import { warmupAudioCtx, isMuted, toggleMuted } from '../app/audio.ts'
@@ -780,6 +780,7 @@ export function bindAllEvents(): void {
     const maxDist = 52
     const ascendHintEl = document.getElementById('touchMoveAscendBadge')
     const aimFireHintEl = document.getElementById('touchAimFireBadge')
+    const aimFireRingEl = document.getElementById('touchAimFireRing')
 
     const handleMove = (clientX: number, clientY: number): void => {
       const m = getElementLandscapeMetrics(zoneEl, clientX, clientY)
@@ -793,10 +794,12 @@ export function bindAllEvents(): void {
       if (isAim) {
         touchState.aimX = nx
         touchState.aimY = ny
-        const firing = Math.hypot(nx, ny) > 0.42
+        // 推到最外圈（阈值）才开火：与 loop.ts 的 touchWantsFire 用同一个常量，避免提示和实际判定不一致
+        const firing = Math.hypot(nx, ny) >= TOUCH_FIRE_THRESHOLD
         stickEl.className = firing
           ? 'w-14 h-14 rounded-full bg-rose-500/85 border-2 border-amber-200 shadow-[0_0_18px_rgba(244,63,94,0.85)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
           : 'w-14 h-14 rounded-full bg-rose-500/55 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
+        aimFireRingEl?.classList.toggle('is-firing', firing)
         if (aimFireHintEl) aimFireHintEl.textContent = firing ? '🔥 射击' : '🎯 瞄准'
       } else {
         touchState.moveX = nx
@@ -836,6 +839,7 @@ export function bindAllEvents(): void {
           touchState.aimActive = false; touchState.aimX = 0; touchState.aimY = 0
           stickEl.style.transform = 'translate(0px, 0px)'
           stickEl.className = 'w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75'
+          aimFireRingEl?.classList.remove('is-firing')
           if (aimFireHintEl) aimFireHintEl.textContent = '瞄准 / 外推开火'
         } else if (!isAim && t.identifier === touchState.moveId) {
           touchState.moveActive = false; touchState.moveX = 0; touchState.moveY = 0
@@ -853,6 +857,61 @@ export function bindAllEvents(): void {
   }
   bindJoystick(document.getElementById('touchMoveZone'), document.getElementById('touchMoveStick'), false)
   bindJoystick(document.getElementById('touchAimZone'), document.getElementById('touchAimStick'), true)
+
+  /**
+   * 阵亡界面滚动兜底。
+   * html/body 上有 touch-action:none（游戏画布必须吃满手势），子元素里的原生触摸滚动
+   * 在移动浏览器上会被这条祖先规则连坐禁用 —— 表现就是「阵亡界面卡住、滑不动，
+   * 最上面的武器选择够不到」。这里用最小实现补一个拖拽滚动：
+   *   - 单指竖向拖动 > 6px 才接管，避免误伤按钮点击；
+   *   - 拖动后吞掉紧随其后的 click，防止松手时误选武器/复活点；
+   *   - 只有内容真的溢出（scrollHeight > clientHeight）才需要它，反之不干扰。
+   */
+  function bindDeathScreenDragScroll(): void {
+    const el = document.getElementById('deathScreen')
+    if (!el) return
+    let startY = 0
+    let startTop = 0
+    let active = false
+    let movedPx = 0
+    // 用时间戳而不是布尔量标记「这次拖动刚结束」：拖动后浏览器会在 touchend 之后补发一个
+    // click，但如果手指抬在按钮外、或浏览器压根没补发，布尔量就会一直留着把下一次点击吃掉。
+    let swallowClickUntil = 0
+
+    el.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) { active = false; return }
+      active = true
+      movedPx = 0
+      startY = e.touches[0].clientY
+      startTop = el.scrollTop
+    }, { passive: true })
+
+    el.addEventListener('touchmove', (e) => {
+      if (!active || e.touches.length !== 1) return
+      const dy = e.touches[0].clientY - startY
+      if (Math.abs(dy) <= 6 && movedPx === 0) return
+      movedPx = Math.abs(dy)
+      el.scrollTop = startTop - dy
+      if (e.cancelable) e.preventDefault()
+    }, { passive: false })
+
+    const stop = (): void => {
+      if (active && movedPx > 8) swallowClickUntil = performance.now() + 400
+      active = false
+    }
+    el.addEventListener('touchend', stop)
+    el.addEventListener('touchcancel', stop)
+
+    // 捕获阶段拦下拖动结束后误触发的点击（按钮本身在 capture 之后才会收到事件）
+    el.addEventListener('click', (e) => {
+      if (performance.now() < swallowClickUntil) {
+        swallowClickUntil = 0
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }, true)
+  }
+  bindDeathScreenDragScroll()
 
   syncTeamButtonsUI()
   document.querySelectorAll('.mode-btn').forEach((b) => {

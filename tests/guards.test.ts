@@ -1199,15 +1199,19 @@ test('护栏·霰弹逐发装填：每发耗时 = reloadTime/magSize，装完一
 test('护栏·阵亡 HUD：居中布局 + KD 统计 + 排行榜元素齐全且用固定宽度防抖动', () => {
   const html = readFileSync(new URL('../docs/index.html', import.meta.url), 'utf8')
 
-  // ① 居中：deathScreen 必须是 flex 容器且水平/垂直都居中
+  // ① 布局：deathScreen 是 flex 容器且覆盖整个视口；垂直方向「放得下就居中、放不下就从头排」。
+  //    这里刻意不再要求 justify-center —— 之前用它做垂直居中，卡片一旦比视口高，
+  //    顶部会被顶到负坐标且滚动条拉不回来，手机上连最上面的武器选择都够不到。
   const dsTag = /<div id="deathScreen"[^>]*class="([^"]*)"/.exec(html)
   assert.ok(dsTag, 'deathScreen exists')
   const cls = dsTag![1]
-  assert.ok(cls.includes('items-center'), 'death screen vertically centers its panel')
-  assert.ok(cls.includes('justify-center'), 'death screen horizontally centers its panel')
+  assert.ok(cls.includes('items-center'), 'death screen centers its panel horizontally')
+  assert.ok(!cls.includes('justify-center'), 'death screen must not vertically center via justify-center (clips the top)')
   assert.ok(cls.includes('flex'), 'death screen uses flex layout (otherwise centering has no effect)')
   assert.ok(cls.includes('inset-0'), 'death screen covers the viewport')
   assert.ok(cls.includes('overflow-y-auto'), 'death screen scrolls when the panel is taller than the viewport')
+  const cardTag = /<div id="deathCard"[^>]*class="([^"]*)"/.exec(html)
+  assert.ok(cardTag && cardTag[1].includes('my-auto'), 'death card uses my-auto so it centers only when it fits')
 
   // ② KD 统计元素齐全，且数字容器带 tabular-nums（等宽数字，位数变化不抖动）
   for (const id of ['deathKdKills', 'deathKdDeaths', 'deathKdRatio']) {

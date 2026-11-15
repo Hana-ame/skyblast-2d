@@ -1,7 +1,7 @@
 // web/game/loop.ts —— 主循环（固定步长推进权威世界 / KCP 联机同步 + 渲染 + 移动端摇杆升空与瞄准优化）
 import {
   canvas, world, localPlayer, bots, pendingLoadout, keys, mouse, touchState, inputQueue,
-  effects, beams, camera, FIXED,
+  effects, beams, camera, FIXED, TOUCH_FIRE_THRESHOLD,
 } from '../app/context.ts'
 import { updateHudWeaponButtons, updateSpawnPointButtonsUI, updateHudUI, updateScoreboardUI, updateDebugHudTelemetry, renderDeathMinimap } from '../app/hud.ts'
 import { stepNetworkFrame, broadcastHostKcpSnapshot, netState, sendClientLoadoutToHost } from '../app/net.ts'
@@ -102,7 +102,8 @@ function buildLocalInput(): WorldInput {
     }
   }
 
-  const touchWantsFire = touchState.enabled && touchState.aimActive && aimMag > 0.42
+  // 开火圈在摇杆外缘：推到 TOUCH_FIRE_THRESHOLD 以上才开火，圈内只做瞄准微调
+  const touchWantsFire = touchState.enabled && touchState.aimActive && aimMag >= TOUCH_FIRE_THRESHOLD
   // 手柄摇杆开火时，狙击枪在 0.5s 读条期间持续追踪当前摇杆拖动方向（0.5s 之后所在位置发射）；键鼠仍锁定按下瞬间方向
   w.trackChargeAim = touchState.enabled && touchState.aimActive
   const wepCur = WEAPONS[localPlayer.weaponIndex]

@@ -4421,6 +4421,7 @@
     wasGroundedBeforeAscend: false,
     aimUsed: false
   };
+  var TOUCH_FIRE_THRESHOLD = 0.9;
   var inputQueue = { interact: false, secondary: null, reload: false };
   var effects = new Effects();
   var beams = [];
@@ -13584,6 +13585,7 @@
       const maxDist = 52;
       const ascendHintEl = document.getElementById("touchMoveAscendBadge");
       const aimFireHintEl = document.getElementById("touchAimFireBadge");
+      const aimFireRingEl = document.getElementById("touchAimFireRing");
       const handleMove = (clientX, clientY) => {
         const m = getElementLandscapeMetrics(zoneEl, clientX, clientY);
         let dx = m.dxFromCenter;
@@ -13599,8 +13601,9 @@
         if (isAim) {
           touchState.aimX = nx;
           touchState.aimY = ny;
-          const firing = Math.hypot(nx, ny) > 0.42;
+          const firing = Math.hypot(nx, ny) >= TOUCH_FIRE_THRESHOLD;
           stickEl.className = firing ? "w-14 h-14 rounded-full bg-rose-500/85 border-2 border-amber-200 shadow-[0_0_18px_rgba(244,63,94,0.85)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50" : "w-14 h-14 rounded-full bg-rose-500/55 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50";
+          aimFireRingEl?.classList.toggle("is-firing", firing);
           if (aimFireHintEl) aimFireHintEl.textContent = firing ? "\u{1F525} \u5C04\u51FB" : "\u{1F3AF} \u7784\u51C6";
         } else {
           touchState.moveX = nx;
@@ -13644,6 +13647,7 @@
             touchState.aimY = 0;
             stickEl.style.transform = "translate(0px, 0px)";
             stickEl.className = "w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75";
+            aimFireRingEl?.classList.remove("is-firing");
             if (aimFireHintEl) aimFireHintEl.textContent = "\u7784\u51C6 / \u5916\u63A8\u5F00\u706B";
           } else if (!isAim && t.identifier === touchState.moveId) {
             touchState.moveActive = false;
@@ -13663,6 +13667,47 @@
     }
     bindJoystick(document.getElementById("touchMoveZone"), document.getElementById("touchMoveStick"), false);
     bindJoystick(document.getElementById("touchAimZone"), document.getElementById("touchAimStick"), true);
+    function bindDeathScreenDragScroll() {
+      const el = document.getElementById("deathScreen");
+      if (!el) return;
+      let startY = 0;
+      let startTop = 0;
+      let active = false;
+      let movedPx = 0;
+      let swallowClickUntil = 0;
+      el.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) {
+          active = false;
+          return;
+        }
+        active = true;
+        movedPx = 0;
+        startY = e.touches[0].clientY;
+        startTop = el.scrollTop;
+      }, { passive: true });
+      el.addEventListener("touchmove", (e) => {
+        if (!active || e.touches.length !== 1) return;
+        const dy = e.touches[0].clientY - startY;
+        if (Math.abs(dy) <= 6 && movedPx === 0) return;
+        movedPx = Math.abs(dy);
+        el.scrollTop = startTop - dy;
+        if (e.cancelable) e.preventDefault();
+      }, { passive: false });
+      const stop = () => {
+        if (active && movedPx > 8) swallowClickUntil = performance.now() + 400;
+        active = false;
+      };
+      el.addEventListener("touchend", stop);
+      el.addEventListener("touchcancel", stop);
+      el.addEventListener("click", (e) => {
+        if (performance.now() < swallowClickUntil) {
+          swallowClickUntil = 0;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }, true);
+    }
+    bindDeathScreenDragScroll();
     syncTeamButtonsUI();
     document.querySelectorAll(".mode-btn").forEach((b) => {
       const sel = b.getAttribute("data-mode") === mode.current;
@@ -14472,7 +14517,7 @@
         w.aim = Math.atan2(mouse.y - (psy - 12 * zoom), mouse.x - psx);
       }
     }
-    const touchWantsFire = touchState.enabled && touchState.aimActive && aimMag > 0.42;
+    const touchWantsFire = touchState.enabled && touchState.aimActive && aimMag >= TOUCH_FIRE_THRESHOLD;
     w.trackChargeAim = touchState.enabled && touchState.aimActive;
     const wepCur = WEAPONS[localPlayer.weaponIndex];
     if (touchWantsFire && (wepCur?.chargeSeconds ?? 0) > 0) {
