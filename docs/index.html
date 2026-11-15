@@ -327,7 +327,7 @@
                 🏠 基地
               </button>
             </div>
-            <canvas id="deathMinimapCanvas" width="528" height="168" class="w-full h-[148px] sm:h-[168px] rounded-xl bg-slate-950 border border-slate-800 cursor-pointer block shadow-inner"></canvas>
+            <canvas id="deathMinimapCanvas" width="528" height="168" class="w-full block rounded-xl bg-slate-950 border border-slate-800 cursor-pointer shadow-inner"></canvas>
           </div>
         </div>
 
@@ -412,7 +412,7 @@
 
     <div id="touchAimZone" class="absolute bottom-5 right-5 w-40 h-40 rounded-full bg-slate-900/50 border-2 border-rose-400/45 pointer-events-auto flex flex-col items-center justify-between py-3 touch-none shadow-[0_0_24px_rgba(244,63,94,0.18)]">
       <div id="touchAimFireBadge" class="text-[10px] text-rose-200/75 font-bold text-center pointer-events-none relative z-10">瞄准 / 外推开火</div>
-      <div id="touchAimFireRing" class="absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none"></div>
+      <div id="touchAimFireRing" class="w-[92px] h-[92px] rounded-full border border-dashed border-rose-300/45 pointer-events-none absolute top-1/2 left-1/2 -ml-[46px] -mt-[46px]"></div>
       <div class="text-[9px] text-rose-300/60 font-semibold pointer-events-none relative z-10">FIRE</div>
       <div id="touchAimStick" class="w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75"></div>
     </div>
@@ -890,6 +890,6 @@
   <!-- 轻提示 Toast -->
   <div id="toastBanner" class="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-400/50 text-cyan-200 text-xs font-bold shadow-xl hidden pointer-events-none"></div>
 
-  <script src="./bundle.js?v=73974b8ea5"></script>
+  <script src="./bundle.js?v=184aa1bd7f"></script>
 </body>
 </html>

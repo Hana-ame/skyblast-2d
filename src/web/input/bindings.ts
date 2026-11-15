@@ -798,11 +798,9 @@ export function bindAllEvents(): void {
         stickEl.className = firing
           ? 'w-14 h-14 rounded-full bg-rose-500/85 border-2 border-amber-200 shadow-[0_0_18px_rgba(244,63,94,0.85)] pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
           : 'w-14 h-14 rounded-full bg-rose-500/55 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-50'
-        if (aimFireRingEl) {
-          aimFireRingEl.className = firing
-            ? 'absolute inset-2 rounded-full border-2 border-dashed border-amber-300/90 pointer-events-none'
-            : 'absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none'
-        }
+        // 开火圈就是「推到阈值才开火」的那条边界线：圈的直径 = 阈值 × 2 × 最大推程，
+        // 所以只切一个 is-firing 类，颜色交给 CSS，避免每次事件重写整串 className
+        aimFireRingEl?.classList.toggle('is-firing', firing)
         if (aimFireHintEl) aimFireHintEl.textContent = firing ? '🔥 射击' : '🎯 瞄准'
       } else {
         touchState.moveX = nx
@@ -842,9 +840,7 @@ export function bindAllEvents(): void {
           touchState.aimActive = false; touchState.aimX = 0; touchState.aimY = 0
           stickEl.style.transform = 'translate(0px, 0px)'
           stickEl.className = 'w-14 h-14 rounded-full bg-rose-500/60 border-2 border-white/80 shadow-lg pointer-events-none absolute top-1/2 left-1/2 -ml-7 -mt-7 transition-transform duration-75'
-          if (aimFireRingEl) {
-            aimFireRingEl.className = 'absolute inset-2 rounded-full border border-dashed border-rose-300/45 pointer-events-none'
-          }
+          aimFireRingEl?.classList.remove('is-firing')
           if (aimFireHintEl) aimFireHintEl.textContent = '瞄准 / 外推开火'
         } else if (!isAim && t.identifier === touchState.moveId) {
           touchState.moveActive = false; touchState.moveX = 0; touchState.moveY = 0

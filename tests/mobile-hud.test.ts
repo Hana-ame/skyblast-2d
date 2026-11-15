@@ -78,8 +78,8 @@ test('手机 HUD：存在矮屏/窄屏的紧凑适配规则', () => {
   for (const sel of ['#topHudBar > .glass-panel', '#bottomWeaponDock .glass-panel', '#killFeedContainer']) {
     assert.ok(css.includes(sel), `紧凑样式必须覆盖 ${sel}`)
   }
-  // 小地图必须限制最大宽度，否则会挤压左上状态面板
-  assert.ok(/#topHudBar canvas/.test(css), '必须限制小地图画布尺寸')
+  // 小地图必须收窄，否则会挤压左上状态面板；收窄的是面板，canvas 按原始比例跟着缩
+  assert.ok(/#hudMinimapPanel\s*\{[^}]*width:/.test(css), '矮屏必须收窄小地图面板宽度')
 })
 
 test('击杀信息默认透明度为 30%', () => {
@@ -129,20 +129,37 @@ test('死亡 HUD：支持上下滚动且顶部武器选择区不被负坐标截�
   assert.ok(bindings.includes('bindScrollableOverlay'), 'bindings.ts 绑定触屏拖拽滚动以兼容横屏旋转模式')
 })
 
-test('手机模式小地图：容器与画布同步收紧，消除右侧空白空缺并保持 3:1 比例', () => {
+test('手机模式小地图：只收窄面板，canvas 按原始比例缩放（不留空缺也不压扁）', () => {
   const css = read('docs/css/style.css')
-  assert.ok(css.includes('#hudMinimapPanel') && css.includes('width: auto !important'), '手机模式下 #hudMinimapPanel 宽度自适应画布，消除右侧空缺')
-  assert.ok(css.includes('#hudMinimapCanvas') && css.includes('width: 180px !important') && css.includes('height: 60px !important'), '矮屏下小地图画布保持 3:1 比例 (180x60)')
-  assert.ok(css.includes('width: 156px !important') && css.includes('height: 52px !important'), '极矮屏下小地图画布保持 3:1 比例 (156x52)')
+  const html = read('docs/index.html')
+
+  // ① 收窄的必须是面板；canvas 自己按比例跟着缩
+  assert.ok(/#hudMinimapPanel\s*\{[^}]*width:\s*176px/.test(css), '矮屏必须收窄 #hudMinimapPanel 本身（176px）')
+  assert.ok(/#miniMapWrap,\s*#minimapWrap\s*\{[^}]*max-width:\s*176px/.test(css), '小地图外层 max-width 必须跟面板一致')
+
+  // ② 不得再给 canvas 同时套 width + height 双约束（那正是压扁 + 右侧空缺的成因）
+  assert.ok(
+    !/#topHudBar canvas[^{]*\{[^}]*height:/.test(css) && !/width: 180px !important/.test(css),
+    '不能再给 #topHudBar canvas 写死 width/height（180x60 偏离原始 244x80）',
+  )
+
+  // ③ 两张小地图都锁原始比例，高度由比例推导
+  assert.ok(/#hudMinimapCanvas\s*\{[^}]*aspect-ratio:\s*244\s*\/\s*80/.test(css), '#hudMinimapCanvas 必须锁 244/80')
+  assert.ok(/#deathMinimapCanvas\s*\{[^}]*aspect-ratio:\s*528\s*\/\s*168/.test(css), '#deathMinimapCanvas 必须锁 528/168')
+  assert.ok(!/id="deathMinimapCanvas"[^>]*class="[^"]*h-\[/.test(html), '死亡小地图不能写死高度类（会拉伸）')
 })
 
 test('瞄准摇杆：开火圈靠外且需拉到底（>= 0.88）才触发射击', () => {
   const html = read('docs/index.html')
+  const css = read('docs/css/style.css')
   const ctx = read('src/web/app/context.ts')
   const loop = read('src/web/game/loop.ts')
   const bindings = read('src/web/input/bindings.ts')
 
-  assert.ok(html.includes('id="touchAimFireRing"') && html.includes('inset-2'), '开火虚线环 #touchAimFireRing 贴近摇杆外圈 (inset-2)')
+  // 圈必须和阈值几何一致：直径 = 阈值 × 2 × 最大推程(52px) = 0.88 × 104 ≈ 92px
+  assert.ok(/id="touchAimFireRing"[^>]*class="[^"]*w-\[92px\]/.test(html), '开火虚线圈直径必须是 92px（= 0.88 × 52 × 2）')
+  assert.ok(/#touchAimFireRing\s*\{[^}]*width:\s*92px/.test(css), 'CSS 里锁死 92px，避免被其它规则覆盖')
+  assert.ok(bindings.includes("classList.toggle('is-firing'"), '进圈高亮用 is-firing 类切换，不重写整串 className')
   const m = /TOUCH_FIRE_THRESHOLD\s*=\s*([0-9.]+)/.exec(ctx)
   assert.ok(m && Number(m[1]) >= 0.85, 'TOUCH_FIRE_THRESHOLD 阈值设置在 0.85 以上（拉到底才打）')
   assert.ok(loop.includes('aimMag >= TOUCH_FIRE_THRESHOLD'), 'loop.ts 使用 TOUCH_FIRE_THRESHOLD 判定摇杆射击')
