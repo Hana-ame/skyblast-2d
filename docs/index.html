@@ -58,7 +58,7 @@
 
       <div id="hudSubStatusRow" class="flex items-center justify-between gap-1 text-[10px]">
         <span id="hudStreakCountBadge" class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700/80 font-mono font-bold text-rose-300 tabular-nums">连死 0</span>
-        <span id="hudUnlockTierPips" class="font-mono text-[9px] text-slate-400 tracking-tight">💣✓ 🧱1 🛡️2 🌀3 🎎4</span>
+        <span id="hudUnlockTierPips" class="font-mono text-[9px] text-slate-400 tracking-tight">副手自选 · 🎎拾取</span>
         <span id="hudActiveBuffsText" class="text-[9px] font-extrabold text-cyan-300 truncate max-w-[90px]"></span>
       </div>
     </div>
@@ -315,26 +315,22 @@
                 </button>
               </div>
 
-              <div id="deathGrenadeSelect" class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              <div id="deathGrenadeSelect" class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 <button type="button" data-sec="frag" class="death-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-center transition">
-                  <div class="text-xs font-extrabold text-white">💣 手榴弹 [默认]</div>
+                  <div class="text-xs font-extrabold text-white">💣 手榴弹</div>
                   <div class="text-[10px] text-rose-200">1 充能自然回复（6s/枚）</div>
                 </button>
-                <button type="button" data-sec="obstacle" disabled class="death-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-sky-300">🧱 障碍物 [连死1]</div>
+                <button type="button" data-sec="obstacle" class="death-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500">
+                  <div class="text-xs font-extrabold text-sky-300">🧱 障碍物</div>
                   <div class="text-[10px] text-sky-200/70">10s冷却 · 无限生成240HP掩体</div>
                 </button>
-                <button type="button" data-sec="teleport" disabled class="death-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-purple-300">🌀 Teleport [连死2]</div>
+                <button type="button" data-sec="teleport" class="death-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500">
+                  <div class="text-xs font-extrabold text-purple-300">🌀 Teleport</div>
                   <div class="text-[10px] text-purple-200/70">读条后直接出现在右键位置</div>
                 </button>
-                <button type="button" data-sec="shield" disabled class="death-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-cyan-300">🛡️ 护盾 [连死3]</div>
+                <button type="button" data-sec="shield" class="death-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500">
+                  <div class="text-xs font-extrabold text-cyan-300">🛡️ 护盾</div>
                   <div class="text-[10px] text-cyan-200/70">70HP 护盾 · 伤害不溢出 · 碰撞箱略大</div>
-                </button>
-                <button type="button" data-sec="doll" disabled class="death-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-pink-300">🎎 替身人偶 [连死4]</div>
-                  <div class="text-[10px] text-pink-200/70">连死4解锁或特殊补给拾取</div>
                 </button>
               </div>
             </div>
@@ -643,26 +639,22 @@
                 </button>
               </div>
 
-              <div id="lobbyGrenadeSelect" class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              <div id="lobbyGrenadeSelect" class="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 <button type="button" data-sec="frag" class="lobby-sec-btn px-2.5 py-2 rounded-xl border-2 border-rose-400 bg-rose-500/20 text-center transition">
-                  <div class="text-xs font-extrabold text-white">💣 手榴弹 [默认]</div>
+                  <div class="text-xs font-extrabold text-white">💣 手榴弹</div>
                   <div class="text-[10px] text-rose-200">1 充能自然回复（6s/枚）</div>
                 </button>
-                <button type="button" data-sec="obstacle" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-sky-300">🧱 障碍物 [连死1]</div>
+                <button type="button" data-sec="obstacle" class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500">
+                  <div class="text-xs font-extrabold text-sky-300">🧱 障碍物</div>
                   <div class="text-[10px] text-sky-200/70">10s冷却 · 无限生成240HP掩体</div>
                 </button>
-                <button type="button" data-sec="teleport" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-purple-300">🌀 Teleport [连死2]</div>
+                <button type="button" data-sec="teleport" class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500">
+                  <div class="text-xs font-extrabold text-purple-300">🌀 Teleport</div>
                   <div class="text-[10px] text-purple-200/70">读条后直接出现在右键位置</div>
                 </button>
-                <button type="button" data-sec="shield" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-cyan-300">🛡️ 护盾 [连死3]</div>
+                <button type="button" data-sec="shield" class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500">
+                  <div class="text-xs font-extrabold text-cyan-300">🛡️ 护盾</div>
                   <div class="text-[10px] text-cyan-200/70">70HP 护盾 · 伤害不溢出 · 碰撞箱略大</div>
-                </button>
-                <button type="button" data-sec="doll" disabled class="lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60">
-                  <div class="text-xs font-extrabold text-pink-300">🎎 替身人偶 [连死4]</div>
-                  <div class="text-[10px] text-pink-200/70">连死4解锁或特殊补给拾取</div>
                 </button>
               </div>
             </div>

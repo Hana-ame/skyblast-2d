@@ -43,8 +43,8 @@ export interface PlayerState {
   chargeAim?: number
   /** 上一帧的开火键状态：用于检测「按下沿」（狙：按一下开始读条，不需按住） */
   prevFireHeld?: boolean
-  // 副武器（连死按平衡性阶梯解锁：frag → obstacle → shield → teleport → mine → doll）
-  secondary: string      // 'frag'|'obstacle'|'shield'|'teleport'|'mine'|'doll'
+  // 玩家已选常规副武器（frag | obstacle | teleport | shield，与连死无关；拾取替身人偶后由 dollCharges > 0 临时接管右键）
+  secondary: string
   secondaryCooldown: number
   fragCharges: number        // 手雷当前可用充能（上限 fragMaxCharges，自然回复）
   fragRechargeTimer: number  // 当前充能已累计回复秒数
@@ -62,7 +62,7 @@ export interface PlayerState {
   // Teleport 读条传送状态（读条结束后直接出现在右键目标位置）
   teleportTimer?: number
   teleportTarget?: Vec2 | null
-  // 替身人偶锚点（激活期间非 null）+ 可用充能数（特殊补给箱获得，或连死解锁赠送）
+  // 替身人偶锚点（激活期间非 null）+ 可用充能数（仅限特殊补给箱拾取；>0 时右键优先释放替身人偶，归 0 后恢复原副武器）
   doll: DollSnapshot | null
   dollCharges: number
   // 重生倒计时（>0 表示死亡等待重生）

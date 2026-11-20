@@ -13,7 +13,7 @@ import { viewCompensation } from '../app/context.ts'
 import { capturePrevPositions, prunePrevPositions, beginOverlayFrame, buildPositionOverlay, getRenderPos } from './interp.ts'
 import { botInput } from './bots.ts'
 import { renderScene } from '../render/scene.ts'
-import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
+import { WEAPONS, isSelectableSecondary } from '../../core/weapons.ts'
 import { isCapturePointSelectable } from '../../core/sim/world.ts'
 import { defaultWorldInput } from '../../core/types.ts'
 import type { WorldInput } from '../../core/types.ts'
@@ -168,8 +168,7 @@ function onLocalDeath(): void {
   pendingLoadout.weaponIndex = cur && !cur.isSupplyOnly
     ? localPlayer.weaponIndex
     : (last && !last.isSupplyOnly ? lastIdx : 0)
-  const streak = localPlayer.deathStreak ?? 0
-  if (!isSecondaryUnlocked(pendingLoadout.secondaryType, streak, localPlayer.dollCharges ?? 0, pendingLoadout.weaponIndex)) {
+  if (!isSelectableSecondary(pendingLoadout.secondaryType)) {
     pendingLoadout.secondaryType = 'frag'
   }
   localPlayer.secondary = pendingLoadout.secondaryType
@@ -191,16 +190,10 @@ function onLocalRespawn(): void {
   const next = WEAPONS[wantW] && !WEAPONS[wantW].isSupplyOnly ? wantW : 0
   localPlayer.weaponIndex = next
   localPlayer.lastPrimaryIndex = next
-  const streak = localPlayer.deathStreak ?? 0
   const wantSec = pendingLoadout.secondaryType
-  const validSec = isSecondaryUnlocked(wantSec, streak, localPlayer.dollCharges ?? 0, next)
-    ? wantSec
-    : 'frag'
+  const validSec = isSelectableSecondary(wantSec) ? wantSec : 'frag'
   pendingLoadout.secondaryType = validSec
   localPlayer.secondary = validSec
-  if (validSec === 'doll' && streak >= SECONDARIES.doll.unlockStreak && localPlayer.dollCharges <= 0) {
-    localPlayer.dollCharges = 1
-  }
   localPlayer.selectedSpawnId = pendingLoadout.spawnPointId
   if (netState.role === 'client') {
     sendClientLoadoutToHost(false)

@@ -1,7 +1,7 @@
 // core/sim/throwables.ts —— 副武器释放、读条传送、手雷、地雷、空袭与爆炸结算子系统 (stepExplosionsAndThrowables)
 import type { Terrain } from '../terrain.ts'
 import type { Rng } from '../rng.ts'
-import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getPlayerFragMaxCharges } from '../weapons.ts'
+import { WEAPONS, SECONDARIES, isSelectableSecondary, getPlayerFragMaxCharges } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX, wrapY, wrapDeltaX, wrapDeltaY, wrapDist, clamp } from '../wrap.ts'
 import { BODY_HALF_W, BODY_BOTTOM } from './landmarks.ts'
@@ -134,9 +134,25 @@ export function useSecondaryInWorld(
   s: { type: string; targetX: number; targetY: number },
 ): void {
   if (p.respawnTimer > 0 || p.secondaryCooldown > 0 || !p.alive) return
-  const def = SECONDARIES[s.type]
+  // 拾取替身人偶后右键强制释放替身人偶；次数归 0 后自动恢复原副武器
+  const effectiveType = (p.dollCharges ?? 0) > 0 ? 'doll' : s.type
+  const def = SECONDARIES[effectiveType]
   if (!def) return
-  if (s.type === 'frag') {
+  if (effectiveType === 'doll') {
+    if (p.dollCharges <= 0) return
+    p.dollCharges--
+    // 次数归 0 后立即恢复原副武器，不让原副武器卡在 24s 人偶冷却中
+    p.secondaryCooldown = p.dollCharges > 0 ? def.cd : 0
+    p.doll = {
+      pos: { x: p.pos.x, y: p.pos.y }, hp: p.hp, shieldHp: p.shieldHp, fuel: p.fuel,
+      weaponIndex: p.weaponIndex, ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
+      timer: ctx.config.dollDuration,
+    }
+    ctx.events.push({ kind: 'doll_recall', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: 'anchor' })
+    return
+  }
+  if (!isSelectableSecondary(effectiveType)) return
+  if (effectiveType === 'frag') {
     if (p.fragCharges <= 0) return
     p.fragCharges--
     p.secondaryCooldown = Math.max(p.secondaryCooldown, 0.8)
@@ -150,23 +166,8 @@ export function useSecondaryInWorld(
     })
     return
   }
-  if (s.type === 'doll') {
-    if (p.dollCharges <= 0) return
-    p.dollCharges--
-    p.secondaryCooldown = def.cd
-    p.doll = {
-      pos: { x: p.pos.x, y: p.pos.y }, hp: p.hp, shieldHp: p.shieldHp, fuel: p.fuel,
-      weaponIndex: p.weaponIndex, ammo: [...p.ammo], reserveAmmo: [...p.reserveAmmo],
-      timer: ctx.config.dollDuration,
-    }
-    ctx.events.push({ kind: 'doll_recall', x: p.pos.x, y: p.pos.y, playerId: p.id, weaponName: 'anchor' })
-    return
-  }
 
-  // 连死阶梯解锁校验（含冲锋枪 +1 挡加权，或当前已合法装备该副手）
-  if (!isSecondaryUnlocked(s.type, p.deathStreak ?? 0, p.dollCharges ?? 0, p.weaponIndex) && p.secondary !== s.type) return
-
-  if (s.type === 'obstacle') {
+  if (effectiveType === 'obstacle') {
     // 10.0s 冷却；D5：每名玩家最多同时存在 3 个战术掩体，超出时销毁最早生成的那个。
     // 原因：无限造墙会永久封死关键通道（中央竖井、地下引力枪房），并加重空间桶碰撞负担。
     const MAX_OBSTACLES_PER_PLAYER = 3
@@ -214,7 +215,7 @@ export function useSecondaryInWorld(
     return
   }
 
-  if (s.type === 'shield') {
+  if (effectiveType === 'shield') {
     // 护盾只允许出现一个：固定 100HP（ctx.config.shieldHp），不可叠加
     if (p.shieldTimer > 0 && p.shieldHp > 0) return
     p.secondaryCooldown = def.cd
@@ -224,7 +225,7 @@ export function useSecondaryInWorld(
     return
   }
 
-  if (s.type === 'teleport') {
+  if (effectiveType === 'teleport') {
     if (p.teleportTimer && p.teleportTimer > 0) return
     p.secondaryCooldown = def.cd
     let tx = wrapX(p.pos.x + Math.cos(p.aim) * 280)
@@ -310,8 +311,8 @@ export function damagePlayerInWorld(
   } else {
     t.deathStreak = (t.deathStreak ?? 0) + 1
   }
-  // 连死后不要自动选择最新解锁的副武器：仅当当前副武器不再满足解锁条件时才统一退回手榴弹 ('frag')
-  if (!SECONDARIES[t.secondary] || !isSecondaryUnlocked(t.secondary, t.deathStreak, t.dollCharges, t.weaponIndex)) {
+  // 连死与副武器选择不再相关：保留玩家已选副武器，仅在非法值时兜底退回 'frag'
+  if (!isSelectableSecondary(t.secondary)) {
     t.secondary = 'frag'
   }
   t.respawnTimer = ctx.config.respawnDelay
@@ -329,8 +330,8 @@ export function damagePlayerInWorld(
     killer.kills++
     killer.lifeKills = (killer.lifeKills ?? 0) + 1
     killer.deathStreak = 0
-    // 杀人后连死归零：若当前副武器因杀人失效，统一返回手榴弹 ('frag')，且手榴弹上限同步回 1
-    if (!SECONDARIES[killer.secondary] || !isSecondaryUnlocked(killer.secondary, killer.deathStreak, killer.dollCharges, killer.weaponIndex)) {
+    // 连死归零不再重置已选副武器；仅兜底校验合法性，且手榴弹上限同步回 1
+    if (!isSelectableSecondary(killer.secondary)) {
       killer.secondary = 'frag'
     }
     const killerMaxFrags = getPlayerFragMaxCharges(killer.deathStreak, ctx.config.fragMaxCharges)

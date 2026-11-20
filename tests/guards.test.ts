@@ -9,7 +9,7 @@ import { allViolations, layoutViolations, weaponViolations } from '../src/core/i
 import { defaultMapData } from '../src/core/map.ts'
 import { weaponFalloff } from '../src/core/weapons.ts'
 import {
-  WEAPONS, DEFAULT_CONFIG, SECONDARIES, SECONDARY_UNLOCK_ORDER,
+  WEAPONS, DEFAULT_CONFIG, SECONDARIES, SECONDARY_UNLOCK_ORDER, SELECTABLE_SECONDARIES,
   formatWeaponAmmoText, formatWeaponCardSubtitle, formatSecondaryButtonTitle, formatSecondaryCardSubtitle,
 } from '../src/core/weapons.ts'
 import type { MapData, MapSolid } from '../src/core/map.ts'
@@ -876,12 +876,13 @@ test('护栏·UI 文本单一数据源校验：index.html 死亡界面与大厅�
   }
   assert.equal(wepMatches, 12, 'checked all 6 death screen weapon buttons + 6 lobby weapon buttons')
 
-  // 2. 校验死亡界面与大厅中不再包含已移除的 mine 副武器按钮，且解锁阶梯与 SECONDARY_UNLOCK_ORDER 完全一致
+  // 2. 校验死亡界面与大厅中不包含 mine 与仅限拾取的 doll 按钮，且可选按钮与 SELECTABLE_SECONDARIES 完全一致
   assert.ok(!html.includes('data-sec="mine"'), 'mine button removed from docs/index.html')
+  assert.ok(!html.includes('data-sec="doll"'), 'doll is pickup-only and must not appear as selectable button in docs/index.html')
   // 阵亡界面与房间设定大厅现在共用同款「标题 + 副标题」双行卡片，两处都要逐行比对单一数据源
   for (const cls of ['death-sec-btn', 'lobby-sec-btn']) {
     const secBtns = [...html.matchAll(new RegExp(`<button[^>]*data-sec="([a-z_]+)"[^>]*class="${cls}[^"]*"[^>]*>[\\s\\S]*?<div[^>]*>([\\s\\S]*?)<\\/div>\\s*<div[^>]*>([\\s\\S]*?)<\\/div>\\s*<\\/button>`, 'g'))]
-    assert.deepEqual(secBtns.map(m => m[1]), [...SECONDARY_UNLOCK_ORDER], `${cls} buttons match SECONDARY_UNLOCK_ORDER`)
+    assert.deepEqual(secBtns.map(m => m[1]), [...SELECTABLE_SECONDARIES], `${cls} buttons match SELECTABLE_SECONDARIES`)
     for (const m of secBtns) {
       const def = SECONDARIES[m[1]]
       assert.equal(m[2].trim(), formatSecondaryButtonTitle(def, false), `${cls} "${m[1]}" title matches single source`)
@@ -1570,7 +1571,7 @@ test('护栏·特性开关(Feature Flags)默认全开与完整战术HUD重构：
   assert.ok(coverPos !== null, 'AI locates nearby cover when engaging enemy')
   assert.ok(coverPos!.x < 2060, 'AI chooses the sheltered side of the cover opposite the enemy')
 
-  // 7) 校验 handleEvents 处理本机击杀事件时不抛未声明引用错误，且能自动将失效副手退回手榴弹
+  // 7) 校验 handleEvents 处理本机击杀事件时不抛未声明引用错误，且连死归零不再重置已选常规副武器
   const { handleEvents } = await import('../src/web/app/events.ts')
   const { pendingLoadout } = await import('../src/web/app/context.ts')
   lp.deathStreak = 0
@@ -1591,8 +1592,8 @@ test('护栏·特性开关(Feature Flags)默认全开与完整战术HUD重构：
     x: lp.pos.x,
     y: lp.pos.y,
   }])
-  assert.equal(pendingLoadout.secondaryType, 'frag', 'handleEvents safely resets invalidated secondary to frag on local kill')
-  assert.equal(lp.secondary, 'frag')
+  assert.equal(pendingLoadout.secondaryType, 'shield', 'handleEvents preserves selected secondary on local kill')
+  assert.equal(lp.secondary, 'shield')
 })
 
 

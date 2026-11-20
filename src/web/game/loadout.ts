@@ -2,7 +2,7 @@
 import { world, localPlayer, pendingLoadout } from '../app/context.ts'
 import { updateHudWeaponButtons, updateSpawnPointButtonsUI } from '../app/hud.ts'
 import { showToast } from '../app/toast.ts'
-import { WEAPONS, SECONDARIES, isSecondaryUnlocked, getHighestUnlockedSecondary } from '../../core/weapons.ts'
+import { WEAPONS, SECONDARIES, isSelectableSecondary } from '../../core/weapons.ts'
 import { SPAWN_POINTS, isCapturePointSelectable } from '../../core/sim/world.ts'
 import { sendClientLoadoutToHost, netState } from '../app/net.ts'
 
@@ -26,11 +26,8 @@ export function applyPendingLoadoutAndSpawn(): void {
   const wIdx = WEAPONS[want] && !WEAPONS[want].isSupplyOnly ? want : 0
   localPlayer.weaponIndex = wIdx
   localPlayer.lastPrimaryIndex = wIdx
-  const streak = localPlayer.deathStreak ?? 0
   const wantSec = pendingLoadout.secondaryType
-  localPlayer.secondary = isSecondaryUnlocked(wantSec, streak, localPlayer.dollCharges ?? 0, wIdx)
-    ? wantSec
-    : 'frag'
+  localPlayer.secondary = isSelectableSecondary(wantSec) ? wantSec : 'frag'
   pendingLoadout.secondaryType = localPlayer.secondary
   localPlayer.selectedSpawnId = pendingLoadout.spawnPointId
   localPlayer.deployed = true

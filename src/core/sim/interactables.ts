@@ -221,7 +221,9 @@ export function handlePlayerInteract(ctx: InteractablesContext, p: PlayerState):
       crate.active = false
       crate.respawnTimer = ctx.config.supplyRespawnTime
       if (crate.kind === 'doll') {
+        const hadDoll = p.dollCharges > 0
         p.dollCharges = Math.min(ctx.config.dollMaxCharges, p.dollCharges + 1)
+        if (!hadDoll) p.secondaryCooldown = 0
       } else {
         p.weaponIndex = crate.weaponId
         p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (WEAPONS[crate.weaponId].fuelMult ?? 1))
@@ -382,7 +384,9 @@ export function stepMapInteractables(ctx: InteractablesContext, dt: number): voi
         crate.active = false
         crate.respawnTimer = ctx.config.supplyRespawnTime
         if (crate.kind === 'doll') {
+          const hadDoll = p.dollCharges > 0
           p.dollCharges = Math.min(ctx.config.dollMaxCharges, p.dollCharges + 1)
+          if (!hadDoll) p.secondaryCooldown = 0
         } else {
           p.weaponIndex = crate.weaponId
           p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (WEAPONS[crate.weaponId].fuelMult ?? 1))

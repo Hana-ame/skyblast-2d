@@ -9,7 +9,7 @@
 //      - 巡逻过程中实时检测直接视线（hasLOS）：有直接视线时瞄准敌人开火，无直接视线时枪口朝向当前巡逻行进方向继续按固定路线推进。
 import { botNames, bots, world, localPlayer, mode, MAX_BOT_COUNT, featureFlags } from '../app/context.ts'
 import { updateTeamCountUI, updateSpawnPointButtonsUI } from '../app/hud.ts'
-import { WEAPONS, isSecondaryUnlocked } from '../../core/weapons.ts'
+import { WEAPONS, isSelectableSecondary, getActiveSecondary } from '../../core/weapons.ts'
 import { MAIN_DECK_TOP } from '../../core/map.ts'
 import { getPhysicsParams } from '../../core/sim/physics.ts'
 import { findObstacleAt } from '../../core/sim/spatial.ts'
@@ -1084,32 +1084,29 @@ export function botInput(bot: PlayerState): WorldInput {
     mem.sniperReleaseTick = false
   }
 
-  const streak = bot.deathStreak ?? 0
   const threatenedCpNow = findThreatenedFriendlyFlag(bot)
   if (featureFlags.smartBotTactics && threatenedCpNow && Math.abs(threatenedCpNow.x - bx) < 260) {
-    if (isSecondaryUnlocked('shield', streak, bot.dollCharges ?? 0, bot.weaponIndex) && bot.shieldHp <= 0) {
+    if (bot.shieldHp <= 0) {
       bot.secondary = 'shield'
-    } else if (isSecondaryUnlocked('obstacle', streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
+    } else {
       bot.secondary = 'obstacle'
     }
   }
-  if (!isSecondaryUnlocked(bot.secondary, streak, bot.dollCharges ?? 0, bot.weaponIndex)) {
+  if (!isSelectableSecondary(bot.secondary)) {
     bot.secondary = 'frag'
   }
   const secCheckInterval = 12 + (bot.id % 7)
   if (bot.secondaryCooldown <= 0 && (world.tick + bot.id * 7) % secCheckInterval === 0) {
-    const secId = bot.secondary
-    if (isSecondaryUnlocked(secId, streak, bot.dollCharges, bot.weaponIndex)) {
-      if (secId === 'shield' && hasLOS && dist < 680 && (bot.hp < 95 || dist < 420)) {
-        w.secondary = { type: 'shield', targetX: bx, targetY: by }
-      } else if (secId === 'frag' && bot.fragCharges > 0 && hasLOS && dist > 180 && dist < 620 && !muzzleBlocked) {
-        const throwSpread = mem.manualRouteLocked ? 0 : (nextBotRand(mem) - 0.5) * 36
-        w.secondary = { type: 'frag', targetX: tx + throwSpread, targetY: ty - 10 }
-      } else if (secId === 'obstacle' && bot.onGround && hasLOS && dist > 200 && dist < 650 && Math.abs(rawDy) < 140) {
-        w.secondary = { type: 'obstacle', targetX: bx + (rawDx >= 0 ? 80 : -80), targetY: bot.pos.y }
-      } else if (secId === 'doll' && bot.doll === null && hasLOS && dist < 560) {
-        w.secondary = { type: 'doll', targetX: bx, targetY: bot.pos.y }
-      }
+    const secId = getActiveSecondary(bot)
+    if (secId === 'doll' && bot.doll === null && hasLOS && dist < 560) {
+      w.secondary = { type: 'doll', targetX: bx, targetY: bot.pos.y }
+    } else if (secId === 'shield' && hasLOS && dist < 680 && (bot.hp < 95 || dist < 420)) {
+      w.secondary = { type: 'shield', targetX: bx, targetY: by }
+    } else if (secId === 'frag' && bot.fragCharges > 0 && hasLOS && dist > 180 && dist < 620 && !muzzleBlocked) {
+      const throwSpread = mem.manualRouteLocked ? 0 : (nextBotRand(mem) - 0.5) * 36
+      w.secondary = { type: 'frag', targetX: tx + throwSpread, targetY: ty - 10 }
+    } else if (secId === 'obstacle' && bot.onGround && hasLOS && dist > 200 && dist < 650 && Math.abs(rawDy) < 140) {
+      w.secondary = { type: 'obstacle', targetX: bx + (rawDx >= 0 ? 80 : -80), targetY: bot.pos.y }
     }
   }
 

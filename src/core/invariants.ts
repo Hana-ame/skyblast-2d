@@ -1,6 +1,6 @@
 // core/invariants.ts —— 数据一致性/布局校验（防“改了这个坏那个”）
 // 供测试使用；数值改动后若违反约定，`npm test` 会直接红，而不是等到线上才发现。
-import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, DEFAULT_CONFIG } from './weapons.ts'
+import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, SELECTABLE_SECONDARIES, DEFAULT_CONFIG } from './weapons.ts'
 import { SPAWN_POINTS, JUMP_PADS, AMMO_SPOTS } from './sim/world.ts'
 import type { World } from './sim/world.ts'
 import { WORLD_W, WORLD_H } from './wrap.ts'
@@ -33,11 +33,14 @@ export function weaponViolations(): Violation[] {
     if (w.ammoPerSecond !== undefined && w.ammoPerSecond <= 0) add('weapon.aps', `${w.name} ammoPerSecond <= 0`)
   }
 
-  // 副手平衡性阶梯解锁顺序硬性约定：frag(0) → obstacle(1) → shield(2) → teleport(3) → doll(4)
-  // 2026-11-14：shield 与 teleport 顺序对调（2 连死先给 teleport，护盾后移到 3 连死）
+  // 副武器约定：连死与副武器选择不再相关；常规副武器(frag/obstacle/teleport/shield)全部自选，替身人偶(doll)仅限拾取
   const EXPECTED_SEC_ORDER = ['frag', 'obstacle', 'teleport', 'shield', 'doll']
+  const EXPECTED_SELECTABLE = ['frag', 'obstacle', 'teleport', 'shield']
   if (SECONDARY_UNLOCK_ORDER.join(',') !== EXPECTED_SEC_ORDER.join(',')) {
     add('secondary.order', `SECONDARY_UNLOCK_ORDER "${SECONDARY_UNLOCK_ORDER.join(',')}" !== "${EXPECTED_SEC_ORDER.join(',')}"`)
+  }
+  if (SELECTABLE_SECONDARIES.join(',') !== EXPECTED_SELECTABLE.join(',')) {
+    add('secondary.selectable', `SELECTABLE_SECONDARIES "${SELECTABLE_SECONDARIES.join(',')}" !== "${EXPECTED_SELECTABLE.join(',')}"`)
   }
   if (SECONDARIES['mine']) {
     add('secondary.mine', 'mine should be removed from SECONDARIES')
@@ -46,10 +49,12 @@ export function weaponViolations(): Violation[] {
   if (DEFAULT_CONFIG.shieldHp !== 70) {
     add('config.shieldHp', `DEFAULT_CONFIG.shieldHp=${DEFAULT_CONFIG.shieldHp} expected 70`)
   }
-  EXPECTED_SEC_ORDER.forEach((secId, idx) => {
+  EXPECTED_SEC_ORDER.forEach((secId) => {
     const def = SECONDARIES[secId]
     if (!def) { add('secondary.missing', `missing secondary "${secId}"`); return }
-    if (def.unlockStreak !== idx) add('secondary.streak', `secondary "${secId}" unlockStreak=${def.unlockStreak} expected ${idx}`)
+    if (def.unlockStreak !== 0) add('secondary.streak', `secondary "${secId}" unlockStreak=${def.unlockStreak} expected 0`)
+    if (secId === 'doll' && !def.supplyOnly) add('secondary.doll', 'doll must be supplyOnly (pickup-only)')
+    if (secId !== 'doll' && def.supplyOnly) add('secondary.selectable_flag', `secondary "${secId}" should be freely selectable`)
     if (def.cd <= 0) add('secondary.cd', `secondary "${secId}" cd <= 0`)
   })
 

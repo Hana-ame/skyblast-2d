@@ -3,7 +3,7 @@ import { jetpack, jump, updateJetpackFuel, getPhysicsParams, recoilDelta } from 
 import { Terrain, OBSTACLE_PRESETS } from '../terrain.ts'
 import type { MapData } from '../map.ts'
 import { Rng } from '../rng.ts'
-import { WEAPONS, SECONDARIES, DEFAULT_CONFIG, isSecondaryUnlocked, getPlayerFragMaxCharges } from '../weapons.ts'
+import { WEAPONS, DEFAULT_CONFIG, isSelectableSecondary, getPlayerFragMaxCharges } from '../weapons.ts'
 import type { GameConfig } from '../weapons.ts'
 import { wrapX } from '../wrap.ts'
 import { defaultWorldInput } from '../types.ts'
@@ -276,8 +276,8 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
     p.shieldHp = 0; p.shieldTimer = 0; p.watchtowerTimer = 0; p.mountedTowerId = null; p.warpCooldown = 0
     p.teleportTimer = 0; p.teleportTarget = null
     p.doll = null
-    p.dollCharges = (streak + (WEAPONS[p.weaponIndex]?.extraSecondarySlot ? 1 : 0)) >= SECONDARIES.doll.unlockStreak ? 1 : 0
-    if (!SECONDARIES[p.secondary] || !isSecondaryUnlocked(p.secondary, streak, p.dollCharges, p.weaponIndex)) {
+    p.dollCharges = 0
+    if (!isSelectableSecondary(p.secondary)) {
       p.secondary = 'frag'
     }
     p.reloading = false; p.fireCooldown = 0; p.chargeTimer = 0; p.chargeAim = undefined; p.secondaryCooldown = 0; p.lifeKills = 0
@@ -379,7 +379,7 @@ export class World implements ProjectileContext, ThrowablesContext, Interactable
       if (wep && !wep.isSupplyOnly && canSwitch) {
         p.weaponIndex = wep.id
         p.lastPrimaryIndex = wep.id
-        if (!isSecondaryUnlocked(p.secondary, p.deathStreak ?? 0, p.dollCharges, p.weaponIndex)) p.secondary = 'frag'
+        if (!isSelectableSecondary(p.secondary)) p.secondary = 'frag'
         p.fuel = Math.min(p.fuel, getPhysicsParams().jetpackFuel * (wep.fuelMult ?? 1))
         p.reloading = false; p.reloadTimer = 0
         p.fireCooldown = Math.max(p.fireCooldown, 0.3)

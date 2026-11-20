@@ -187,11 +187,9 @@ export function weaponFalloff(wep: WeaponDef, dist: number, exponent = 1): numbe
 }
 
 /**
- * 连续阵亡副手平衡性阶梯解锁顺序（已移除地雷，护盾只保留唯一档）：
- * 默认手榴弹(0) → 障碍物(1) → teleport(2) → 护盾(3) → 替身人偶(4)
- * 2026-11-14：shield 与 teleport 顺序对调 —— 护盾（伤害不溢出的 100HP 等效血量翻倍）
- * 在 2 连死就解锁过强，实测对拼胜率 96.8% 甚至超过 4 连死的替身人偶；
- * 改为 3 连死解锁，2 连死先给位移型的 teleport。
+ * 副武器完整枚举顺序（同时用于二进制协议 3-bit 索引兼容）：
+ * 可自选副武器（与连死无关）：frag / obstacle / teleport / shield
+ * 仅限特殊补给拾取（无法在配装中选择）：doll
  */
 export const SECONDARY_UNLOCK_ORDER = [
   'frag',
@@ -199,6 +197,14 @@ export const SECONDARY_UNLOCK_ORDER = [
   'teleport',
   'shield',
   'doll',
+] as const
+
+/** 配装中可自由选择的副武器列表（连死与副武器选择不再相关；替身人偶仅限拾取，无法选择） */
+export const SELECTABLE_SECONDARIES = [
+  'frag',
+  'obstacle',
+  'teleport',
+  'shield',
 ] as const
 
 export type SecondaryId = (typeof SECONDARY_UNLOCK_ORDER)[number]
@@ -209,28 +215,26 @@ export const SECONDARIES: Record<string, SecondaryDef> = {
     desc: '1 充能自然回复（6s/枚）',
   },
   obstacle: {
-    id: 'obstacle', name: '障碍物', icon: '🧱', cd: 10.0, unlockStreak: 1, supplyOnly: true,
+    id: 'obstacle', name: '障碍物', icon: '🧱', cd: 10.0, unlockStreak: 0,
     desc: '10s冷却 · 无限生成240HP掩体',
   },
   shield: {
-    id: 'shield', name: '护盾', icon: '🛡️', cd: 10.0, unlockStreak: 3, supplyOnly: true,
+    id: 'shield', name: '护盾', icon: '🛡️', cd: 10.0, unlockStreak: 0,
     desc: '70HP 护盾 · 伤害不溢出 · 碰撞箱略大',
   },
   teleport: {
-    id: 'teleport', name: 'Teleport', icon: '🌀', cd: 10.0, unlockStreak: 2, supplyOnly: true,
+    id: 'teleport', name: 'Teleport', icon: '🌀', cd: 10.0, unlockStreak: 0,
     desc: '读条后直接出现在右键位置',
   },
   doll: {
-    id: 'doll', name: '替身人偶', icon: '🎎', cd: 24.0, unlockStreak: 4, supplyOnly: true,
-    desc: '连死4解锁或特殊补给拾取',
+    id: 'doll', name: '替身人偶', icon: '🎎', cd: 24.0, unlockStreak: 0, supplyOnly: true,
+    desc: '仅限特殊补给拾取 · 拾取后右键激活，用尽恢复原副武器',
   },
 }
 
-/** 计算玩家的等效连死副手解锁档位（选用冲锋枪 weaponIndex===8 时自动获得连死 +1 挡的副武器选择权） */
-export function getEffectiveUnlockStreak(deathStreak: number, weaponIndex?: number): number {
-  const base = Math.max(0, Math.floor(deathStreak ?? 0))
-  const bonus = weaponIndex !== undefined && WEAPONS[weaponIndex]?.extraSecondarySlot ? 1 : 0
-  return base + bonus
+/** 计算玩家的等效连死数（保留供旧调用方兼容；连死不再限制副武器选择） */
+export function getEffectiveUnlockStreak(deathStreak: number, _weaponIndex?: number): number {
+  return Math.max(0, Math.floor(deathStreak ?? 0))
 }
 
 /** 手榴弹充能上限 = 连死数（0 或 1 连死时为 baseMax=1，连死 N>=1 时上限为 N） */
@@ -238,28 +242,35 @@ export function getPlayerFragMaxCharges(deathStreak: number, baseMax = 1): numbe
   return Math.max(baseMax, Math.floor(deathStreak ?? 0))
 }
 
-/** 判断某副手对当前玩家是否已解锁（满足连死阈值/冲锋枪+1挡，或替身人偶持有补给箱充能） */
-export function isSecondaryUnlocked(secId: string, deathStreak: number, dollCharges = 0, weaponIndex?: number): boolean {
+/** 判断某副手是否允许在配装中手动选择（替身人偶仅限拾取，无法选择） */
+export function isSelectableSecondary(secId: string): boolean {
   const def = SECONDARIES[secId]
-  if (!def) return false
-  if (secId === 'doll' && dollCharges > 0) return true
-  return getEffectiveUnlockStreak(deathStreak, weaponIndex) >= def.unlockStreak
+  return Boolean(def && !def.supplyOnly)
 }
 
-/** 获取当前已解锁的全部副手 ID 列表（按平衡性从低到高排序） */
-export function getUnlockedSecondaries(deathStreak: number, dollCharges = 0, weaponIndex?: number): string[] {
+/** 获取玩家当前右键实际生效的副武器：持有替身人偶充能时为 'doll'，次数归 0 后自动恢复原副武器 */
+export function getActiveSecondary(p: { secondary: string; dollCharges?: number }): string {
+  if ((p.dollCharges ?? 0) > 0) return 'doll'
+  return isSelectableSecondary(p.secondary) ? p.secondary : 'frag'
+}
+
+/** 判断某副手对当前玩家是否可用（常规副武器与连死无关全部可用；替身人偶仅在持有拾取充能时可用） */
+export function isSecondaryUnlocked(secId: string, _deathStreak = 0, dollCharges = 0, _weaponIndex?: number): boolean {
+  const def = SECONDARIES[secId]
+  if (!def) return false
+  if (secId === 'doll') return dollCharges > 0
+  return !def.supplyOnly
+}
+
+/** 获取当前可用的全部副手 ID 列表 */
+export function getUnlockedSecondaries(deathStreak = 0, dollCharges = 0, weaponIndex?: number): string[] {
   return SECONDARY_UNLOCK_ORDER.filter(id => isSecondaryUnlocked(id, deathStreak, dollCharges, weaponIndex))
 }
 
-/** 获取当前连死层数下已解锁的最高阶副手 ID */
-export function getHighestUnlockedSecondary(deathStreak: number, dollCharges = 0, weaponIndex?: number): string {
-  const s = getEffectiveUnlockStreak(deathStreak, weaponIndex)
-  for (let i = SECONDARY_UNLOCK_ORDER.length - 1; i >= 0; i--) {
-    const id = SECONDARY_UNLOCK_ORDER[i]
-    if (s >= SECONDARIES[id].unlockStreak) return id
-  }
+/** 获取当前可用副手中的最高阶 ID（保留兼容） */
+export function getHighestUnlockedSecondary(_deathStreak = 0, dollCharges = 0, _weaponIndex?: number): string {
   if (dollCharges > 0) return 'doll'
-  return 'frag'
+  return SELECTABLE_SECONDARIES[SELECTABLE_SECONDARIES.length - 1]
 }
 
 /** 全局玩法参数（服务器可调；随 hello/config_event 同步） */
@@ -356,10 +367,9 @@ export function formatWeaponCardSubtitle(w: WeaponDef): string {
 }
 
 /** 统一副武器按钮标题（死亡界面与大厅共用同一文本源） */
-export function formatSecondaryButtonTitle(s: SecondaryDef, withSupplyTag = false): string {
-  if (s.unlockStreak <= 0) return `${s.icon} ${s.name} [默认]`
-  if (s.id === 'doll' && withSupplyTag) return `${s.icon} ${s.name} [连死${s.unlockStreak}/补给]`
-  return `${s.icon} ${s.name} [连死${s.unlockStreak}]`
+export function formatSecondaryButtonTitle(s: SecondaryDef, _withSupplyTag = false): string {
+  if (s.supplyOnly) return `${s.icon} ${s.name} [仅限拾取]`
+  return `${s.icon} ${s.name}`
 }
 
 /** 统一副武器卡片说明（结合当前 GameConfig 实时数值） */
@@ -368,6 +378,6 @@ export function formatSecondaryCardSubtitle(s: SecondaryDef, cfg: GameConfig = D
   if (s.id === 'obstacle') return `${s.cd}s冷却 · 无限生成${cfg.obstacleDefaultHp}HP掩体`
   if (s.id === 'shield') return `${cfg.shieldHp}HP 护盾 · 伤害不溢出 · 碰撞箱略大`
   if (s.id === 'teleport') return '读条后直接出现在右键位置'
-  if (s.id === 'doll') return `连死${s.unlockStreak}解锁或特殊补给拾取`
+  if (s.id === 'doll') return '仅限特殊补给拾取 · 拾取后右键激活，用尽恢复原副武器'
   return s.desc ?? ''
 }

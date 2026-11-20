@@ -3,7 +3,7 @@ import type { WorldEvent } from '../../core/types.ts'
 import {
   screenFx, localPlayer, pendingLoadout, effects, beams, world,
 } from './context.ts'
-import { isSecondaryUnlocked } from '../../core/weapons.ts'
+import { isSelectableSecondary } from '../../core/weapons.ts'
 import { updateHudWeaponButtons } from './hud.ts'
 import { TEAM_PALETTE } from '../sprites.ts'
 import { addKillFeed, showToast } from './toast.ts'
@@ -26,7 +26,7 @@ export function handleEvents(evs: WorldEvent[]): void {
       addKillFeed(kName, kTeam, vName, vTeam, e.weaponLabel ?? '', e.isHeadshot ?? e.headshot, e.isPierced)
       const isOwnKill = killer === localPlayer.id && e.victimId !== localPlayer.id
       if (isOwnKill) playProceduralSound((e.isHeadshot ?? e.headshot) ? 'headshot' : 'kill')
-      if ((e.killerId === localPlayer.id || e.attackerId === localPlayer.id) && !isSecondaryUnlocked(pendingLoadout.secondaryType, localPlayer.deathStreak ?? 0, localPlayer.dollCharges ?? 0, localPlayer.weaponIndex)) {
+      if ((e.killerId === localPlayer.id || e.attackerId === localPlayer.id) && !isSelectableSecondary(pendingLoadout.secondaryType)) {
         pendingLoadout.secondaryType = 'frag'
         localPlayer.secondary = 'frag'
         updateHudWeaponButtons()

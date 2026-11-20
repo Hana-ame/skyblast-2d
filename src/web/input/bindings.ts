@@ -29,7 +29,7 @@ import { syncBotsCount } from '../game/bots.ts'
 import { applyPendingLoadoutAndSpawn } from '../game/loadout.ts'
 import { setPhysicsParams, resetPhysicsParams } from '../../core/sim/physics.ts'
 import { isCapturePointSelectable } from '../../core/sim/world.ts'
-import { WEAPONS, DEFAULT_CONFIG } from '../../core/weapons.ts'
+import {WEAPONS, DEFAULT_CONFIG, getActiveSecondary } from '../../core/weapons.ts'
 import type { TeamId } from '../../core/types.ts'
 import { wrapDeltaY, wrapDist } from '../../core/wrap.ts'
 
@@ -101,7 +101,7 @@ export function bindAllEvents(): void {
     if (active && ['INPUT', 'TEXTAREA'].includes(active.tagName)) return
     keys[e.code] = true
     if (e.code === 'KeyR') inputQueue.reload = true
-    else if (e.code === 'KeyG' || e.code === 'KeyQ') inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
+    else if (e.code === 'KeyG' || e.code === 'KeyQ') inputQueue.secondary = { type: getActiveSecondary(localPlayer), targetX: mouse.worldX, targetY: mouse.worldY }
     else if (e.code === 'KeyE') {
       inputQueue.interact = true
       trySelectCapturedFlagSpawnByKey()
@@ -130,7 +130,7 @@ export function bindAllEvents(): void {
     warmupAudioCtx()
     if (!touchState.aimActive) touchState.aimUsed = false
     if (e.button === 0) mouse.down = true
-    else if (e.button === 2) inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
+    else if (e.button === 2) inputQueue.secondary = { type: getActiveSecondary(localPlayer), targetX: mouse.worldX, targetY: mouse.worldY }
   })
   canvas?.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.down = false })
   canvas?.addEventListener('contextmenu', (e) => e.preventDefault())
@@ -352,7 +352,7 @@ export function bindAllEvents(): void {
   })
   document.getElementById('hudReloadBtn')?.addEventListener('click', () => { inputQueue.reload = true })
   document.getElementById('hudGrenadeBtn')?.addEventListener('click', () => {
-    inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
+    inputQueue.secondary = { type: getActiveSecondary(localPlayer), targetX: mouse.worldX, targetY: mouse.worldY }
   })
   document.getElementById('hudQuickMortarBtn')?.addEventListener('click', () => {
     inputQueue.interact = true
@@ -1043,7 +1043,7 @@ export function bindAllEvents(): void {
 
   const triggerSecondaryTouch = (e?: Event) => {
     if (e && e.cancelable) e.preventDefault()
-    inputQueue.secondary = { type: localPlayer.secondary, targetX: mouse.worldX, targetY: mouse.worldY }
+    inputQueue.secondary = { type: getActiveSecondary(localPlayer), targetX: mouse.worldX, targetY: mouse.worldY }
   }
   const triggerReloadTouch = (e?: Event) => {
     if (e && e.cancelable) e.preventDefault()

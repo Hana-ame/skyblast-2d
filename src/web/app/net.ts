@@ -3,7 +3,7 @@
 import { world, localPlayer, bots, mode, pendingLoadout, uiState, featureFlags } from './context.ts'
 import { getPhysicsParams, setPhysicsParams } from '../../core/sim/physics.ts'
 import { resetBinaryCodecState, encodeServerMsgBinary, filterSnapshotAOI } from '../../net/protocol/BinaryCodec.ts'
-import { WEAPONS, SECONDARIES, isSecondaryUnlocked } from '../../core/weapons.ts'
+import { WEAPONS, SECONDARIES, isSelectableSecondary } from '../../core/weapons.ts'
 import { applyIntents } from '../../net/ServerSim.ts'
 import type { QueuedClientInput } from '../../net/ServerSim.ts'
 import { ClientSession } from '../../net/ClientSession.ts'
@@ -401,7 +401,7 @@ function acceptIncomingKcpGuest(
     guestPlayer.weaponIndex = initWeaponIdx
     guestPlayer.lastPrimaryIndex = initWeaponIdx
   }
-  if (typeof initSecondary === 'string' && SECONDARIES[initSecondary] && isSecondaryUnlocked(initSecondary, guestPlayer.deathStreak ?? 0, guestPlayer.dollCharges ?? 0, guestPlayer.weaponIndex)) {
+  if (typeof initSecondary === 'string' && isSelectableSecondary(initSecondary)) {
     guestPlayer.secondary = initSecondary
   }
   guestPlayer.deployed = true
@@ -444,7 +444,7 @@ function acceptIncomingKcpGuest(
           guestPlayer.lastPrimaryIndex = wIdx
         }
         if (typeof parsed.secondary === 'string' && SECONDARIES[parsed.secondary]) {
-          guestPlayer.secondary = isSecondaryUnlocked(parsed.secondary, guestPlayer.deathStreak ?? 0, guestPlayer.dollCharges ?? 0, guestPlayer.weaponIndex) ? parsed.secondary : 'frag'
+          guestPlayer.secondary = isSelectableSecondary(parsed.secondary) ? parsed.secondary : 'frag'
         }
         if (typeof parsed.spawnPointId === 'string') {
           guestPlayer.selectedSpawnId = parsed.spawnPointId

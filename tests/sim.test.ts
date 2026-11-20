@@ -9,7 +9,7 @@ import { ServerSim } from '../src/net/ServerSim.ts'
 import { ClientSession } from '../src/net/ClientSession.ts'
 import { createLoopback } from '../src/net/transport/Loopback.ts'
 import { InputMapper } from '../src/input/InputMapper.ts'
-import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, isSecondaryUnlocked, getUnlockedSecondaries, getHighestUnlockedSecondary, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
+import { WEAPONS, SECONDARIES, SECONDARY_UNLOCK_ORDER, SELECTABLE_SECONDARIES, isSelectableSecondary, getActiveSecondary, isSecondaryUnlocked, getUnlockedSecondaries, getHighestUnlockedSecondary, DEFAULT_CONFIG, weaponFalloff } from '../src/core/weapons.ts'
 import { JUMP_PADS } from '../src/core/sim/world.ts'
 import { defaultMapData, sanitizeMapData, carveTunnelInSolids, UNIFIED_EDGE_HIGHLIGHT } from '../src/core/map.ts'
 import { FFA_SPAWN_POINTS, AMMO_SPOTS } from '../src/core/sim/world.ts'
@@ -122,22 +122,32 @@ test('手榴弹：引爆产生爆炸事件', () => {
   assert.ok(sawExplosion, 'grenade should explode')
 })
 
-test('替身人偶：只从特殊补给获得（无充能不可用）', () => {
+test('替身人偶：仅限特殊补给拾取，拾取后右键优先替身人偶，次数归0恢复原副武器', () => {
   const w = new World(11)
   const p = w.addPlayer('P', 'red')
+  p.secondary = 'shield'
+  assert.equal(isSelectableSecondary('doll'), false, 'doll cannot be manually selected')
+  assert.equal(getActiveSecondary(p), 'shield', 'original secondary before pickup is shield')
   // 无充能：使用无效、不进入 CD
   w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
   assert.equal(p.doll, null, 'no doll charge -> cannot anchor')
   assert.equal(p.secondaryCooldown, 0, 'no cooldown consumed when unavailable')
-  // 拾取特殊补给箱 → 获得充能
+  // 拾取特殊补给箱 → 获得充能，右键自动变为替身人偶
   const crate = w.supplyCrates.find(c => c.kind === 'doll')!
   p.pos = { x: crate.x, y: crate.y }
   w.step(DT, new Map([[p.id, input()]]))
   assert.equal(p.dollCharges, 1, 'doll supply should grant a charge')
-  // 再使用 → 锚定 + 消耗充能
-  w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
+  assert.equal(getActiveSecondary(p), 'doll', 'active secondary switches to doll after pickup')
+  assert.equal(p.secondary, 'shield', 'original secondary preserved while holding doll')
+  // 右键使用（即便传入原副武器类型也会优先触发替身人偶）→ 锚定 + 消耗充能 + 次数归0后恢复原副武器
+  w.step(DT, new Map([[p.id, input({ secondary: sec(getActiveSecondary(p)) })]]))
   assert.ok(p.doll !== null, 'doll should be anchored')
   assert.equal(p.dollCharges, 0, 'charge consumed')
+  assert.equal(getActiveSecondary(p), 'shield', 'active secondary restores to original shield when dollCharges reaches 0')
+  assert.equal(p.secondaryCooldown, 0, 'restored original secondary is not stuck on 24s doll cooldown')
+  // 次数归0后再次右键，应释放原来的护盾副武器
+  w.step(DT, new Map([[p.id, input({ secondary: sec(getActiveSecondary(p)) })]]))
+  assert.ok(p.shieldHp > 0, 'restored original secondary (shield) works after doll charges reach 0')
   const anchorPos = { ...p.pos }
   // 走远一点再挨致死伤（狙击 68×2.5=170 > 100）
   for (let i = 0; i < 60; i++) w.step(DT, new Map([[p.id, input({ move: 1 })]]))
@@ -429,9 +439,10 @@ test('配装表：8 主武器（含手枪）+ 副武器仅手雷/人偶 + 武器
   assert.equal(WEAPONS[2].grazeDamageMin, 99, 'sniper graze floor 99')
   assert.equal(WEAPONS[2].farRange, 900, 'sniper has far-range attenuation')
   assert.equal(WEAPONS[2].farDamage, 99, 'sniper far damage 99')
-  assert.deepEqual(SECONDARY_UNLOCK_ORDER, ['frag', 'obstacle', 'teleport', 'shield', 'doll'], 'secondary unlock order: teleport at 2 deaths, shield moved to 3')
+  assert.deepEqual(SECONDARY_UNLOCK_ORDER, ['frag', 'obstacle', 'teleport', 'shield', 'doll'], 'secondary enum order preserved for binary codec')
+  assert.deepEqual(SELECTABLE_SECONDARIES, ['frag', 'obstacle', 'teleport', 'shield'], 'all 4 standard secondaries selectable without doll')
   assert.equal(SECONDARIES.doll.supplyOnly, true, 'doll is supply-only')
-  assert.ok(!SECONDARIES.frag.supplyOnly, 'frag selectable')
+  for (const id of SELECTABLE_SECONDARIES) assert.ok(!SECONDARIES[id].supplyOnly, `${id} selectable`)
 
   // 手雷充能制：初始 2、投出消耗、6s 回复 1
   const w = new World(53)
@@ -1637,65 +1648,50 @@ test('快照增量精简与高频弹丸事件化：静态设施零重复传输 +
 })
 
 
-test('连死副手阶梯解锁：依次解锁 障碍物 → teleport → 护盾 → 替身人偶（已移除地雷），且击杀重置连死', () => {
+test('连死与副武器选择解耦：常规副手 0 连死全可选、击杀不重置副武器，替身人偶仅限拾取', () => {
   const w = new World(777)
   w.config.randomSpawn = false
   const p = w.addPlayer('Victim', 'red')
   const killer = w.addPlayer('Killer', 'blue')
 
   assert.equal(p.deathStreak, 0)
-  assert.deepEqual(getUnlockedSecondaries(p.deathStreak), ['frag'])
+  assert.deepEqual(getUnlockedSecondaries(p.deathStreak), ['frag', 'obstacle', 'teleport', 'shield'])
+  assert.equal(isSelectableSecondary('doll'), false, 'doll is pickup-only and not selectable')
   assert.equal(p.secondary, 'frag')
   assert.equal(SECONDARIES['mine'], undefined, 'mine option removed from SECONDARIES')
 
-  // 未解锁前直接请求使用高阶副手应被拒绝（不消耗冷却）
+  // 0 连死即可直接使用障碍物等常规副武器
   const obsCount0 = w.obstacles.length
   w.step(DT, new Map([[p.id, input({ secondary: sec('obstacle') })]]))
-  assert.equal(w.obstacles.length, obsCount0, 'locked obstacle must not spawn')
-  assert.equal(p.secondaryCooldown, 0)
+  assert.equal(w.obstacles.length, obsCount0 + 1, 'obstacle usable at deathStreak 0')
 
-  const expectedProgression = ['obstacle', 'teleport', 'shield', 'doll']
-  for (let i = 0; i < expectedProgression.length; i++) {
-    const expectedSec = expectedProgression[i]
-    // 确保持续测试 Victim 零击杀连死：每次重置 killer.lifeKills 不影响 Victim
+  // 连续阵亡 4 次：deathStreak 仍正常统计，但不会赠送替身人偶充能，也不会自动改副武器
+  p.secondary = 'shield'
+  for (let i = 0; i < 4; i++) {
     w.damagePlayer(p, 999, undefined, false, false, killer.id, killer.team, '测试')
     assert.equal(p.deathStreak, i + 1, `death #${i + 1} increments deathStreak`)
-    assert.equal(getHighestUnlockedSecondary(p.deathStreak), expectedSec)
-    // 连死后不要自动选择最新解锁的副武器：p.secondary 保持为玩家原本的 'frag'
-    assert.equal(p.secondary, 'frag', `does NOT auto-switch secondary to ${expectedSec} at streak ${i + 1}`)
-    // 推进到重生完成
+    assert.equal(p.secondary, 'shield', 'selected secondary preserved across deaths')
     for (let t = 0; t < 300; t++) w.step(DT, new Map([[p.id, input()], [killer.id, input()]]))
     assert.ok(p.alive && p.respawnTimer <= 0, 'player respawned')
-    // 手榴弹的上限 = 连死数 (i + 1)
+    assert.equal(p.dollCharges, 0, 'deathStreak must NOT grant doll charges')
     assert.equal(p.fragCharges, i + 1, `at streak ${i + 1}, grenade max/initial charges equals deathStreak (${i + 1})`)
   }
 
-  // 手动选择已解锁的替身人偶或护盾，验证可使用；随后反杀 Killer 验证「因为杀人失效，统一返回手榴弹」
-  p.secondary = 'shield'
-  assert.equal(p.dollCharges, 1, 'streak 4 grants 1 doll charge on respawn')
-  w.step(DT, new Map([[p.id, input({ secondary: sec('doll') })]]))
-  assert.ok(p.doll !== null, 'doll anchored after streak unlock')
-
-  // 当 Victim 反杀 Killer 时，Victim 的连死计数重置为 0，且原本选中的高阶副手 ('shield') 因杀人失效统一返回手榴弹 ('frag')，手榴弹上限同步回 1
+  // 反杀 Killer 后连死归 0，但玩家选中的副武器 ('shield') 保持不变
   w.damagePlayer(killer, 999, undefined, false, false, p.id, p.team, '反杀')
   assert.equal(p.kills, 1)
   assert.equal(p.deathStreak, 0, 'getting a kill resets deathStreak to 0')
-  assert.equal(p.secondary, 'frag', 'streak secondary invalidated by getting a kill automatically reverts to frag')
+  assert.equal(p.secondary, 'shield', 'getting a kill does NOT reset selected secondary')
   assert.equal(p.fragCharges, 1, 'fragCharges capped back to 1 when deathStreak resets to 0')
-
-  // 且 killer 在本命已杀 4 人的情况下本次阵亡，连死计数应为 0（而非无论杀几人死亡后都是连死 1）
   assert.equal(killer.deathStreak, 0, 'dying after getting kills in that life keeps deathStreak at 0 instead of 1')
 
-  // 冲锋枪 (weaponIndex=8) 自动获得连死计数 +1 挡的副武器选择权
+  // 切换主武器也不再重置已选副武器
   p.weaponIndex = 8
-  assert.equal(isSecondaryUnlocked('obstacle', 0, 0, 8), true, 'SMG at deathStreak=0 unlocks tier 1 (obstacle)')
-  assert.equal(isSecondaryUnlocked('shield', 0, 0, 8), false, 'SMG at deathStreak=0 does not unlock tier 2')
   p.secondary = 'obstacle'
-  // 切换回突击步枪 (weaponIndex=1) 重生部署时失去冲锋枪 +1 挡加成，副武器自动退回手榴弹 ('frag')
   p.weaponIndex = 1
   w.deploy(p)
   assert.equal(p.weaponIndex, 1)
-  assert.equal(p.secondary, 'frag', 'switching away from SMG invalidates +1 tier secondary and reverts to frag')
+  assert.equal(p.secondary, 'obstacle', 'switching primary weapon preserves selected secondary')
 })
 
 test('连死解锁副手实战效果：障碍物上限3 / 70HP不溢出且碰撞箱略大的唯一护盾 / teleport读条落右键点 / 二进制同步无损', () => {

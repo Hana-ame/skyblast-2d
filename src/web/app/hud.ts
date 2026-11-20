@@ -10,7 +10,8 @@ import type { PlayerState } from '../../core/types.ts'
 import {
   WEAPONS,
   SECONDARIES,
-  isSecondaryUnlocked,
+  isSelectableSecondary,
+  getActiveSecondary,
   getPlayerFragMaxCharges,
   formatWeaponCardSubtitle,
   formatSecondaryButtonTitle,
@@ -372,11 +373,9 @@ export function syncLoadoutTextFromSingleSource(): void {
 
 export function updateHudWeaponButtons(): void {
   syncLoadoutTextFromSingleSource()
-  const streak = localPlayer.deathStreak ?? 0
-  const dollCharges = localPlayer.dollCharges ?? 0
   const wepIdx = pendingLoadout.weaponIndex
 
-  if (!isSecondaryUnlocked(pendingLoadout.secondaryType, streak, dollCharges, wepIdx)) {
+  if (!isSelectableSecondary(pendingLoadout.secondaryType)) {
     pendingLoadout.secondaryType = 'frag'
     localPlayer.secondary = 'frag'
   }
@@ -392,8 +391,8 @@ export function updateHudWeaponButtons(): void {
   })
   document.querySelectorAll('.death-sec-btn').forEach((btn) => {
     const sec = btn.getAttribute('data-sec') || 'frag'
-    const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx)
-    if (!unlocked) {
+    const selectable = isSelectableSecondary(sec)
+    if (!selectable) {
       setClassIfChanged(btn, 'death-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60')
     } else {
       setClassIfChanged(
@@ -403,10 +402,10 @@ export function updateHudWeaponButtons(): void {
           : 'death-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500',
       )
     }
-    ;(btn as HTMLButtonElement).disabled = !unlocked
+    ;(btn as HTMLButtonElement).disabled = !selectable
   })
   const streakNote = getEl('deathSecNote')
-  setTextIfChanged(streakNote, wepIdx === 8 ? `+1挡` : '')
+  setTextIfChanged(streakNote, '')
 
   document.querySelectorAll('.lobby-wep-btn').forEach((btn) => {
     const slot = Number(btn.getAttribute('data-wep') || 0)
@@ -419,8 +418,8 @@ export function updateHudWeaponButtons(): void {
   })
   document.querySelectorAll('.lobby-sec-btn').forEach((btn) => {
     const sec = btn.getAttribute('data-sec') || 'frag'
-    const unlocked = isSecondaryUnlocked(sec, streak, dollCharges, wepIdx)
-    if (!unlocked) {
+    const selectable = isSelectableSecondary(sec)
+    if (!selectable) {
       setClassIfChanged(btn, 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-800 bg-slate-950/40 text-center transition cursor-not-allowed opacity-60')
     } else {
       setClassIfChanged(
@@ -430,7 +429,7 @@ export function updateHudWeaponButtons(): void {
           : 'lobby-sec-btn px-2.5 py-2 rounded-xl border border-slate-700 bg-slate-950/70 text-center transition hover:border-slate-500',
       )
     }
-    ;(btn as HTMLButtonElement).disabled = !unlocked
+    ;(btn as HTMLButtonElement).disabled = !selectable
   })
 }
 
@@ -551,8 +550,7 @@ export function tryChangePrimaryWeapon(slotIdx: number): void {
   pendingLoadout.weaponIndex = slotIdx
   localPlayer.weaponIndex = slotIdx
   localPlayer.lastPrimaryIndex = slotIdx
-  const streak = localPlayer.deathStreak ?? 0
-  if (!isSecondaryUnlocked(pendingLoadout.secondaryType, streak, localPlayer.dollCharges ?? 0, slotIdx)) {
+  if (!isSelectableSecondary(pendingLoadout.secondaryType)) {
     pendingLoadout.secondaryType = 'frag'
     localPlayer.secondary = 'frag'
   }
@@ -563,17 +561,8 @@ export function tryChangePrimaryWeapon(slotIdx: number): void {
 export function tryChangeSecondaryWeapon(secType: string): void {
   const def = SECONDARIES[secType]
   if (!def) return
-  const streak = localPlayer.deathStreak ?? 0
-  const dollCharges = localPlayer.dollCharges ?? 0
-  const unlocked = isSecondaryUnlocked(secType, streak, dollCharges, pendingLoadout.weaponIndex)
-  if (!unlocked) {
-    showToast(`🔒 需连死 ${def.unlockStreak} 次解锁`)
-    return
-  }
-  if (secType === 'doll' && localPlayer.deployed && localPlayer.respawnTimer <= 0 && dollCharges > 0) {
-    localPlayer.secondary = secType
-    updateHudWeaponButtons()
-    showToast(`🎎 替身人偶 ×${dollCharges}`)
+  if (!isSelectableSecondary(secType)) {
+    if (secType === 'doll') showToast('🎎 替身人偶仅限战场特殊补给拾取，无法选择')
     return
   }
   if (localPlayer.deployed && localPlayer.respawnTimer <= 0) {
@@ -947,12 +936,11 @@ export function updateHudUI(): void {
 
   const pipsEl = getEl('hudUnlockTierPips')
   if (pipsEl) {
-    const wIdx = localPlayer.weaponIndex
-    const p1 = isSecondaryUnlocked('obstacle', streak, dollCharges, wIdx) ? '🧱✓' : '🧱1'
-    const p2 = isSecondaryUnlocked('shield', streak, dollCharges, wIdx) ? '🛡️✓' : '🛡️2'
-    const p3 = isSecondaryUnlocked('teleport', streak, dollCharges, wIdx) ? '🌀✓' : '🌀3'
-    const p4 = isSecondaryUnlocked('doll', streak, dollCharges, wIdx) ? '🎎✓' : '🎎4'
-    setTextIfChanged(pipsEl, `💣✓ ${p1} ${p2} ${p3} ${p4}`)
+    const origSec = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag
+    setTextIfChanged(
+      pipsEl,
+      dollCharges > 0 ? `🎎×${dollCharges} → ${origSec.icon}` : '副手自选 · 🎎拾取',
+    )
   }
 
   const buffsEl = getEl('hudActiveBuffsText')
@@ -981,7 +969,8 @@ export function updateHudUI(): void {
   setTextIfChanged(getEl('currentWeaponName'), mounted ? '🎯 迫击炮' : wep.shortName)
   setTextIfChanged(getEl('hudCurrentWeaponName'), wep.shortName)
 
-  const secDef = SECONDARIES[localPlayer.secondary] ?? SECONDARIES.frag
+  const activeSec = getActiveSecondary(localPlayer)
+  const secDef = SECONDARIES[activeSec] ?? SECONDARIES.frag
   setTextIfChanged(getEl('hudSecondaryChipText'), `${secDef.icon} ${secDef.name}`)
 
   const curAmmo = Math.max(0, Math.ceil(localPlayer.ammo[localPlayer.weaponIndex] ?? 0))
@@ -1026,11 +1015,17 @@ export function updateHudUI(): void {
 
   let secStatusShort = `${secDef.icon} 就绪`
   if (gOverlay && gLabel) {
-    if (localPlayer.secondary === 'doll') {
-      setHeightIfChanged(gOverlay, localPlayer.dollCharges > 0 ? '0%' : '100%')
-      secStatusShort = localPlayer.dollCharges > 0 ? `🎎 ×${localPlayer.dollCharges}` : '🎎 0'
+    if (activeSec === 'doll') {
+      if (localPlayer.secondaryCooldown > 0) {
+        const pct = Math.round(clamp((localPlayer.secondaryCooldown / Math.max(0.1, secDef.cd)) * 100, 0, 100))
+        setHeightIfChanged(gOverlay, `${pct}%`)
+        secStatusShort = `🎎 ${localPlayer.secondaryCooldown.toFixed(1)}s`
+      } else {
+        setHeightIfChanged(gOverlay, localPlayer.dollCharges > 0 ? '0%' : '100%')
+        secStatusShort = localPlayer.dollCharges > 0 ? `🎎 ×${localPlayer.dollCharges}` : '🎎 0'
+      }
       setTextIfChanged(gLabel, secStatusShort)
-    } else if (localPlayer.secondary === 'frag') {
+    } else if (activeSec === 'frag') {
       const maxFrags = getPlayerFragMaxCharges(localPlayer.deathStreak ?? 0, world.config.fragMaxCharges)
       const need = localPlayer.fragCharges >= maxFrags
       if (need) {
@@ -1042,7 +1037,7 @@ export function updateHudUI(): void {
         secStatusShort = `💣 ${(world.config.fragRechargeSeconds - localPlayer.fragRechargeTimer).toFixed(1)}s`
       }
       setTextIfChanged(gLabel, secStatusShort)
-    } else if (localPlayer.secondary === 'teleport' && (localPlayer.teleportTimer ?? 0) > 0) {
+    } else if (activeSec === 'teleport' && (localPlayer.teleportTimer ?? 0) > 0) {
       const castTotal = Math.max(0.05, world.config.teleportCastTime ?? 0.35)
       const pct = Math.round(clamp((1 - localPlayer.teleportTimer! / castTotal) * 100, 0, 100))
       setHeightIfChanged(gOverlay, `${100 - pct}%`)
